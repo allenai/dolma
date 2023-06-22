@@ -61,3 +61,6 @@ target/
 
 # macOS metadata
 .DS_Store
+
+# ignoring test output
+/tests/work/
