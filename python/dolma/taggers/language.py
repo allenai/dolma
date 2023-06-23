@@ -10,7 +10,7 @@ from typing import Iterable, List, Tuple
 import cld3
 import pycld2 as cld2
 import regex
-from unidecode import unidecode
+from anyascii import anyascii
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.ft_tagger import BaseFastTextTagger, Prediction
@@ -54,7 +54,7 @@ class Cld2LanguageFilter(BaseTagger):
         return self.RE_BAD_CHARS.sub("", text)
 
     def _to_ascii_input(self, text: str) -> str:
-        return unidecode(text)
+        return anyascii(text)
 
     def _identity_fn(self, text: str) -> str:
         return text
