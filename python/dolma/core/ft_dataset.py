@@ -13,8 +13,9 @@ import os
 import random
 from dataclasses import dataclass
 from functools import partial
-from multiprocessing import Event, Manager, Pool, Process, Queue
-from typing import Generator, Optional
+from multiprocessing import Manager, Pool, Process, Queue
+from threading import Event
+from typing import Generator, Optional, List
 
 from smashed.utils.io_utils import (
     open_file_for_read,
@@ -32,7 +33,7 @@ _WRITER_EXIT_MSG = "__WRITE__EXIT__"
 @dataclass
 class Config:
     target_path: str
-    sample_paths: str
+    sample_paths: List[str]
     out_path: str
     mode: str
     newlines: str
@@ -64,10 +65,10 @@ def _split(text: str, config: Config) -> Generator[TextSlice, None, None]:
 
 @dataclass
 class ReadResult:
-    examples: list[str]
+    examples: List[str]
 
 
-def process_file(config: Config, q: Queue, flag: Event, label: str, fn):
+def process_file(config: Config, q: "Queue[str]", flag: Event, label: str, fn):
     # Check a global exit flag and stop processing file
     if flag.is_set():
         return
@@ -99,7 +100,7 @@ def process_file(config: Config, q: Queue, flag: Event, label: str, fn):
                 q.put(f"__label__{label} {final_text}")
 
 
-def write_results(config: Config, q: Queue, flag: Event):
+def write_results(config: Config, q: "Queue[str]", flag: Event):
     written = 0
 
     with open_file_for_write(config.out_path) as o:
@@ -119,7 +120,7 @@ def write_results(config: Config, q: Queue, flag: Event):
                 written = 0
 
 
-def process_paths(paths: list[str], config: Config, q: Queue, flag: Event, label: str):
+def process_paths(paths: List[str], config: Config, q: "Queue[str]", flag: Event, label: str):
     fns = [fn for p in paths for fn in recursively_list_files(p)]
     random.shuffle(fns)
 
@@ -135,7 +136,7 @@ def main(config: Config):
     random.seed(117)
 
     with Manager() as manager:
-        q = manager.Queue()
+        q: "Queue[str]" = manager.Queue()   # type: ignore
         flag = manager.Event()
 
         writer = Process(target=write_results, args=(config, q, flag))
