@@ -2,9 +2,25 @@ import re
 import string
 from typing import List
 
-import blingfire
+try:
+    import blingfire
+    BLINGFIRE_AVAILABLE = True
+except Exception:
+    BLINGFIRE_AVAILABLE = False
+
+import nltk
+from nltk.tokenize.punkt import PunktSentenceTokenizer
+
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
 
 from .data_types import TextSlice
+
+
+sent_tokenizer = PunktSentenceTokenizer()
 
 
 def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> str:
@@ -36,8 +52,11 @@ def split_sentences(text: str) -> List[TextSlice]:
     """
     Split a string into sentences.
     """
-    if text:
+    if text and BLINGFIRE_AVAILABLE:
         _, offsets = blingfire.text_to_sentences_and_offsets(text)
+    elif text:
+        offsets = [(start, end) for start, end in sent_tokenizer.span_tokenize(text)]
     else:
         offsets = []
+
     return [TextSlice(doc=text, start=start, end=end) for (start, end) in offsets]

@@ -25,6 +25,15 @@ from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
 
 
+__all__ = [
+    "PiiPresidioV1",
+    "PiiRegexV1",
+    "PiiRegexV2",
+    "FastPiiRegex",
+    "PiiRegexWithCountV2"
+]
+
+
 class BasePiiFilter(BaseTagger):
     EMAIL = "EMAIL_ADDRESS"
     PHONE = "PHONE_NUMBER"

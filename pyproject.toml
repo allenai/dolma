@@ -2,16 +2,6 @@
 name = "dolma"
 version = "0.6.0"
 description = "Data filters"
-authors = [
-    {name = "Aakanksha Naik", email = "aakankshan@allenai.org" },
-    {name = "Abhilasha Ravichander", email = "abhilashar@allenai.org" },
-    {name = "Akshita Bhagia", email = "akshitab@allenai.org" },
-    {name = "Ian Magnusson", email = "ianm@allenai.org" },
-    {name = "Khyathi Chandu", email = "khyathic@allenai.org" },
-    {name = "Kyle Lo", email = "kylel@allenai.org" },
-    {name = "Luca Soldaini", email = "lucas@allenai.org" },
-    {name = "Rodney Kinney", email = "rodneyk@allenai.org" }
-]
 license = {text = "Apache-2.0"}
 readme = "README.md"
 requires-python = ">=3.8"
@@ -25,13 +15,13 @@ dependencies = [
     "presidio_analyzer==2.2.32",
     "pycld2==0.41",
     "pycld3==0.22",
-    "blingfire==0.1.8",
     "fasttext>=0.9.2",
     "tokenizers>=0.13.3,<1.0.0",
     "omegaconf>=2.3.0",
     "anyascii>=0.3.2",
     "uniseg",
     "pyyaml",
+    "blingfire==0.1.8",
     "detect-secrets==1.4.0",
     "termcolor==2.3.0",
     "smart-open>=6.3.0",
@@ -44,15 +34,52 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
 
+[[project.authors]]
+name = "Allen Institute for Artificial Intelligence"
+email = "contact@allenai.org"
+
+[[project.authors]]
+name = "Luca Soldaini"
+email = "luca@soldaini.net"
+
+[[project.authors]]
+name = "Kyle Lo"
+email = "kylel@allenai.org"
+
+[[project.authors]]
+name = "Rodney Kinney"
+email = "rodneyk@allenai.org"
+
+[[project.authors]]
+name = "Aakanksha Naik"
+email = "aakankshan@allenai.org"
+
+[[project.authors]]
+name = "Abhilasha Ravichander"
+email = "abhilashar@allenai.org"
+
+[[project.authors]]
+name = "Akshita Bhagia"
+email = "akshitab@allenai.org"
+
+[[project.authors]]
+name = "Ian Magnusson"
+email = "ianm@allenai.org"
+
+[[project.authors]]
+name = "Khyathi Chandu"
+email = "khyathic@allenai.org"
+
+[[project.maintainers]]
+name = "Allen Institute for Artificial Intelligence"
+email = "contact@allenai.org"
+
 [project.urls]
 Homepage = "https://github.com/allenai/dolma"
 
 
-# [project.scripts]
-# ai2_llm_filters = "ai2_llm_filters.core_tools.runtime:TaggerProcessor.main"
-# ai2_llm_filters_viz = "ai2_llm_filters.core_tools.vizualizer:Visualizer.main"
-# ai2_llm_filters_pre = "ai2_llm_filters.core_tools.vizualizer:RawPreviewer.main"
-
+[project.scripts]
+dolma = "dolma.cli.__main__:main"
 
 [project.optional-dependencies]
 dev = [
@@ -67,7 +94,6 @@ dev = [
     "flake8-pyi>=22.8.1",
     "Flake8-pyproject>=1.1.0",
 ]
-
 [build-system]
 requires = [
     "maturin>=1.1,<2.0",
@@ -86,7 +112,7 @@ features = ["pyo3/extension-module"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-dolma = ["py.typed"]
+dolma = ["py.typed", "data/*"]
 
 [tool.black]
 line-length = 115
@@ -131,10 +157,3 @@ pretty = true
 
 [tool.mypy-tests]
 strict_optional = false
-
-[tool.flake8]
-per-file-ignores = [
-    '__init__.py:F401',
-    '*.pyi:E302,E305',
-    '*.py:E203'
-]

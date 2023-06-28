@@ -261,14 +261,14 @@ class TaggerProcessor(BaseParallelProcessor):
                 and len(manually_included_paths) == 1
                 and os.path.exists(manually_included_paths[0])
             ):
-                manually_included_paths = [l.strip() for l in open(manually_included_paths[0])]
+                manually_included_paths = [lp.strip() for lp in open(manually_included_paths[0])]
             manually_excluded_paths = opts.manually_excluded_paths
             if (
                 manually_excluded_paths
                 and len(manually_excluded_paths) == 1
                 and os.path.exists(manually_excluded_paths[0])
             ):
-                manually_excluded_paths = [l.strip() for l in open(manually_excluded_paths[0])]
+                manually_excluded_paths = [lp.strip() for lp in open(manually_excluded_paths[0])]
 
             msg = (
                 "----- TaggerProcessor -----\n"
