@@ -1,0 +1,51 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: DOLMa
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - family-names: Soldaini
+    given-names: Luca
+    email: lucas@allenai.org
+    affiliation: Allen Institute for AI
+    orcid: 'https://orcid.org/0000-0001-6998-9863'
+  - given-names: Kyle
+    family-names: Lo
+    email: kylel@allenai.org
+    affiliation: Allen Institute for AI
+    orcid: 'https://orcid.org/0000-0002-1804-2853'
+  - given-names: Rodney
+    family-names: Kinney
+    email: rodneyk@allenai.org
+    affiliation: Allen Institute for AI
+  - given-names: Aakanksha
+    family-names: Naik
+    email: aakankshan@allenai.org
+    affiliation: Allen Institute for AI
+    orcid: 'https://orcid.org/0000-0002-3673-0051'
+  - given-names: Abhilasha
+    family-names: Ravichander
+    email: abhilashar@allenai.org
+    affiliation: Allen Institute for AI
+  - given-names: Akshita
+    family-names: Bhagia
+    email: akshitab@allenai.org
+    affiliation: Allen Institute for AI
+  - given-names: Ian
+    family-names: Magnusson
+    email: ianm@allenai.org
+    affiliation: Allen Institute for AI
+  - given-names: Khyathi
+    family-names: Chandu
+    email: khyathic@allenai.org
+    affiliation: khyathic@allenai.org
+repository-code: 'https://github.com/allenai/dolma'
+url: 'https://github.com/allenai/dolma'
+abstract: >
+  Data and tools for generating and inspecting OLMo
+  pre-training data.
+license: Apache-2.0
