@@ -5,9 +5,13 @@ from argparse import ArgumentParser
 
 
 AVAILABLE_COMMANDS = {
-    'deduper': DeduperCli,
-    'mixer': MixerCli,
-    'tagger': TaggerCli,
+    'dedupe': DeduperCli,
+    'mix': MixerCli,
+    'tag': TaggerCli,
+    'visualize': None,
+    'browse': None,
+    'stats': None,
+    'fttrain': None,
 }
 
 
@@ -15,10 +19,12 @@ def main():
     parser = ArgumentParser(
         prog='dolma',
         usage="domla [command] [options]",
-        description="Command line interface for dolma corpus processing toolkit"
+        description="Command line interface for the DOLMa dataset processing toolkit"
     )
     subparsers = parser.add_subparsers(dest='command')
-    breakpoint()
+    subparsers.required = True
+    subparsers.choices = AVAILABLE_COMMANDS.keys()  # pyright: ignore
+
     for command, cli in AVAILABLE_COMMANDS.items():
         cli.make_parser(subparsers.add_parser(command))
 

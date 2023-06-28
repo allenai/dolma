@@ -30,8 +30,6 @@ from .utils import make_variable_name
 
 
 class TaggerProcessor(BaseParallelProcessor):
-    BASE_S3_PREFIX = "s3://ai2-llm/pretraining-data/sources"
-
     @classmethod
     def get_logger(cls) -> logging.Logger:
         return logging.getLogger(cls.__name__)
