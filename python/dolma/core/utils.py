@@ -19,7 +19,6 @@ except LookupError:
 
 from .data_types import TextSlice
 
-
 sent_tokenizer = PunktSentenceTokenizer()
 
 
@@ -42,10 +41,11 @@ def split_paragraphs(text: str) -> List[TextSlice]:
     Split a string into paragraphs. A paragraph is defined as a sequence of zero or more characters, followed
     by a newline character, or a sequence of one or more characters, followed by the end of the string.
     """
-    return [
-        TextSlice(doc=text, start=match.start(), end=match.end())
+    paras = [
+        TextSlice(doc=text, start=match.start(), end=match.end() - 1)
         for match in re.finditer(r"([^\n]*\n|[^\n]+$)", text)
     ]
+    return [para for para in paras if para.text.strip()]
 
 
 def split_sentences(text: str) -> List[TextSlice]:
