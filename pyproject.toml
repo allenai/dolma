@@ -63,6 +63,10 @@ name = "Akshita Bhagia"
 email = "akshitab@allenai.org"
 
 [[project.authors]]
+name = "Dirk Groeneveld"
+email = "dirkg@allenai.org"
+
+[[project.authors]]
 name = "Ian Magnusson"
 email = "ianm@allenai.org"
 

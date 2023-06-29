@@ -14,7 +14,7 @@ If you use this repository, please cite it as:
 
 ```bibtex
 @software{dolma,
-    author = {{Soldaini, Luca and Lo, Kyle and Kinney, Rodney and Naik, Aakanksha and Ravichander, Abhilasha and Bhagia, Akshita and Magnusson, Ian and Chandu, Khyathi and Groeneveld, Dirk}},
+    author = {{Soldaini, Luca and Lo, Kyle and Kinney, Rodney and Naik, Aakanksha and Ravichander, Abhilasha and Bhagia, Akshita and Groeneveld, Dirk and Magnusson, Ian and Chandu, Khyathi}},
     license = {{Apache-2.0}},
     title = {{DOLMa}},
     url = {https://github.com/allenai/dolma}
