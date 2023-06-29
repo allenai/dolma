@@ -68,8 +68,8 @@ class TestUtils(TestCase):
 
         self.assertEqual(len(sentences), 0)
 
-    def test_split_sentences_with_newline(self):
-        text = "This is a sentence. \nThis is another sentence.\nThis is a third sentence."
+    def test_split_sentences_with_newline_and_spaces(self):
+        text = "This is a sentence. \n  \n This is another sentence.\n\n  This is a third sentence."
         sentences = split_sentences(text=text)
 
         self.assertEqual(len(sentences), 3)
@@ -82,4 +82,3 @@ class TestUtils(TestCase):
         self.assertEqual(sentences[1].text, "This is another sentence.")
         self.assertEqual(text[sentences[1].start : sentences[1].end], "This is another sentence.")
 
-    
