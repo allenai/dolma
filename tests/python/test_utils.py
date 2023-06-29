@@ -48,3 +48,38 @@ class TestUtils(TestCase):
 
         self.assertEqual(paragraphs[1].text, "This is another paragraph.")
         self.assertEqual(text[paragraphs[1].start : paragraphs[1].end], "This is another paragraph.")
+
+    def test_split_sentences(self):
+        text = "This is a sentence. This is another sentence. This is a third sentence."
+        sentences = split_sentences(text=text)
+
+        self.assertIsInstance(sentences[0], TextSlice)
+        self.assertEqual(len(sentences), 3)
+
+        self.assertEqual(sentences[0].text, "This is a sentence.")
+        self.assertEqual(text[sentences[0].start : sentences[0].end], "This is a sentence.")
+
+        self.assertEqual(sentences[1].text, "This is another sentence.")
+        self.assertEqual(text[sentences[1].start : sentences[1].end], "This is another sentence.")
+
+    def test_split_sentences_empty(self):
+        text = ""
+        sentences = split_sentences(text=text)
+
+        self.assertEqual(len(sentences), 0)
+
+    def test_split_sentences_with_newline(self):
+        text = "This is a sentence. \nThis is another sentence.\nThis is a third sentence."
+        sentences = split_sentences(text=text)
+
+        self.assertEqual(len(sentences), 3)
+        self.assertIsInstance(sentences[0], TextSlice)
+        self.assertEqual(len(sentences), 3)
+
+        self.assertEqual(sentences[0].text, "This is a sentence.")
+        self.assertEqual(text[sentences[0].start : sentences[0].end], "This is a sentence.")
+
+        self.assertEqual(sentences[1].text, "This is another sentence.")
+        self.assertEqual(text[sentences[1].start : sentences[1].end], "This is another sentence.")
+
+    
