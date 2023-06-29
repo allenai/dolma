@@ -8,6 +8,25 @@
 Data and tools for generating and inspecting OLMo pre-training data.
 
 
+## Setup
+
+Install Rust
+```
+curl https://sh.rustup.rs -sSf | sh
+```
+
+Setting up Python
+```
+conda create -n dolma python=3.10
+```
+
+Installing this repository
+```
+cd dolma
+pip install -e .
+```
+
+
 ## Citation
 
 If you use this repository, please cite it as:
