@@ -14,7 +14,7 @@ dependencies = [
     "smashed[remote]>=0.20.0",
     "presidio_analyzer==2.2.32",
     "pycld2==0.41",
-    "pycld3==0.22",
+    # "pycld3==0.22",
     "fasttext>=0.9.2",
     "tokenizers>=0.13.3,<1.0.0",
     "omegaconf>=2.3.0",

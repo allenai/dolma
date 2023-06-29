@@ -15,10 +15,24 @@ Install Rust
 curl https://sh.rustup.rs -sSf | sh
 ```
 
+Install [CMake](https://cmake.org/install/)
+
+  * On **Mac OSX** with `brew install cmake`
+
+
 Setting up Python
 ```
 conda create -n dolma python=3.10
 ```
+
+
+Install [Maturin](https://www.maturin.rs/)
+
+```
+pip install maturin
+maturin develop
+```
+
 
 Installing this repository
 ```
