@@ -1,5 +1,14 @@
 import argparse
 
+from .om_utils import make_parser, namespace_to_nested_omegaconf, field
+
+__all__ = [
+    'BaseCli',
+    'make_parser',
+    'namespace_to_nested_omegaconf',
+    'field',
+]
+
 
 class BaseCli:
     @classmethod
