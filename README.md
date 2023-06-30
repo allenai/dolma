@@ -18,7 +18,18 @@ curl https://sh.rustup.rs -sSf | sh
 Install [CMake](https://cmake.org/install/)
 
   * On **Mac OSX** with `brew install cmake`
+  * On **Linux** with `apt-get install cmake`
 
+
+Install [OpenSSL](https://www.openssl.org/)
+
+  * On **Mac OSX** with `brew install openssl re2`
+  * On **Linux** with `apt-get install openssl`
+
+Install [Protobuf]()
+
+  * On **Mac OSX** with `brew install protobuf`
+  * On **Linux** with `apt-get install protobuf-compiler`
 
 Setting up Python
 ```
