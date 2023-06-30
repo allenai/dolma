@@ -19,7 +19,6 @@ except LookupError:
 
 from .data_types import TextSlice
 
-
 sent_tokenizer = PunktSentenceTokenizer()
 
 
@@ -37,18 +36,22 @@ def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> 
     return name
 
 
-def split_paragraphs(text: str) -> List[TextSlice]:
+def split_paragraphs(text: str, remove_empty: bool = True) -> List[TextSlice]:
     """
     Split a string into paragraphs. A paragraph is defined as a sequence of zero or more characters, followed
     by a newline character, or a sequence of one or more characters, followed by the end of the string.
     """
-    return [
+    text_slices = [
         TextSlice(doc=text, start=match.start(), end=match.end())
         for match in re.finditer(r"([^\n]*\n|[^\n]+$)", text)
     ]
+    if remove_empty is True:
+        text_slices = [text_slice for text_slice in text_slices if text_slice.text.strip()]
+    return text_slices
 
 
-def split_sentences(text: str) -> List[TextSlice]:
+
+def split_sentences(text: str, remove_empty: bool = True) -> List[TextSlice]:
     """
     Split a string into sentences.
     """
@@ -59,4 +62,7 @@ def split_sentences(text: str) -> List[TextSlice]:
     else:
         offsets = []
 
-    return [TextSlice(doc=text, start=start, end=end) for (start, end) in offsets]
+    if remove_empty is True:
+        return [TextSlice(doc=text, start=start, end=end) for (start, end) in offsets]
+    else:
+        raise NotImplementedError("remove_empty=False is not implemented yet")
