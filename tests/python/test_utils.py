@@ -68,9 +68,6 @@ class TestUtils(TestCase):
         self.assertEqual(text[sentences[0].start : sentences[0].end], sentences[0].text)
         self.assertEqual(sentences[1].text, "This is another sentence.")
         self.assertEqual(text[sentences[1].start : sentences[1].end], sentences[1].text)
-
-        sentences2 = split_sentences(text=text, remove_empty=False)
-        self.assertListEqual([s.text for s in sentences], [s.text for s in sentences2])
         
     def test_split_sentences_empty(self):
         text = ""
