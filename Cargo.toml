@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 ahash = { version = "0.8.1", features = ["runtime-rng"] }
-aws-config = { version = "0.55.0", features = [], default-features = false }
+aws-config = { version = "0.55.0"}
 aws-sdk-s3 = "0.25.0"
 byteorder = "1"
 clap = { version = "4.1.11", features = ["derive"] }

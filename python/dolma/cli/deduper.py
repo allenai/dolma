@@ -1,12 +1,13 @@
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from dataclasses import dataclass
-from omegaconf import OmegaConf as om
 from argparse import ArgumentParser, Namespace
+from dataclasses import dataclass
+from pathlib import Path
 from tempfile import gettempdir
+from typing import Any, Dict, List, Optional
 
-from dolma.cli import BaseCli, field, namespace_to_nested_omegaconf, make_parser
+from omegaconf import OmegaConf as om
+
 from dolma import deduper
+from dolma.cli import BaseCli, field, make_parser, namespace_to_nested_omegaconf
 
 
 @dataclass
@@ -28,67 +29,57 @@ class BloomFilterConfig:
         help=(
             "Size of the bloom filter in bytes. Either this value is provided, or both estimated_doc_count "
             "and desired_false_positive_rate."
-        )
+        ),
     )
-    read_only: bool = field(
-        help="If true, the bloom filter will be read from the file and not updated. Required."
-    )
+    read_only: bool = field(help="If true, the bloom filter will be read from the file and not updated. Required.")
     estimated_doc_count: int = field(
         default=-1,
         help=(
             "Estimated number of documents to be added to the bloom filter. Either this value is provided, "
             "or both size_in_bytes and desired_false_positive_rate."
-        )
+        ),
     )
     desired_false_positive_rate: float = field(
-        default=-1.,
+        default=-1.0,
         help=(
             "Desired false positive rate. Either this value is provided, or both size_in_bytes and "
             "estimated_doc_count."
-        )
+        ),
     )
 
 
 @dataclass
 class DedupeConfig:
-    name: str
+    name: str = field(help="Name of the deduper. Required.")
     documents: Optional[DocumentDedupeConfig] = field(
-        default=None,
-        help="Configuration for document deduplication"
+        default=None, help="Configuration for document deduplication"
     )
     paragraphs: Optional[ParagraphDedupeConfig] = field(
-        default=None,
-        help="Configuration for paragraph deduplication"
+        default=None, help="Configuration for paragraph deduplication"
     )
-    skip_empty: Optional[bool] = field(
-        default=False,
-        help="If true, empty documents/paragraphs will be skipped"
-    )
+    skip_empty: Optional[bool] = field(default=False, help="If true, empty documents/paragraphs will be skipped")
 
 
 @dataclass
 class WorkDirConfig:
     input: str = field(
-        default=str(Path(gettempdir()) / 'dolma' / 'deduper' / 'input'),
-        help="Path to the input directory. Required."
+        default=str(Path(gettempdir()) / "dolma" / "deduper" / "input"),
+        help="Path to the input directory. Required.",
     )
     output: str = field(
-        default=str(Path(gettempdir()) / 'dolma' / 'deduper' / 'output'),
-        help="Path to the output directory. Required."
+        default=str(Path(gettempdir()) / "dolma" / "deduper" / "output"),
+        help="Path to the output directory. Required.",
     )
 
 
 @dataclass
 class DeduperConfig:
-    documents: List[str] = field(
-        help="Paths to the documents to be deduplicated. Required."
-    )
+    documents: List[str] = field(help="Paths to the documents to be deduplicated. Required.")
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Path to the working directory")
     dedupe: DedupeConfig = field(help="Deduplication configuration. Required.")
     bloom_filter: BloomFilterConfig = field(help="Bloom filter configuration. Required.")
     processes: int = field(
-        default=1,
-        help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
+        default=1, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
     )
 
 
@@ -98,42 +89,42 @@ class DeduperCli(BaseCli):
         make_parser(parser, DeduperConfig)
 
     @classmethod
-    def run_from_args(cls, args: Namespace):
-        config = namespace_to_nested_omegaconf(args, DeduperConfig)
+    def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
+        parsed_config = namespace_to_nested_omegaconf(args=args, structured=DeduperConfig, config=config)
         dict_config: Dict[str, Any] = {}
 
-        dict_config['dedupe'] = {
-            'name': config.dedupe.name,
-            'skip_empty': config.dedupe.skip_empty
-        }
-        if config.dedupe.documents is not None:
-            dict_config['dedupe']['documents'] = om.to_container(config.dedupe.documents)
-        elif config.dedupe.paragraphs is None:
-            dict_config['dedupe']['paragraphs'] = om.to_container(config.dedupe.paragraphs)
+        dict_config["dedupe"] = {"name": parsed_config.dedupe.name, "skip_empty": parsed_config.dedupe.skip_empty}
+        if parsed_config.dedupe.documents is not None:
+            dict_config["dedupe"]["documents"] = om.to_container(parsed_config.dedupe.documents)
+        elif parsed_config.dedupe.paragraphs is None:
+            dict_config["dedupe"]["paragraphs"] = om.to_container(parsed_config.dedupe.paragraphs)
         else:
             raise ValueError("Either dedupe.documents or dedupe.paragraphs must be specified")
 
-        dict_config['bloom_filter'] = {
-            'file': config.bloom_filter.file,
-            'read_only': config.bloom_filter.read_only
+        dict_config["bloom_filter"] = {
+            "file": parsed_config.bloom_filter.file,
+            "read_only": parsed_config.bloom_filter.read_only,
+            "size_in_bytes": getattr(parsed_config.bloom_filter, "size_in_bytes", 0),
+            "estimated_doc_count": getattr(parsed_config.bloom_filter, "estimated_doc_count", 0),
+            "desired_false_positive_rate": getattr(parsed_config.bloom_filter, "desired_false_positive_rate", 0),
         }
-        if config.bloom_filter.size_in_bytes > 0:
-            dict_config['bloom_filter']['size_in_bytes'] = config.bloom_filter.size_in_bytes
-        if config.bloom_filter.estimated_doc_count > 0 and config.bloom_filter.desired_false_positive_rate > 0:
-            dict_config['bloom_filter'].update({
-                'estimated_doc_count': config.bloom_filter.estimated_doc_count,
-                'desired_false_positive_rate': config.bloom_filter.desired_false_positive_rate
-            })
-        else:
+
+        if dict_config["bloom_filter"]["size_in_bytes"] <= 0 and (
+            dict_config["bloom_filter"]["estimated_doc_count"] <= 0
+            or dict_config["bloom_filter"]["desired_false_positive_rate"] <= 0
+        ):
             raise ValueError(
                 "Either bloom_filter.size_in_bytes or bloom_filter.estimated_doc_count and "
                 "bloom_filter.desired_false_positive_rate must be specified"
             )
 
-        dict_config['work_dir'] = {
-            'input': config.work_dir.input,
-            'output': config.work_dir.output
-        }
-        dict_config['num_processes'] = config.processes
+        dict_config["work_dir"] = {"input": parsed_config.work_dir.input, "output": parsed_config.work_dir.output}
+        dict_config["processes"] = parsed_config.processes
+        dict_config["documents"] = list(om.to_container(parsed_config.documents))  # pyright: ignore
+
+        if len(dict_config["documents"]) == 0:
+            raise ValueError("At least one document must be specified")
+
+        print(dict_config)
 
         deduper(dict_config)

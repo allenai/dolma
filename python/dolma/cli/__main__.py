@@ -1,34 +1,38 @@
+from argparse import ArgumentParser
+from pathlib import Path
+from typing import Optional
+
+from yaml import safe_load
+
 from .deduper import DeduperCli
 from .mixer import MixerCli
 from .tagger import TaggerCli
-from argparse import ArgumentParser
-
 
 AVAILABLE_COMMANDS = {
-    'dedupe': DeduperCli,
-    'mix': MixerCli,
-    'tag': TaggerCli,
-    'visualize': None,
-    'browse': None,
-    'stats': None,
-    'ft-train': None,
+    "dedupe": DeduperCli,
+    "mix": MixerCli,
+    "tag": TaggerCli,
+    "visualize": None,
+    "browse": None,
+    "stats": None,
+    "ft-train": None,
 }
 
 
 def main():
     parser = ArgumentParser(
-        prog='dolma',
+        prog="dolma",
         usage="domla [command] [options]",
-        description="Command line interface for the DOLMa dataset processing toolkit"
+        description="Command line interface for the DOLMa dataset processing toolkit",
     )
     parser.add_argument(
         "-c",
         "--config",
         help="Path to configuration optional file",
-        type=str,
+        type=Path,
         default=None,
     )
-    subparsers = parser.add_subparsers(dest='command')
+    subparsers = parser.add_subparsers(dest="command")
     subparsers.required = True
     subparsers.choices = AVAILABLE_COMMANDS.keys()  # pyright: ignore
 
@@ -37,5 +41,12 @@ def main():
             cli.make_parser(subparsers.add_parser(command))
 
     args = parser.parse_args()
-    breakpoint()
-    AVAILABLE_COMMANDS[args.command].run_from_args(args)
+
+    # try parsing the config file
+    config: Optional[dict] = None
+    if config_path := args.__dict__.pop("config"):
+        assert config_path.exists(), f"Config file {config_path} does not exist"
+        with open(config_path) as f:
+            config = dict(safe_load(f))
+
+    AVAILABLE_COMMANDS[args.__dict__.pop("command")].run_from_args(args=args, config=config)

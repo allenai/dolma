@@ -1,6 +1,6 @@
 import json
 
-from . import dolma as _dolma    # type: ignore
+from . import dolma as _dolma  # type: ignore
 
 
 def deduper(config: dict):
