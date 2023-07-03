@@ -696,6 +696,7 @@ dependencies = [
  "pyo3",
  "rand",
  "rayon",
+ "regex",
  "serde",
  "serde_json",
  "threadpool",

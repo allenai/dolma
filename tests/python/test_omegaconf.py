@@ -1,4 +1,4 @@
-from dolma.cli.om_utils import make_parser, namespace_to_nested_omegaconf, field
+from dolma.cli import make_parser, namespace_to_nested_omegaconf, field
 from dataclasses import dataclass
 from argparse import ArgumentParser
 
@@ -26,28 +26,21 @@ class TestOmegaconf(TestCase):
         parser = make_parser(ap, _1)
 
         args = parser.parse_args(['--a', '1', '--b', '2'])
-        self.assertEqual(args.a, 1)
-        self.assertEqual(args.b, '2')
+        opts = namespace_to_nested_omegaconf(args=args, structured=_1)
+
+        self.assertEqual(opts.a, 1)
+        self.assertEqual(opts.b, '2')
 
     def test_nested_parser(self):
         ap = ArgumentParser()
         parser = make_parser(ap, _2)
 
-        args = vars(parser.parse_args(['--a.a', '1', '--a.b', '2', '--c', '3']))
-        self.assertEqual(args['a.a'], 1)
-        self.assertEqual(args['a.b'], '2')
-        self.assertEqual(args['c'], 3.0)
-
-    def test_omegaconf(self):
-        ap = ArgumentParser()
-        parser = make_parser(ap, _2)
-
         args = parser.parse_args(['--a.a', '1', '--a.b', '2', '--c', '3'])
-        conf = namespace_to_nested_omegaconf(args, _2)
+        opts = namespace_to_nested_omegaconf(args=args, structured=_2)
 
-        self.assertEqual(conf.a.a, 1)
-        self.assertEqual(conf.a.b, '2')
-        self.assertEqual(conf.c, 3.0)
+        self.assertEqual(opts.a.a, 1)
+        self.assertEqual(opts.a.b, '2')
+        self.assertEqual(opts.c, 3.0)
 
     def test_fail_omegaconf(self):
         ap = ArgumentParser()
