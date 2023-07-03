@@ -17,7 +17,7 @@ from dolma.cli.shared import WorkDirConfig
 class StreamOutputConfig:
     path: str = field(help="Path where to write the mixed documents to. Required.")
     max_size_in_bytes: int = field(
-        default=2 * 2 ** 30, help="Maximum size of the output file in bytes. Defaults to 2GB."
+        default=2 * 2**30, help="Maximum size of the output file in bytes. Defaults to 2GB."
     )
 
 

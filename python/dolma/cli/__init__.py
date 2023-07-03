@@ -78,8 +78,7 @@ def _make_nested_dict(key: str, value: Any, d: Optional[Dict[str, Any]] = None) 
         key, rest = key.split(".", 1)
         value = _make_nested_dict(rest, value, d.get(key))
 
-    # if value is not MISSING:
-    #     d[key] = value
+    d[key] = value
 
     return d
 
