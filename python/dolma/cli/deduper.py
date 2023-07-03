@@ -125,6 +125,4 @@ class DeduperCli(BaseCli):
         if len(dict_config["documents"]) == 0:
             raise ValueError("At least one document must be specified")
 
-        print(dict_config)
-
         deduper(dict_config)

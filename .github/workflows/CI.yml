@@ -23,8 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # TODO: re enable `armv7` after https://github.com/ziglang/zig/issues/10411
-        target: [x86_64, x86, aarch64]
+        target: [x86_64, x86, aarch64, armv7]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
