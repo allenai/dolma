@@ -1,13 +1,18 @@
 from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
-from pathlib import Path
-from tempfile import gettempdir
 from typing import Any, Dict, List, Optional
 
 from omegaconf import OmegaConf as om
 
 from dolma import deduper
-from dolma.cli import BaseCli, field, make_parser, namespace_to_nested_omegaconf
+from dolma.cli import (
+    BaseCli,
+    field,
+    make_parser,
+    namespace_to_nested_omegaconf,
+    print_config,
+)
+from dolma.cli.shared import WorkDirConfig
 
 
 @dataclass
@@ -61,21 +66,9 @@ class DedupeConfig:
 
 
 @dataclass
-class WorkDirConfig:
-    input: str = field(
-        default=str(Path(gettempdir()) / "dolma" / "deduper" / "input"),
-        help="Path to the input directory. Required.",
-    )
-    output: str = field(
-        default=str(Path(gettempdir()) / "dolma" / "deduper" / "output"),
-        help="Path to the output directory. Required.",
-    )
-
-
-@dataclass
 class DeduperConfig:
-    documents: List[str] = field(help="Paths to the documents to be deduplicated. Required.")
-    work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Path to the working directory")
+    documents: List[str] = field(default=[], help="Paths to the documents to be deduplicated. Required.")
+    work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
     dedupe: DedupeConfig = field(help="Deduplication configuration. Required.")
     bloom_filter: BloomFilterConfig = field(help="Bloom filter configuration. Required.")
     processes: int = field(
@@ -91,6 +84,8 @@ class DeduperCli(BaseCli):
     @classmethod
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         parsed_config = namespace_to_nested_omegaconf(args=args, structured=DeduperConfig, config=config)
+        print_config(parsed_config)
+
         dict_config: Dict[str, Any] = {}
 
         dict_config["dedupe"] = {"name": parsed_config.dedupe.name, "skip_empty": parsed_config.dedupe.skip_empty}

@@ -11,7 +11,6 @@ from smashed.utils.io_utils import (
     recursively_list_files,
     stream_file_for_read,
 )
-from termcolor import colored
 
 from .data_types import DocResult, InputSpec, OutputSpec
 

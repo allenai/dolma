@@ -14,14 +14,17 @@ from dataclasses import is_dataclass
 from logging import warn
 from typing import Any, Dict, Literal, Optional, Protocol, Type, TypeVar, Union
 
-from omegaconf import MISSING, DictConfig
+from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
+from rich.console import Console
+from rich.syntax import Syntax
 
 __all__ = [
     "BaseCli",
+    "field",
     "make_parser",
     "namespace_to_nested_omegaconf",
-    "field",
+    "print_config",
 ]
 
 
@@ -93,6 +96,12 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
     merged_config = om.merge(base_structured_config, untyped_config)
     assert isinstance(merged_config, DictConfig)
     return merged_config  # pyright: ignore
+
+
+def print_config(config: Union[ListConfig, DictConfig, DataClass], console: Optional[Console] = None) -> None:
+    console = console or Console()
+    syntax = Syntax(code=om.to_yaml(config).strip(), lexer="yaml", theme="ansi_dark")
+    console.print(syntax)
 
 
 class BaseCli:
