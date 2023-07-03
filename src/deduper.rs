@@ -15,7 +15,7 @@ use threadpool::ThreadPool;
 
 use crate::bloom_filter::BloomFilter;
 use crate::s3_util;
-use crate::s3_util::{download_to_file, upload_file};
+use crate::s3_util::{download_to_file, upload_file,split_path};
 use crate::shard::shard_config::WorkDirConfig;
 
 use deduper_config::*;
@@ -108,12 +108,20 @@ fn write_attributes(
     {
         let local_input = input_work_dir.join(Path::new(&doc_path));
         log::info!("Downloading {} to {}", doc_path, local_input.display());
-        rt.block_on(download_to_file(
-            &s3_client,
-            "ai2-llm",
-            &doc_path,
-            &local_input,
-        ))?;
+        match split_path(doc_path.as_str()) {
+            Ok((bucket, pattern)) => {
+                rt.block_on(download_to_file(
+                    &s3_client,
+                    bucket,
+                    pattern,
+                    &local_input,
+                ))?;
+            }
+            Err(e) => {
+                println!("Error parsing pattern: {}", e);
+            }
+        };
+
         let input_file = OpenOptions::new()
             .read(true)
             .write(false)
@@ -235,12 +243,19 @@ fn write_attributes(
         &tmp_output_path.display(),
         &output_path
     );
-    rt.block_on(upload_file(
-        &s3_client,
-        "ai2-llm",
-        &output_path,
-        &tmp_output_path,
-    ))?;
+    match split_path(output_path.as_str()) {
+        Ok((bucket, pattern)) => {
+            rt.block_on(upload_file(
+                &s3_client,
+                bucket,
+                pattern,
+                &tmp_output_path,
+            ))?;
+        }
+        Err(e) => {
+            println!("Error parsing pattern: {}", e);
+        }
+    };
 
     {
         // Create empty file to indicate that the shard is done.
@@ -364,7 +379,7 @@ mod test {
 
     #[test]
     fn test_dedupe_by_url() -> Result<(), io::Error> {
-        let config = DeduperConfig::read_from_file("tests/config/dedupe-by-url.json").unwrap();
+        let config: DeduperConfig = DeduperConfig::read_from_file("tests/config/dedupe-by-url.json").unwrap();
         run(config);
 
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -374,12 +389,21 @@ mod test {
         let s3_client = s3_util::new_client()?;
 
         let local_output_file = "tests/work/output/dedupe-by-url.json.gz";
-        rt.block_on(download_to_file(
-            &s3_client,
-            "ai2-llm",
-            "pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_by_url/head/0000.json.gz",
-            Path::new(local_output_file),
-        ))?;
+        let remote_output_file = "s3://pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_by_url/head/0000.json.gz";
+
+        match split_path(remote_output_file) {
+            Ok((bucket, pattern)) => {
+                rt.block_on(download_to_file(
+                    &s3_client,
+                    bucket,
+                    pattern,
+                    Path::new(local_output_file),
+                ))?;
+            }
+            Err(e) => {
+                println!("Error parsing pattern: {}", e);
+            }
+        }
 
         compare_contents(
             "tests/data/expected/dedupe-by-url.json.gz",

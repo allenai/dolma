@@ -85,7 +85,6 @@ mod test {
 
     use flate2::read::MultiGzDecoder;
 
-    use crate::mixer_config::MixerConfig;
     use crate::s3_util;
     use crate::s3_util::download_to_file;
 
