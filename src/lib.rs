@@ -1,15 +1,14 @@
 use pyo3::prelude::*;
 
 pub mod bloom_filter;
+pub mod deduper;
+pub mod mixer;
 pub mod s3_util;
 pub mod shard;
-pub mod mixer;
-pub mod deduper;
 
-use std::{env};
 use crate::deduper::deduper_config::DeduperConfig;
 use crate::mixer::mixer_config::MixerConfig;
-
+use std::env;
 
 #[pyfunction]
 fn deduper_entrypoint(config_str: &str) -> PyResult<()> {
@@ -17,7 +16,6 @@ fn deduper_entrypoint(config_str: &str) -> PyResult<()> {
     deduper::run(config);
     Ok(())
 }
-
 
 #[pyfunction]
 fn mixer_entrypoint(config_str: &str) -> PyResult<()> {

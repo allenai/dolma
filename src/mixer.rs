@@ -9,7 +9,6 @@ use crate::shard::Shard;
 
 use mixer_config::*;
 
-
 pub fn run(config: MixerConfig) {
     let shards = Shard::split_streams(&config.streams).unwrap();
 
@@ -134,13 +133,14 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = s3_util::new_client()?;
+        let s3_client = s3_util::new_client(None)?;
 
         let local_output_file = "tests/work/output/mixer.json.gz";
+        let remote_output_file =
+            "s3://pretraining-data/tests/mixer/outputs/v1/documents/head/mixer-test-0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
-            "ai2-llm",
-            "pretraining-data/tests/mixer/outputs/v1/documents/head/mixer-test-0000.json.gz",
+            remote_output_file,
             Path::new(local_output_file),
         ))?;
 
@@ -157,13 +157,14 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = s3_util::new_client()?;
+        let s3_client = s3_util::new_client(None)?;
 
         let local_output_file = "tests/work/output/email-spans.json.gz";
+        let remote_output_file =
+            "s3://pretraining-data/tests/mixer/outputs/v1/documents/head/email-spans-test-0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
-            "ai2-llm",
-            "pretraining-data/tests/mixer/outputs/v1/documents/head/email-spans-test-0000.json.gz",
+            remote_output_file,
             Path::new(local_output_file),
         ))?;
 
@@ -180,12 +181,16 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = s3_util::new_client()?;
+        let s3_client = s3_util::new_client(None)?;
 
         let local_output_file = "tests/work/output/remove-paragraphs.json.gz";
-        rt.block_on(download_to_file(&s3_client, "ai2-llm",
-                                     "pretraining-data/tests/mixer/outputs/v1/documents/head/paragraph-spans-test-0000.json.gz",
-                                     Path::new(local_output_file)))?;
+        let remote_output_file =
+            "s3://pretraining-data/tests/mixer/outputs/v1/documents/head/paragraph-spans-test-0000.json.gz";
+        rt.block_on(download_to_file(
+            &s3_client,
+            remote_output_file,
+            Path::new(local_output_file),
+        ))?;
 
         compare_contents(
             "tests/data/expected/remove-paragraphs.json.gz",
@@ -203,12 +208,16 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = s3_util::new_client()?;
+        let s3_client = s3_util::new_client(None)?;
 
         let local_output_file = "tests/work/output/filter-by-spans.json.gz";
-        rt.block_on(download_to_file(&s3_client, "ai2-llm",
-                                     "pretraining-data/tests/mixer/outputs/v1/documents/head/filter-by-spans-test-0000.json.gz",
-                                     Path::new(local_output_file)))?;
+        let remote_output_file =
+            "s3://pretraining-data/tests/mixer/outputs/v1/documents/head/filter-by-spans-test-0000.json.gz";
+        rt.block_on(download_to_file(
+            &s3_client,
+            remote_output_file,
+            Path::new(local_output_file),
+        ))?;
 
         compare_contents(
             "tests/data/expected/filter-by-spans.json.gz",

@@ -1,14 +1,13 @@
 release:
 	maturin build
 
-test: test-python test-rust
+test: setup develop setup-test-data test-python test-rust clean-test-data
 
-test-python: develop setup
+test-python:
 	pytest -vs tests/python
 
-test-rust: clean-test-data setup-test-data develop setup
-	pytest -vs tests/rust
-
+test-rust:
+	cargo test -- --nocapture
 
 clean-test-data:
 	rm -rf tests/work/*

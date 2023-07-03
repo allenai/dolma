@@ -98,6 +98,7 @@ dev = [
     "ipdb>=0.13.0",
     "flake8-pyi>=22.8.1",
     "Flake8-pyproject>=1.1.0",
+    "awscli>=1.16.0",
 ]
 [build-system]
 requires = [
