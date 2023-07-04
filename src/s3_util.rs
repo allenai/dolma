@@ -1,5 +1,6 @@
 use std::io;
 use std::path::Path;
+use std::str::FromStr;
 
 use aws_sdk_s3::config::Region;
 use aws_sdk_s3::error::ProvideErrorMetadata;
@@ -125,6 +126,10 @@ pub fn find_objects_matching_patterns(
         let start_size = stream_inputs.len();
         let (bucket, pattern) = split_path(full_pattern).unwrap();
 
+        let mut output_prefix = String::from_str("s3://").unwrap();
+        output_prefix.push_str(bucket);
+        output_prefix.push_str("/");
+
         let mut prefix = pattern.clone().to_string();
         let mut suffix: Option<String> = Some("".to_owned());
         let maybe_index = pattern.chars().position(|c| c == '*');
@@ -161,7 +166,9 @@ pub fn find_objects_matching_patterns(
                 .unwrap()
             };
             resp.contents().unwrap_or_default().iter().for_each(|obj| {
-                stream_inputs.push(obj.key().unwrap().to_owned());
+                let mut full_output_prefix = output_prefix.clone();
+                full_output_prefix.push_str(obj.key().unwrap());
+                stream_inputs.push(full_output_prefix);
             });
             suffix.iter().for_each(|s| {
                 resp.common_prefixes()
@@ -170,7 +177,10 @@ pub fn find_objects_matching_patterns(
                     .for_each(|sub_folder| {
                         let mut full_path = sub_folder.prefix().unwrap().to_owned();
                         full_path.push_str(s);
-                        stream_inputs.push(full_path);
+                        let mut full_output_prefix = output_prefix.clone();
+                        full_output_prefix.push_str(&full_path);
+
+                        stream_inputs.push(full_output_prefix);
                     });
             });
             token = resp.next_continuation_token().map(String::from);
@@ -203,10 +213,13 @@ pub fn new_client(region_name: Option<String>) -> Result<S3Client, io::Error> {
 mod test {
     use super::*;
 
+    use std::collections::HashSet;
+    use std::fs::read_dir;
     use std::fs::OpenOptions;
     use std::io;
     use std::io::{BufRead, BufReader};
     use std::path::Path;
+    use std::str::FromStr;
 
     use flate2::read::MultiGzDecoder;
 
@@ -298,6 +311,43 @@ mod test {
 
         compare_contents("tests/data/documents.json.gz", local_output_file);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_objects_matching_patterns() -> Result<(), io::Error> {
+        let s3_client = new_client(None)?;
+
+        let patterns =
+            vec![
+                String::from_str("s3://ai2-llm/pretraining-data/tests/mixer/expected/*.json.gz")
+                    .unwrap(),
+            ];
+
+        let resp = find_objects_matching_patterns(&s3_client, &patterns).unwrap();
+        let mut matches: HashSet<String> = HashSet::from_iter(resp.iter().map(|s| s.to_owned()));
+
+        // list the contents of `tests/data/expected` and check that they match
+        match read_dir("tests/data/expected") {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            let mut remote_path = String::from_str(
+                                "s3://ai2-llm/pretraining-data/tests/mixer/expected/",
+                            )
+                            .unwrap();
+                            remote_path.push_str(entry.file_name().to_str().unwrap());
+                            matches.remove(&remote_path);
+                        }
+                        Err(err) => println!("Error: {}", err),
+                    }
+                }
+            }
+            Err(err) => println!("Error: {}", err),
+        }
+
+        assert_eq!(matches.len(), 0);
         Ok(())
     }
 }
