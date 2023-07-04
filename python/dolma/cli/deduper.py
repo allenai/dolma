@@ -84,14 +84,13 @@ class DeduperCli(BaseCli):
     @classmethod
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         parsed_config = namespace_to_nested_omegaconf(args=args, structured=DeduperConfig, config=config)
-        print_config(parsed_config)
 
         dict_config: Dict[str, Any] = {}
 
         dict_config["dedupe"] = {"name": parsed_config.dedupe.name, "skip_empty": parsed_config.dedupe.skip_empty}
         if parsed_config.dedupe.documents is not None:
             dict_config["dedupe"]["documents"] = om.to_container(parsed_config.dedupe.documents)
-        elif parsed_config.dedupe.paragraphs is None:
+        elif parsed_config.dedupe.paragraphs is not None:
             dict_config["dedupe"]["paragraphs"] = om.to_container(parsed_config.dedupe.paragraphs)
         else:
             raise ValueError("Either dedupe.documents or dedupe.paragraphs must be specified")
@@ -120,4 +119,5 @@ class DeduperCli(BaseCli):
         if len(dict_config["documents"]) == 0:
             raise ValueError("At least one document must be specified")
 
+        print_config(dict_config)
         deduper(dict_config)

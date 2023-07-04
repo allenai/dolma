@@ -3,10 +3,10 @@
     {
       "name": "c4-cleaned",
       "documents": [
-        "pretraining-data/tests/mixer/inputs/c4/documents/*/0000.json.gz"
+        "s3://ai2-llm/pretraining-data/tests/mixer/inputs/c4/documents/*/0000.json.gz"
       ],
       "output": {
-        "path": "pretraining-data/tests/mixer/outputs/c4-cleaned/documents/head",
+        "path": "s3://ai2-llm/pretraining-data/tests/mixer/outputs/c4-cleaned/documents/head",
         "max_size_in_bytes": 100000
       },
       "attributes": [
@@ -19,7 +19,7 @@
           "replacement": ""
         },
         {
-          "span": "$.attributes.c4_rules__c4_v1__lines_with_too_few_words",
+        "span": "$.attributes.c4_rules__c4_v1__lines_with_too_few_words",
           "min_score": 0.5,
           "replacement": ""
         }

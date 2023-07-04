@@ -66,7 +66,7 @@ def make_parser(parser: ArgumentParser, config: DataClass, prefix: Optional[str]
             continue
 
         field_name = f"{prefix}.{field_name}" if prefix else field_name
-        parser.add_argument(f"--{field_name}", **{**field.metadata})
+        parser.add_argument(f"--{field_name}", help=field.metadata.get("help"), default=MISSING)
 
     return parser
 
@@ -78,7 +78,8 @@ def _make_nested_dict(key: str, value: Any, d: Optional[Dict[str, Any]] = None) 
         key, rest = key.split(".", 1)
         value = _make_nested_dict(rest, value, d.get(key))
 
-    d[key] = value
+    if value is not MISSING:
+        d[key] = value
 
     return d
 
@@ -91,13 +92,16 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
     untyped_config: DictConfig = om.merge(
         om.create(config or {}), om.create(nested_config_dict)
     )  # pyright: ignore (pylance is confused because om.create might return a DictConfig or a ListConfig)
+
     base_structured_config: DictConfig = om.structured(structured)
     merged_config = om.merge(base_structured_config, untyped_config)
     assert isinstance(merged_config, DictConfig)
     return merged_config  # pyright: ignore
 
 
-def print_config(config: Union[ListConfig, DictConfig, DataClass], console: Optional[Console] = None) -> None:
+def print_config(config: Any, console: Optional[Console] = None) -> None:
+    if not isinstance(config, (DictConfig, ListConfig)):
+        config = om.create(config)
     console = console or Console()
     syntax = Syntax(code=om.to_yaml(config).strip(), lexer="yaml", theme="ansi_dark")
     console.print(syntax)
