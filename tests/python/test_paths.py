@@ -1,10 +1,9 @@
 import itertools
+import os
 from pathlib import Path
 from unittest import TestCase
-import os
 
 from dolma.core.paths import glob_path
-
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"
 
@@ -27,9 +26,9 @@ class TestPaths(TestCase):
         paths = list(glob_path(local_glob))
         expected = list(
             itertools.chain.from_iterable(
-                (str(fp), ) if (fp := LOCAL_DATA / fn).is_file() and 'paragraphs' in fn else (
-                    (str(fp / sn) for sn in os.listdir(fp) if 'paragraphs' in sn) if fp.is_dir() else ()
-                )
+                (str(fp),)
+                if (fp := LOCAL_DATA / fn).is_file() and "paragraphs" in fn
+                else ((str(fp / sn) for sn in os.listdir(fp) if "paragraphs" in sn) if fp.is_dir() else ())
                 for fn in os.listdir(LOCAL_DATA)
             )
         )

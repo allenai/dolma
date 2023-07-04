@@ -1,15 +1,13 @@
+import glob
 from functools import partial
 from pathlib import Path
-from typing import Dict, Iterator, Union, Any
-import glob
-
-from fsspec import get_filesystem_class
-from fsspec import AbstractFileSystem
+from typing import Any, Dict, Iterator, Union
 from urllib.parse import urlparse
 
+from fsspec import AbstractFileSystem, get_filesystem_class
 
 FS_KWARGS: Dict[str, Dict[str, Any]] = {
-    '': {'auto_mkdir': True},
+    "": {"auto_mkdir": True},
 }
 
 
@@ -22,7 +20,7 @@ def get_fs(path: Union[Path, str]) -> AbstractFileSystem:
     fs = get_filesystem_class(protocol)(**FS_KWARGS.get(protocol, {}))
 
     # patch glob method to support recursive globbing
-    if protocol == '':
+    if protocol == "":
         fs.glob = partial(glob.glob, recursive=True)
 
     return fs
