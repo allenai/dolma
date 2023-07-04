@@ -1,17 +1,10 @@
-from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from omegaconf import OmegaConf as om
 
 from dolma import deduper
-from dolma.cli import (
-    BaseCli,
-    field,
-    make_parser,
-    namespace_to_nested_omegaconf,
-    print_config,
-)
+from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig
 
 
@@ -77,14 +70,10 @@ class DeduperConfig:
 
 
 class DeduperCli(BaseCli):
-    @classmethod
-    def make_parser(cls, parser: ArgumentParser):
-        make_parser(parser, DeduperConfig)
+    CONFIG = DeduperConfig
 
     @classmethod
-    def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
-        parsed_config = namespace_to_nested_omegaconf(args=args, structured=DeduperConfig, config=config)
-
+    def run(cls, parsed_config: DeduperConfig):
         dict_config: Dict[str, Any] = {}
 
         dict_config["dedupe"] = {"name": parsed_config.dedupe.name, "skip_empty": parsed_config.dedupe.skip_empty}
@@ -120,4 +109,4 @@ class DeduperCli(BaseCli):
             raise ValueError("At least one document must be specified")
 
         print_config(dict_config)
-        deduper(dict_config)
+        return deduper(dict_config)

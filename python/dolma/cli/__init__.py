@@ -12,7 +12,7 @@ from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
 from logging import warn
-from typing import Any, Dict, Literal, Optional, Protocol, Type, TypeVar, Union
+from typing import Any, Dict, Generic, Literal, Optional, Protocol, Type, TypeVar, Union
 
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
@@ -29,7 +29,8 @@ __all__ = [
 
 
 T = TypeVar("T", bound=Any)
-V = TypeVar("V", bound=Any)
+D = TypeVar("D", bound="DataClass")
+A = TypeVar("A", bound="ArgumentParser")
 
 
 def _field_nargs(default: Any) -> Union[Literal["?"], Literal["*"]]:
@@ -51,13 +52,13 @@ class DataClass(Protocol):
     __dataclass_fields__: Dict[str, Field]
 
 
-def make_parser(parser: ArgumentParser, config: DataClass, prefix: Optional[str] = None) -> ArgumentParser:
+def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None) -> A:
     for field_name, field in config.__dataclass_fields__.items():
         # get type from annotations or metadata
         typ_ = config.__annotations__.get(field_name, field.metadata.get("type", MISSING))
 
         if typ_ is MISSING:
-            warn(f"No type annotation for field {field_name} in {config.__class__.__name__}")
+            warn(f"No type annotation for field {field_name} in {config.__name__}")
             continue
 
         if is_dataclass(typ_):
@@ -107,11 +108,20 @@ def print_config(config: Any, console: Optional[Console] = None) -> None:
     console.print(syntax)
 
 
-class BaseCli:
+class BaseCli(Generic[D]):
+    CONFIG: Type[D]
+
     @classmethod
-    def make_parser(cls, parser: ArgumentParser):
-        raise NotImplementedError("Abstract method; must be implemented in subclass")
+    def make_parser(cls, parser: A) -> A:
+        assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
+        return make_parser(parser, cls.CONFIG)
 
     @classmethod
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
+        assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
+        parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)
+        return cls.run(parsed_config)
+
+    @classmethod
+    def run(cls, parsed_config: D):
         raise NotImplementedError("Abstract method; must be implemented in subclass")

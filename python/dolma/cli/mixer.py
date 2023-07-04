@@ -1,17 +1,10 @@
-from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from omegaconf import OmegaConf as om
 
 from dolma import mixer
-from dolma.cli import (
-    BaseCli,
-    field,
-    make_parser,
-    namespace_to_nested_omegaconf,
-    print_config,
-)
+from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig
 
 
@@ -59,14 +52,10 @@ class MixerConfig:
 
 
 class MixerCli(BaseCli):
-    @classmethod
-    def make_parser(cls, parser: ArgumentParser):
-        make_parser(parser, MixerConfig)
+    CONFIG = MixerConfig
 
     @classmethod
-    def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
-        parsed_config = namespace_to_nested_omegaconf(args=args, structured=MixerConfig, config=config)
-
+    def run(cls, parsed_config: MixerConfig):
         dict_config: Dict[str, Any] = {
             "work_dir": {"input": parsed_config.work_dir.input, "output": parsed_config.work_dir.output},
             "processes": parsed_config.processes,
@@ -118,4 +107,4 @@ class MixerCli(BaseCli):
             raise ValueError("No streams to mix")
 
         print_config(dict_config)
-        mixer(dict_config)
+        return mixer(dict_config)
