@@ -2,6 +2,8 @@ from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from omegaconf import OmegaConf as om
+
 from dolma import mixer
 from dolma.cli import (
     BaseCli,
@@ -19,6 +21,7 @@ class StreamOutputConfig:
     max_size_in_bytes: int = field(
         default=2 * 2**30, help="Maximum size of the output file in bytes. Defaults to 2GB."
     )
+    discard_fields: List[str] = field(default=[], help="List of fields to discard from the output documents.")
 
 
 @dataclass
@@ -103,6 +106,7 @@ class MixerCli(BaseCli):
             stream_config_dict["output"] = {
                 "path": stream_config.output.path,
                 "max_size_in_bytes": stream_config.output.max_size_in_bytes,
+                "discard_fields": om.to_container(stream_config.output.discard_fields),
             }
 
             if len(stream_config_dict["documents"]) == 0:

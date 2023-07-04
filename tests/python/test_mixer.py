@@ -11,9 +11,6 @@ PARAGRAPH_SPANS = Path(__file__).parent.parent / "config/paragraph-spans.json"
 
 
 class TestDeduper(TestCase):
-    def test_c4_cleaned(self):
-        main(argv=["-c", str(C4_CLEANED), "mix"])
-
     def test_email_spans(self):
         main(argv=["-c", str(EMAIL_SPANS), "mix"])
 

@@ -49,6 +49,7 @@ impl Shard {
             log::info!("Computing shards for stream {}...", stream_config.name);
             let stream_inputs =
                 s3_util::find_objects_matching_patterns(&s3_client, &stream_config.documents)?;
+
             let inputs_with_sizes = stream_inputs
                 .par_iter()
                 .map(|input| {
