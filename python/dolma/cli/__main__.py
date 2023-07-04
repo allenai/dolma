@@ -1,6 +1,6 @@
 from argparse import ArgumentParser
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from yaml import safe_load
 
@@ -12,17 +12,17 @@ AVAILABLE_COMMANDS = {
     "dedupe": DeduperCli,
     "mix": MixerCli,
     "tag": TaggerCli,
-    "visualize": None,
-    "browse": None,
-    "stats": None,
-    "ft-train": None,
+    # "visualize": None,
+    # "browse": None,
+    # "stats": None,
+    # "ft-train": None,
 }
 
 
-def main():
+def main(argv: Optional[List[str]] = None):
     parser = ArgumentParser(
         prog="dolma",
-        usage="domla [command] [options]",
+        usage="dolma [command] [options]",
         description="Command line interface for the DOLMa dataset processing toolkit",
     )
     parser.add_argument(
@@ -34,13 +34,13 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command")
     subparsers.required = True
-    subparsers.choices = AVAILABLE_COMMANDS.keys()  # pyright: ignore
+    subparsers.choices = AVAILABLE_COMMANDS.keys()  # type: ignore
 
     for command, cli in AVAILABLE_COMMANDS.items():
         if cli is not None:
             cli.make_parser(subparsers.add_parser(command))
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # try parsing the config file
     config: Optional[dict] = None

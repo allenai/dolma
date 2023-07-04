@@ -63,7 +63,6 @@ class MixerCli(BaseCli):
     @classmethod
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         parsed_config = namespace_to_nested_omegaconf(args=args, structured=MixerConfig, config=config)
-        print_config(parsed_config)
 
         dict_config: Dict[str, Any] = {
             "work_dir": {"input": parsed_config.work_dir.input, "output": parsed_config.work_dir.output},
@@ -73,8 +72,10 @@ class MixerCli(BaseCli):
 
         for stream_config in parsed_config.streams:
             stream_config_dict: Dict[str, Any] = {}
+
             if stream_config.filter is not None:
                 stream_config_dict["filter"] = {}
+
                 if len(stream_config.filter.include):
                     stream_config_dict["filter"]["include"] = list(stream_config.filter.include)
 
@@ -112,4 +113,5 @@ class MixerCli(BaseCli):
         if len(dict_config["streams"]) == 0:
             raise ValueError("No streams to mix")
 
+        print_config(dict_config)
         mixer(dict_config)

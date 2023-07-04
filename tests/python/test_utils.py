@@ -16,7 +16,7 @@ from dolma.core.utils import make_variable_name, split_paragraphs, split_sentenc
 class TestUtils(TestCase):
     def test_make_variable_name(self):
         pass
-    
+
     def test_split_paragraphs(self):
         text = "This is a paragraph.\nThis is another paragraph.\nThis is a third paragraph."
         paragraphs = split_paragraphs(text=text)
@@ -37,7 +37,7 @@ class TestUtils(TestCase):
 
     def test_split_paragraphs_with_newline_and_spaces(self):
         text = "This is a sentence. \n  \n This is another sentence.\n\n  This is a third sentence."
-        
+
         paragraphs = split_paragraphs(text=text)
         self.assertEqual(len(paragraphs), 3)
         self.assertIsInstance(paragraphs[0], TextSlice)
@@ -60,7 +60,7 @@ class TestUtils(TestCase):
 
     def test_split_sentences(self):
         text = "This is a sentence. This is another sentence. This is a third sentence."
-        
+
         sentences = split_sentences(text=text)
         self.assertIsInstance(sentences[0], TextSlice)
         self.assertEqual(len(sentences), 3)
@@ -68,7 +68,7 @@ class TestUtils(TestCase):
         self.assertEqual(text[sentences[0].start : sentences[0].end], sentences[0].text)
         self.assertEqual(sentences[1].text, "This is another sentence.")
         self.assertEqual(text[sentences[1].start : sentences[1].end], sentences[1].text)
-        
+
     def test_split_sentences_empty(self):
         text = ""
         sentences = split_sentences(text=text)
@@ -85,4 +85,3 @@ class TestUtils(TestCase):
         self.assertEqual(text[sentences[0].start : sentences[0].end], sentences[0].text)
         self.assertEqual(sentences[1].text, "This is another sentence.")
         self.assertEqual(text[sentences[1].start : sentences[1].end], sentences[1].text)
-
