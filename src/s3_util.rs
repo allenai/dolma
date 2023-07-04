@@ -90,11 +90,6 @@ pub async fn upload_file(s3_client: &S3Client, prefix: &str, path: &Path) -> Res
 
 pub async fn object_size(s3_client: &S3Client, prefix: &str) -> Result<usize, io::Error> {
     let (bucket, key) = split_path(prefix).unwrap();
-
-    println!("Checking size of {}...", prefix);
-    println!("Bucket is {}", bucket);
-    println!("Key is {}", key);
-
     let resp = s3_client
         .head_object()
         .bucket(bucket)
@@ -340,11 +335,15 @@ mod test {
                             remote_path.push_str(entry.file_name().to_str().unwrap());
                             matches.remove(&remote_path);
                         }
-                        Err(err) => println!("Error: {}", err),
+                        Err(err) => {
+                            return Err(err);
+                        }
                     }
                 }
             }
-            Err(err) => println!("Error: {}", err),
+            Err(err) => {
+                return Err(err);
+            }
         }
 
         assert_eq!(matches.len(), 0);

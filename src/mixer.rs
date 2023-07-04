@@ -137,7 +137,7 @@ mod test {
 
         let local_output_file = "tests/work/output/mixer.json.gz";
         let remote_output_file =
-            "s3://pretraining-data/tests/mixer/outputs/v1/documents/head/mixer-test-0000.json.gz";
+            "s3://ai2-llm/pretraining-data/tests/mixer/outputs/v1/documents/head/mixer-test-0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
             remote_output_file,
@@ -161,7 +161,7 @@ mod test {
 
         let local_output_file = "tests/work/output/email-spans.json.gz";
         let remote_output_file =
-            "s3://pretraining-data/tests/mixer/outputs/v1/documents/head/email-spans-test-0000.json.gz";
+            "s3://ai2-llm/pretraining-data/tests/mixer/outputs/v1/documents/head/email-spans-test-0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
             remote_output_file,
@@ -185,7 +185,7 @@ mod test {
 
         let local_output_file = "tests/work/output/remove-paragraphs.json.gz";
         let remote_output_file =
-            "s3://pretraining-data/tests/mixer/outputs/v1/documents/head/paragraph-spans-test-0000.json.gz";
+            "s3://ai2-llm/pretraining-data/tests/mixer/outputs/v1/documents/head/paragraph-spans-test-0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
             remote_output_file,
@@ -212,7 +212,7 @@ mod test {
 
         let local_output_file = "tests/work/output/filter-by-spans.json.gz";
         let remote_output_file =
-            "s3://pretraining-data/tests/mixer/outputs/v1/documents/head/filter-by-spans-test-0000.json.gz";
+            "s3://ai2-llm/pretraining-data/tests/mixer/outputs/v1/documents/head/filter-by-spans-test-0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
             remote_output_file,
