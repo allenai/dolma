@@ -7,8 +7,14 @@ Filters.
 """
 from typing import Iterable, List, Tuple
 
-import cld3
-import pycld2 as cld2
+from necessary import necessary
+
+with necessary(["cld3", "pycld2"], soft=True) as LANG_ID_AVAILABLE:
+    if LANG_ID_AVAILABLE:
+        from cld2 import detect, error
+        from cld3 import get_language
+        __all__ = ['get_language', 'detect', 'error']
+
 import regex
 from anyascii import anyascii
 
@@ -22,7 +28,7 @@ from ..core.utils import split_paragraphs
 @TaggerRegistry.add("cld3_en_doc_v2")
 class Cld3LanguageTagger(BaseTagger):
     def _predict_text(self, text: str) -> Tuple[str, float]:
-        pred = cld3.get_language(text)  # pyright: ignore
+        pred = get_language(text)  # pyright: ignore
         score = pred.probability if pred.language == "en" else 0.0
         return "en", score
 
@@ -64,9 +70,9 @@ class Cld2LanguageFilter(BaseTagger):
         is_reliable = False
         for fn in (self._identity_fn, self._to_ascii_input, self._sanitize_input):
             try:
-                is_reliable, _, details = cld2.detect(fn(text))
+                is_reliable, _, details = detect(fn(text))
                 break
-            except cld2.error:
+            except error:
                 ...
 
         score = max([d[2] for d in details if d[0] == "ENGLISH" and is_reliable] or [0])
