@@ -39,7 +39,7 @@ def _pathify(path: Union[Path, str]) -> Tuple[str, Path]:
     return parsed.scheme, path
 
 
-def glob_path(path: Union[Path, str]) -> Iterator[str]:
+def glob_path(path: Union[Path, str], hidden_files: bool = False) -> Iterator[str]:
     """
     Expand a glob path into a list of paths.
     """
@@ -49,7 +49,10 @@ def glob_path(path: Union[Path, str]) -> Iterator[str]:
 
     for gl in fs.glob(path):
         gl = str(gl)
-        if protocol:
+
+        if not hidden_files and Path(gl).name.startswith("."):
+            continue
+        elif protocol:
             gl = f"{protocol}://{gl}"
         yield gl
 
