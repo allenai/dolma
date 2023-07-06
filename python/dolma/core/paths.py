@@ -1,13 +1,23 @@
 import glob
+from itertools import chain
 import re
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Tuple, Union
 from urllib.parse import urlparse
 
 from fsspec import AbstractFileSystem, get_filesystem_class
 
-__all__ = ["glob_path", "sub_prefix", "add_suffix", "sub_suffix", "make_relative", "mkdir_p"]
+__all__ = [
+    "glob_path",
+    "sub_prefix",
+    "add_suffix",
+    "sub_suffix",
+    "make_relative",
+    "mkdir_p",
+    "split_path",
+    "join_path",
+]
 
 
 FS_KWARGS: Dict[str, Dict[str, Any]] = {
@@ -37,6 +47,25 @@ def _pathify(path: Union[Path, str]) -> Tuple[str, Path]:
     parsed = urlparse(str(path))
     path = Path(f"{parsed.netloc}/{parsed.path}") if parsed.netloc else Path(parsed.path)
     return parsed.scheme, path
+
+
+def split_path(path: str) -> Tuple[str, Tuple[str, ...]]:
+    """
+    Split a path into its protocol and path components.
+    """
+    protocol, _path = _pathify(path)
+    return protocol, _path.parts
+
+
+def join_path(protocol: str, *parts: Union[str, Iterable[str]]) -> str:
+    """
+    Join a path from its protocol and path components.
+    """
+    all_parts = chain.from_iterable([p] if isinstance(p, str) else p for p in parts)
+    path = str(Path(*all_parts)).rstrip("/")
+    if protocol:
+        path = f"{protocol}://{path.lstrip('/')}"
+    return path
 
 
 def glob_path(path: Union[Path, str], hidden_files: bool = False) -> Iterator[str]:

@@ -10,6 +10,8 @@ from dolma.core.paths import (
     make_relative,
     sub_prefix,
     sub_suffix,
+    join_path,
+    split_path
 )
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"
@@ -153,3 +155,51 @@ class TestPaths(TestCase):
                 "path_c/to/dir/more/**/stuff",
             ],
         )
+
+    def test_split(self):
+        prot, parts = split_path("s3://path/to/dir")
+        self.assertEqual(prot, "s3")
+        self.assertEqual(parts, ("path", "to", "dir"))
+
+        prot, parts = split_path("/path/to/dir")
+        self.assertEqual(prot, "")
+        self.assertEqual(parts, ("/", "path", "to", "dir"))
+
+        prot, parts = split_path("s3://path/to/dir/")
+        self.assertEqual(prot, "s3")
+        self.assertEqual(parts, ("path", "to", "dir"))
+
+        prot, parts = split_path("path/to/dir/")
+        self.assertEqual(prot, "")
+        self.assertEqual(parts, ("path", "to", "dir"))
+
+    def test_join(self):
+        path = join_path("s3", ("path", "to", "dir"))
+        self.assertEqual(path, "s3://path/to/dir")
+
+        path = join_path("", ("/", "path", "to", "dir"))
+        self.assertEqual(path, "/path/to/dir")
+
+        path = join_path("s3", ("/", "path", "to", "dir", ""))
+        self.assertEqual(path, "s3://path/to/dir")
+
+        path = join_path("", ("path", "to", "dir", ""))
+        self.assertEqual(path, "path/to/dir")
+
+        path = join_path("s3", ("path/to", "dir/"))
+        self.assertEqual(path, "s3://path/to/dir")
+
+        path = join_path("", "path", ("to", "a", "very", "hidden"), "dir" "/with_file.txt")
+        self.assertEqual(path, "path/to/a/very/hidden/dir/with_file.txt")
+
+    def test_split_and_join(self):
+        paths = [
+            "s3://path/to/a/and/b",
+            "s3://path/to/a/and/**.zip",
+            "s3://path/to/b/more/**/stuff",
+            "/path/to/dir/and/more",
+            "/path/to/dir/and/**.zip",
+            "*"
+        ]
+        for path in paths:
+            self.assertEqual(join_path(*split_path(path)), path)
