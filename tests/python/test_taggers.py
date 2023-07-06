@@ -9,7 +9,7 @@ Unit tests for taggers/*.py
 from unittest import TestCase
 
 from dolma.core.data_types import Document
-from dolma.taggers import GopherTagger
+from dolma.taggers.gopher import GopherTagger
 
 
 class TestGopherTagger(TestCase):

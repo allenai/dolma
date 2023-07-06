@@ -1,12 +1,13 @@
 import glob
+import re
 from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Iterator, Tuple, Union
+from typing import Any, Dict, Iterator, List, Tuple, Union
 from urllib.parse import urlparse
 
 from fsspec import AbstractFileSystem, get_filesystem_class
 
-__all__ = ["glob_path", "sub_path", "add_path"]
+__all__ = ["glob_path", "sub_prefix", "add_suffix", "sub_suffix", "make_relative", "mkdir_p"]
 
 
 FS_KWARGS: Dict[str, Dict[str, Any]] = {
@@ -53,7 +54,7 @@ def glob_path(path: Union[Path, str]) -> Iterator[str]:
         yield gl
 
 
-def sub_path(a: str, b: str) -> str:
+def sub_prefix(a: str, b: str) -> str:
     """
     Return the relative path of b from a.
     """
@@ -71,7 +72,28 @@ def sub_path(a: str, b: str) -> str:
     return str(diff)
 
 
-def add_path(a: str, b: str) -> str:
+def sub_suffix(a: str, b: str) -> str:
+    """
+    Remove b from the end of a.
+    """
+    prot_a, path_a = _pathify(a)
+    prot_b, path_b = _pathify(b)
+
+    if prot_b:
+        raise ValueError(f"{b} is not a relative path")
+
+    sub_path = re.sub(f"{path_b}$", "", str(path_a))
+    sub_prot = f"{prot_a}://" if prot_a else ""
+
+    # need to trim '/' from the end if (a) '/' is not the only symbol in the path or
+    # (b) there is a protocol so absolute paths don't make sense
+    if sub_path != "/" or sub_prot:
+        sub_path = sub_path.rstrip("/")
+
+    return sub_prot + sub_path
+
+
+def add_suffix(a: str, b: str) -> str:
     """
     Return the the path of a joined with b.
     """
@@ -81,5 +103,40 @@ def add_path(a: str, b: str) -> str:
     if prot_b:
         raise ValueError(f"{b} is not a relative path")
 
-    # breakpoint()
-    return (f"{prot_a}://" if prot_a else '') + str(path_a / path_b)
+    return (f"{prot_a}://" if prot_a else "") + str(path_a / path_b)
+
+
+def mkdir_p(path: str) -> None:
+    """
+    Create a directory if it does not exist.
+    """
+    fs = _get_fs(path)
+    fs.makedirs(path, exist_ok=True)
+
+
+def make_relative(paths: List[str]) -> Tuple[str, List[str]]:
+    """Find minimum longest root shared among all paths"""
+    if len(paths) == 0:
+        raise ValueError("Cannot make relative path of empty list")
+
+    common_prot, common_parts = (p := _pathify(paths[0]))[0], p[1].parts
+
+    for path in paths:
+        current_prot, current_path = _pathify(path)
+        if current_prot != common_prot:
+            raise ValueError(f"Protocols of {path} and {paths[0]} do not match")
+
+        current_parts = current_path.parts
+        for i in range(min(len(common_parts), len(current_parts))):
+            if common_parts[i] != current_parts[i]:
+                common_parts = common_parts[:i]
+                break
+
+    if len(common_parts) > 0:
+        common_path = (f"{common_prot}://" if common_prot else "") + str(Path(*common_parts))
+        relative_paths = [sub_prefix(path, common_path) for path in paths]
+    else:
+        common_path = f"{common_prot}://" if common_prot else ""
+        relative_paths = [str(_pathify(path)[1]) for path in paths]
+
+    return common_path, relative_paths
