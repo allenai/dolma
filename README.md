@@ -48,18 +48,18 @@ This command will run the `random_number_v1` tagger on all documents in the spec
 ### `dolma dedupe`
 
 The dedupe command is used to deduplicate a set of documents at the attribute level using a bloom filter.
-For example configurations, see directory `test/config`. For example:
+For example configurations, see directory `tests/config`. For example:
 
 ```shell
-dolma dedupe -c test/config/dedupe-paragraphs.json
+dolma dedupe -c tests/config/dedupe-paragraphs.json
 ```
 
 ### `dolma mix`
 
-The mix command is used to mix documents from multiple sources, optionally filtering by attributes and/or performing string replacement. For example configurations, see directory `test/config`. For example:
+The mix command is used to mix documents from multiple sources, optionally filtering by attributes and/or performing string replacement. For example configurations, see directory `tests/config`. For example:
 
 ```shell
-dolma mix -c test/config/mixer.json
+dolma mix -c tests/config/mixer.json
 ```
 
 
