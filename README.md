@@ -7,8 +7,63 @@
 
 Data and tools for generating and inspecting OLMo pre-training data.
 
+To get started, install dolma using [pip](https://pypi.org/project/dolma/).
 
-## Setup
+```shell
+pip install dolma
+```
+
+## Usage
+
+The dolma CLI can be access using the `dolma` command. To see the available commands, use the `--help` flag.
+
+```shell
+dolma --help
+```
+
+At the moment, the CLI supports three commands: `tag`, `dedupe`, and `mix`.
+
+For all commands, configurations can be specified from command line, or by passing a YAML or JSON file using the `-c` flag. For example:
+
+```shell
+dolma -c config.yaml dedupe --dedupe.name "test"
+```
+
+### `dolma tag`
+
+The tag command is used to run any of the built-in taggers on a set of documents. For example:
+
+```shell
+dolma tag \
+    --experiment sample \
+    --documents \
+        's3://ai2-llm/pretraining-data/sources/common-crawl/test/v0/documents/**/*.json.gz' \
+        's3://ai2-llm/pretraining-data/sources/common-crawl/test/v1/documents/*.json.gz' \
+    --taggers random_number_v1 \
+    --processes 2
+```
+
+This command will run the `random_number_v1` tagger on all documents in the specified S3 paths. The results will be written to the `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v0/attributes/sample` and `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v1/attributes/sample` paths.
+
+### `dolma dedupe`
+
+The dedupe command is used to deduplicate a set of documents at the attribute level using a bloom filter.
+For example configurations, see directory `test/config`. For example:
+
+```shell
+dolma dedupe -c test/config/dedupe-paragraphs.json
+```
+
+### `dolma mix`
+
+The mix command is used to mix documents from multiple sources, optionally filtering by attributes and/or performing string replacement. For example configurations, see directory `test/config`. For example:
+
+```shell
+dolma mix -c test/config/mixer.json
+```
+
+
+## Development
 
 Create a conda environment with Python >= 3.8. In this case, we use Python 3.10 and use Anaconda to create the environment.
 

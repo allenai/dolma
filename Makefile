@@ -25,8 +25,8 @@ setup:
 	which cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 	which maturin || pip install maturin
 
-release:
-	maturin build
+publish:
+	maturin publish
 
 test: setup develop setup-test test-python test-rust clean-test
 
