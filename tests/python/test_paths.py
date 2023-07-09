@@ -4,14 +4,18 @@ from pathlib import Path
 from unittest import TestCase
 
 from dolma.core.paths import (
+    _escape_glob,
     _pathify,
+    _unescape_glob,
     add_suffix,
     glob_path,
+    is_glob,
+    join_path,
     make_relative,
+    split_glob,
+    split_path,
     sub_prefix,
     sub_suffix,
-    join_path,
-    split_path
 )
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"
@@ -161,6 +165,10 @@ class TestPaths(TestCase):
         self.assertEqual(prot, "s3")
         self.assertEqual(parts, ("path", "to", "dir"))
 
+        prot, parts = split_path("s3://path/to/[abc]/dir")
+        self.assertEqual(prot, "s3")
+        self.assertEqual(parts, ("path", "to", "[abc]", "dir"))
+
         prot, parts = split_path("/path/to/dir")
         self.assertEqual(prot, "")
         self.assertEqual(parts, ("/", "path", "to", "dir"))
@@ -199,7 +207,65 @@ class TestPaths(TestCase):
             "s3://path/to/b/more/**/stuff",
             "/path/to/dir/and/more",
             "/path/to/dir/and/**.zip",
-            "*"
+            "*",
         ]
         for path in paths:
             self.assertEqual(join_path(*split_path(path)), path)
+
+    def test_is_glob(self):
+        path = "s3://path/to/a/and/b"
+        self.assertFalse(is_glob(path))
+
+        path = "/user/?/docs/*"
+        self.assertTrue(is_glob(path))
+
+        path = "/user/1/docs/file.txt"
+        self.assertFalse(is_glob(path))
+
+        path = r"/user/\?/docs/*"
+        self.assertTrue(is_glob(path))
+
+        path = r"/user/\?/docs/\*"
+        self.assertFalse(is_glob(path))
+
+    def test_escape_glob(self):
+        path = "/user/?/docs/*"
+        self.assertEqual(_escape_glob(path), "/user/\u2582/docs/\u2581")
+
+        path = "/user/[abc]/docs/*"
+        self.assertEqual(_escape_glob(path), "/user/\u2583abc\u2584/docs/\u2581")
+
+        path = "/user/[abc]/docs/[a-z]/\\*"
+        self.assertEqual(_escape_glob(path), "/user/\u2583abc\u2584/docs/\u2583a-z\u2584/\\*")
+
+        path = "/no/glob/here"
+        self.assertEqual(_escape_glob(path), path)
+
+    def test_unescape_glob(self):
+        path = "/user/?/docs/*"
+        self.assertEqual(_unescape_glob(_escape_glob(path)), path)
+
+        path = "/user/[abc]/docs/*"
+        self.assertEqual(_unescape_glob(_escape_glob(path)), path)
+
+        path = "/user/[abc]/docs/[a-z]/\\*"
+        self.assertEqual(_unescape_glob(_escape_glob(path)), path)
+
+        path = "/no/glob/here"
+        self.assertEqual(_unescape_glob(_escape_glob(path)), path)
+
+    def test_split_glob(self):
+        path = "/user/_/docs/*"
+        self.assertEqual(split_glob(path), ("/user/_/docs", "*"))
+
+        path = "/user/?/docs/*"
+        self.assertEqual(split_glob(path), ("/user", "?/docs/*"))
+
+        path = "/user/[abc]/docs/*"
+        self.assertEqual(split_glob(path), ("/user", "[abc]/docs/*"))
+
+        path = "/user/\\[abc\\]/docs/[a-z]/\\*"
+        self.assertEqual(split_glob(path), ("/user/\\[abc\\]/docs", "[a-z]/\\*"))
+
+        path = "/no/glob/here"
+        self.assertEqual(split_glob(path), ("/no/glob/here", ""))

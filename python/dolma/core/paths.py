@@ -1,7 +1,7 @@
 import glob
-from itertools import chain
 import re
 from functools import partial
+from itertools import chain
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Tuple, Union
 from urllib.parse import urlparse
@@ -17,6 +17,8 @@ __all__ = [
     "mkdir_p",
     "split_path",
     "join_path",
+    "is_glob",
+    "split_glob",
 ]
 
 
@@ -40,13 +42,49 @@ def _get_fs(path: Union[Path, str]) -> AbstractFileSystem:
     return fs
 
 
+def _escape_glob(s: Union[str, Path]) -> str:
+    """
+    Escape glob characters in a string.
+    """
+    r"(?<!\\)[*?[\]]"
+    s = str(s)
+    s = re.sub(r"(?<!\\)\*", "\u2581", s)
+    s = re.sub(r"(?<!\\)\?", "\u2582", s)
+    s = re.sub(r"(?<!\\)\[", "\u2583", s)
+    s = re.sub(r"(?<!\\)\]", "\u2584", s)
+    return s
+
+
+def _unescape_glob(s: Union[str, Path]) -> str:
+    """
+    Unescape glob characters in a string.
+    """
+    s = str(s)
+    s = re.sub("\u2581", "*", s)
+    s = re.sub("\u2582", "?", s)
+    s = re.sub("\u2583", "[", s)
+    s = re.sub("\u2584", "]", s)
+    return s
+
+
 def _pathify(path: Union[Path, str]) -> Tuple[str, Path]:
     """
     Return the protocol and path of a given path.
     """
-    parsed = urlparse(str(path))
+    path = _escape_glob(str(path))
+    parsed = urlparse(path)
     path = Path(f"{parsed.netloc}/{parsed.path}") if parsed.netloc else Path(parsed.path)
     return parsed.scheme, path
+
+
+def _unpathify(protocol: str, path: Path) -> str:
+    """
+    Return a path from its protocol and path components.
+    """
+    path_str = _unescape_glob(str(path))
+    if protocol:
+        path_str = f"{protocol}://{path_str.lstrip('/')}"
+    return path_str
 
 
 def split_path(path: str) -> Tuple[str, Tuple[str, ...]]:
@@ -54,18 +92,18 @@ def split_path(path: str) -> Tuple[str, Tuple[str, ...]]:
     Split a path into its protocol and path components.
     """
     protocol, _path = _pathify(path)
-    return protocol, _path.parts
+    return protocol, tuple(_unescape_glob(p) for p in _path.parts)
 
 
 def join_path(protocol: str, *parts: Union[str, Iterable[str]]) -> str:
     """
     Join a path from its protocol and path components.
     """
-    all_parts = chain.from_iterable([p] if isinstance(p, str) else p for p in parts)
+    all_parts = (_escape_glob(p) for p in chain.from_iterable([p] if isinstance(p, str) else p for p in parts))
     path = str(Path(*all_parts)).rstrip("/")
     if protocol:
         path = f"{protocol}://{path.lstrip('/')}"
-    return path
+    return _unescape_glob(path)
 
 
 def glob_path(path: Union[Path, str], hidden_files: bool = False) -> Iterator[str]:
@@ -81,9 +119,8 @@ def glob_path(path: Union[Path, str], hidden_files: bool = False) -> Iterator[st
 
         if not hidden_files and Path(gl).name.startswith("."):
             continue
-        elif protocol:
-            gl = f"{protocol}://{gl}"
-        yield gl
+
+        yield join_path(protocol, gl)
 
 
 def sub_prefix(a: str, b: str) -> str:
@@ -99,9 +136,9 @@ def sub_prefix(a: str, b: str) -> str:
     try:
         diff = str(path_a.relative_to(path_b))
     except ValueError:
-        diff = f"{prot_a}://{path_a}" if prot_a else str(path_a)
+        diff = join_path(prot_a, path_a.parts)
 
-    return str(diff)
+    return _unescape_glob(diff)
 
 
 def sub_suffix(a: str, b: str) -> str:
@@ -122,7 +159,7 @@ def sub_suffix(a: str, b: str) -> str:
     if sub_path != "/" or sub_prot:
         sub_path = sub_path.rstrip("/")
 
-    return sub_prot + sub_path
+    return _unescape_glob(sub_prot + sub_path)
 
 
 def add_suffix(a: str, b: str) -> str:
@@ -135,13 +172,16 @@ def add_suffix(a: str, b: str) -> str:
     if prot_b:
         raise ValueError(f"{b} is not a relative path")
 
-    return (f"{prot_a}://" if prot_a else "") + str(path_a / path_b)
+    return join_path(prot_a, str(path_a / path_b))
 
 
 def mkdir_p(path: str) -> None:
     """
     Create a directory if it does not exist.
     """
+    if is_glob(path):
+        raise ValueError(f"Cannot create directory with glob pattern: {path}")
+
     fs = _get_fs(path)
     fs.makedirs(path, exist_ok=True)
 
@@ -169,6 +209,29 @@ def make_relative(paths: List[str]) -> Tuple[str, List[str]]:
         relative_paths = [sub_prefix(path, common_path) for path in paths]
     else:
         common_path = f"{common_prot}://" if common_prot else ""
-        relative_paths = [str(_pathify(path)[1]) for path in paths]
+        relative_paths = [_unpathify("", _pathify(path)[1]) for path in paths]
 
     return common_path, relative_paths
+
+
+def is_glob(path: str) -> bool:
+    """
+    Check if a path contains a glob wildcard.
+    """
+    return bool(re.search(r"(?<!\\)[*?[\]]", path))
+
+
+def split_glob(path: str) -> Tuple[str, str]:
+    """
+    Partition a path on the first wildcard.
+    """
+    if not is_glob(path):
+        return path, ""
+
+    protocol, parts = split_path(path)
+
+    i = min(i for i, c in enumerate(parts) if is_glob(c))
+
+    path = join_path(protocol, *parts[:i])
+    rest = join_path("", *parts[i:])
+    return path, rest
