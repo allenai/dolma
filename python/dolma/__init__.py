@@ -6,7 +6,10 @@ warnings.filterwarnings("ignore", message=r".*declare_namespace\(\'.*google.*", 
 # base warning raised when warning above are raised
 warnings.filterwarnings("ignore", message=r".*pkg_resources is deprecated.*", category=DeprecationWarning)
 
+# must import taggers to register them
+# we import the rust extension here and wrap it in a python module
 from . import dolma as _dolma  # type: ignore   # noqa: E402
+from . import taggers  # noqa: E402
 
 
 def deduper(config: dict):

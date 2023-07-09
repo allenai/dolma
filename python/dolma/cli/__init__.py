@@ -67,7 +67,12 @@ def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None
             continue
 
         field_name = f"{prefix}.{field_name}" if prefix else field_name
-        parser.add_argument(f"--{field_name}", help=field.metadata.get("help"), default=MISSING)
+        parser.add_argument(
+            f"--{field_name}",
+            help=field.metadata.get("help"),
+            nargs=field.metadata.get("nargs", "?"),
+            default=MISSING,
+        )
 
     return parser
 

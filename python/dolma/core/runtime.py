@@ -1,6 +1,6 @@
 import logging
 import multiprocessing
-import os
+import tempfile
 from contextlib import ExitStack
 from queue import Queue
 from typing import Dict, List, Union
@@ -140,9 +140,6 @@ class TaggerProcessor(BaseParallelProcessor):
         encoder = msgspec.json.Encoder()
         decoder = msgspec.json.Decoder(InputSpec)
 
-        # this will be used to cache the file locally if needed
-        caching_path = source_path
-
         with ExitStack() as stack:
             try:
                 # open each file for reading and writing. We use open_file_for_read to handle s3 paths and
@@ -151,7 +148,6 @@ class TaggerProcessor(BaseParallelProcessor):
                 out_stream = stack.enter_context(smart_open.open(destination_path, "wt", encoding="utf-8"))
 
                 for raw in in_stream:
-                    # row = json.loads(raw)
                     row = decoder.decode(raw)
 
                     # running the taggers and merging them flat
@@ -165,7 +161,7 @@ class TaggerProcessor(BaseParallelProcessor):
                     output = OutputSpec(source=row.source, id=row.id, attributes=attributes)
 
                     # write the output to the output file
-                    out_stream.write(encoder.encode(output).decode("utf-8") + "\n")  # pyright: ignore
+                    out_stream.write(encoder.encode(output).decode("utf-8") + "\n")
 
                     # increment the number of documents processed so far
                     docs_cnt += 1
@@ -191,60 +187,79 @@ class TaggerProcessor(BaseParallelProcessor):
                         raise DolmaShardError(msg) from e
                     else:
                         raise DolmaFatalError(msg) from e
-            finally:
-                if caching_path != source_path and os.path.exists(caching_path):
-                    os.remove(caching_path)
 
         # increment the files progress bar
         cls.increment_progressbar(queue, files=1, documents=docs_cnt)
 
-    @classmethod
-    def main(
-        cls,
-        documents: List[str],
-        taggers_names: List[str],
-        experiment_name: str,
-        destination: Union[None, str, List[str]] = None,
-        metadata: Union[None, str, List[str]] = None,
-        debug: bool = False,
-        seed: int = 0,
-        ignore_existing: bool = False,
-        skip_on_failure: bool = False,
-        retries_on_error: int = 0,
-    ):
-        if destination is None:
-            try:
-                destination = _make_paths_from_substitution(documents, "documents", "attributes")
-            except Exception as e:
-                raise RuntimeError("Could not make destination paths from documents paths") from e
-        elif isinstance(destination, str):
-            try:
-                destination = _make_paths_from_prefix(documents, destination)
-            except Exception as e:
-                raise RuntimeError(f"Could not make destination paths from prefix {destination}") from e
 
-        if metadata is None:
-            try:
-                metadata = _make_paths_from_substitution(documents, "documents", "metadata")
-            except Exception as e:
-                raise RuntimeError("Could not make metadata paths from documents paths") from e
-        elif isinstance(metadata, str):
-            try:
-                metadata = _make_paths_from_prefix(documents, metadata)
-            except Exception as e:
-                raise RuntimeError(f"Could not make metadata paths from prefix {metadata}") from e
+def create_and_run_tagger(
+    documents: List[str],
+    experiment: str,
+    taggers: List[str],
+    destination: Union[None, str, List[str]] = None,
+    metadata: Union[None, str, List[str]] = None,
+    debug: bool = False,
+    seed: int = 0,
+    ignore_existing: bool = False,
+    skip_on_failure: bool = False,
+    retries_on_error: int = 0,
+    num_processes: int = 1,
+):
+    """This function creates a tagger and runs it on a list of documents.
 
-            parallel_compute = cls(
-                source_prefix=documents,
-                destination_prefix=destination,
-                metadata_prefix=metadata,
-                debug=debug,
-                seed=seed,
-                ignore_existing=ignore_existing,
-                retries_on_error=retries_on_error,
-            )
-            parallel_compute(
-                taggers_names=taggers_names,
-                experiment_name=experiment_name,
-                skip_on_failure=skip_on_failure,
-            )
+    Args:
+        documents (List[str]): List of documents to run the taggers on. Each element of the list is a path to
+            a file containing documents in json lines format, or a glob pattern that matches such files.
+        experiment (str): The name of the experiment. This will be used to prefix the names of the attributes,
+            as well as the name of the directory where the outputs will be saved in `destination`.
+        taggers (List[str]): List of taggers to run. Each element of the list is the name of a tagger.
+        destination (Union[None, str, List[str]], optional): The path where the outputs will be saved. If
+            `None`, the outputs will be saved in a directory parallel to the directory containing the
+            documents, with the same name as `experiment`. If a string, paths corresponding to each element
+            of `documents` will be created by determining a relative path from the directory containing the
+            documents.
+        metadata (Union[None, str, List[str]], optional): Location where to save metadata that keeps track of
+            which documents have been processed. If `None`, the metadata will be saved in a temporary directory.
+        debug (bool, optional): Whether to run in debug mode. Defaults to False.
+        seed (int, optional): The seed to use for the random number generator. Defaults to 0.
+        ignore_existing (bool, optional): Whether to ignore existing outputs and re-run the taggers.
+            Defaults to False.
+        skip_on_failure (bool, optional): Whether to skip a document if it fails to process. Defaults to False.
+        retries_on_error (int, optional): Number of times to retry processing a document if it fails.
+            Defaults to 0 (fail immediately)
+        num_processes (int, optional): Number of processes to use. Defaults to 1.
+    """
+
+    if destination is None:
+        try:
+            destination = _make_paths_from_substitution(documents, "documents", f"attributes/{experiment}")
+        except Exception as e:
+            raise RuntimeError("Could not make destination paths from documents paths") from e
+    elif isinstance(destination, str):
+        try:
+            destination = _make_paths_from_prefix(documents, join_path(destination, experiment))
+        except Exception as e:
+            raise RuntimeError(f"Could not make destination paths from prefix {destination}") from e
+
+    metadata = metadata or tempfile.mkdtemp()
+    if isinstance(metadata, str):
+        try:
+            metadata = _make_paths_from_prefix(documents, metadata)
+        except Exception as e:
+            raise RuntimeError(f"Could not make metadata paths from prefix {metadata}") from e
+
+        tagger = TaggerProcessor(
+            source_prefix=documents,
+            destination_prefix=destination,
+            metadata_prefix=metadata,
+            debug=debug,
+            seed=seed,
+            ignore_existing=ignore_existing,
+            retries_on_error=retries_on_error,
+            num_processes=num_processes,
+        )
+        tagger(
+            experiment_name=experiment,
+            taggers_names=taggers,
+            skip_on_failure=skip_on_failure,
+        )
