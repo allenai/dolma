@@ -40,11 +40,12 @@ class BaseParallelProcessor:
         num_processes: int = 1,
         debug: bool = False,
         seed: int = 0,
-        pbar_timeout: float = 0.01,
+        pbar_timeout: float = 1e-3,
         ignore_existing: bool = False,
         include_paths: Optional[List[str]] = None,
         exclude_paths: Optional[List[str]] = None,
         files_regex_pattern: Optional[str] = None,
+        retries_on_error: int = 0,
     ):
         """Initialize the parallel processor.
 
@@ -85,6 +86,7 @@ class BaseParallelProcessor:
         self.include_paths = set(include_paths) if include_paths is not None else None
         self.exclude_paths = set(exclude_paths) if exclude_paths is not None else None
         self.files_regex_pattern = re.compile(files_regex_pattern) if files_regex_pattern else None
+        self.retries_on_error = retries_on_error
 
         # checking that the increment_progressbar method is subclassed correctly
         sig = inspect.signature(self.increment_progressbar)
@@ -150,7 +152,7 @@ class BaseParallelProcessor:
         """A wrapper around process single that saves a metadata file if processing is successful."""
 
         kwargs = pickle.loads(serialized_kwargs)
-        tries_remaining = kwargs.get("retry_on_read_error", 0) + 1
+        retries_on_error = kwargs.get("retries_on_error", 0) + 1
         while True:
             try:
                 cls.process_single(
@@ -158,8 +160,8 @@ class BaseParallelProcessor:
                 )
                 break
             except DolmaRetryableFailure as e:
-                tries_remaining -= 1
-                if tries_remaining == 0:
+                retries_on_error -= 1
+                if retries_on_error == 0:
                     raise DolmaFilterError from e
 
         with smart_open.open(metadata_path, "wt") as f:
@@ -340,6 +342,9 @@ class BaseParallelProcessor:
     def __call__(self, **process_single_kwargs: Any):
         """Run the processor."""
         random.seed(self.seed)
+
+        # in case the user wants to override the default kwargs for retries
+        process_single_kwargs.setdefault("retries_on_error", self.retries_on_error)
 
         all_source_paths, all_destination_paths, all_metadata_paths = self._get_all_paths()
 

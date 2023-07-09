@@ -1,12 +1,9 @@
-import argparse
-import gzip
 import logging
 import multiprocessing
 import os
-import tempfile
 from contextlib import ExitStack
 from queue import Queue
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Union
 
 import msgspec
 import smart_open
@@ -47,11 +44,36 @@ def _make_paths_from_substitution(paths: List[str], find: str, replace: str) -> 
 
 
 def _make_paths_from_prefix(paths: List[str], prefix: str) -> List[str]:
+    """
+    Utility function to make paths using a prefix. This is useful if you want to create a destination path
+    from a source path by prepending a prefix to the source path.
+
+    To create destination paths, we first find the longest common prefix among all source paths. Then, we
+    we remove the prefix from each source path and prepend the new prefix to each source path. For example,
+    if you have a source path of
+    ```
+    current_paths = [
+        "s3://bucket/data/documentsA/**.json.gz",
+        "s3://bucket/data/documentsB/**.json.gz",
+    ]
+    ```
+    and you want to replace `s3://bucket/data/` with `s3://bucket/attributes/`, you can use this function
+    to do that. by calling `_make_paths_from_prefix(current_paths, "s3://bucket/attributes/")`. This will
+    return the following list
+
+    ```
+    [
+        "s3://bucket/attributes/documentsA/",
+        "s3://bucket/attributes/documentsB/",
+    ]
+    ```
+
+    Note how glob patterns are removed from the paths.
+    """
+
     new_paths: List[str] = []
     prefix_prot, prefix_path = split_path(prefix)
-    _, relative_paths = make_relative(
-        paths,
-    )
+    _, relative_paths = make_relative(paths)
 
     for curr_path in relative_paths:
         base_curr_path, _ = split_glob(curr_path)
@@ -105,9 +127,6 @@ class TaggerProcessor(BaseParallelProcessor):
 
         # skip on failure
         skip_on_failure = kwargs.get("skip_on_failure", False)
-
-        # local read cache
-        local_read_cache = kwargs.get("local_read_cache", None)
 
         # interval at which to update the progress bar; will double if it gets
         # too full
@@ -183,72 +202,49 @@ class TaggerProcessor(BaseParallelProcessor):
     def main(
         cls,
         documents: List[str],
-        destination: Union[None, List[str]] = None,
-        metadata: Union[None, List[str]] = None,
+        taggers_names: List[str],
+        experiment_name: str,
+        destination: Union[None, str, List[str]] = None,
+        metadata: Union[None, str, List[str]] = None,
+        debug: bool = False,
+        seed: int = 0,
+        ignore_existing: bool = False,
+        skip_on_failure: bool = False,
+        retries_on_error: int = 0,
     ):
         if destination is None:
             try:
                 destination = _make_paths_from_substitution(documents, "documents", "attributes")
             except Exception as e:
                 raise RuntimeError("Could not make destination paths from documents paths") from e
+        elif isinstance(destination, str):
+            try:
+                destination = _make_paths_from_prefix(documents, destination)
+            except Exception as e:
+                raise RuntimeError(f"Could not make destination paths from prefix {destination}") from e
 
         if metadata is None:
-            _, rel_docs = make_relative(documents)
-
-        # use a local read cache if we are in safe mode or if a local read cache is provided
-        local_read_cache = opts.local_read_cache or (tempfile.gettempdir() if opts.safe_mode else None)
-
-        with tempfile.TemporaryDirectory() as tempdir:
-            metadata_workdir = opts.reuse_existing or tempdir
-            ignore_existing = opts.reuse_existing is None
-            manually_included_paths = opts.manually_included_paths
-            if (
-                manually_included_paths
-                and len(manually_included_paths) == 1
-                and os.path.exists(manually_included_paths[0])
-            ):
-                manually_included_paths = [lp.strip() for lp in open(manually_included_paths[0])]
-            manually_excluded_paths = opts.manually_excluded_paths
-            if (
-                manually_excluded_paths
-                and len(manually_excluded_paths) == 1
-                and os.path.exists(manually_excluded_paths[0])
-            ):
-                manually_excluded_paths = [lp.strip() for lp in open(manually_excluded_paths[0])]
-
-            msg = (
-                "----- TaggerProcessor -----\n"
-                f"source:       {source_prefix}\n"
-                f"destination:  {destination_prefix}\n"
-                f"scratch:      {tempdir}\n"
-                f"taggers:      {', '.join(opts.taggers)}\n"
-                f"parallel:     {opts.parallel}\n"
-                f"debug:        {opts.debug}\n"
-                f"skip on fail: {opts.skip_on_failure}\n"
-                f"reuse prev:   {not ignore_existing}\n"
-                f"workdir:      {metadata_workdir}\n"
-                f"safe mode:    {opts.safe_mode}\n"
-                f"local cache:  {local_read_cache}\n"
-                f"file regex:   {opts.files_regex_pattern}\n"
-                "---------------------------\n"
-            )
-            print(msg)
+            try:
+                metadata = _make_paths_from_substitution(documents, "documents", "metadata")
+            except Exception as e:
+                raise RuntimeError("Could not make metadata paths from documents paths") from e
+        elif isinstance(metadata, str):
+            try:
+                metadata = _make_paths_from_prefix(documents, metadata)
+            except Exception as e:
+                raise RuntimeError(f"Could not make metadata paths from prefix {metadata}") from e
 
             parallel_compute = cls(
-                source_prefix=source_prefix,
-                destination_prefix=destination_prefix,
-                metadata_prefix=metadata_workdir,
-                num_processes=opts.parallel,
+                source_prefix=documents,
+                destination_prefix=destination,
+                metadata_prefix=metadata,
+                debug=debug,
+                seed=seed,
                 ignore_existing=ignore_existing,
-                debug=opts.debug,
-                include_paths=opts.manually_included_paths,
-                exclude_paths=opts.manually_excluded_paths,
-                files_regex_pattern=opts.files_regex_pattern,
+                retries_on_error=retries_on_error,
             )
             parallel_compute(
-                taggers_names=opts.taggers,
-                experiment_name=opts.experiment_name,
-                skip_on_failure=opts.skip_on_failure,
-                local_read_cache=local_read_cache,
-                retry_on_read_error=opts.retry_on_read_error,
+                taggers_names=taggers_names,
+                experiment_name=experiment_name,
+                skip_on_failure=skip_on_failure,
             )
