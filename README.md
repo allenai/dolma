@@ -10,47 +10,32 @@ Data and tools for generating and inspecting OLMo pre-training data.
 
 ## Setup
 
-Install Rust
-```
-curl https://sh.rustup.rs -sSf | sh
-```
+Create a conda environment with Python >= 3.8. In this case, we use Python 3.10 and use Anaconda to create the environment.
 
-Install [CMake](https://cmake.org/install/)
-
-  * On **Mac OSX** with `brew install cmake`
-  * On **Linux** with `apt-get install cmake`
-
-
-Install [OpenSSL](https://www.openssl.org/)
-
-  * On **Mac OSX** with `brew install openssl re2`
-  * On **Linux** with `apt-get install openssl`
-
-Install [Protobuf]()
-
-  * On **Mac OSX** with `brew install protobuf`
-  * On **Linux** with `apt-get install protobuf-compiler`
-
-Setting up Python
-```
+```shell
 conda create -n dolma python=3.10
 ```
 
+After creating the environment, activate it and install necessary tools using the included makefile.
 
-Install [Maturin](https://www.maturin.rs/)
-
-```
-pip install maturin
-maturin develop
-```
-
-
-Installing this repository
-```
-cd dolma
-pip install -e .
+```shell
+conda activate dolma
+make setup
 ```
 
+Finally, to begin development, install the repository in editable mode using maturin.
+
+```shell
+make develop
+```
+
+To run tests, use the following command.
+
+```shell
+make test
+```
+
+You can choose to run just the Python or Rust tests by calling `make test-python` or `make test-rust` respectively.
 
 ## Citation
 
