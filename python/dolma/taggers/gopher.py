@@ -155,7 +155,7 @@ def all_ngram_counts(words) -> List[Tuple[int, CounterType[Tuple[str, ...]]]]:
 def all_ngram_counts_alt(words: List[str]) -> List[Tuple[int, CounterType[Tuple[str, ...]]]]:
     """Seems like it should be faster, but isn't"""
     ngram: List[Tuple[str, ...]] = list(zip(words, words[1:]))
-    all_counts = [(2, Counter(ngram))]
+    all_counts: List[Tuple[int, CounterType[Tuple[str, ...]]]] = [(2, Counter(ngram))]
 
     for n in range(3, 11):
         ngram = list(a + (b,) for a, b in zip(ngram, words[n - 1 :]))

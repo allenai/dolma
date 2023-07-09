@@ -4,6 +4,7 @@ from typing import List
 
 try:
     import blingfire
+
     BLINGFIRE_AVAILABLE = True
 except Exception:
     BLINGFIRE_AVAILABLE = False
@@ -12,9 +13,9 @@ import nltk
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 
 try:
-    nltk.data.find('tokenizers/punkt')
+    nltk.data.find("tokenizers/punkt")
 except LookupError:
-    nltk.download('punkt')
+    nltk.download("punkt")
 
 
 from .data_types import TextSlice
@@ -48,7 +49,6 @@ def split_paragraphs(text: str, remove_empty: bool = True) -> List[TextSlice]:
     if remove_empty is True:
         text_slices = [text_slice for text_slice in text_slices if text_slice.text.strip()]
     return text_slices
-
 
 
 def split_sentences(text: str, remove_empty: bool = True) -> List[TextSlice]:

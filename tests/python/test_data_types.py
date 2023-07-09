@@ -38,16 +38,11 @@ class TestSpan(TestCase):
     def test_span_to_from_json(self):
         span = Span(start=0, end=1, type="type", score=1.0)
         span_json = span.to_json()
-        span_json2 = {
-            "start": 0,
-            "end": 1,
-            "type": "type",
-            "score": 1.0
-        }
+        span_json2 = {"start": 0, "end": 1, "type": "type", "score": 1.0}
         self.assertEqual(span_json, span_json2)
         span2 = Span.from_json(span_json2)
         self.assertEqual(span_json, span2.to_json())
-    
+
     # TODO: add tests for to/from Spec
     def test_span_to_from_spec(self):
         span = Span(start=0, end=1, type="type", score=1.0)
@@ -88,7 +83,7 @@ class TestDocResult(TestCase):
             "spans": [
                 {"start": 0, "end": 2, "type": "xxx", "score": 1.0, "mention": "te"},
                 {"start": 2, "end": 4, "type": "yyy", "score": 0.5, "mention": "xt"},
-            ]
+            ],
         }
         doc_result3 = DocResult.from_json(doc_result_json3)
         self.assertEqual(doc_result_json, doc_result3.to_json())

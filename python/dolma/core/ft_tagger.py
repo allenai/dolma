@@ -9,10 +9,10 @@ import os
 from tempfile import NamedTemporaryFile
 from typing import Iterable, Literal, NamedTuple, Optional
 
+import smart_open
 from cached_path import cached_path
 from fasttext import train_supervised
 from fasttext.FastText import _FastText
-from smashed.utils.io_utils import open_file_for_write
 
 from .data_types import DocResult, Document, Span, TextSlice
 from .taggers import BaseTagger
@@ -108,7 +108,7 @@ class BaseFastTextTagger(BaseTagger):
             classifier.save_model(local_save_path)
 
             # upload to remote if save_path is s3 path
-            with open_file_for_write(save_path, "wb") as fo, open(local_save_path, "rb") as fi:
+            with smart_open.open(save_path, "wb") as fo, smart_open.open(local_save_path, "rb") as fi:
                 fo.write(fi.read())
         finally:
             # regardless to what happened, remove the local temp file if it

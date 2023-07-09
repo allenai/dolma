@@ -24,14 +24,7 @@ from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
 
-
-__all__ = [
-    "PiiPresidioV1",
-    "PiiRegexV1",
-    "PiiRegexV2",
-    "FastPiiRegex",
-    "PiiRegexWithCountV2"
-]
+__all__ = ["PiiPresidioV1", "PiiRegexV1", "PiiRegexV2", "FastPiiRegex", "PiiRegexWithCountV2"]
 
 
 class BasePiiFilter(BaseTagger):
@@ -264,7 +257,7 @@ class FastPiiRegex(BaseTagger):
         paragraphs = split_paragraphs(doc.text)
         spans: List[Span] = []
 
-        if doc.text.count('?') > 10_000:
+        if doc.text.count("?") > 10_000:
             warn("Skipping regex PII detection for doc with >10k question marks")
             paragraphs = []
 

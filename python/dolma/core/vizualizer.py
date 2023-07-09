@@ -6,12 +6,6 @@ from typing import Dict, List, Optional
 
 import msgspec
 import yaml
-from smashed.utils.io_utils import (
-    decompress_stream,
-    recursively_list_files,
-    stream_file_for_read,
-)
-from termcolor import colored
 
 from .data_types import DocResult, InputSpec, OutputSpec
 

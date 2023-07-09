@@ -1,21 +1,19 @@
 use pyo3::prelude::*;
 
 pub mod bloom_filter;
+pub mod deduper;
+pub mod mixer;
 pub mod s3_util;
 pub mod shard;
-pub mod mixer;
-pub mod deduper;
 
-use std::{env};
 use crate::deduper::deduper_config::DeduperConfig;
 use crate::mixer::mixer_config::MixerConfig;
-
+use std::env;
 
 #[pyfunction]
 fn deduper_entrypoint(config_str: &str) -> PyResult<()> {
     let config: DeduperConfig = DeduperConfig::parse_from_string(config_str).unwrap();
     deduper::run(config);
-
     Ok(())
 }
 
@@ -23,7 +21,6 @@ fn deduper_entrypoint(config_str: &str) -> PyResult<()> {
 fn mixer_entrypoint(config_str: &str) -> PyResult<()> {
     let config: MixerConfig = MixerConfig::parse_from_string(config_str).unwrap();
     mixer::run(config);
-
     Ok(())
 }
 
@@ -39,7 +36,6 @@ fn dolma(_py: Python, m: &PyModule) -> PyResult<()> {
         env::set_var("RUST_LOG", "dolma=info,deduper=info");
     }
     env_logger::init();
-
 
     Ok(())
 }

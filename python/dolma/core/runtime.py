@@ -1,32 +1,85 @@
-import argparse
-import gzip
 import logging
 import multiprocessing
-import os
 import tempfile
 from contextlib import ExitStack
 from queue import Queue
-from typing import Dict
+from typing import Dict, List, Union
 
 import msgspec
-from cached_path import cached_path
-from smashed.utils.io_utils import (
-    compress_stream,
-    decompress_stream,
-    open_file_for_write,
-    stream_file_for_read,
-)
+import smart_open
 
-from .data_types import (
-    Ai2LlmFatalError,
-    Ai2LlmRetryableFailure,
-    Ai2LlmShardError,
-    InputSpec,
-    OutputSpec,
-)
+from .data_types import InputSpec, OutputSpec
+from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor
+from .paths import join_path, make_relative, split_glob, split_path
 from .registry import TaggerRegistry
 from .utils import make_variable_name
+
+
+def _make_paths_from_substitution(paths: List[str], find: str, replace: str) -> List[str]:
+    """
+    Utility function to make paths using a find/replace substitution. This is useful if you want to
+    create a destination path from a source path by replacing part of the source path with something else.
+
+    For example, if you have a source path of `current_paths = ["s3://bucket/data/documents/**.json.gz"]` and
+    you want to replace `documents` with `attributes`, you can use this function to do that. by calling
+    `_make_paths_from_substitution(current_paths, "documents", "attribute")`. This will return the following
+    list `["s3://bucket/data/attributes"]`. Note how glob patterns are removed from the paths.
+    """
+    new_paths: List[str] = []
+    for curr in paths:
+        curr_pre_glob, _ = split_glob(curr)
+        curr_prot, curr_parts = split_path(curr_pre_glob)
+        find_dir_index = curr_parts.index(find)
+
+        if not curr_pre_glob.strip():
+            raise RuntimeError(f"Path '{curr}' contains a wildcard at the beginning. ")
+        elif find_dir_index < 0:
+            raise RuntimeError(f"Path '{curr}' does not contain a '{find}' component.")
+
+        dst_parts = [p if i != find_dir_index else replace for i, p in enumerate(curr_parts)]
+        new_paths.append(join_path(curr_prot, dst_parts))
+
+    return new_paths
+
+
+def _make_paths_from_prefix(paths: List[str], prefix: str) -> List[str]:
+    """
+    Utility function to make paths using a prefix. This is useful if you want to create a destination path
+    from a source path by prepending a prefix to the source path.
+
+    To create destination paths, we first find the longest common prefix among all source paths. Then, we
+    we remove the prefix from each source path and prepend the new prefix to each source path. For example,
+    if you have a source path of
+    ```
+    current_paths = [
+        "s3://bucket/data/documentsA/**.json.gz",
+        "s3://bucket/data/documentsB/**.json.gz",
+    ]
+    ```
+    and you want to replace `s3://bucket/data/` with `s3://bucket/attributes/`, you can use this function
+    to do that. by calling `_make_paths_from_prefix(current_paths, "s3://bucket/attributes/")`. This will
+    return the following list
+
+    ```
+    [
+        "s3://bucket/attributes/documentsA/",
+        "s3://bucket/attributes/documentsB/",
+    ]
+    ```
+
+    Note how glob patterns are removed from the paths.
+    """
+
+    new_paths: List[str] = []
+    prefix_prot, prefix_path = split_path(prefix)
+    _, relative_paths = make_relative(paths)
+
+    for curr_path in relative_paths:
+        base_curr_path, _ = split_glob(curr_path)
+        new_paths.append(join_path(prefix_prot, prefix_path, base_curr_path))
+
+    return new_paths
 
 
 class TaggerProcessor(BaseParallelProcessor):
@@ -75,9 +128,6 @@ class TaggerProcessor(BaseParallelProcessor):
         # skip on failure
         skip_on_failure = kwargs.get("skip_on_failure", False)
 
-        # local read cache
-        local_read_cache = kwargs.get("local_read_cache", None)
-
         # interval at which to update the progress bar; will double if it gets
         # too full
         update_interval = 1
@@ -90,27 +140,14 @@ class TaggerProcessor(BaseParallelProcessor):
         encoder = msgspec.json.Encoder()
         decoder = msgspec.json.Decoder(InputSpec)
 
-        # this will be used to cache the file locally if needed
-        caching_path = source_path
-
         with ExitStack() as stack:
             try:
                 # open each file for reading and writing. We use open_file_for_read to handle s3 paths and
-                # download the file locally if needed, while gzip.open is used to
-                # read and write gzipped files.
-
-                if local_read_cache is not None:
-                    caching_path = cached_path(source_path, cache_dir=local_read_cache)
-                    in_stream = stack.enter_context(gzip.open(caching_path, mode="rt"))
-                else:
-                    input_file = stack.enter_context(stream_file_for_read(source_path, mode="rb"))
-                    in_stream = stack.enter_context(decompress_stream(input_file, mode="rt"))
-
-                out_file = stack.enter_context(open_file_for_write(destination_path, "wb"))
-                out_stream = stack.enter_context(compress_stream(out_file, "wt"))
+                # download the file locally if needed, while gzip.open is used to read and write gzipped files.
+                in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))
+                out_stream = stack.enter_context(smart_open.open(destination_path, "wt", encoding="utf-8"))
 
                 for raw in in_stream:
-                    # row = json.loads(raw)
                     row = decoder.decode(raw)
 
                     # running the taggers and merging them flat
@@ -124,7 +161,7 @@ class TaggerProcessor(BaseParallelProcessor):
                     output = OutputSpec(source=row.source, id=row.id, attributes=attributes)
 
                     # write the output to the output file
-                    out_stream.write(encoder.encode(output).decode("utf-8") + "\n")  # pyright: ignore
+                    out_stream.write(encoder.encode(output).decode("utf-8") + "\n")
 
                     # increment the number of documents processed so far
                     docs_cnt += 1
@@ -144,163 +181,85 @@ class TaggerProcessor(BaseParallelProcessor):
                 msg = f"Failed to process {source_path} due to {e.__class__.__name__}: {' '.join(e.args)}"
                 if e.__class__.__name__ == "IncompleteReadError":
                     # Intermittent error that occurs when reading from S3
-                    raise Ai2LlmRetryableFailure(msg) from e
+                    raise DolmaRetryableFailure(msg) from e
                 else:
                     if skip_on_failure:
-                        raise Ai2LlmShardError(msg) from e
+                        raise DolmaShardError(msg) from e
                     else:
-                        raise Ai2LlmFatalError(msg) from e
-            finally:
-                if caching_path != source_path and os.path.exists(caching_path):
-                    os.remove(caching_path)
+                        raise DolmaFatalError(msg) from e
 
         # increment the files progress bar
         cls.increment_progressbar(queue, files=1, documents=docs_cnt)
 
-    @classmethod
-    def main(cls):
-        ap = argparse.ArgumentParser()
-        ap.add_argument(
-            "-d",
-            "--dataset",
-            default=None,
-            help=f"Dataset to process; this should be relative path from {TaggerProcessor.BASE_S3_PREFIX}.",
-        )
-        ap.add_argument(
-            "-n",
-            "--experiment-name",
-            default=None,
-            help=(
-                "Name of for this sequence of taggers to be grouped under; "
-                "it could be 'experiment_n' or a more descriptive name."
-            ),
-        )
-        ap.add_argument(
-            "-t",
-            "--taggers",
-            default=[],
-            nargs="+",
-            help="One or more taggers to run; use -l to list available taggers.",
-        )
-        ap.add_argument("-l", "--list-taggers", action="store_true", help="List available taggers.")
-        ap.add_argument("-p", "--parallel", type=int, default=1, help="Number of parallel processes to use.")
-        ap.add_argument(
-            "-u", "--debug", action="store_true", help="Run in debug mode; parallelism will be disabled."
-        )
-        ap.add_argument(
-            "--skip-on-failure",
-            action="store_true",
-            help="Skip documents that fail to process instead of raising an error.",
-        )
-        ap.add_argument(
-            "--retry-on-read-error",
-            default=0,
-            type=int,
-            help="Number of retries to attempt after an error from reading inputs.",
-        )
-        ap.add_argument(
-            "--reuse-existing",
-            default=None,
-            type=str,
-            help="If provided, keeps track of which files have already been processed and skips them. ",
-        )
-        ap.add_argument(
-            "--local-read-cache",
-            default=None,
-            type=str,
-            help="If provided, will cache the files locally before processing them.",
-        )
-        ap.add_argument(
-            "--manually-included-paths",
-            default=None,
-            nargs="+",
-            help="If provided, only these paths will be processed. If points to an existing file, read s3:// URLs from it.",
-        )
-        ap.add_argument(
-            "--files-regex-pattern",
-            default=None,
-            type=str,
-            help="If provided, only files matching this regex pattern will be processed.",
-        )
-        ap.add_argument(
-            "--manually-excluded-paths",
-            default=None,
-            nargs="+",
-            help="If provided, these paths will be skipped. If points to an existing file, read s3:// URLs from it.",
-        )
-        ap.add_argument(
-            "--safe-mode", action="store_true", help="Run in safe mode; will download locally before processing."
-        )
-        opts = ap.parse_args()
 
-        if opts.list_taggers:
-            print("\nAvailable Taggers:")
-            for tagger_name, tagger_cls in sorted(TaggerRegistry.taggers()):
-                print(f"  {tagger_name} ({tagger_cls.__name__})")
-            print()
-            return
+def create_and_run_tagger(
+    documents: List[str],
+    experiment: str,
+    taggers: List[str],
+    destination: Union[None, str, List[str]] = None,
+    metadata: Union[None, str, List[str]] = None,
+    debug: bool = False,
+    seed: int = 0,
+    ignore_existing: bool = False,
+    skip_on_failure: bool = False,
+    retries_on_error: int = 0,
+    num_processes: int = 1,
+):
+    """This function creates a tagger and runs it on a list of documents.
 
-        assert opts.dataset is not None, "Dataset must be specified."
-        assert opts.experiment_name is not None, "Experiment name must be specified."
-        assert len(opts.taggers) > 0, "At least one tagger must be specified."
+    Args:
+        documents (List[str]): List of documents to run the taggers on. Each element of the list is a path to
+            a file containing documents in json lines format, or a glob pattern that matches such files.
+        experiment (str): The name of the experiment. This will be used to prefix the names of the attributes,
+            as well as the name of the directory where the outputs will be saved in `destination`.
+        taggers (List[str]): List of taggers to run. Each element of the list is the name of a tagger.
+        destination (Union[None, str, List[str]], optional): The path where the outputs will be saved. If
+            `None`, the outputs will be saved in a directory parallel to the directory containing the
+            documents, with the same name as `experiment`. If a string, paths corresponding to each element
+            of `documents` will be created by determining a relative path from the directory containing the
+            documents.
+        metadata (Union[None, str, List[str]], optional): Location where to save metadata that keeps track of
+            which documents have been processed. If `None`, the metadata will be saved in a temporary directory.
+        debug (bool, optional): Whether to run in debug mode. Defaults to False.
+        seed (int, optional): The seed to use for the random number generator. Defaults to 0.
+        ignore_existing (bool, optional): Whether to ignore existing outputs and re-run the taggers.
+            Defaults to False.
+        skip_on_failure (bool, optional): Whether to skip a document if it fails to process. Defaults to False.
+        retries_on_error (int, optional): Number of times to retry processing a document if it fails.
+            Defaults to 0 (fail immediately)
+        num_processes (int, optional): Number of processes to use. Defaults to 1.
+    """
 
-        source_prefix = f"{cls.BASE_S3_PREFIX}/{opts.dataset}/documents"
-        destination_prefix = f"{cls.BASE_S3_PREFIX}/{opts.dataset}/attributes/{opts.experiment_name}"
+    if destination is None:
+        try:
+            destination = _make_paths_from_substitution(documents, "documents", f"attributes/{experiment}")
+        except Exception as e:
+            raise RuntimeError("Could not make destination paths from documents paths") from e
+    elif isinstance(destination, str):
+        try:
+            destination = _make_paths_from_prefix(documents, join_path(destination, experiment))
+        except Exception as e:
+            raise RuntimeError(f"Could not make destination paths from prefix {destination}") from e
 
-        # use a local read cache if we are in safe mode or if a local read cache is provided
-        local_read_cache = opts.local_read_cache or (tempfile.gettempdir() if opts.safe_mode else None)
+    metadata = metadata or tempfile.mkdtemp()
+    if isinstance(metadata, str):
+        try:
+            metadata = _make_paths_from_prefix(documents, metadata)
+        except Exception as e:
+            raise RuntimeError(f"Could not make metadata paths from prefix {metadata}") from e
 
-        with tempfile.TemporaryDirectory() as tempdir:
-            metadata_workdir = opts.reuse_existing or tempdir
-            ignore_existing = opts.reuse_existing is None
-            manually_included_paths = opts.manually_included_paths
-            if (
-                manually_included_paths
-                and len(manually_included_paths) == 1
-                and os.path.exists(manually_included_paths[0])
-            ):
-                manually_included_paths = [lp.strip() for lp in open(manually_included_paths[0])]
-            manually_excluded_paths = opts.manually_excluded_paths
-            if (
-                manually_excluded_paths
-                and len(manually_excluded_paths) == 1
-                and os.path.exists(manually_excluded_paths[0])
-            ):
-                manually_excluded_paths = [lp.strip() for lp in open(manually_excluded_paths[0])]
-
-            msg = (
-                "----- TaggerProcessor -----\n"
-                f"source:       {source_prefix}\n"
-                f"destination:  {destination_prefix}\n"
-                f"scratch:      {tempdir}\n"
-                f"taggers:      {', '.join(opts.taggers)}\n"
-                f"parallel:     {opts.parallel}\n"
-                f"debug:        {opts.debug}\n"
-                f"skip on fail: {opts.skip_on_failure}\n"
-                f"reuse prev:   {not ignore_existing}\n"
-                f"workdir:      {metadata_workdir}\n"
-                f"safe mode:    {opts.safe_mode}\n"
-                f"local cache:  {local_read_cache}\n"
-                f"file regex:   {opts.files_regex_pattern}\n"
-                "---------------------------\n"
-            )
-            print(msg)
-
-            parallel_compute = cls(
-                source_prefix=source_prefix,
-                destination_prefix=destination_prefix,
-                metadata_prefix=metadata_workdir,
-                num_processes=opts.parallel,
-                ignore_existing=ignore_existing,
-                debug=opts.debug,
-                include_paths=opts.manually_included_paths,
-                exclude_paths=opts.manually_excluded_paths,
-                files_regex_pattern=opts.files_regex_pattern,
-            )
-            parallel_compute(
-                taggers_names=opts.taggers,
-                experiment_name=opts.experiment_name,
-                skip_on_failure=opts.skip_on_failure,
-                local_read_cache=local_read_cache,
-                retry_on_read_error=opts.retry_on_read_error,
-            )
+        tagger = TaggerProcessor(
+            source_prefix=documents,
+            destination_prefix=destination,
+            metadata_prefix=metadata,
+            debug=debug,
+            seed=seed,
+            ignore_existing=ignore_existing,
+            retries_on_error=retries_on_error,
+            num_processes=num_processes,
+        )
+        tagger(
+            experiment_name=experiment,
+            taggers_names=taggers,
+            skip_on_failure=skip_on_failure,
+        )

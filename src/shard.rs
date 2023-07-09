@@ -41,7 +41,7 @@ impl Shard {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = s3_util::new_client()?;
+        let s3_client = s3_util::new_client(None)?;
 
         let mut shards: Vec<Shard> = Vec::new();
         for stream_config in streams {
@@ -49,10 +49,11 @@ impl Shard {
             log::info!("Computing shards for stream {}...", stream_config.name);
             let stream_inputs =
                 s3_util::find_objects_matching_patterns(&s3_client, &stream_config.documents)?;
+
             let inputs_with_sizes = stream_inputs
                 .par_iter()
                 .map(|input| {
-                    let resp = rt.block_on(object_size(&s3_client, "ai2-llm", input));
+                    let resp = rt.block_on(object_size(&s3_client, input));
                     let mut attr_paths = Vec::new();
                     for prefix in stream_config.attributes.iter() {
                         let mut attr_prefix = "/attributes/".to_owned();
@@ -148,7 +149,7 @@ impl Shard {
             .build()
             .unwrap();
 
-        let s3_client = s3_util::new_client()?;
+        let s3_client = s3_util::new_client(None)?;
 
         let inputs_dir = Path::new(&work_dirs.input);
         let outputs_dir = Path::new(&work_dirs.output);
@@ -180,7 +181,6 @@ impl Shard {
                 );
                 rt.block_on(download_to_file(
                     &s3_client,
-                    "ai2-llm",
                     &input_path.doc_path,
                     &local_docs_file,
                 ))?;
@@ -189,12 +189,7 @@ impl Shard {
                 for attr in &input_path.attribute_paths {
                     let local_attr_file = inputs_dir.join(Path::new(&attr));
                     log::info!("Downloading {} to {}", attr, local_attr_file.display());
-                    rt.block_on(download_to_file(
-                        &s3_client,
-                        "ai2-llm",
-                        &attr,
-                        &local_attr_file,
-                    ))?;
+                    rt.block_on(download_to_file(&s3_client, &attr, &local_attr_file))?;
                     let f = OpenOptions::new()
                         .read(true)
                         .write(false)
@@ -236,13 +231,9 @@ impl Shard {
                             Some(Ok(line)) => {
                                 let attr_data: Value = serde_json::from_str(&line)?;
                                 assert_eq!(
-                                    attr_data["id"],
-                                    data["id"],
+                                    attr_data["id"], data["id"],
                                     "Mismatched ids for line {} of {}: {} != {}",
-                                    line_number,
-                                    &input_path.doc_path,
-                                    attr_data["id"],
-                                    data["id"]
+                                    line_number, &input_path.doc_path, attr_data["id"], data["id"]
                                 );
                                 for (k, v) in attr_data["attributes"].as_object().unwrap().iter() {
                                     attrs.insert(k.clone(), v.clone());
@@ -339,7 +330,8 @@ impl Shard {
                                                     new_text.push_str(&replacement_text);
                                                 }
                                                 while span_index < replacements.len()
-                                                    && replacements[span_index].start < i {
+                                                    && replacements[span_index].start < i
+                                                {
                                                     span_index += 1;
                                                 }
                                             }
@@ -391,7 +383,9 @@ impl Shard {
                             attr_reader_failure_counts[i]
                         );
                     }
-                    std::fs::remove_file(inputs_dir.join(Path::new(&input_path.attribute_paths[i])))?;
+                    std::fs::remove_file(
+                        inputs_dir.join(Path::new(&input_path.attribute_paths[i])),
+                    )?;
                 }
                 log::info!(
                     "Dropped {} of {} documents from {}",
@@ -407,12 +401,7 @@ impl Shard {
             &tmp_output_path.display(),
             &self.output
         );
-        rt.block_on(upload_file(
-            &s3_client,
-            "ai2-llm",
-            &self.output,
-            &tmp_output_path,
-        ))?;
+        rt.block_on(upload_file(&s3_client, &self.output, &tmp_output_path))?;
 
         {
             // Create empty file to indicate that the shard is done.

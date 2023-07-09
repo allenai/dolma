@@ -1,11 +1,11 @@
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
+use std::io;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::{io};
 
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
@@ -20,14 +20,13 @@ use crate::shard::shard_config::WorkDirConfig;
 
 use deduper_config::*;
 
-
 pub fn run(config: DeduperConfig) {
     assert!(
         config.dedupe.paragraphs.is_some() ^ config.dedupe.documents.is_some(),
         "Must dedupe either paragraphs or documents"
     );
 
-    let s3_client = s3_util::new_client().unwrap();
+    let s3_client = s3_util::new_client(None).unwrap();
 
     let bloom_filter = BloomFilter::initialize(&config.bloom_filter).unwrap();
     let bloom_filter = Arc::new(bloom_filter);
@@ -85,7 +84,7 @@ fn write_attributes(
         .build()
         .unwrap();
 
-    let s3_client = s3_util::new_client()?;
+    let s3_client = s3_util::new_client(None)?;
 
     let input_work_dir = Path::new(&work_dirs.input);
     let output_work_dir = Path::new(&work_dirs.output);
@@ -108,12 +107,7 @@ fn write_attributes(
     {
         let local_input = input_work_dir.join(Path::new(&doc_path));
         log::info!("Downloading {} to {}", doc_path, local_input.display());
-        rt.block_on(download_to_file(
-            &s3_client,
-            "ai2-llm",
-            &doc_path,
-            &local_input,
-        ))?;
+        rt.block_on(download_to_file(&s3_client, &doc_path, &local_input))?;
         let input_file = OpenOptions::new()
             .read(true)
             .write(false)
@@ -235,12 +229,7 @@ fn write_attributes(
         &tmp_output_path.display(),
         &output_path
     );
-    rt.block_on(upload_file(
-        &s3_client,
-        "ai2-llm",
-        &output_path,
-        &tmp_output_path,
-    ))?;
+    rt.block_on(upload_file(&s3_client, &output_path, &tmp_output_path))?;
 
     {
         // Create empty file to indicate that the shard is done.
@@ -314,7 +303,7 @@ pub mod deduper_config {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::fs::OpenOptions;
     use std::io;
     use std::io::{BufRead, BufReader};
@@ -363,7 +352,7 @@ mod test {
     }
 
     #[test]
-    fn test_dedupe_by_url() -> Result<(), io::Error> {
+    pub fn test_dedupe_by_url() -> Result<(), io::Error> {
         let config = DeduperConfig::read_from_file("tests/config/dedupe-by-url.json").unwrap();
         run(config);
 
@@ -371,13 +360,13 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = s3_util::new_client()?;
+        let s3_client = s3_util::new_client(None)?;
 
         let local_output_file = "tests/work/output/dedupe-by-url.json.gz";
+        let remote_output_file = "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_by_url/head/0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
-            "ai2-llm",
-            "pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_by_url/head/0000.json.gz",
+            remote_output_file,
             Path::new(local_output_file),
         ))?;
 
@@ -389,7 +378,7 @@ mod test {
     }
 
     #[test]
-    fn test_dedupe_paragraphs() -> Result<(), io::Error> {
+    pub fn test_dedupe_paragraphs() -> Result<(), io::Error> {
         let config = DeduperConfig::read_from_file("tests/config/dedupe-paragraphs.json").unwrap();
         run(config);
 
@@ -397,13 +386,13 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = s3_util::new_client()?;
+        let s3_client = s3_util::new_client(None)?;
 
         let local_output_file = "tests/work/output/dedupe-paragraphs.json.gz";
+        let remote_output_file = "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_paragraphs/head/0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
-            "ai2-llm",
-            "pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_paragraphs/head/0000.json.gz",
+            remote_output_file,
             Path::new(local_output_file),
         ))?;
 

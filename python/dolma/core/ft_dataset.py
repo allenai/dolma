@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from functools import partial
 from multiprocessing import Manager, Pool, Process, Queue
 from threading import Event
-from typing import Generator, Optional, List
+from typing import Generator, List, Optional
 
 from smashed.utils.io_utils import (
     open_file_for_read,
@@ -136,7 +136,7 @@ def main(config: Config):
     random.seed(117)
 
     with Manager() as manager:
-        q: "Queue[str]" = manager.Queue()   # type: ignore
+        q: "Queue[str]" = manager.Queue()  # type: ignore
         flag = manager.Event()
 
         writer = Process(target=write_results, args=(config, q, flag))

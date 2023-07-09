@@ -1,4 +1,5 @@
 import inspect
+import itertools
 import multiprocessing
 import pickle
 import random
@@ -11,14 +12,11 @@ from queue import Queue
 from threading import Thread
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import smart_open
 import tqdm
-from smashed.utils.io_utils import (
-    MultiPath,
-    open_file_for_write,
-    recursively_list_files,
-)
 
-from .data_types import Ai2LlmFilterError, Ai2LlmRetryableFailure
+from .errors import DolmaFilterError, DolmaRetryableFailure
+from .paths import add_suffix, glob_path, make_relative, mkdir_p, sub_prefix
 
 METADATA_SUFFIX = ".done.txt"
 
@@ -36,17 +34,18 @@ class BaseParallelProcessor:
 
     def __init__(
         self,
-        source_prefix: str,
-        destination_prefix: str,
-        metadata_prefix: str,
+        source_prefix: Union[str, List[str]],
+        destination_prefix: Union[str, List[str]],
+        metadata_prefix: Union[str, List[str]],
         num_processes: int = 1,
         debug: bool = False,
         seed: int = 0,
-        pbar_timeout: float = 0.01,
+        pbar_timeout: float = 1e-3,
         ignore_existing: bool = False,
         include_paths: Optional[List[str]] = None,
         exclude_paths: Optional[List[str]] = None,
         files_regex_pattern: Optional[str] = None,
+        retries_on_error: int = 0,
     ):
         """Initialize the parallel processor.
 
@@ -75,9 +74,9 @@ class BaseParallelProcessor:
                 match one of the paths will be skipped. Defaults to None.
         """
 
-        self.source_prefix = MultiPath.parse(source_prefix)
-        self.destination_prefix = MultiPath.parse(destination_prefix)
-        self.metadata_prefix = MultiPath.parse(metadata_prefix)
+        self.src_prefixes = [source_prefix] if isinstance(source_prefix, str) else source_prefix
+        self.dst_prefixes = [destination_prefix] if isinstance(destination_prefix, str) else destination_prefix
+        self.meta_prefixes = [metadata_prefix] if isinstance(metadata_prefix, str) else metadata_prefix
         self.num_processes = num_processes
         self.debug = debug
         self.seed = seed
@@ -87,9 +86,9 @@ class BaseParallelProcessor:
         self.include_paths = set(include_paths) if include_paths is not None else None
         self.exclude_paths = set(exclude_paths) if exclude_paths is not None else None
         self.files_regex_pattern = re.compile(files_regex_pattern) if files_regex_pattern else None
+        self.retries_on_error = retries_on_error
 
-        # checking that the increment_progressbar method is subclassed
-        # correctly
+        # checking that the increment_progressbar method is subclassed correctly
         sig = inspect.signature(self.increment_progressbar)
         if "queue" not in sig.parameters or sig.parameters["queue"].kind != inspect.Parameter.POSITIONAL_ONLY:
             raise AttributeError(
@@ -106,6 +105,19 @@ class BaseParallelProcessor:
                 "increment_progressbar must have a default value of 0 for all arguments except 'queue'; "
                 "Check that you have subclassed BaseParallelProcessor correctly!"
             )
+
+        if len(self.src_prefixes) != len(self.dst_prefixes) or len(self.src_prefixes) != len(self.meta_prefixes):
+            raise ValueError("The number of source, destination and metadata prefixes must be the same.")
+
+        if len(self.src_prefixes) == 0:
+            raise ValueError("At least one source prefix must be provided.")
+
+        if any("*" in p for p in itertools.chain(self.dst_prefixes, self.meta_prefixes)):
+            raise ValueError("Destination and metadata prefixes cannot contain wildcards.")
+
+        for i in range(len(self.src_prefixes)):
+            # adding a wildcard to the end of the each source prefix if it doesn't have one
+            self.src_prefixes[i] = add_suffix(p, "*") if "*" not in (p := self.src_prefixes[i]) else p
 
     @classmethod
     def process_single(
@@ -140,18 +152,19 @@ class BaseParallelProcessor:
         """A wrapper around process single that saves a metadata file if processing is successful."""
 
         kwargs = pickle.loads(serialized_kwargs)
-        tries_remaining = kwargs.get("retry_on_read_error", 0) + 1
+        retries_on_error = kwargs.get("retries_on_error", 0) + 1
         while True:
             try:
                 cls.process_single(
                     source_path=source_path, destination_path=destination_path, queue=queue, **kwargs
                 )
                 break
-            except Ai2LlmRetryableFailure as e:
-                tries_remaining -= 1
-                if tries_remaining == 0:
-                    raise Ai2LlmFilterError from e
-        with open_file_for_write(metadata_path) as f:
+            except DolmaRetryableFailure as e:
+                retries_on_error -= 1
+                if retries_on_error == 0:
+                    raise DolmaFilterError from e
+
+        with smart_open.open(metadata_path, "wt") as f:
             f.write(datetime.now().isoformat())
 
     @classmethod
@@ -208,9 +221,9 @@ class BaseParallelProcessor:
 
     def _debug_run_all(
         self,
-        all_source_paths: List[MultiPath],
-        all_destination_paths: List[MultiPath],
-        all_metadata_paths: List[MultiPath],
+        all_source_paths: List[str],
+        all_destination_paths: List[str],
+        all_metadata_paths: List[str],
         **process_single_kwargs: Any,
     ):
         """Run files one by one on the main process
@@ -228,9 +241,9 @@ class BaseParallelProcessor:
 
         for source_prefix, destination_prefix, metadata_prefix in it:
             self._process_single_and_save_status(
-                source_path=source_prefix.as_str,
-                destination_path=destination_prefix.as_str,
-                metadata_path=metadata_prefix.as_str,
+                source_path=source_prefix,
+                destination_path=destination_prefix,
+                metadata_path=metadata_prefix,
                 queue=pbar_queue,
                 serialized_kwargs=pickle.dumps(process_single_kwargs),
             )
@@ -240,9 +253,9 @@ class BaseParallelProcessor:
 
     def _multiprocessing_run_all(
         self,
-        all_source_paths: List[MultiPath],
-        all_destination_paths: List[MultiPath],
-        all_metadata_paths: List[MultiPath],
+        all_source_paths: List[str],
+        all_destination_paths: List[str],
+        all_metadata_paths: List[str],
         **process_single_kwargs: Any,
     ):
         """Run files in parallel using multiprocessing.
@@ -271,9 +284,9 @@ class BaseParallelProcessor:
                 process_single_fn = partial(
                     self._process_single_and_save_status,
                     queue=pbar_queue,
-                    source_path=s.as_str,
-                    destination_path=d.as_str,
-                    metadata_path=m.as_str,
+                    source_path=s,
+                    destination_path=d,
+                    metadata_path=m,
                     serialized_kwargs=pickle.dumps(process_single_kwargs),
                 )
                 result = pool.apply_async(process_single_fn)
@@ -298,37 +311,40 @@ class BaseParallelProcessor:
             return False
         return True
 
-    def _get_all_paths(self) -> Tuple[List[MultiPath], List[MultiPath], List[MultiPath]]:
+    def _get_all_paths(self) -> Tuple[List[str], List[str], List[str]]:
         """Get all paths to process using prefixes provided"""
         all_source_paths, all_destination_paths, all_metadata_paths = [], [], []
 
-        existing_metadata_names = set(
-            (MultiPath.parse(path) - self.metadata_prefix).as_str.rstrip(METADATA_SUFFIX)
-            for path in recursively_list_files(self.metadata_prefix)
-        )
+        for src_prefix, dst_prefix, meta_prefix in zip(self.src_prefixes, self.dst_prefixes, self.meta_prefixes):
+            mkdir_p(dst_prefix)
+            mkdir_p(meta_prefix)
 
-        paths = list(recursively_list_files(self.source_prefix))
-        random.shuffle(paths)
+            prefix, rel_paths = make_relative(list(glob_path(src_prefix)))
+            random.shuffle(rel_paths)
 
-        for path in paths:
-            source_path = MultiPath.parse(path)
-            if not self.ignore_existing and (source_path - self.source_prefix).as_str in existing_metadata_names:
-                continue
+            existing_metadata_names = set(
+                sub_prefix(path, meta_prefix).strip(METADATA_SUFFIX) for path in glob_path(meta_prefix)
+            )
 
-            if not self._valid_path(source_path.as_str):
-                continue
+            for path in rel_paths:
+                if not self.ignore_existing and path in existing_metadata_names:
+                    continue
 
-            all_source_paths.append(source_path)
-            all_destination_paths.append(self.destination_prefix / (source_path - self.source_prefix))
+                if not self._valid_path(path):
+                    continue
 
-            metadata_path = MultiPath.parse(source_path.as_str + METADATA_SUFFIX)
-            all_metadata_paths.append(self.metadata_prefix / (metadata_path - self.source_prefix))
+                all_source_paths.append(add_suffix(prefix, path))
+                all_destination_paths.append(add_suffix(dst_prefix, path))
+                all_metadata_paths.append(add_suffix(meta_prefix, path) + METADATA_SUFFIX)
 
         return all_source_paths, all_destination_paths, all_metadata_paths
 
     def __call__(self, **process_single_kwargs: Any):
         """Run the processor."""
         random.seed(self.seed)
+
+        # in case the user wants to override the default kwargs for retries
+        process_single_kwargs.setdefault("retries_on_error", self.retries_on_error)
 
         all_source_paths, all_destination_paths, all_metadata_paths = self._get_all_paths()
 
