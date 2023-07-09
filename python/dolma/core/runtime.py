@@ -6,27 +6,58 @@ import os
 import tempfile
 from contextlib import ExitStack
 from queue import Queue
-from typing import Dict
+from typing import Dict, List, Optional, Union
 
 import msgspec
-from cached_path import cached_path
-from smashed.utils.io_utils import (
-    compress_stream,
-    decompress_stream,
-    open_file_for_write,
-    stream_file_for_read,
-)
+import smart_open
 
-from .data_types import (
-    Ai2LlmFatalError,
-    Ai2LlmRetryableFailure,
-    Ai2LlmShardError,
-    InputSpec,
-    OutputSpec,
-)
+from .data_types import InputSpec, OutputSpec
+from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor
+from .paths import join_path, make_relative, split_glob, split_path
 from .registry import TaggerRegistry
 from .utils import make_variable_name
+
+
+def _make_paths_from_substitution(paths: List[str], find: str, replace: str) -> List[str]:
+    """
+    Utility function to make paths using a find/replace substitution. This is useful if you want to
+    create a destination path from a source path by replacing part of the source path with something else.
+
+    For example, if you have a source path of `current_paths = ["s3://bucket/data/documents/**.json.gz"]` and
+    you want to replace `documents` with `attributes`, you can use this function to do that. by calling
+    `_make_paths_from_substitution(current_paths, "documents", "attribute")`. This will return the following
+    list `["s3://bucket/data/attributes"]`. Note how glob patterns are removed from the paths.
+    """
+    new_paths: List[str] = []
+    for curr in paths:
+        curr_pre_glob, _ = split_glob(curr)
+        curr_prot, curr_parts = split_path(curr_pre_glob)
+        find_dir_index = curr_parts.index(find)
+
+        if not curr_pre_glob.strip():
+            raise RuntimeError(f"Path '{curr}' contains a wildcard at the beginning. ")
+        elif find_dir_index < 0:
+            raise RuntimeError(f"Path '{curr}' does not contain a '{find}' component.")
+
+        dst_parts = [p if i != find_dir_index else replace for i, p in enumerate(curr_parts)]
+        new_paths.append(join_path(curr_prot, dst_parts))
+
+    return new_paths
+
+
+def _make_paths_from_prefix(paths: List[str], prefix: str) -> List[str]:
+    new_paths: List[str] = []
+    prefix_prot, prefix_path = split_path(prefix)
+    _, relative_paths = make_relative(
+        paths,
+    )
+
+    for curr_path in relative_paths:
+        base_curr_path, _ = split_glob(curr_path)
+        new_paths.append(join_path(prefix_prot, prefix_path, base_curr_path))
+
+    return new_paths
 
 
 class TaggerProcessor(BaseParallelProcessor):
@@ -96,18 +127,9 @@ class TaggerProcessor(BaseParallelProcessor):
         with ExitStack() as stack:
             try:
                 # open each file for reading and writing. We use open_file_for_read to handle s3 paths and
-                # download the file locally if needed, while gzip.open is used to
-                # read and write gzipped files.
-
-                if local_read_cache is not None:
-                    caching_path = cached_path(source_path, cache_dir=local_read_cache)
-                    in_stream = stack.enter_context(gzip.open(caching_path, mode="rt"))
-                else:
-                    input_file = stack.enter_context(stream_file_for_read(source_path, mode="rb"))
-                    in_stream = stack.enter_context(decompress_stream(input_file, mode="rt"))
-
-                out_file = stack.enter_context(open_file_for_write(destination_path, "wb"))
-                out_stream = stack.enter_context(compress_stream(out_file, "wt"))
+                # download the file locally if needed, while gzip.open is used to read and write gzipped files.
+                in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))
+                out_stream = stack.enter_context(smart_open.open(destination_path, "wt", encoding="utf-8"))
 
                 for raw in in_stream:
                     # row = json.loads(raw)
@@ -144,12 +166,12 @@ class TaggerProcessor(BaseParallelProcessor):
                 msg = f"Failed to process {source_path} due to {e.__class__.__name__}: {' '.join(e.args)}"
                 if e.__class__.__name__ == "IncompleteReadError":
                     # Intermittent error that occurs when reading from S3
-                    raise Ai2LlmRetryableFailure(msg) from e
+                    raise DolmaRetryableFailure(msg) from e
                 else:
                     if skip_on_failure:
-                        raise Ai2LlmShardError(msg) from e
+                        raise DolmaShardError(msg) from e
                     else:
-                        raise Ai2LlmFatalError(msg) from e
+                        raise DolmaFatalError(msg) from e
             finally:
                 if caching_path != source_path and os.path.exists(caching_path):
                     os.remove(caching_path)
@@ -158,94 +180,20 @@ class TaggerProcessor(BaseParallelProcessor):
         cls.increment_progressbar(queue, files=1, documents=docs_cnt)
 
     @classmethod
-    def main(cls):
-        ap = argparse.ArgumentParser()
-        ap.add_argument(
-            "-d",
-            "--dataset",
-            default=None,
-            help=f"Dataset to process; this should be relative path from {TaggerProcessor.BASE_S3_PREFIX}.",
-        )
-        ap.add_argument(
-            "-n",
-            "--experiment-name",
-            default=None,
-            help=(
-                "Name of for this sequence of taggers to be grouped under; "
-                "it could be 'experiment_n' or a more descriptive name."
-            ),
-        )
-        ap.add_argument(
-            "-t",
-            "--taggers",
-            default=[],
-            nargs="+",
-            help="One or more taggers to run; use -l to list available taggers.",
-        )
-        ap.add_argument("-l", "--list-taggers", action="store_true", help="List available taggers.")
-        ap.add_argument("-p", "--parallel", type=int, default=1, help="Number of parallel processes to use.")
-        ap.add_argument(
-            "-u", "--debug", action="store_true", help="Run in debug mode; parallelism will be disabled."
-        )
-        ap.add_argument(
-            "--skip-on-failure",
-            action="store_true",
-            help="Skip documents that fail to process instead of raising an error.",
-        )
-        ap.add_argument(
-            "--retry-on-read-error",
-            default=0,
-            type=int,
-            help="Number of retries to attempt after an error from reading inputs.",
-        )
-        ap.add_argument(
-            "--reuse-existing",
-            default=None,
-            type=str,
-            help="If provided, keeps track of which files have already been processed and skips them. ",
-        )
-        ap.add_argument(
-            "--local-read-cache",
-            default=None,
-            type=str,
-            help="If provided, will cache the files locally before processing them.",
-        )
-        ap.add_argument(
-            "--manually-included-paths",
-            default=None,
-            nargs="+",
-            help="If provided, only these paths will be processed. If points to an existing file, read s3:// URLs from it.",
-        )
-        ap.add_argument(
-            "--files-regex-pattern",
-            default=None,
-            type=str,
-            help="If provided, only files matching this regex pattern will be processed.",
-        )
-        ap.add_argument(
-            "--manually-excluded-paths",
-            default=None,
-            nargs="+",
-            help="If provided, these paths will be skipped. If points to an existing file, read s3:// URLs from it.",
-        )
-        ap.add_argument(
-            "--safe-mode", action="store_true", help="Run in safe mode; will download locally before processing."
-        )
-        opts = ap.parse_args()
+    def main(
+        cls,
+        documents: List[str],
+        destination: Union[None, List[str]] = None,
+        metadata: Union[None, List[str]] = None,
+    ):
+        if destination is None:
+            try:
+                destination = _make_paths_from_substitution(documents, "documents", "attributes")
+            except Exception as e:
+                raise RuntimeError("Could not make destination paths from documents paths") from e
 
-        if opts.list_taggers:
-            print("\nAvailable Taggers:")
-            for tagger_name, tagger_cls in sorted(TaggerRegistry.taggers()):
-                print(f"  {tagger_name} ({tagger_cls.__name__})")
-            print()
-            return
-
-        assert opts.dataset is not None, "Dataset must be specified."
-        assert opts.experiment_name is not None, "Experiment name must be specified."
-        assert len(opts.taggers) > 0, "At least one tagger must be specified."
-
-        source_prefix = f"{cls.BASE_S3_PREFIX}/{opts.dataset}/documents"
-        destination_prefix = f"{cls.BASE_S3_PREFIX}/{opts.dataset}/attributes/{opts.experiment_name}"
+        if metadata is None:
+            _, rel_docs = make_relative(documents)
 
         # use a local read cache if we are in safe mode or if a local read cache is provided
         local_read_cache = opts.local_read_cache or (tempfile.gettempdir() if opts.safe_mode else None)

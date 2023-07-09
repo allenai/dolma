@@ -1,66 +1,55 @@
-# mypy: disable-error-code="unused-ignore"
-
-import os
 from pathlib import Path
-from queue import Queue
-from tempfile import TemporaryDirectory
-from typing import Any, Tuple, Union
 from unittest import TestCase
 
-import smart_open
-
-from dolma.core.parallel import BaseParallelProcessor
+from dolma.core.runtime import _make_paths_from_prefix, _make_paths_from_substitution
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"
 
 
-class MockProcessor(BaseParallelProcessor):
-    @classmethod
-    def increment_progressbar(cls, queue, /, cnt: int = 0):  # type: ignore[override]
-        return super().increment_progressbar(queue, cnt=cnt)
+class TestRuntimeUtilities(TestCase):
+    def test_make_paths_from_substitution(self):
+        paths = [
+            "s3://bucket/common-crawl/documents/cc_*/*.json.gz",
+            "/local/path/to/documents/train/*",
+        ]
+        new_paths = _make_paths_from_substitution(
+            paths=paths,
+            find="documents",
+            replace="attributes",
+        )
+        self.assertEqual(new_paths, ["s3://bucket/common-crawl/attributes", "/local/path/to/attributes/train"])
 
-    @classmethod
-    def process_single(
-        cls,
-        source_path: str,
-        destination_path: str,
-        queue: "Queue[Union[None, Tuple[int, ...]]]",
-        **kwargs: Any,
-    ):
-        with smart_open.open(source_path, "rb") as f, smart_open.open(destination_path, "wb") as g:
-            g.write(f.read())
-        queue.put((1,))
+    def test_make_paths_from_prefix(self):
+        paths = [
+            "s3://bucket/common-crawl/documents/cc_head/*.json.gz",
+            "s3://bucket/common-crawl/documents/cc_middle/*.json.gz",
+            "s3://bucket/common-crawl/documents/cc_tail/*.json.gz",
+        ]
+        new_paths = _make_paths_from_prefix(
+            paths=paths,
+            prefix="s3://bucket/common-crawl/attributes/",
+        )
+        self.assertEqual(
+            new_paths,
+            [
+                "s3://bucket/common-crawl/attributes/cc_head",
+                "s3://bucket/common-crawl/attributes/cc_middle",
+                "s3://bucket/common-crawl/attributes/cc_tail",
+            ],
+        )
 
-
-class TestParallel(TestCase):
-    def test_base_parallel_processor(self):
-        with self.assertRaises(ValueError):
-            MockProcessor(source_prefix=[], destination_prefix=[], metadata_prefix=[])
-
-        with TemporaryDirectory() as d:
-            proc = MockProcessor(
-                source_prefix=str(LOCAL_DATA / "expected"),
-                destination_prefix=f"{d}/destination",
-                metadata_prefix=f"{d}/metadata",
-                ignore_existing=False,
-            )
-            proc()
-            src = [p for p in os.listdir(LOCAL_DATA / "expected") if not p.startswith(".")]
-            meta = [p.rstrip(".done.txt") for p in os.listdir(f"{d}/metadata")]
-            dest = [p for p in os.listdir(f"{d}/destination") if not p.startswith(".")]
-            self.assertEqual(sorted(src), sorted(meta))
-            self.assertEqual(sorted(src), sorted(dest))
-
-        with TemporaryDirectory() as d:
-            proc = MockProcessor(
-                source_prefix=str(LOCAL_DATA / "expected" / "*-paragraphs.*"),
-                destination_prefix=f"{d}/destination",
-                metadata_prefix=f"{d}/metadata",
-                ignore_existing=False,
-            )
-            proc()
-            src = [p for p in os.listdir(LOCAL_DATA / "expected") if "paragraphs" in p]
-            meta = [p.rstrip(".done.txt") for p in os.listdir(f"{d}/metadata")]
-            dest = [p for p in os.listdir(f"{d}/destination")]
-            self.assertEqual(sorted(src), sorted(meta))
-            self.assertEqual(sorted(src), sorted(dest))
+        paths = [
+            "s3://bucket/common-crawl/documents/*.json.gz",
+            "s3://bucket2/c4/documents/**/data/*.json.gz",
+        ]
+        new_paths = _make_paths_from_prefix(
+            paths=paths,
+            prefix="/local/path/",
+        )
+        self.assertEqual(
+            new_paths,
+            [
+                "/local/path/bucket/common-crawl/documents",
+                "/local/path/bucket2/c4/documents",
+            ],
+        )

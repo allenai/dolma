@@ -23,7 +23,7 @@ setup:
 	$(shell "${PROTOBUF_SETUP}")
 	$(shell "${OPENSSL_SETUP}")
 	which cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
+	which maturin || pip install maturin
 
 release:
 	maturin build
