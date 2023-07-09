@@ -25,7 +25,8 @@ dependencies = [
     "detect-secrets==1.4.0",
     "termcolor==2.3.0",
     "smart-open>=6.3.0",
-    "nltk==3.8.1"
+    "nltk==3.8.1",
+    "kenlm @ git+https://github.com/kpu/kenlm.git@master"
 ]
 classifiers = [
     "Development Status :: 3 - Veta",
