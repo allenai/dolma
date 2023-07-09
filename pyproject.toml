@@ -29,7 +29,7 @@ dependencies = [
     "s3fs>=2021.10.0",
 ]
 classifiers = [
-    "Development Status :: 3 - Veta",
+    "Development Status :: 3 - Alpha",
     "Typing :: Typed",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
