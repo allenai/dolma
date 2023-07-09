@@ -218,35 +218,35 @@ class TestGopherTagger(TestCase):
             },
         )
         self.assertEqual(
-            d["spans"][9], {"start": 0, "end": 15, "type": "character_count", "score": 79.0, "mention": text}
+            d["spans"][9], {"start": 0, "end": 79, "type": "character_count", "score": 79.0, "mention": text}
         )
         self.assertEqual(
-            d["spans"][10], {"start": 0, "end": 15, "type": "word_count", "score": 13.0, "mention": text}
+            d["spans"][10], {"start": 0, "end": 79, "type": "word_count", "score": 13.0, "mention": text}
         )
         self.assertEqual(
-            d["spans"][11], {"start": 0, "end": 15, "type": "median_word_length", "score": 4.0, "mention": text}
+            d["spans"][11], {"start": 0, "end": 79, "type": "median_word_length", "score": 4.0, "mention": text}
         )
         self.assertEqual(
-            d["spans"][12], {"start": 0, "end": 15, "type": "symbol_to_word_ratio", "score": 0.0, "mention": text}
+            d["spans"][12], {"start": 0, "end": 79, "type": "symbol_to_word_ratio", "score": 0.0, "mention": text}
         )
         self.assertEqual(
             d["spans"][13],
             {
                 "start": 0,
-                "end": 15,
+                "end": 79,
                 "type": "fraction_of_words_with_alpha_character",
                 "score": 1.0,
                 "mention": text,
             },
         )
         self.assertEqual(
-            d["spans"][14], {"start": 0, "end": 15, "type": "required_word_count", "score": 0.0, "mention": text}
+            d["spans"][14], {"start": 0, "end": 79, "type": "required_word_count", "score": 0.0, "mention": text}
         )
         self.assertEqual(
             d["spans"][15],
             {
                 "start": 0,
-                "end": 15,
+                "end": 79,
                 "type": "fraction_of_lines_starting_with_bullet_point",
                 "score": 0.0,
                 "mention": text,
@@ -256,7 +256,7 @@ class TestGopherTagger(TestCase):
             d["spans"][16],
             {
                 "start": 0,
-                "end": 15,
+                "end": 79,
                 "type": "fraction_of_lines_ending_with_ellipsis",
                 "score": 0.0,
                 "mention": text,
@@ -264,13 +264,13 @@ class TestGopherTagger(TestCase):
         )
         self.assertEqual(
             d["spans"][17],
-            {"start": 0, "end": 15, "type": "fraction_of_duplicate_lines", "score": 0.0, "mention": text},
+            {"start": 0, "end": 79, "type": "fraction_of_duplicate_lines", "score": 0.0, "mention": text},
         )
         self.assertEqual(
             d["spans"][18],
             {
                 "start": 0,
-                "end": 15,
+                "end": 79,
                 "type": "fraction_of_characters_in_duplicate_lines",
                 "score": 0.0,
                 "mention": text,

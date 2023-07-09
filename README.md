@@ -78,7 +78,7 @@ conda activate dolma
 make setup
 ```
 
-Finally, to begin development, install the repository in editable mode using maturin.
+and restart your shell. Finally, to begin development, install the repository in editable mode using maturin.
 
 ```shell
 make develop
