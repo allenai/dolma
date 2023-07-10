@@ -22,7 +22,7 @@ setup:
 	$(shell "${CMAKE_SETUP}")
 	$(shell "${PROTOBUF_SETUP}")
 	$(shell "${OPENSSL_SETUP}")
-	which cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+	which cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 	which maturin || pip install maturin
 
 publish:
@@ -53,5 +53,9 @@ develop:
 
 style:
 	rustfmt --edition 2021 src/*.rs
-	autopep8 --in-place --recursive python/ && isort python/ && black python/
-	autopep8 --in-place --recursive tests/python/ && isort tests/python/ && black tests/python/
+	autopep8 --in-place --recursive python/
+	isort python/
+	black python/
+	autopep8 --in-place --recursive tests/python/
+	isort tests/python/
+	black tests/python/
