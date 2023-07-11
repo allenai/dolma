@@ -1,9 +1,8 @@
 [package]
 name = "dolma"
-version = "0.6.2"
+version = "0.6.3"
 edition = "2021"
 license = "Apache-2.0"
-
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
@@ -30,3 +29,4 @@ threadpool = "1.8.1"
 tokio = {version = "1.27.0", features = ["full"]}
 tokio-util = "0.7.7"
 unicode-segmentation = "1.7"
+glob = "0.3.1"

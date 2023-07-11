@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -15,8 +15,8 @@ use threadpool::ThreadPool;
 
 use crate::bloom_filter::BloomFilter;
 use crate::s3_util;
-use crate::s3_util::{download_to_file, upload_file};
 use crate::shard::shard_config::WorkDirConfig;
+use crate::shard::FileCache;
 
 use deduper_config::*;
 
@@ -74,40 +74,44 @@ pub fn run(config: DeduperConfig) {
 // For doc-level deduping, check the Bloom filter for existence of the configured key and set the configured attribute to true.
 // For paragraph-level deduping, check the Bloom filter for existence of a paragraph in the text and add a span to the configured attribute.
 fn write_attributes(
-    doc_path: String,
+    docs_location: String,
     work_dirs: WorkDirConfig,
     dedupe_config: DedupeConfig,
     bloom_filter: Arc<BloomFilter>,
 ) -> Result<(), io::Error> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let cache = FileCache {
+        s3_client: Box::new(s3_util::new_client(None)?),
+        work: work_dirs.clone(),
+    };
 
-    let s3_client = s3_util::new_client(None)?;
-
-    let input_work_dir = Path::new(&work_dirs.input);
-    let output_work_dir = Path::new(&work_dirs.output);
-
-    let output_path = {
+    let attrs_location = {
         let mut attr_prefix = "/attributes/".to_owned();
         attr_prefix.push_str(&dedupe_config.name);
         attr_prefix.push_str("/");
-        doc_path.to_owned().replace("/documents/", &attr_prefix)
+        docs_location
+            .to_owned()
+            .replace("/documents/", &attr_prefix)
     };
-    let local_output = output_work_dir.join(&output_path);
+    let local_output = cache.prepare_output(&attrs_location)?;
     if local_output.exists() {
-        log::info!("Skipping {:?} because it already exists", output_path);
+        log::info!("Skipping {:?} because it already exists", attrs_location);
         return Ok(());
     }
+    log::info!(
+        "Writing attributes for {} to {}",
+        docs_location,
+        local_output.display()
+    );
 
     std::fs::create_dir_all(local_output.parent().unwrap())?;
 
-    let tmp_output_path = output_work_dir.join(output_path.clone() + ".tmp");
+    log::info!(
+        "Writing attributes for {} to {}",
+        docs_location,
+        local_output.display()
+    );
     {
-        let local_input = input_work_dir.join(Path::new(&doc_path));
-        log::info!("Downloading {} to {}", doc_path, local_input.display());
-        rt.block_on(download_to_file(&s3_client, &doc_path, &local_input))?;
+        let local_input = cache.prepare_input(&docs_location)?;
         let input_file = OpenOptions::new()
             .read(true)
             .write(false)
@@ -120,7 +124,7 @@ fn write_attributes(
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&tmp_output_path)?;
+            .open(&local_output)?;
 
         let mut writer = BufWriter::with_capacity(
             1024 * 1024,
@@ -132,7 +136,12 @@ fn write_attributes(
             match line {
                 Ok(_) => {}
                 Err(e) => {
-                    log::error!("Error reading line {} of {}: {}", line_number, &doc_path, e);
+                    log::error!(
+                        "Error reading line {} of {}: {}",
+                        line_number,
+                        &docs_location,
+                        e
+                    );
                     break;
                 }
             }
@@ -223,23 +232,7 @@ fn write_attributes(
         }
         std::fs::remove_file(local_input)?;
     }
-
-    log::info!(
-        "Uploading {} to {}",
-        &tmp_output_path.display(),
-        &output_path
-    );
-    rt.block_on(upload_file(&s3_client, &output_path, &tmp_output_path))?;
-
-    {
-        // Create empty file to indicate that the shard is done.
-        OpenOptions::new()
-            .create(true)
-            .write(true)
-            .open(&local_output)?;
-        std::fs::remove_file(&tmp_output_path)?;
-    }
-
+    cache.finalize_output(&attrs_location)?;
     Ok(())
 }
 
@@ -303,16 +296,14 @@ pub mod deduper_config {
 }
 
 #[cfg(test)]
-pub mod test {
+mod test {
     use std::fs::OpenOptions;
     use std::io;
     use std::io::{BufRead, BufReader};
-    use std::path::Path;
 
     use flate2::read::MultiGzDecoder;
 
     use crate::s3_util;
-    use crate::s3_util::download_to_file;
 
     use super::*;
 
@@ -352,53 +343,39 @@ pub mod test {
     }
 
     #[test]
-    pub fn test_dedupe_by_url() -> Result<(), io::Error> {
+    fn test_dedupe_by_url() -> Result<(), io::Error> {
         let config = DeduperConfig::read_from_file("tests/config/dedupe-by-url.json").unwrap();
-        run(config);
+        run(config.clone());
 
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let s3_client = s3_util::new_client(None)?;
+        let cache = FileCache {
+            s3_client: Box::new(s3_util::new_client(None)?),
+            work: config.work_dir.clone(),
+        };
 
-        let local_output_file = "tests/work/output/dedupe-by-url.json.gz";
-        let remote_output_file = "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_by_url/head/0000.json.gz";
-        rt.block_on(download_to_file(
-            &s3_client,
-            remote_output_file,
-            Path::new(local_output_file),
-        ))?;
+        let local_output_file = cache.prepare_input("s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_by_url/head/0000.json.gz")?;
 
         compare_contents(
             "tests/data/expected/dedupe-by-url.json.gz",
-            local_output_file,
+            &local_output_file.display().to_string(),
         );
         Ok(())
     }
 
     #[test]
-    pub fn test_dedupe_paragraphs() -> Result<(), io::Error> {
+    fn test_dedupe_paragraphs() -> Result<(), io::Error> {
         let config = DeduperConfig::read_from_file("tests/config/dedupe-paragraphs.json").unwrap();
-        run(config);
+        run(config.clone());
 
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-        let s3_client = s3_util::new_client(None)?;
+        let cache = FileCache {
+            s3_client: Box::new(s3_util::new_client(None)?),
+            work: config.work_dir.clone(),
+        };
 
-        let local_output_file = "tests/work/output/dedupe-paragraphs.json.gz";
-        let remote_output_file = "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_paragraphs/head/0000.json.gz";
-        rt.block_on(download_to_file(
-            &s3_client,
-            remote_output_file,
-            Path::new(local_output_file),
-        ))?;
+        let local_output_file = cache.prepare_input("s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_paragraphs/head/0000.json.gz")?;
 
         compare_contents(
             "tests/data/expected/dedupe-paragraphs.json.gz",
-            local_output_file,
+            &local_output_file.display().to_string(),
         );
         Ok(())
     }

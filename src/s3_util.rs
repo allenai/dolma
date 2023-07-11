@@ -1,23 +1,21 @@
 use std::io;
 use std::path::Path;
-use std::str::FromStr;
 
 use aws_sdk_s3::config::Region;
 use aws_sdk_s3::error::ProvideErrorMetadata;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client as S3Client;
-use regex::Regex;
 use tokio::fs::File as TokioFile;
 
-pub fn split_path(s3_prefix: &str) -> Result<(&str, &str), &'static str> {
+// Split an s3:// url into a bucket and key
+pub fn split_url(s3_url: &str) -> Result<(&str, &str), &'static str> {
     // use a regular expression to check if s3_prefix starts with s3://
-    let re = Regex::new(r"^s3://").unwrap();
-    if !re.is_match(s3_prefix) {
+    if !s3_url.starts_with("s3://") {
         return Err("s3_prefix must start with s3://");
     }
 
     // split the s3_prefix into parts
-    let parts: Vec<&str> = s3_prefix.splitn(4, '/').collect();
+    let parts: Vec<&str> = s3_url.splitn(4, '/').collect();
 
     // if there are less than 3 parts, then the s3_prefix is invalid
     if parts.len() < 3 {
@@ -27,22 +25,21 @@ pub fn split_path(s3_prefix: &str) -> Result<(&str, &str), &'static str> {
     let bucket = parts[2];
 
     // if there are not 4 parts, then the object path is empty, so we set it to "/"
-    let object_path = if parts.len() == 4 { parts[3] } else { "/" };
+    let key = if parts.len() == 4 { parts[3] } else { "/" };
 
-    Ok((bucket, object_path))
+    Ok((bucket, key))
 }
 
 pub async fn download_to_file(
     s3_client: &S3Client,
-    prefix: &str,
+    bucket: &str,
+    key: &str,
     path: &Path,
 ) -> Result<(), io::Error> {
-    let (bucket, key) = split_path(prefix).unwrap();
-
     let result = s3_client
         .get_object()
         .bucket(bucket)
-        .key(key)
+        .key(key.clone())
         .send()
         .await
         .map_err(|e| {
@@ -64,13 +61,16 @@ pub async fn download_to_file(
     Ok(())
 }
 
-pub async fn upload_file(s3_client: &S3Client, prefix: &str, path: &Path) -> Result<(), io::Error> {
-    let (bucket, key) = split_path(prefix).unwrap();
-
+pub async fn upload_file(
+    s3_client: &S3Client,
+    path: &Path,
+    bucket: &str,
+    key: &str,
+) -> Result<(), io::Error> {
     s3_client
         .put_object()
         .bucket(bucket)
-        .key(key)
+        .key(key.clone())
         .body(ByteStream::from_path(path).await?)
         .send()
         .await
@@ -88,8 +88,11 @@ pub async fn upload_file(s3_client: &S3Client, prefix: &str, path: &Path) -> Res
     Ok(())
 }
 
-pub async fn object_size(s3_client: &S3Client, prefix: &str) -> Result<usize, io::Error> {
-    let (bucket, key) = split_path(prefix).unwrap();
+pub async fn object_size(
+    s3_client: &S3Client,
+    bucket: &str,
+    key: &str,
+) -> Result<usize, io::Error> {
     let resp = s3_client
         .head_object()
         .bucket(bucket)
@@ -117,15 +120,9 @@ pub fn find_objects_matching_patterns(
         .unwrap();
 
     let mut stream_inputs: Vec<String> = Vec::new();
-    for full_pattern in patterns.iter() {
+    for pattern in patterns.iter() {
         let start_size = stream_inputs.len();
-        let (bucket, pattern) = split_path(full_pattern).unwrap();
-
-        let mut output_prefix = String::from_str("s3://").unwrap();
-        output_prefix.push_str(bucket);
-        output_prefix.push_str("/");
-
-        let mut prefix = pattern.clone().to_string();
+        let mut prefix = pattern.clone();
         let mut suffix: Option<String> = Some("".to_owned());
         let maybe_index = pattern.chars().position(|c| c == '*');
         if let Some(index) = maybe_index {
@@ -138,12 +135,14 @@ pub fn find_objects_matching_patterns(
         let mut has_more = true;
         let mut token: Option<String> = None;
         while has_more {
+            let (bucket, key) = split_url(&prefix).unwrap();
             let resp = if token.is_some() {
+                log::info!("Listing objects in bucket={}, prefix={}", bucket, key);
                 rt.block_on(
                     s3_client
                         .list_objects_v2()
                         .bucket(bucket)
-                        .prefix(&prefix)
+                        .prefix(key)
                         .delimiter("/")
                         .continuation_token(token.unwrap())
                         .send(),
@@ -154,16 +153,15 @@ pub fn find_objects_matching_patterns(
                     s3_client
                         .list_objects_v2()
                         .bucket(bucket)
-                        .prefix(&prefix)
+                        .prefix(key)
                         .delimiter("/")
                         .send(),
                 )
                 .unwrap()
             };
             resp.contents().unwrap_or_default().iter().for_each(|obj| {
-                let mut full_output_prefix = output_prefix.clone();
-                full_output_prefix.push_str(obj.key().unwrap());
-                stream_inputs.push(full_output_prefix);
+                let s3_url = format!("s3://{}/{}", bucket, obj.key().unwrap());
+                stream_inputs.push(s3_url);
             });
             suffix.iter().for_each(|s| {
                 resp.common_prefixes()
@@ -172,10 +170,8 @@ pub fn find_objects_matching_patterns(
                     .for_each(|sub_folder| {
                         let mut full_path = sub_folder.prefix().unwrap().to_owned();
                         full_path.push_str(s);
-                        let mut full_output_prefix = output_prefix.clone();
-                        full_output_prefix.push_str(&full_path);
-
-                        stream_inputs.push(full_output_prefix);
+                        let s3_url = format!("s3://{}/{}", bucket, full_path);
+                        stream_inputs.push(s3_url);
                     });
             });
             token = resp.next_continuation_token().map(String::from);
@@ -254,16 +250,16 @@ mod test {
     }
 
     #[test]
-    fn test_split_path() -> Result<(), ()> {
+    fn test_split_url() -> Result<(), ()> {
         // test case when path is correct
-        let prefix = "s3://my-bucket/my-key";
-        let (bucket, key) = split_path(prefix).unwrap();
+        let prefix = "s3://my-bucket/my-key-dir/my-key";
+        let (bucket, key) = split_url(prefix).unwrap();
         assert_eq!(bucket, "my-bucket");
-        assert_eq!(key, "my-key");
+        assert_eq!(key, "my-key-dir/my-key");
 
         // test case when path is incorrect
         let prefix = "s3:/my-bucket/my-key";
-        let result = split_path(prefix);
+        let result = split_url(prefix);
         assert!(result.is_err());
 
         Ok(())
@@ -277,9 +273,8 @@ mod test {
             .unwrap();
         let s3_client = new_client(None)?;
 
-        let prefix =
-            "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
-        let resp = rt.block_on(object_size(&s3_client, prefix));
+        let key = "pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
+        let resp = rt.block_on(object_size(&s3_client, "ai2-llm", key));
 
         let size = resp.unwrap();
         assert_eq!(size, 25985);
@@ -296,11 +291,11 @@ mod test {
 
         let local_output_file =
             "tests/work/output/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
-        let remote_output_file: &str =
-            "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
+        let s3_path: &str = "pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
-            remote_output_file,
+            "ai2-llm",
+            s3_path,
             Path::new(local_output_file),
         ))?;
 

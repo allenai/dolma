@@ -28,25 +28,24 @@ setup:
 publish:
 	maturin publish
 
-test: setup develop setup-test test-python test-rust clean-test
+test: setup develop setup-test test-python test-rust
 
 test-python:
 	pytest -vs tests/python
 
-test-rust:
-	cargo test -- --nocapture
-
-clean-test:
+test-rust-clean:
 	rm -rf tests/work/*
 	aws s3 rm --recursive s3://ai2-llm/pretraining-data/tests/mixer/
 
-setup-test:
+test-rust-setup:
 	aws s3 cp tests/data/documents.json.gz s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz
 	aws s3 cp tests/data/pii-attributes.json.gz s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/pii/head/0000.json.gz
 	aws s3 cp tests/data/toxicity-attributes.json.gz s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/toxicity/head/0000.json.gz
 	aws s3 cp tests/data/sample-attributes.json.gz s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/sample/head/0000.json.gz
 	aws s3 cp tests/data/duplicate-paragraphs.json.gz s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/duplicate_paragraphs/head/0000.json.gz
-	aws s3 sync tests/data/expected s3://ai2-llm/pretraining-data/tests/mixer/expected  --exclude ".*" --exclude "*/.*"
+
+test-rust: test-rust-clean test-rust-setup
+	cargo test -- --nocapture
 
 develop:
 	maturin develop --extras=dev
