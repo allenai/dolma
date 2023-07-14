@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import smart_open
 import tqdm
 
-from .errors import DolmaFilterError, DolmaRetryableFailure
+from .errors import DolmaError, DolmaRetryableFailure
 from .paths import add_suffix, glob_path, make_relative, mkdir_p, sub_prefix
 
 METADATA_SUFFIX = ".done.txt"
@@ -162,7 +162,7 @@ class BaseParallelProcessor:
             except DolmaRetryableFailure as e:
                 retries_on_error -= 1
                 if retries_on_error == 0:
-                    raise DolmaFilterError from e
+                    raise DolmaError from e
 
         with smart_open.open(metadata_path, "wt") as f:
             f.write(datetime.now().isoformat())

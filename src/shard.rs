@@ -197,7 +197,7 @@ impl Shard {
 
                                 // raise an error if there if the id from attributes and the id from
                                 // the data do not match
-                                if !(attr_data["id"] != data["id"]) {
+                                if attr_data["id"] != data["id"] {
                                     return Err(io::Error::new(
                                         io::ErrorKind::Other,
                                         format!(

@@ -1,14 +1,18 @@
-class DolmaFilterError(Exception):
+class DolmaError(Exception):
     """Base class for all errors"""
 
 
-class DolmaFatalError(DolmaFilterError):
+class DolmaFatalError(DolmaError):
     """Fatal error. Abort the entire process"""
 
 
-class DolmaShardError(DolmaFilterError):
+class DolmaShardError(DolmaError):
     """Fail the shard and continue"""
 
 
-class DolmaRetryableFailure(DolmaFilterError):
+class DolmaRetryableFailure(DolmaError):
     """Retry if a shard throws this error"""
+
+
+class DolmaRustPipelineError(DolmaError):
+    """Error raised by the rust pipeline"""
