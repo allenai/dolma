@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -9,7 +8,7 @@ use crate::shard::Shard;
 
 use mixer_config::*;
 
-pub fn run(config: MixerConfig) {
+pub fn run(config: MixerConfig) -> Result<u32, u32> {
     let shards = Shard::split_streams(&config.streams).unwrap();
 
     let threadpool = ThreadPool::new(config.processes);
@@ -39,11 +38,15 @@ pub fn run(config: MixerConfig) {
     threadpool.join();
 
     let failure_count = failed_shard_count_ref.fetch_add(0, Ordering::Relaxed);
-    if failure_count > 0 {
-        log::error!("{} shards failed to process.", failure_count);
-        process::exit(1);
-    } else {
-        log::info!("Done!");
+    match failure_count {
+        0 => {
+            log::info!("Done!");
+            return Ok(failure_count);
+        }
+        _ => {
+            log::error!("{} shards failed to process.", failure_count);
+            return Err(failure_count);
+        }
     }
 }
 

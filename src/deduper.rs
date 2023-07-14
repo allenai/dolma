@@ -3,7 +3,6 @@ use std::fs::OpenOptions;
 use std::io;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
-use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -20,12 +19,7 @@ use crate::shard::FileCache;
 
 use deduper_config::*;
 
-pub fn run(config: DeduperConfig) {
-    assert!(
-        config.dedupe.paragraphs.is_some() ^ config.dedupe.documents.is_some(),
-        "Must dedupe either paragraphs or documents"
-    );
-
+pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let s3_client = s3_util::new_client(None).unwrap();
 
     let bloom_filter = BloomFilter::initialize(&config.bloom_filter).unwrap();
@@ -34,6 +28,11 @@ pub fn run(config: DeduperConfig) {
     let paths = s3_util::find_objects_matching_patterns(&s3_client, &config.documents)
         .unwrap()
         .clone();
+
+    if !(config.dedupe.paragraphs.is_some() ^ config.dedupe.documents.is_some()) {
+        log::error!("Must dedupe either paragraphs or documents");
+        return Err(paths.len() as u32);
+    }
 
     let threadpool = ThreadPool::new(config.processes);
     let failed_shard_count = AtomicU32::new(0);
@@ -61,12 +60,17 @@ pub fn run(config: DeduperConfig) {
     log::info!("Writing bloom filter to {:?}...", config.bloom_filter.file);
     bloom_filter.write_to_file(&bloom_filter_file).unwrap();
     log::info!("Bloom filter written.");
+
     let failure_count = failed_shard_count_ref.fetch_add(0, Ordering::Relaxed);
-    if failure_count > 0 {
-        log::error!("{} shards failed to process.", failure_count);
-        process::exit(1);
-    } else {
-        log::info!("Done!");
+    match failure_count {
+        0 => {
+            log::info!("Done!");
+            return Ok(failure_count);
+        }
+        _ => {
+            log::error!("{} shards failed to process.", failure_count);
+            return Err(failure_count);
+        }
     }
 }
 

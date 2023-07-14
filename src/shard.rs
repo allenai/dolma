@@ -194,11 +194,30 @@ impl Shard {
                         match attr_reader.next() {
                             Some(Ok(line)) => {
                                 let attr_data: Value = serde_json::from_str(&line)?;
-                                assert_eq!(
-                                    attr_data["id"], data["id"],
-                                    "Mismatched ids for line {} of {}: {} != {}",
-                                    line_number, &input_path.doc_path, attr_data["id"], data["id"]
-                                );
+
+                                // raise an error if there if the id from attributes and the id from
+                                // the data do not match
+                                if !(attr_data["id"] != data["id"]) {
+                                    return Err(io::Error::new(
+                                        io::ErrorKind::Other,
+                                        format!(
+                                            "Mismatched ids for line {} of {}: {} != {}",
+                                            line_number, &input_path.doc_path, attr_data["id"], data["id"]
+                                        ),
+                                    ));
+                                }
+
+                                // raise an error if there is no attribute key
+                                if !attr_data["attributes"].is_object() {
+                                    return Err(io::Error::new(
+                                        io::ErrorKind::Other,
+                                        format!(
+                                            "Missing attributes for line {} of {}",
+                                            line_number, &input_path.doc_path
+                                        ),
+                                    ));
+                                }
+
                                 for (k, v) in attr_data["attributes"].as_object().unwrap().iter() {
                                     attrs.insert(k.clone(), v.clone());
                                 }

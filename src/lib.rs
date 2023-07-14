@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::exceptions;
 
 pub mod bloom_filter;
 pub mod deduper;
@@ -10,18 +11,24 @@ use crate::deduper::deduper_config::DeduperConfig;
 use crate::mixer::mixer_config::MixerConfig;
 use std::env;
 
+
 #[pyfunction]
 fn deduper_entrypoint(config_str: &str) -> PyResult<()> {
     let config: DeduperConfig = DeduperConfig::parse_from_string(config_str).unwrap();
-    deduper::run(config);
-    Ok(())
+
+    match deduper::run(config) {
+        Ok(_) => Ok(()),
+        Err(cnt) =>  Err(exceptions::PyRuntimeError::new_err(("Failed with {} errors", cnt)))
+    }
 }
 
 #[pyfunction]
-fn mixer_entrypoint(config_str: &str) -> PyResult<()> {
+fn mixer_entrypoint(config_str: &str) -> PyResult<()> { //Result<u32, PyErr> {
     let config: MixerConfig = MixerConfig::parse_from_string(config_str).unwrap();
-    mixer::run(config);
-    Ok(())
+    match mixer::run(config) {
+        Ok(_) => Ok(()),
+        Err(cnt) =>  Err(exceptions::PyRuntimeError::new_err(("Failed with {} errors", cnt)))
+    }
 }
 
 // A Python module implemented in Rust. The name of this function must match
