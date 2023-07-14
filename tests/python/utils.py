@@ -1,17 +1,16 @@
 import os
 import re
 import uuid
-import boto3
-
 from typing import Tuple
-from dolma.core.paths import glob_path, mkdir_p
 from urllib.parse import urlparse
 
+import boto3
 from smart_open import open
 
+from dolma.core.paths import glob_path, mkdir_p
 
 DOLMA_TEST_S3_PREFIX_ENV_VAR = "DOLMA_TESTS_S3_PREFIX"
-DOLMA_TEST_S3_PREFIX_DEFAULT = "s3://dolma/tests"
+DOLMA_TEST_S3_PREFIX_DEFAULT = "s3://dolma-tests"
 
 
 def parse_s3_path(s3_path: str) -> Tuple[str, str]:
@@ -24,12 +23,12 @@ def parse_s3_path(s3_path: str) -> Tuple[str, str]:
     Returns:
         A tuple containing the bucket and key.
     """
-    if not re.match(r'^s3://[\w-]+', s3_path):
+    if not re.match(r"^s3://[\w-]+", s3_path):
         raise RuntimeError(f"Invalid s3 path: {s3_path}")
 
     # use urlparse to parse the s3 path
     parsed = urlparse(s3_path)
-    return parsed.netloc, parsed.path.lstrip('/')
+    return parsed.netloc, parsed.path.lstrip("/")
 
 
 def get_test_prefix() -> str:
@@ -50,51 +49,65 @@ def get_test_prefix() -> str:
         )
 
     # add a uuid to the test prefix to avoid collisions
-    return test_prefix.rstrip() + str(uuid.uuid4())
+    return f"{test_prefix.rstrip()}/{uuid.uuid4()}"
 
 
 def upload_test_documents(local_input: str, test_prefix: str) -> Tuple[str, str]:
-
-    remote_input = f'{test_prefix}/input/documents'
-    remote_output = f'{test_prefix}/output/documents'
+    remote_input = f"{test_prefix}/input/documents"
+    remote_output = f"{test_prefix}/output/documents"
 
     for i, local_fp in enumerate(glob_path(local_input)):
-        remote_fp = f'{remote_input}/{i:05d}.json.gz'
+        remote_fp = f"{remote_input}/{i:05d}.json.gz"
 
-        with open(local_fp, 'rb') as f, open(remote_fp, 'wb') as g:
+        with open(local_fp, "rb") as f, open(remote_fp, "wb") as g:
             g.write(f.read())
 
     return remote_input, remote_output
 
 
 def upload_test_attributes(local_attributes: str, test_prefix: str):
-    remote_attributes = f'{test_prefix}/input/attributes'
+    remote_attributes = f"{test_prefix}/input/attributes"
 
     for i, local_fp in enumerate(glob_path(local_attributes)):
-        matched = re.match(r'^(attributes|duplicate)-(\w+)', local_fp)
+        matched = re.match(r"^(attributes|duplicate)-(\w+)", local_fp)
         if not matched:
-            raise RuntimeError(f'Unexpected filename: {local_fp}')
+            raise RuntimeError(f"Unexpected filename: {local_fp}")
 
         _, name = matched.groups()
 
-        remote_fp = f'{remote_attributes}/{name}/{i:05d}.json.gz'
+        remote_fp = f"{remote_attributes}/{name}/{i:05d}.json.gz"
 
-        with open(local_fp, 'rb') as f, open(remote_fp, 'wb') as g:
+        with open(local_fp, "rb") as f, open(remote_fp, "wb") as g:
             g.write(f.read())
 
 
 def clean_test_data(test_prefix: str):
-    s3 = boto3.client('s3')
+    s3 = boto3.client("s3")
 
     bucket_name, prefix = parse_s3_path(test_prefix)
 
-    for obj in s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix).get('Contents', []):
-        s3.delete_object(Bucket=bucket_name, Key=obj['Key'])
+    for obj in s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix).get("Contents", []):
+        s3.delete_object(Bucket=bucket_name, Key=obj["Key"])
 
 
-def copy_files(src: str, dst: str) -> None:
-    if urlparse(src).scheme in ('file', ''):
-        mkdir_p(os.path.dirname(dst.lstrip('file:/')))
+def download_s3_prefix(s3_prefix: str, local_prefix: str):
+    s3 = boto3.client("s3")
 
-    with open(src, 'rb') as f, open(dst, 'wb') as g:
-        g.write(f.read())
+    bucket_name, prefix = parse_s3_path(s3_prefix)
+
+    for obj in s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix).get("Contents", []):
+        name = obj["Key"].replace(prefix, "").lstrip("/")
+        local_fp = os.path.join(local_prefix, name)
+        mkdir_p(os.path.dirname(local_fp))
+
+        s3.download_file(Bucket=bucket_name, Key=obj["Key"], Filename=local_fp)
+
+
+def upload_s3_prefix(s3_prefix: str, local_prefix: str):
+    s3 = boto3.client("s3")
+
+    bucket_name, prefix = parse_s3_path(s3_prefix)
+
+    for local_fp in glob_path(local_prefix):
+        name = local_fp.replace(local_prefix, "").lstrip("/")
+        s3.upload_file(Bucket=bucket_name, Key=f"{prefix}/{name}", Filename=local_fp)

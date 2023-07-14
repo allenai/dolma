@@ -202,7 +202,10 @@ impl Shard {
                                         io::ErrorKind::Other,
                                         format!(
                                             "Mismatched ids for line {} of {}: {} != {}",
-                                            line_number, &input_path.doc_path, attr_data["id"], data["id"]
+                                            line_number,
+                                            &input_path.doc_path,
+                                            attr_data["id"],
+                                            data["id"]
                                         ),
                                     ));
                                 }
@@ -600,7 +603,7 @@ pub fn find_objects_matching_patterns(patterns: &Vec<String>) -> Result<Vec<Stri
         let mut matches = Vec::new();
         for pattern in patterns.iter() {
             for entry in
-            glob(pattern).expect(format! {"Invalid file pattern: {}", pattern.clone()}.as_str())
+                glob(pattern).expect(format! {"Invalid file pattern: {}", pattern.clone()}.as_str())
             {
                 matches.push(entry.unwrap().to_str().unwrap().to_owned());
             }
