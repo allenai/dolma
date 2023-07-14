@@ -18,7 +18,7 @@ fn deduper_entrypoint(config_str: &str) -> PyResult<()> {
 
     match deduper::run(config) {
         Ok(_) => Ok(()),
-        Err(cnt) =>  Err(exceptions::PyRuntimeError::new_err(("Failed with {} errors", cnt)))
+        Err(cnt) =>  Err(exceptions::PyRuntimeError::new_err(format!("Failed with {} errors", cnt)))
     }
 }
 
@@ -27,7 +27,7 @@ fn mixer_entrypoint(config_str: &str) -> PyResult<()> { //Result<u32, PyErr> {
     let config: MixerConfig = MixerConfig::parse_from_string(config_str).unwrap();
     match mixer::run(config) {
         Ok(_) => Ok(()),
-        Err(cnt) =>  Err(exceptions::PyRuntimeError::new_err(("Failed with {} errors", cnt)))
+        Err(cnt) =>  Err(exceptions::PyRuntimeError::new_err(format!("Failed with {} errors", cnt)))
     }
 }
 
