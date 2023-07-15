@@ -7,7 +7,13 @@ Filters.
 """
 from typing import Iterable, List, Tuple
 
-import cld3
+try:
+    import cld3
+
+    CLD3_AVAILABLE = True
+except ImportError:
+    CLD3_AVAILABLE = False
+
 import pycld2 as cld2
 import regex
 from anyascii import anyascii
@@ -21,6 +27,10 @@ from ..core.utils import split_paragraphs
 
 @TaggerRegistry.add("cld3_en_doc_v2")
 class Cld3LanguageTagger(BaseTagger):
+    def __init__(self) -> None:
+        if not CLD3_AVAILABLE:
+            raise ImportError(f"cld3 is not install, cannot instantiate {self.__class__.__name__}")
+
     def _predict_text(self, text: str) -> Tuple[str, float]:
         pred = cld3.get_language(text)  # pyright: ignore
         score = pred.probability if pred.language == "en" else 0.0

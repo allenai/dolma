@@ -9,8 +9,8 @@ Tests for the utils module.
 
 from unittest import TestCase
 
-from dolma.core.data_types import DocResult, Document, Span, TextSlice
-from dolma.core.utils import make_variable_name, split_paragraphs, split_sentences
+from dolma.core.data_types import TextSlice
+from dolma.core.utils import split_paragraphs, split_sentences
 
 
 class TestUtils(TestCase):
