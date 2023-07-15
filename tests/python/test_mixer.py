@@ -1,10 +1,7 @@
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import List
 from unittest import TestCase
-
-import smart_open
 
 from dolma.cli.__main__ import main
 
@@ -12,6 +9,7 @@ from .utils import (
     clean_test_data,
     download_s3_prefix,
     get_test_prefix,
+    load_jsonl,
     upload_s3_prefix,
 )
 
@@ -19,11 +17,6 @@ EMAIL_SPANS = Path(__file__).parent.parent / "config/email-spans.json"
 FILTER_BY_SPANS = Path(__file__).parent.parent / "config/filter-by-spans.json"
 MIXER = Path(__file__).parent.parent / "config/mixer.json"
 PARAGRAPH_SPANS = Path(__file__).parent.parent / "config/paragraph-spans.json"
-
-
-def load_jsonl(fp: str) -> List[dict]:
-    with smart_open.open(fp, "r") as f:
-        return [json.loads(ln) for ln in f]
 
 
 class TestMixer(TestCase):

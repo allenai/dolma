@@ -1,10 +1,12 @@
+import json
 import os
 import re
 import uuid
-from typing import Tuple
+from typing import List, Tuple
 from urllib.parse import urlparse
 
 import boto3
+import smart_open
 from smart_open import open
 
 from dolma.core.paths import glob_path, mkdir_p
@@ -111,3 +113,8 @@ def upload_s3_prefix(s3_prefix: str, local_prefix: str):
     for local_fp in glob_path(local_prefix):
         name = local_fp.replace(local_prefix, "").lstrip("/")
         s3.upload_file(Bucket=bucket_name, Key=f"{prefix}/{name}", Filename=local_fp)
+
+
+def load_jsonl(fp: str) -> List[dict]:
+    with smart_open.open(fp, "r") as f:
+        return [json.loads(ln) for ln in f]
