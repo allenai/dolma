@@ -135,7 +135,12 @@ pub fn find_objects_matching_patterns(
         let mut has_more = true;
         let mut token: Option<String> = None;
         while has_more {
-            let (bucket, key) = split_url(&prefix).unwrap();
+            let (bucket, key) = match split_url(&prefix) {
+                Ok((bucket, key)) => (bucket, key),
+                Err(e) => {
+                    return Err(io::Error::new(io::ErrorKind::Other, e));
+                }
+            };
             let resp = if token.is_some() {
                 log::info!("Listing objects in bucket={}, prefix={}", bucket, key);
                 rt.block_on(

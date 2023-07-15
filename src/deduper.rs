@@ -15,17 +15,15 @@ use threadpool::ThreadPool;
 use crate::bloom_filter::BloomFilter;
 use crate::s3_util;
 use crate::shard::shard_config::WorkDirConfig;
-use crate::shard::FileCache;
+use crate::shard::{find_objects_matching_patterns, FileCache};
 
 use deduper_config::*;
 
 pub fn run(config: DeduperConfig) -> Result<u32, u32> {
-    let s3_client = s3_util::new_client(None).unwrap();
-
     let bloom_filter = BloomFilter::initialize(&config.bloom_filter).unwrap();
     let bloom_filter = Arc::new(bloom_filter);
 
-    let paths = s3_util::find_objects_matching_patterns(&s3_client, &config.documents)
+    let paths = find_objects_matching_patterns(&config.documents)
         .unwrap()
         .clone();
 
