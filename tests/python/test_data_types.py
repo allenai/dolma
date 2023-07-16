@@ -47,7 +47,7 @@ class TestSpan(TestCase):
     def test_span_to_from_spec(self):
         span = Span(start=0, end=1, type="type", score=1.0)
         with self.assertRaises(AssertionError):
-            spec = span.to_spec()
+            span.to_spec()
 
 
 class TestDocResult(TestCase):
@@ -72,7 +72,7 @@ class TestDocResult(TestCase):
 
         # from_json() requires also providing the Document
         with self.assertRaises(KeyError):
-            doc_result2 = DocResult.from_json(doc_result_json2)
+            DocResult.from_json(doc_result_json2)
         doc_result_json3 = {
             "doc": {
                 "source": "source",

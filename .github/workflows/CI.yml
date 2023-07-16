@@ -15,6 +15,84 @@ permissions:
   contents: read
 
 jobs:
+
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: [3.8]
+        task:
+          - name: Check Python style
+            run: |
+              isort --check .
+              black --check .
+
+          - name: Check Rust style
+            run: |
+              rustfmt --edition 2021 src/*.rs --check
+
+          - name: Lint
+            run: |
+              flake8 .
+
+          - name: Type check
+            run: |
+              mypy .
+
+          - name: Test
+            run: |
+              pytest -v --color=yes tests/python/
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - name: Setup system libraries
+        run:  |
+          sudo apt-get update
+          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Install Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: "x64"
+          sccache: true
+
+      - name: Create a new Python environment & install maturin
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -U pip
+          pip install maturin
+
+      - name: Install dolma wheels
+        run: |
+          source .venv/bin/activate
+          maturin develop --extras=dev
+
+      - name: ${{ matrix.task.name }}
+        run: |
+          source .venv/bin/activate
+          ${{ matrix.task.run }}
+
+      - name: Clean up
+        if: always()
+        run: |
+          source .venv/bin/activate
+          pip uninstall -y dolma
+
   build-linux:
     runs-on: ubuntu-latest
     env:

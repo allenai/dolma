@@ -18,10 +18,19 @@ from dolma.core.paths import (
     sub_suffix,
 )
 
+from .utils import clean_test_data, get_test_prefix, upload_s3_prefix
+
 LOCAL_DATA = Path(__file__).parent.parent / "data"
 
 
 class TestPaths(TestCase):
+    def setUp(self) -> None:
+        self.test_prefix = get_test_prefix()
+        upload_s3_prefix(s3_prefix=f"{self.test_prefix}", local_prefix="tests/data/expected/*")
+
+    def tearDown(self) -> None:
+        clean_test_data(self.test_prefix)
+
     def test_pathify(self):
         path = "s3://path/to/file"
         protocol, path = _pathify(path)
@@ -45,9 +54,12 @@ class TestPaths(TestCase):
         self.assertEqual(sorted(paths), sorted(expected))
 
     def test_remote_glob_path(self):
-        prefix = "s3://ai2-llm/pretraining-data/tests/mixer/expected"
-        paths = list(glob_path(f"{prefix}/*"))
-        expected = [f"{prefix}/{fn}" for fn in os.listdir(LOCAL_DATA / "expected") if fn.endswith(".json.gz")]
+        paths = list(glob_path(f"{self.test_prefix}/**/*.json.gz"))
+        expected = [
+            f"{self.test_prefix}/tests/data/expected/{fn}"
+            for fn in os.listdir(LOCAL_DATA / "expected")
+            if fn.endswith(".json.gz")
+        ]
         self.assertEqual(sorted(paths), sorted(expected))
 
     def test_local_glob_with_recursive(self):

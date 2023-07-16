@@ -83,7 +83,7 @@ class UnisegParagraphsWithDocLengthV1(UnisegParagraphsV1):
 @TaggerRegistry.add("olmo_pretokenizer_v1")
 class OlmoPreTokenizerV1(BaseTagger):
     def __init__(self) -> None:
-        self.pre_tokenizer = pre_tokenizers.Sequence(  # type: ignore
+        self.pre_tokenizer = pre_tokenizers.Sequence(
             [
                 # Split on all punctuation.
                 pre_tokenizers.Split(

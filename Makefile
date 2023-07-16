@@ -30,10 +30,11 @@ publish:
 
 test-python:
 	pytest -vs tests/python
+	rm -rf tests/work/*
 
 test-rust: test-rust-clean test-rust-setup
 	cargo test -- --nocapture
-		rm -rf tests/work/*
+	rm -rf tests/work/*
 
 develop:
 	maturin develop --extras=dev
