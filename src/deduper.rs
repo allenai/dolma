@@ -3,7 +3,6 @@ use std::fs::OpenOptions;
 use std::io;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
-use std::process;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
@@ -16,24 +15,22 @@ use threadpool::ThreadPool;
 use crate::bloom_filter::BloomFilter;
 use crate::s3_util;
 use crate::shard::shard_config::WorkDirConfig;
-use crate::shard::FileCache;
+use crate::shard::{find_objects_matching_patterns, FileCache};
 
 use deduper_config::*;
 
-pub fn run(config: DeduperConfig) {
-    assert!(
-        config.dedupe.paragraphs.is_some() ^ config.dedupe.documents.is_some(),
-        "Must dedupe either paragraphs or documents"
-    );
-
-    let s3_client = s3_util::new_client(None).unwrap();
-
+pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let bloom_filter = BloomFilter::initialize(&config.bloom_filter).unwrap();
     let bloom_filter = Arc::new(bloom_filter);
 
-    let paths = s3_util::find_objects_matching_patterns(&s3_client, &config.documents)
+    let paths = find_objects_matching_patterns(&config.documents)
         .unwrap()
         .clone();
+
+    if !(config.dedupe.paragraphs.is_some() ^ config.dedupe.documents.is_some()) {
+        log::error!("Must dedupe either paragraphs or documents");
+        return Err(paths.len() as u32);
+    }
 
     let threadpool = ThreadPool::new(config.processes);
     let failed_shard_count = AtomicU32::new(0);
@@ -61,12 +58,17 @@ pub fn run(config: DeduperConfig) {
     log::info!("Writing bloom filter to {:?}...", config.bloom_filter.file);
     bloom_filter.write_to_file(&bloom_filter_file).unwrap();
     log::info!("Bloom filter written.");
+
     let failure_count = failed_shard_count_ref.fetch_add(0, Ordering::Relaxed);
-    if failure_count > 0 {
-        log::error!("{} shards failed to process.", failure_count);
-        process::exit(1);
-    } else {
-        log::info!("Done!");
+    match failure_count {
+        0 => {
+            log::info!("Done!");
+            return Ok(failure_count);
+        }
+        _ => {
+            log::error!("{} shards failed to process.", failure_count);
+            return Err(failure_count);
+        }
     }
 }
 
@@ -292,91 +294,5 @@ pub mod deduper_config {
             let config: DeduperConfig = serde_json::from_str(s)?;
             Ok(config)
         }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::fs::OpenOptions;
-    use std::io;
-    use std::io::{BufRead, BufReader};
-
-    use flate2::read::MultiGzDecoder;
-
-    use crate::s3_util;
-
-    use super::*;
-
-    fn compare_contents(expected: &str, actual: &str) {
-        let expected_lines = BufReader::new(MultiGzDecoder::new(
-            OpenOptions::new()
-                .read(true)
-                .write(false)
-                .create(false)
-                .open(expected)
-                .unwrap(),
-        ))
-        .lines()
-        .collect::<Vec<Result<String, io::Error>>>();
-        let actual_lines = BufReader::new(MultiGzDecoder::new(
-            OpenOptions::new()
-                .read(true)
-                .write(false)
-                .create(false)
-                .open(actual)
-                .unwrap(),
-        ))
-        .lines()
-        .collect::<Vec<Result<String, io::Error>>>();
-
-        assert_eq!(
-            expected_lines.len(),
-            actual_lines.len(),
-            "Wrong number of output documents"
-        );
-
-        for (actual, expected) in std::iter::zip(expected_lines, actual_lines) {
-            let actual = actual.unwrap();
-            let expected = expected.unwrap();
-            assert_eq!(actual, expected);
-        }
-    }
-
-    #[test]
-    fn test_dedupe_by_url() -> Result<(), io::Error> {
-        let config = DeduperConfig::read_from_file("tests/config/dedupe-by-url.json").unwrap();
-        run(config.clone());
-
-        let cache = FileCache {
-            s3_client: Box::new(s3_util::new_client(None)?),
-            work: config.work_dir.clone(),
-        };
-
-        let local_output_file = cache.prepare_input("s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_by_url/head/0000.json.gz")?;
-
-        compare_contents(
-            "tests/data/expected/dedupe-by-url.json.gz",
-            &local_output_file.display().to_string(),
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_dedupe_paragraphs() -> Result<(), io::Error> {
-        let config = DeduperConfig::read_from_file("tests/config/dedupe-paragraphs.json").unwrap();
-        run(config.clone());
-
-        let cache = FileCache {
-            s3_client: Box::new(s3_util::new_client(None)?),
-            work: config.work_dir.clone(),
-        };
-
-        let local_output_file = cache.prepare_input("s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/attributes/dedupe_paragraphs/head/0000.json.gz")?;
-
-        compare_contents(
-            "tests/data/expected/dedupe-paragraphs.json.gz",
-            &local_output_file.display().to_string(),
-        );
-        Ok(())
     }
 }

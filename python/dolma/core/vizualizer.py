@@ -1,3 +1,6 @@
+# flake8: noqa
+# type: ignore
+
 import argparse
 import json
 import os

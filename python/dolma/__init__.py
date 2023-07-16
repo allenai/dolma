@@ -9,12 +9,19 @@ warnings.filterwarnings("ignore", message=r".*pkg_resources is deprecated.*", ca
 # must import taggers to register them
 # we import the rust extension here and wrap it in a python module
 from . import dolma as _dolma  # type: ignore   # noqa: E402
-from . import taggers  # noqa: E402
+from .core.errors import DolmaRustPipelineError  # noqa: E402
+from .taggers import *  # noqa: E402
 
 
 def deduper(config: dict):
-    return _dolma.deduper_entrypoint(json.dumps(config))
+    try:
+        _dolma.deduper_entrypoint(json.dumps(config))
+    except RuntimeError as e:
+        raise DolmaRustPipelineError(f"Error running deduper: {e}") from e
 
 
 def mixer(config: dict):
-    return _dolma.mixer_entrypoint(json.dumps(config))
+    try:
+        _dolma.mixer_entrypoint(json.dumps(config))
+    except RuntimeError as e:
+        raise DolmaRustPipelineError(f"Error running mixer: {e}") from e

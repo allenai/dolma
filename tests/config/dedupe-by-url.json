@@ -1,10 +1,10 @@
 {
   "documents": [
-    "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/documents/*/0000.json.gz"
+    "tests/data/provided/documents/000.json.gz"
   ],
   "work_dir": {
-    "input": "tests/work/url/input",
-    "output": "tests/work/url/output"
+    "input": "tests/work/temp/dedupe-url/input",
+    "output": "tests/work/temp/dedupe-url/output"
   },
   "dedupe": {
     "name": "dedupe_by_url",
@@ -14,7 +14,7 @@
     }
   },
   "bloom_filter": {
-    "file": "tests/work/url_bloom_filter.bin",
+    "file": "tests/work/dedupe_by_url/url_bloom_filter.bin",
     "size_in_bytes": 0,
     "read_only": false,
     "estimated_doc_count": 1000,

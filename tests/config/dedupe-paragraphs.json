@@ -1,10 +1,10 @@
 {
   "documents": [
-    "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/documents/*/0000.json.gz"
+    "tests/data/provided/doc*/000.json.gz"
   ],
   "work_dir": {
-    "input": "tests/work/para/input",
-    "output": "tests/work/para/output"
+    "input": "tests/work/temp/dedupe-para/input",
+    "output": "tests/work/temp/dedupe-para/output"
   },
   "dedupe": {
     "name": "dedupe_paragraphs",

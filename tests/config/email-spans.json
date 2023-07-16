@@ -1,12 +1,12 @@
 {
   "streams": [
     {
-      "name": "email-spans-test",
+      "name": "email-spans",
       "documents": [
-        "s3://ai2-llm/pretraining-data/tests/mixer/inputs/v0/documents/*/0000.json.gz"
+        "tests/data/provided/documents/*.json.gz"
       ],
       "output": {
-        "path": "s3://ai2-llm/pretraining-data/tests/mixer/outputs/v1/documents/head",
+        "path": "tests/work/output/email-spans",
         "max_size_in_bytes": 100000
       },
       "attributes": [
@@ -27,8 +27,8 @@
     }
   ],
   "work_dir": {
-    "input": "tests/work/email-spans/input",
-    "output": "tests/work/email-spans/output"
+    "input": "tests/work/temp/email-spans/input",
+    "output": "tests/work/temp/email-spans/output"
   },
   "processes": 1
 }
