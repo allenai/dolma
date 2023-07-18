@@ -16,6 +16,8 @@ class InputSpec(Struct):
     text: str
     source: str
     version: Optional[str] = None
+    # ignoring metadata for now; taggers run on text only
+    # metadata: Optional[Dict[str, Any]] = None
 
 
 class OutputSpec(Struct):
@@ -48,10 +50,8 @@ class Document:
         return {"source": self.source, "version": self.version, "id": self.id, "text": self.text}
 
     def __str__(self) -> str:
-        return (
-            str(self.__class__.__name__)
-            + f"(source={repr(self.source)},version={repr(self.version)},id={repr(self.id)},text={repr(self.text)})"
-        )
+        attributes_string = ",".join([f"{k}:{repr(v)}" for k, v in self.to_json()])
+        return f"{self.__class__.__name__}({attributes_string})"
 
 
 class Span:

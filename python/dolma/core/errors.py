@@ -16,3 +16,7 @@ class DolmaRetryableFailure(DolmaError):
 
 class DolmaRustPipelineError(DolmaError):
     """Error raised by the rust pipeline"""
+
+
+class DolmaConfigError(DolmaError):
+    """Error raised while parsing config"""
