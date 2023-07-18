@@ -1,6 +1,7 @@
 import inspect
 import itertools
 import multiprocessing
+import os
 import pickle
 import random
 import re
@@ -316,9 +317,6 @@ class BaseParallelProcessor:
         all_source_paths, all_destination_paths, all_metadata_paths = [], [], []
 
         for src_prefix, dst_prefix, meta_prefix in zip(self.src_prefixes, self.dst_prefixes, self.meta_prefixes):
-            mkdir_p(dst_prefix)
-            mkdir_p(meta_prefix)
-
             prefix, rel_paths = make_relative(list(glob_path(src_prefix)))
             random.shuffle(rel_paths)
 
@@ -333,6 +331,14 @@ class BaseParallelProcessor:
                 if not self._valid_path(path):
                     continue
 
+                # get relative path from source prefix
+                rel_dir, _ = os.path.splitext(path)
+
+                # make sure destination/metadata directories exists
+                mkdir_p(os.path.join(dst_prefix, rel_dir))
+                mkdir_p(os.path.join(meta_prefix, rel_dir))
+
+                # create new paths to pass to taggers
                 all_source_paths.append(add_suffix(prefix, path))
                 all_destination_paths.append(add_suffix(dst_prefix, path))
                 all_metadata_paths.append(add_suffix(meta_prefix, path) + METADATA_SUFFIX)

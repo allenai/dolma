@@ -12,6 +12,8 @@ from .data_types import DocResult, Document, InputSpec
 
 
 class BaseTagger:
+    FIELDS: List[str] = ["text"]
+
     @classmethod
     def train(cls, *args, **kwargs):
         raise RuntimeError("This tagger does not support training")
