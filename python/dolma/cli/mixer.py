@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from omegaconf import OmegaConf as om
-
 from dolma import mixer
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig
@@ -117,7 +115,7 @@ class MixerCli(BaseCli):
             }
 
             if stream_config.output.discard_fields:
-                stream_config_dict["discard_fields"] = om.to_container(stream_config.output.discard_fields)
+                stream_config_dict["output"]["discard_fields"] = list(stream_config.output.discard_fields)
 
             if len(stream_config_dict["documents"]) == 0:
                 raise ValueError("No documents to mix")

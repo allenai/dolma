@@ -332,7 +332,7 @@ class BaseParallelProcessor:
                     continue
 
                 # get relative path from source prefix
-                rel_dir, _ = os.path.splitext(path)
+                rel_dir, _ = os.path.split(path)
 
                 # make sure destination/metadata directories exists
                 mkdir_p(os.path.join(dst_prefix, rel_dir))
