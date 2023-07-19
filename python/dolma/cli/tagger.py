@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 from typing import List, Optional
-
 from omegaconf import MISSING
 
 from dolma.cli import BaseCli, field, print_config
@@ -9,6 +8,10 @@ from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
 from dolma.core.runtime import create_and_run_tagger
+from dolma.core.registry import TaggerRegistry
+
+from rich.console import Console
+from rich.table import Table
 
 
 @dataclass
@@ -48,6 +51,10 @@ class TaggerConfig:
 
 class TaggerCli(BaseCli):
     CONFIG = TaggerConfig
+    DESCRIPTION = (
+        "Tag documents or spans of documents using one or more taggers. "
+        "For a list of available taggers, run `dolma list`."
+    )
 
     @classmethod
     def run(cls, parsed_config: TaggerConfig):
@@ -80,3 +87,26 @@ class TaggerCli(BaseCli):
             experiment=parsed_config.experiment,
             debug=parsed_config.debug,
         )
+
+
+@dataclass
+class ListTaggerConfig:
+    ...
+
+
+class ListTaggerCli(BaseCli):
+    CONFIG = ListTaggerConfig
+    DESCRIPTION = "List available taggers."
+
+    @classmethod
+    def run(cls, parsed_config: ListTaggerConfig):
+        table = Table(title="dolma taggers", style="bold")
+        table.add_column("name", justify="left", style="cyan")
+        table.add_column("class", justify="left", style="magenta")
+
+        for tagger_name, tagger_cls in sorted(TaggerRegistry.taggers()):
+            tagger_repr = f"{tagger_cls.__module__}.{tagger_cls.__name__}"
+            table.add_row(tagger_name, tagger_repr)
+
+        console = Console()
+        console.print(table)
