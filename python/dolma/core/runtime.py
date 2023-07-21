@@ -22,7 +22,7 @@ import smart_open
 from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor
-from .paths import join_path, make_relative, split_glob, split_path
+from .paths import join_path, make_relative, mkdir_p, split_glob, split_path
 from .registry import TaggerRegistry
 from .utils import make_variable_name
 
@@ -155,6 +155,11 @@ def _make_output_streams(
     with ExitStack() as stack:
         for key, loc in taggers_paths.items():
             if loc.path not in opened:
+                # make sure the parent directory exists
+                prot, path = split_path(loc.path)
+                parent = join_path(prot, path[:-1])
+                mkdir_p(parent)
+
                 # open a new file and create a new encoder
                 io = stack.enter_context(smart_open.open(loc.path, **open_kwargs))
                 encoder = msgspec.json.Encoder()
