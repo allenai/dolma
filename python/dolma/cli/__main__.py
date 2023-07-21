@@ -6,12 +6,14 @@ from yaml import safe_load
 
 from .deduper import DeduperCli
 from .mixer import MixerCli
-from .tagger import TaggerCli
+from .tagger import ListTaggerCli, TaggerCli
 
 AVAILABLE_COMMANDS = {
     "dedupe": DeduperCli,
     "mix": MixerCli,
     "tag": TaggerCli,
+    "list": ListTaggerCli
+    # following functionality is not yet implemented
     # "visualize": None,
     # "browse": None,
     # "stats": None,
@@ -38,7 +40,7 @@ def main(argv: Optional[List[str]] = None):
 
     for command, cli in AVAILABLE_COMMANDS.items():
         if cli is not None:
-            cli.make_parser(subparsers.add_parser(command))
+            cli.make_parser(subparsers.add_parser(command, help=cli.DESCRIPTION))
 
     args = parser.parse_args(argv)
 

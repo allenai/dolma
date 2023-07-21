@@ -1,19 +1,34 @@
 import logging
 import multiprocessing
 import tempfile
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from queue import Queue
-from typing import Dict, List, Union
+from typing import (
+    IO,
+    Any,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    NamedTuple,
+    Optional,
+    Set,
+    Union,
+)
 
 import msgspec
 import smart_open
 
-from .data_types import InputSpec, OutputSpec
+from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor
-from .paths import join_path, make_relative, split_glob, split_path
+from .paths import join_path, make_relative, mkdir_p, split_glob, split_path
 from .registry import TaggerRegistry
 from .utils import make_variable_name
+
+# this placeholder gets used when a user has provided no experiment name, and we want to use taggers'
+# names as experiment names.
+EXPERIMENT_PLACEHOLDER_NAME = "_______EXPERIMENT_PLACEHOLDER_NAME_______"
 
 
 def _make_paths_from_substitution(paths: List[str], find: str, replace: str) -> List[str]:
@@ -82,6 +97,106 @@ def _make_paths_from_prefix(paths: List[str], prefix: str) -> List[str]:
     return new_paths
 
 
+class TaggerOutputLocation(NamedTuple):
+    exp: str
+    name: str
+    path: str
+
+
+class TaggerOutputIO(NamedTuple):
+    exp: str
+    taggers: Set[str]
+    path: str
+    io: IO
+    encoder: msgspec.json.Encoder
+
+    def write(self, d: OutputSpec) -> None:
+        enc = self.encoder.encode(d)
+        self.io.write(enc.decode("utf-8") + "\n")
+
+
+def _determine_output_paths_for_taggers(
+    experiment_name: str, destination: str, taggers: Iterable[str]
+) -> Dict[str, TaggerOutputLocation]:
+    """Utility function to derive the paths to which taggers output should be written.
+
+    If experiment_name is the placeholder name, then the name of each tagger will be used as part of the
+    destination path. Otherwise, the destination path will be used for all taggers."""
+
+    if experiment_name == EXPERIMENT_PLACEHOLDER_NAME:
+        return {
+            tagger_name: TaggerOutputLocation(
+                exp=make_variable_name(tagger_name),
+                name=make_variable_name(tagger_name),
+                path=destination.replace(EXPERIMENT_PLACEHOLDER_NAME, tagger_name),
+            )
+            for tagger_name in taggers
+        }
+    else:
+        return {
+            tagger_name: TaggerOutputLocation(
+                exp=make_variable_name(experiment_name), name=make_variable_name(tagger_name), path=destination
+            )
+            for tagger_name in taggers
+        }
+
+
+@contextmanager
+def _make_output_streams(
+    taggers_paths: Dict[str, TaggerOutputLocation], **open_kwargs: Any
+) -> Generator[Dict[str, TaggerOutputIO], None, None]:
+    """Utility function to open paths for taggers.
+
+    It is designed NOT to open duplicate paths if multiple taggers are writing to the same file.
+    """
+    # keep track of the paths that have been opened
+    opened: Dict[str, TaggerOutputIO] = {}
+
+    with ExitStack() as stack:
+        for key, loc in taggers_paths.items():
+            if loc.path not in opened:
+                # make sure the parent directory exists
+                prot, path = split_path(loc.path)
+                parent = join_path(prot, path[:-1])
+                mkdir_p(parent)
+
+                # open a new file and create a new encoder
+                io = stack.enter_context(smart_open.open(loc.path, **open_kwargs))
+                encoder = msgspec.json.Encoder()
+                opened[loc.path] = TaggerOutputIO(
+                    exp=loc.exp, taggers=set(), path=loc.path, io=io, encoder=encoder
+                )
+
+            # keep track of which taggers are writing to this paths
+            opened[loc.path].taggers.add(key)
+
+        yield opened
+
+
+@contextmanager
+def _write_sample_to_streams(
+    taggers_paths: Dict[str, TaggerOutputLocation],
+    output_streams: Dict[str, TaggerOutputIO],
+    row: InputSpec,
+) -> Generator[Dict[str, TaggerOutputDictType], None, None]:
+    """Utility function to write a sample to the output streams; yields a dictionary that should be used
+    to collect the output of each tagger."""
+
+    samples_collectors: Dict[str, TaggerOutputDictType] = {}
+    yield samples_collectors
+
+    attributes_by_stream: Dict[str, TaggerOutputDictType] = {}
+    for tagger_name, tagger_data in samples_collectors.items():
+        tagger_output = taggers_paths[tagger_name]
+        for tagger_key, tagger_value in tagger_data.items():
+            tagger_key = f"{tagger_output.exp}__{tagger_output.name}__{make_variable_name(tagger_key)}"
+            attributes_by_stream.setdefault(tagger_output.path, {})[tagger_key] = tagger_value
+
+    for stream_path, attributes in attributes_by_stream.items():
+        output = OutputSpec(source=row.source, id=row.id, attributes=attributes)
+        output_streams[stream_path].write(output)
+
+
 class TaggerProcessor(BaseParallelProcessor):
     @classmethod
     def get_logger(cls) -> logging.Logger:
@@ -120,10 +235,13 @@ class TaggerProcessor(BaseParallelProcessor):
         taggers = {make_variable_name(t): TaggerRegistry.get(t)() for t in taggers_names}
 
         # get name of experiment
-        experiment_name = kwargs.get("experiment_name", None)
-        if experiment_name is None:
+        if (experiment_name := kwargs.get("experiment_name", None)) is None:
             raise RuntimeError("Experiment name not in kwargs, this is a bug! Please report it.")
-        experiment_name = make_variable_name(experiment_name)
+
+        # this is the dictionary that will hold the output of each tagger
+        taggers_paths = _determine_output_paths_for_taggers(
+            experiment_name=experiment_name, destination=destination_path, taggers=taggers
+        )
 
         # skip on failure
         skip_on_failure = kwargs.get("skip_on_failure", False)
@@ -136,32 +254,24 @@ class TaggerProcessor(BaseParallelProcessor):
         # bar
         docs_cnt = 0
 
-        # creating dedicated encoders/decoders speeds up the process
-        encoder = msgspec.json.Encoder()
+        # creating dedicated decoder speeds up the process
         decoder = msgspec.json.Decoder(InputSpec)
 
-        with ExitStack() as stack:
+        with smart_open.open(source_path, "rt", encoding="utf-8") as in_stream, _make_output_streams(
+            taggers_paths=taggers_paths, mode="wt", encoding="utf-8"
+        ) as output_streams:
             try:
-                # open each file for reading and writing. We use open_file_for_read to handle s3 paths and
-                # download the file locally if needed, while gzip.open is used to read and write gzipped files.
-                in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))
-                out_stream = stack.enter_context(smart_open.open(destination_path, "wt", encoding="utf-8"))
-
                 for raw in in_stream:
                     row = decoder.decode(raw)
 
-                    # running the taggers and merging them flat
-                    attributes = {}
-                    for tagger_name, tagger in taggers.items():
-                        for key_name, key_value in tagger.tag(row).items():
-                            key_name = f"{experiment_name}__{tagger_name}__{make_variable_name(key_name)}"
-                            attributes[key_name] = key_value
-
-                    # make output file
-                    output = OutputSpec(source=row.source, id=row.id, attributes=attributes)
-
-                    # write the output to the output file
-                    out_stream.write(encoder.encode(output).decode("utf-8") + "\n")
+                    with _write_sample_to_streams(
+                        taggers_paths=taggers_paths,
+                        output_streams=output_streams,
+                        row=row,
+                    ) as samples_collectors:
+                        # we run the taggers; the context manager will write the output to the output streams
+                        for tagger_name, tagger in taggers.items():
+                            samples_collectors[tagger_name] = tagger.tag(row)
 
                     # increment the number of documents processed so far
                     docs_cnt += 1
@@ -194,8 +304,8 @@ class TaggerProcessor(BaseParallelProcessor):
 
 def create_and_run_tagger(
     documents: List[str],
-    experiment: str,
     taggers: List[str],
+    experiment: Optional[str] = None,
     destination: Union[None, str, List[str]] = None,
     metadata: Union[None, str, List[str]] = None,
     debug: bool = False,
@@ -210,9 +320,10 @@ def create_and_run_tagger(
     Args:
         documents (List[str]): List of documents to run the taggers on. Each element of the list is a path to
             a file containing documents in json lines format, or a glob pattern that matches such files.
-        experiment (str): The name of the experiment. This will be used to prefix the names of the attributes,
-            as well as the name of the directory where the outputs will be saved in `destination`.
         taggers (List[str]): List of taggers to run. Each element of the list is the name of a tagger.
+        experiment (str, optional): The name of the experiment. This will be used to prefix the names of the
+            attributes, as well as the name of the directory where the outputs will be saved in `destination`.
+            If not provided, the name of each tagger will be used as the experiment name.
         destination (Union[None, str, List[str]], optional): The path where the outputs will be saved. If
             `None`, the outputs will be saved in a directory parallel to the directory containing the
             documents, with the same name as `experiment`. If a string, paths corresponding to each element
@@ -230,6 +341,12 @@ def create_and_run_tagger(
         num_processes (int, optional): Number of processes to use. Defaults to 1.
     """
 
+    # use placeholder experiment name if none is provided; raise an error if the placeholder name is used
+    if experiment == EXPERIMENT_PLACEHOLDER_NAME:
+        raise RuntimeError(f"Experiment name cannot be {EXPERIMENT_PLACEHOLDER_NAME}; reserved for internal use.")
+    elif experiment is None:
+        experiment = EXPERIMENT_PLACEHOLDER_NAME
+
     if destination is None:
         try:
             destination = _make_paths_from_substitution(documents, "documents", f"attributes/{experiment}")
@@ -237,7 +354,7 @@ def create_and_run_tagger(
             raise RuntimeError("Could not make destination paths from documents paths") from e
     elif isinstance(destination, str):
         try:
-            destination = _make_paths_from_prefix(documents, join_path(destination, experiment))
+            destination = _make_paths_from_prefix(documents, join_path(None, destination, experiment))
         except Exception as e:
             raise RuntimeError(f"Could not make destination paths from prefix {destination}") from e
 

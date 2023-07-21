@@ -6,9 +6,12 @@ Filters.
 
 """
 from abc import abstractmethod
-from typing import Dict, List, Union
+from typing import List
 
-from .data_types import DocResult, Document, InputSpec
+from .data_types import DocResult, Document, InputSpec, TaggerOutputDictType
+
+# digits after the decimal point
+TAGGER_SCORE_PRECISION = 5
 
 
 class BaseTagger:
@@ -26,12 +29,13 @@ class BaseTagger:
     def predict(self, doc: Document) -> DocResult:
         raise NotImplementedError
 
-    def tag(self, row: InputSpec) -> Dict[str, List[List[Union[int, float]]]]:
+    def tag(self, row: InputSpec) -> TaggerOutputDictType:
         """Internal function that is used by the tagger to get data"""
         doc = Document(source=row.source, version=row.version, id=row.id, text=row.text)
         doc_result = self.predict(doc)
 
-        tagger_output: Dict[str, list] = {}
+        tagger_output: TaggerOutputDictType = {}
         for span in doc_result.spans:
-            tagger_output.setdefault(span.type, []).append([span.start, span.end, round(float(span.score), 5)])
+            output = (span.start, span.end, round(float(span.score), TAGGER_SCORE_PRECISION))
+            tagger_output.setdefault(span.type, []).append(output)
         return tagger_output

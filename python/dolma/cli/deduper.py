@@ -74,6 +74,7 @@ class DeduperConfig:
 
 class DeduperCli(BaseCli):
     CONFIG = DeduperConfig
+    DESCRIPTION = "Deduplicate documents or paragraphs using a bloom filter."
 
     @classmethod
     def run(cls, parsed_config: DeduperConfig):

@@ -17,7 +17,15 @@ import smart_open
 import tqdm
 
 from .errors import DolmaError, DolmaRetryableFailure
-from .paths import add_suffix, glob_path, make_relative, mkdir_p, sub_prefix
+from .paths import (
+    add_suffix,
+    glob_path,
+    join_path,
+    make_relative,
+    mkdir_p,
+    split_path,
+    sub_prefix,
+)
 
 METADATA_SUFFIX = ".done.txt"
 
@@ -115,10 +123,6 @@ class BaseParallelProcessor:
 
         if any("*" in p for p in itertools.chain(self.dst_prefixes, self.meta_prefixes)):
             raise ValueError("Destination and metadata prefixes cannot contain wildcards.")
-
-        for i in range(len(self.src_prefixes)):
-            # adding a wildcard to the end of the each source prefix if it doesn't have one
-            self.src_prefixes[i] = add_suffix(p, "*") if "*" not in (p := self.src_prefixes[i]) else p
 
     @classmethod
     def process_single(
@@ -317,9 +321,24 @@ class BaseParallelProcessor:
         all_source_paths, all_destination_paths, all_metadata_paths = [], [], []
 
         for src_prefix, dst_prefix, meta_prefix in zip(self.src_prefixes, self.dst_prefixes, self.meta_prefixes):
-            prefix, rel_paths = make_relative(list(glob_path(src_prefix)))
+            current_source_prefixes = sorted(glob_path(src_prefix))
+
+            if len(current_source_prefixes) > 1:
+                # make relative only makes sense if there is more than one path; otherwise, it's unclear
+                # what a relative path would be.
+                prefix, rel_paths = make_relative(current_source_prefixes)
+            elif len(current_source_prefixes) == 1:
+                # in case we have a single path, we can just use the path minus the file as the shared prefix,
+                # and the file as the relative path
+                prot, parts = split_path(current_source_prefixes[0])
+                prefix, rel_paths = join_path(prot, *parts[:-1]), [parts[-1]]
+            else:
+                raise ValueError(f"Could not find any files matching {src_prefix}")
+
+            # shuffle the order of the files so time estimation in progress bars is more accurate
             random.shuffle(rel_paths)
 
+            # get a list of which metadata files already exist
             existing_metadata_names = set(
                 sub_prefix(path, meta_prefix).strip(METADATA_SUFFIX) for path in glob_path(meta_prefix)
             )

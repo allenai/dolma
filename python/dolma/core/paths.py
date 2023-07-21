@@ -19,12 +19,22 @@ __all__ = [
     "join_path",
     "is_glob",
     "split_glob",
+    "partition_path",
 ]
 
 
 FS_KWARGS: Dict[str, Dict[str, Any]] = {
     "": {"auto_mkdir": True},
 }
+
+
+RE_ANY_ESCAPE = re.compile(r"(?<!\\)(\*\?\[\])")
+RE_GLOB_STAR_ESCAPE = re.compile(r"(?<!\\)\*")
+RE_GLOB_ONE_ESCAPE = re.compile(r"(?<!\\)\?")
+RE_GLOB_OPEN_ESCAPE = re.compile(r"(?<!\\)\[")
+RE_GLOB_CLOSE_ESCAPE = re.compile(r"(?<!\\)\]")
+ESCAPE_SYMBOLS_MAP = {"*": "\u2581", "?": "\u2582", "[": "\u2583", "]": "\u2584"}
+REVERSE_ESCAPE_SYMBOLS_MAP = {v: k for k, v in ESCAPE_SYMBOLS_MAP.items()}
 
 
 def _get_fs(path: Union[Path, str]) -> AbstractFileSystem:
@@ -46,12 +56,11 @@ def _escape_glob(s: Union[str, Path]) -> str:
     """
     Escape glob characters in a string.
     """
-    r"(?<!\\)[*?[\]]"
     s = str(s)
-    s = re.sub(r"(?<!\\)\*", "\u2581", s)
-    s = re.sub(r"(?<!\\)\?", "\u2582", s)
-    s = re.sub(r"(?<!\\)\[", "\u2583", s)
-    s = re.sub(r"(?<!\\)\]", "\u2584", s)
+    s = RE_GLOB_STAR_ESCAPE.sub(ESCAPE_SYMBOLS_MAP["*"], s)
+    s = RE_GLOB_ONE_ESCAPE.sub(ESCAPE_SYMBOLS_MAP["?"], s)
+    s = RE_GLOB_OPEN_ESCAPE.sub(ESCAPE_SYMBOLS_MAP["["], s)
+    s = RE_GLOB_CLOSE_ESCAPE.sub(ESCAPE_SYMBOLS_MAP["]"], s)
     return s
 
 
@@ -60,10 +69,8 @@ def _unescape_glob(s: Union[str, Path]) -> str:
     Unescape glob characters in a string.
     """
     s = str(s)
-    s = re.sub("\u2581", "*", s)
-    s = re.sub("\u2582", "?", s)
-    s = re.sub("\u2583", "[", s)
-    s = re.sub("\u2584", "]", s)
+    for k, v in REVERSE_ESCAPE_SYMBOLS_MAP.items():
+        s = s.replace(k, v)
     return s
 
 
@@ -87,6 +94,26 @@ def _unpathify(protocol: str, path: Path) -> str:
     return path_str
 
 
+def partition_path(path: str) -> Tuple[str, Tuple[str, ...], Tuple[str, ...]]:
+    """Partition a path into its protocol, symbols before a glob, and symbols after a glob."""
+    # split the path into its protocol and path components
+    prot, path_obj = _pathify(path)
+
+    # we need to first figure out if this path has a glob by checking if any of the escaped symbols for
+    # globs are in the path.
+    glob_locs = [i for i, p in enumerate(path_obj.parts) if any(c in p for c in REVERSE_ESCAPE_SYMBOLS_MAP)]
+
+    # make the path components before the glob
+    pre_glob_path = path_obj.parts[: glob_locs[0]] if glob_locs else path_obj.parts
+    pre_glob_path = tuple(_unescape_glob(p) for p in pre_glob_path)
+
+    # make the path components after the glob
+    post_glob_path = path_obj.parts[glob_locs[0] + 1 :] if glob_locs else ()
+    post_glob_path = tuple(_unescape_glob(p) for p in post_glob_path)
+
+    return prot, pre_glob_path, post_glob_path
+
+
 def split_path(path: str) -> Tuple[str, Tuple[str, ...]]:
     """
     Split a path into its protocol and path components.
@@ -95,7 +122,7 @@ def split_path(path: str) -> Tuple[str, Tuple[str, ...]]:
     return protocol, tuple(_unescape_glob(p) for p in _path.parts)
 
 
-def join_path(protocol: str, *parts: Union[str, Iterable[str]]) -> str:
+def join_path(protocol: Union[str, None], *parts: Union[str, Iterable[str]]) -> str:
     """
     Join a path from its protocol and path components.
     """
@@ -106,13 +133,16 @@ def join_path(protocol: str, *parts: Union[str, Iterable[str]]) -> str:
     return _unescape_glob(path)
 
 
-def glob_path(path: Union[Path, str], hidden_files: bool = False) -> Iterator[str]:
+def glob_path(path: Union[Path, str], hidden_files: bool = False, autoglob_dirs: bool = True) -> Iterator[str]:
     """
     Expand a glob path into a list of paths.
     """
     path = str(path)
     protocol = urlparse(path).scheme
     fs = _get_fs(path)
+
+    if fs.isdir(path) and autoglob_dirs:
+        path = join_path(None, path, "*")
 
     for gl in fs.glob(path):
         gl = str(gl)
@@ -191,14 +221,13 @@ def make_relative(paths: List[str]) -> Tuple[str, List[str]]:
     if len(paths) == 0:
         raise ValueError("Cannot make relative path of empty list")
 
-    common_prot, common_parts = (p := _pathify(paths[0]))[0], p[1].parts
+    common_prot, common_parts, _ = partition_path(paths[0])
 
     for path in paths:
-        current_prot, current_path = _pathify(path)
+        current_prot, current_parts, _ = partition_path(path)
         if current_prot != common_prot:
             raise ValueError(f"Protocols of {path} and {paths[0]} do not match")
 
-        current_parts = current_path.parts
         for i in range(min(len(common_parts), len(current_parts))):
             if common_parts[i] != current_parts[i]:
                 common_parts = common_parts[:i]

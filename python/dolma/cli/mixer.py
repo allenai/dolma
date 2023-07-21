@@ -54,6 +54,7 @@ class MixerConfig:
 
 class MixerCli(BaseCli):
     CONFIG = MixerConfig
+    DESCRIPTION = "Mix documents from multiple streams."
 
     @classmethod
     def run(cls, parsed_config: MixerConfig):

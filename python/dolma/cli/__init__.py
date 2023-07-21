@@ -115,6 +115,7 @@ def print_config(config: Any, console: Optional[Console] = None) -> None:
 
 class BaseCli(Generic[D]):
     CONFIG: Type[D]
+    DESCRIPTION: Optional[str] = None
 
     @classmethod
     def make_parser(cls, parser: A) -> A:
