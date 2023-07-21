@@ -6,7 +6,7 @@ from yaml import safe_load
 
 from .deduper import DeduperCli
 from .mixer import MixerCli
-from .tagger import TaggerCli, ListTaggerCli
+from .tagger import ListTaggerCli, TaggerCli
 
 AVAILABLE_COMMANDS = {
     "dedupe": DeduperCli,

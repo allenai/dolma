@@ -1,17 +1,17 @@
 from dataclasses import dataclass
 from typing import List, Optional
+
 from omegaconf import MISSING
+from rich.console import Console
+from rich.table import Table
 
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
-from dolma.core.runtime import create_and_run_tagger
 from dolma.core.registry import TaggerRegistry
-
-from rich.console import Console
-from rich.table import Table
+from dolma.core.runtime import create_and_run_tagger
 
 
 @dataclass

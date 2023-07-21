@@ -6,9 +6,14 @@ Data types assumed by Filters.
 
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from msgspec import Struct
+from typing_extensions import TypeAlias
+
+TaggerOutputValueType: TypeAlias = Tuple[int, int, float]
+TaggerOutputType: TypeAlias = List[TaggerOutputValueType]
+TaggerOutputDictType: TypeAlias = Dict[str, TaggerOutputType]
 
 
 class InputSpec(Struct):
@@ -22,7 +27,7 @@ class InputSpec(Struct):
 
 class OutputSpec(Struct):
     id: str
-    attributes: Dict[str, List[List[Union[int, float]]]]
+    attributes: Dict[str, List[Tuple[int, int, float]]]
     source: Optional[str] = None
 
 
@@ -80,7 +85,7 @@ class Span:
         return doc.text[self.start : self.end]
 
     @classmethod
-    def from_spec(cls, attribute_name: str, attribute_value: List[Union[int, float]]) -> "Span":
+    def from_spec(cls, attribute_name: str, attribute_value: TaggerOutputValueType) -> "Span":
         if "__" in attribute_name:
             # bff tagger has different name
             exp_name, tgr_name, attr_type = attribute_name.split("__", 2)
@@ -97,12 +102,12 @@ class Span:
             tagger=tgr_name,
         )
 
-    def to_spec(self) -> Tuple[str, List[Union[int, float]]]:
+    def to_spec(self) -> Tuple[str, TaggerOutputValueType]:
         assert self.experiment is not None, "Experiment name must be set to convert to spec"
         assert self.tagger is not None, "Tagger name must be set to convert to spec"
         return (
             f"{self.experiment}__{self.tagger}__{self.type}",
-            [self.start, self.end, self.score],
+            (self.start, self.end, self.score),
         )
 
     def __len__(self) -> int:
@@ -146,7 +151,7 @@ class DocResult:
 
     def to_spec(self) -> Tuple[InputSpec, OutputSpec]:
         doc_spec = self.doc.to_spec()
-        attributes: Dict[str, List[List[Union[int, float]]]] = {}
+        attributes: Dict[str, List[TaggerOutputValueType]] = {}
 
         for span in self.spans:
             attr_name, attr_value = span.to_spec()
