@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-from omegaconf import MISSING
 from rich.console import Console
 from rich.table import Table
 
@@ -32,13 +31,17 @@ class TaggerConfig:
         default=[],
         help="List of taggers to run.",
     )
-    experiment: str = field(
-        default=MISSING,
+    experiment: Optional[str] = field(
+        default=None,
         help="Name of the experiment.",
     )
     processes: int = field(
         default=1,
         help="Number of parallel processes to use.",
+    )
+    ignore_existing: bool = field(
+        default=False,
+        help="Whether to ignore existing outputs and re-run the taggers.",
     )
     debug: bool = field(
         default=False,
@@ -83,6 +86,7 @@ class TaggerCli(BaseCli):
             destination=parsed_config.destination,
             metadata=metadata,
             taggers=taggers,
+            ignore_existing=parsed_config.ignore_existing,
             num_processes=parsed_config.processes,
             experiment=parsed_config.experiment,
             debug=parsed_config.debug,

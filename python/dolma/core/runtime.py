@@ -179,6 +179,9 @@ def _write_sample_to_streams(
     output_streams: Dict[str, TaggerOutputIO],
     row: InputSpec,
 ) -> Generator[Dict[str, TaggerOutputDictType], None, None]:
+    """Utility function to write a sample to the output streams; yields a dictionary that should be used
+    to collect the output of each tagger."""
+
     samples_collectors: Dict[str, TaggerOutputDictType] = {}
     yield samples_collectors
 
@@ -258,13 +261,6 @@ class TaggerProcessor(BaseParallelProcessor):
             taggers_paths=taggers_paths, mode="wt", encoding="utf-8"
         ) as output_streams:
             try:
-                # open each file for reading and writing. We use open_file_for_read to handle s3 paths and
-                # download the file locally if needed, while gzip.open is used to read and write gzipped files.
-                # in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))
-                # output_streams = _open_output_streams_for_taggers(
-                #     taggers_paths=taggers_paths, mode="wt", encoding="utf-8"
-                # )
-
                 for raw in in_stream:
                     row = decoder.decode(raw)
 
