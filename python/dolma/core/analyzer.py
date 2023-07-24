@@ -141,7 +141,7 @@ class AnalyzerProcessor(BaseParallelProcessor):
                 # update the length and score trackers for each attribute
                 for attr_name, attr_values in row.attributes.items():
                     # if a regex is provided, skip attributes that don't match it
-                    if name_regex and not name_regex.match(attr_name):
+                    if name_regex and not name_regex.search(attr_name):
                         continue
 
                     # empty attributes count as zero
@@ -206,20 +206,30 @@ def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[Summa
     return summaries
 
 
-def visualize_summaries(summaries: List[SummarySpec], digits: int = 5, num_viz_bins: int = 10):
+def visualize_summaries(summaries: List[SummarySpec], digits: int = 4, num_viz_bins: int = 10):
     console = Console()
     console.print()
 
     def round_all(values: List[float], opt_sci: bool = False) -> List[str]:
+        """Logic to round values depending on their range"""
+
         if values == [0, 1]:
+            # just 0 and 1; no need to round or add decimal points
             return ["0", "1"]
-        elif all(-1 < val < 1 for val in values):
+        elif all(-1 <= val <= 1 for val in values):
+            # all values are in the range [-1, 1]; let's attempt rounding with {digits} decimal points
+            # unless some values are identical after rounding.
             attempt_rounding = [round(val, digits) for val in values]
+
             if len(set(attempt_rounding)) != len(values) and opt_sci:
+                # oops, some values collide after rounding; let's use scientific notation instead
+                # with  one decimal point (note that we do this only if `opt_sci` is True)
                 return [f"{val:.1e}" for val in values]
             else:
+                # phew, all good; let's use {digits} decimal points for all values
                 return [f"{round(val, digits):.{digits}f}" for val in values]
         else:
+            # all values are outside the range [-1, 1]; let's round them to the nearest integer
             return [f"{int(round(val, 0)):d}" for val in values]
 
     for summary in summaries:
@@ -229,8 +239,6 @@ def visualize_summaries(summaries: List[SummarySpec], digits: int = 5, num_viz_b
             counts=(re_binned := summary.to_tracker().summarize(n=num_viz_bins)).counts,
             bins=re_binned.bins,
         )
-
-        breakpoint()
 
         # build the table here
         table = Table(title=summary.name, style="bold", min_width=len(summary.name))
@@ -249,7 +257,7 @@ def visualize_summaries(summaries: List[SummarySpec], digits: int = 5, num_viz_b
         counts_normed = round_all([(count / counts_sum) for count in summary.counts], opt_sci=False)
 
         for value, dist, count in zip(ranges, counts_normed, summary.counts):
-            table.add_row(str(value), str(dist), str(count))
+            table.add_row(value, dist, f"{count:,}")
 
         console.print(table)
         console.print()
