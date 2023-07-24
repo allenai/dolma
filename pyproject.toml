@@ -1,6 +1,6 @@
 [project]
 name = "dolma"
-version = "0.7.0"
+version = "0.8.0"
 description = "Data filters"
 license = {text = "Apache-2.0"}
 readme = "README.md"
@@ -19,7 +19,7 @@ dependencies = [
     "omegaconf>=2.3.0",
     "presidio_analyzer==2.2.32",
     "pycld2==0.41",
-    # "pycld3==0.22",       # does not instlal correctly
+    # "pycld3==0.22",       # does not install correctly
     "pyyaml",
     "requests",
     "rich",
@@ -28,6 +28,8 @@ dependencies = [
     "tokenizers>=0.13.3,<1.0.0",
     "tqdm",
     "uniseg",
+    "numpy",
+    "sortedcontainers",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -165,6 +167,9 @@ warn_return_any = false
 warn_unreachable = true
 show_error_codes = true
 pretty = true
+plugins = [
+    "numpy.typing.mypy_plugin"
+]
 
 [tool.mypy-tests]
 strict_optional = false

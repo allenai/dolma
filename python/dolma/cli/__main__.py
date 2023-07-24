@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from yaml import safe_load
 
+from .analyzer import AnalyzerCli
 from .deduper import DeduperCli
 from .mixer import MixerCli
 from .tagger import ListTaggerCli, TaggerCli
@@ -12,12 +13,11 @@ AVAILABLE_COMMANDS = {
     "dedupe": DeduperCli,
     "mix": MixerCli,
     "tag": TaggerCli,
-    "list": ListTaggerCli
+    "list": ListTaggerCli,
+    "stat": AnalyzerCli,
     # following functionality is not yet implemented
-    # "visualize": None,
-    # "browse": None,
-    # "stats": None,
-    # "ft-train": None,
+    # "train-ft": None,
+    # "train-lm": None,
 }
 
 
@@ -39,8 +39,7 @@ def main(argv: Optional[List[str]] = None):
     subparsers.choices = AVAILABLE_COMMANDS.keys()  # type: ignore
 
     for command, cli in AVAILABLE_COMMANDS.items():
-        if cli is not None:
-            cli.make_parser(subparsers.add_parser(command, help=cli.DESCRIPTION))
+        cli.make_parser(subparsers.add_parser(command, help=cli.DESCRIPTION))
 
     args = parser.parse_args(argv)
 
