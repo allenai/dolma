@@ -170,7 +170,7 @@ class BucketsValTracker:
         self._buffer_counts[self._buffer_idx] = count
         self._buffer_idx += 1
 
-        if self._buffer_idx == len(self._buffer_bins):
+        if self._buffer_idx == self._buffer_bins.size:
             self._concat_buffer()
 
     def _add_full(self, value: float, count: int = 1):
@@ -180,11 +180,11 @@ class BucketsValTracker:
         self._buffer_counts[self._buffer_idx] = count
         self._buffer_idx += 1
 
-        if self._buffer_idx == len(self._buffer_bins):
+        if self._buffer_idx == self._buffer_bins.size:
             self._add_buffer_to_bins()
 
     def __len__(self) -> int:
-        return len(self._counts)
+        return self._counts.size
 
     @property
     def full(self) -> bool:
@@ -208,7 +208,6 @@ class BucketsValTracker:
 
         if len(self) <= n:
             # if there are fewer than n buckets, return the buckets as is
-            # return SummaryTuple(counts=list(self._container.values()), bins=list(self._container.keys()))
             return SummaryTuple(counts=self._counts.tolist(), bins=self._bins.tolist())
 
         # make weighted histogram using counts
