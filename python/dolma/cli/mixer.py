@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from dolma import mixer
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig
+from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
@@ -60,71 +60,72 @@ class MixerCli(BaseCli):
     def run(cls, parsed_config: MixerConfig):
         logger = get_logger("mixer")
 
-        dict_config: Dict[str, Any] = {
-            "work_dir": {"input": parsed_config.work_dir.input, "output": parsed_config.work_dir.output},
-            "processes": parsed_config.processes,
-            "streams": [],
-        }
-
-        for stream_config in parsed_config.streams:
-            stream_config_dict: Dict[str, Any] = {}
-
-            if stream_config.filter is not None:
-                if not stream_config.filter.include and not stream_config.filter.exclude:
-                    raise DolmaConfigError("Either `include` or `exclude` must be specified for filter")
-
-                stream_config_dict["filter"] = {
-                    "include": list(stream_config.filter.include),
-                    "exclude": list(stream_config.filter.exclude),
-                }
-
-            for span_replacement in stream_config.span_replacement:
-                stream_config_dict.setdefault("span_replacement", []).append(
-                    {
-                        "span": span_replacement.span,
-                        "min_score": span_replacement.min_score,
-                        "replacement": span_replacement.replacement,
-                    }
-                )
-
-            if "span_replacement" not in stream_config_dict and "filter" not in stream_config_dict:
-                raise DolmaConfigError("Either `filter` or `span_replacement` must be specified")
-
-            # perform some path validation to make sure we don't call the mixer with invalid config
-            total_matching_documents = 0
-            for document in stream_config.documents:
-                if document.count("*") > 1:
-                    raise DolmaConfigError("Only one wildcard is allowed in the document path")
-
-                current_matching_documents = sum(1 for _ in glob_path(document))
-                if current_matching_documents == 0:
-                    # only raise a warning if no documents are found for a single path
-                    logger.warn(f"No documents found for path {document}")
-                total_matching_documents += current_matching_documents
-
-            if total_matching_documents == 0:
-                # but raise an error if no documents are found for all paths
-                raise DolmaConfigError(f"No documents found for the paths for {stream_config.name} config.")
-
-            # populate the stream config dict
-            stream_config_dict["name"] = stream_config.name
-            stream_config_dict["documents"] = list(stream_config.documents)
-            stream_config_dict["attributes"] = list(stream_config.attributes)
-            stream_config_dict["output"] = {
-                "path": stream_config.output.path,
-                "max_size_in_bytes": stream_config.output.max_size_in_bytes,
+        with make_workdirs(parsed_config.work_dir) as work_dirs:
+            dict_config: Dict[str, Any] = {
+                "work_dir": {"input": work_dirs.input, "output": work_dirs.output},
+                "processes": parsed_config.processes,
+                "streams": [],
             }
 
-            if stream_config.output.discard_fields:
-                stream_config_dict["output"]["discard_fields"] = list(stream_config.output.discard_fields)
+            for stream_config in parsed_config.streams:
+                stream_config_dict: Dict[str, Any] = {}
 
-            if len(stream_config_dict["documents"]) == 0:
-                raise ValueError("No documents to mix")
+                if stream_config.filter is not None:
+                    if not stream_config.filter.include and not stream_config.filter.exclude:
+                        raise DolmaConfigError("Either `include` or `exclude` must be specified for filter")
 
-            dict_config["streams"].append(stream_config_dict)
+                    stream_config_dict["filter"] = {
+                        "include": list(stream_config.filter.include),
+                        "exclude": list(stream_config.filter.exclude),
+                    }
 
-        if len(dict_config["streams"]) == 0:
-            raise DolmaConfigError("No streams to mix")
+                for span_replacement in stream_config.span_replacement:
+                    stream_config_dict.setdefault("span_replacement", []).append(
+                        {
+                            "span": span_replacement.span,
+                            "min_score": span_replacement.min_score,
+                            "replacement": span_replacement.replacement,
+                        }
+                    )
 
-        print_config(dict_config)
-        return mixer(dict_config)
+                if "span_replacement" not in stream_config_dict and "filter" not in stream_config_dict:
+                    raise DolmaConfigError("Either `filter` or `span_replacement` must be specified")
+
+                # perform some path validation to make sure we don't call the mixer with invalid config
+                total_matching_documents = 0
+                for document in stream_config.documents:
+                    if document.count("*") > 1:
+                        raise DolmaConfigError("Only one wildcard is allowed in the document path")
+
+                    current_matching_documents = sum(1 for _ in glob_path(document))
+                    if current_matching_documents == 0:
+                        # only raise a warning if no documents are found for a single path
+                        logger.warn(f"No documents found for path {document}")
+                    total_matching_documents += current_matching_documents
+
+                if total_matching_documents == 0:
+                    # but raise an error if no documents are found for all paths
+                    raise DolmaConfigError(f"No documents found for the paths for {stream_config.name} config.")
+
+                # populate the stream config dict
+                stream_config_dict["name"] = stream_config.name
+                stream_config_dict["documents"] = list(stream_config.documents)
+                stream_config_dict["attributes"] = list(stream_config.attributes)
+                stream_config_dict["output"] = {
+                    "path": stream_config.output.path,
+                    "max_size_in_bytes": stream_config.output.max_size_in_bytes,
+                }
+
+                if stream_config.output.discard_fields:
+                    stream_config_dict["output"]["discard_fields"] = list(stream_config.output.discard_fields)
+
+                if len(stream_config_dict["documents"]) == 0:
+                    raise ValueError("No documents to mix")
+
+                dict_config["streams"].append(stream_config_dict)
+
+            if len(dict_config["streams"]) == 0:
+                raise DolmaConfigError("No streams to mix")
+
+            print_config(dict_config)
+            return mixer(dict_config)
