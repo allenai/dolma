@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig
+from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.analyzer import create_and_run_analyzer
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
@@ -67,14 +67,16 @@ class AnalyzerCli(BaseCli):
             raise DolmaConfigError(f"No documents found for paths {parsed_config.attributes}.")
 
         print_config(parsed_config)
-        create_and_run_analyzer(
-            attributes=parsed_config.attributes,
-            report=parsed_config.report,
-            summaries_path=parsed_config.work_dir.output,
-            metadata_path=parsed_config.work_dir.input,
-            debug=parsed_config.debug,
-            seed=parsed_config.seed,
-            num_bins=parsed_config.bins,
-            num_processes=parsed_config.processes,
-            name_regex=parsed_config.regex,
-        )
+
+        with make_workdirs(parsed_config.work_dir) as work_dirs:
+            create_and_run_analyzer(
+                attributes=parsed_config.attributes,
+                report=parsed_config.report,
+                summaries_path=work_dirs.output,
+                metadata_path=work_dirs.input,
+                debug=parsed_config.debug,
+                seed=parsed_config.seed,
+                num_bins=parsed_config.bins,
+                num_processes=parsed_config.processes,
+                name_regex=parsed_config.regex,
+            )

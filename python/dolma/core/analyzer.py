@@ -4,22 +4,27 @@ import shutil
 from contextlib import ExitStack
 from queue import Queue
 from tempfile import TemporaryDirectory
-from typing import Dict, List, NamedTuple, Optional, Union
+from typing import Dict, List, Optional
 
 import msgspec
-import numpy as np
 import smart_open
 import tqdm
 from msgspec.json import Decoder
 from rich.console import Console
 from rich.table import Table
-from sortedcontainers import SortedDict
 
-from dolma.core.paths import glob_path, mkdir_p
-
+from .binning import BucketsValTracker
 from .data_types import OutputSpec
 from .errors import DolmaError
 from .parallel import BaseParallelProcessor
+from .paths import glob_path, mkdir_p
+
+NUM_BINS = 100_000
+BUFF_SIZE = 1_000
+
+
+def _make_tracker() -> BucketsValTracker:
+    return BucketsValTracker(NUM_BINS, BUFF_SIZE)
 
 
 class SummarySpec(msgspec.Struct):
@@ -33,58 +38,12 @@ class SummarySpec(msgspec.Struct):
         return SummarySpec(name=name, counts=counts, bins=bins)
 
     def to_tracker(self) -> "BucketsValTracker":
-        tracker = BucketsValTracker()
-        tracker.add_many(values=self.bins, counts=self.counts)
+        tracker = _make_tracker()
+        try:
+            tracker.add_many(values=self.bins, counts=self.counts)
+        except ValueError:
+            breakpoint()
         return tracker
-
-
-class SummaryTuple(NamedTuple):
-    counts: List[int]
-    bins: List[float]
-
-
-class BucketsValTracker:
-    """Keep track of running values by using two bucketed buffers"""
-
-    def __init__(self, n: int = 100_000):
-        self.n = n
-        self._container = SortedDict()
-
-    def _add_not_full(self, value: float, count: int = 1):
-        self._container[value] = self._container.get(value, 0) + count
-        self.n -= count
-
-    def _add_full(self, value: float, count: int = 1):
-        p = min(self._container.bisect_left(value), len(self._container) - 1)
-        k, v = self._container.peekitem(p)
-        self._container[k] = v + count
-
-    def __len__(self) -> int:
-        return len(self._container)
-
-    def add(self, value: Union[int, float], count: int = 1):
-        return (self._add_not_full if self.n else self._add_full)(value=float(value), count=count)
-
-    def add_many(self, values: List[Union[int, float]], counts: List[int]):
-        for value, count in zip(values, counts):
-            self.add(value, count)
-
-    def summarize(self, n: int) -> SummaryTuple:
-        """Return up to n buckets with counts of merged values"""
-
-        if len(self) <= n:
-            # if there are fewer than n buckets, return the buckets as is
-            return SummaryTuple(counts=list(self._container.values()), bins=list(self._container.keys()))
-
-        # put the values and counts in numpy arrays
-        values = np.array(self._container.keys())
-        counts = np.array(self._container.values())
-
-        # make weighted histogram using counts
-        new_counts, new_values = np.histogram(a=values, bins=n, weights=counts)
-
-        # return lists instead of numpy arrays
-        return SummaryTuple(counts=new_counts.tolist(), bins=new_values.tolist())
 
 
 class AnalyzerProcessor(BaseParallelProcessor):
@@ -156,8 +115,8 @@ class AnalyzerProcessor(BaseParallelProcessor):
                             # attribute name contains __label__
                             score = min(score, 1.0)
 
-                        trackers.setdefault(f"{attr_name}/score", BucketsValTracker()).add(score)
-                        trackers.setdefault(f"{attr_name}/length", BucketsValTracker()).add(end - start)
+                        trackers.setdefault(f"{attr_name}/score", _make_tracker()).add(score)
+                        trackers.setdefault(f"{attr_name}/length", _make_tracker()).add(end - start)
 
                 # increment the number of documents processed so far
                 docs_cnt += 1
@@ -196,7 +155,7 @@ def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[Summa
         with smart_open.open(path, "rt") as f:
             for ln in f:
                 summary = decoder.decode(ln)
-                trackers.setdefault(summary.name, BucketsValTracker()).add_many(summary.bins, summary.counts)
+                trackers.setdefault(summary.name, _make_tracker()).add_many(summary.bins, summary.counts)
 
     # convert trackers to summaries
     summaries = [
@@ -268,7 +227,7 @@ def write_output(summaries: List[SummarySpec], report: Optional[str] = None):
         return
 
     mkdir_p(report)
-    with smart_open.open(f"{report}/summaries.jsonl", "w") as f:
+    with smart_open.open(f"{report}/summaries.jsonl.gz", "w") as f:
         for summary in summaries:
             f.write(msgspec.json.encode(summary).decode("utf-8") + "\n")
 

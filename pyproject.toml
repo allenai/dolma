@@ -28,8 +28,7 @@ dependencies = [
     "tokenizers>=0.13.3,<1.0.0",
     "tqdm",
     "uniseg",
-    "numpy",
-    "sortedcontainers",
+    "numpy"
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

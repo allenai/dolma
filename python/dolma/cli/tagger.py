@@ -5,7 +5,7 @@ from rich.console import Console
 from rich.table import Table
 
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig
+from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
@@ -47,9 +47,7 @@ class TaggerConfig:
         default=False,
         help="Whether to run in debug mode.",
     )
-    work_dir: Optional[WorkDirConfig] = field(
-        default=WorkDirConfig(), help="Configuration for temporary work directories."
-    )
+    work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
 
 
 class TaggerCli(BaseCli):
@@ -63,34 +61,34 @@ class TaggerCli(BaseCli):
     def run(cls, parsed_config: TaggerConfig):
         logger = get_logger("tagger")
 
-        metadata = parsed_config.work_dir.output if parsed_config.work_dir else None
-        documents = [str(p) for p in parsed_config.documents]
-        taggers = [str(p) for p in parsed_config.taggers]
+        with make_workdirs(parsed_config.work_dir) as work_dirs:
+            documents = [str(p) for p in parsed_config.documents]
+            taggers = [str(p) for p in parsed_config.taggers]
 
-        # perform some path validation to make sure we don't call the mixer with invalid config
-        total_matching_documents = 0
-        for document in documents:
-            current_matching_documents = sum(1 for _ in glob_path(document))
-            if current_matching_documents == 0:
-                # only raise a warning if no documents are found for a single path
-                logger.warn(f"No documents found for path {document}")
-            total_matching_documents += current_matching_documents
+            # perform some path validation to make sure we don't call the mixer with invalid config
+            total_matching_documents = 0
+            for document in documents:
+                current_matching_documents = sum(1 for _ in glob_path(document))
+                if current_matching_documents == 0:
+                    # only raise a warning if no documents are found for a single path
+                    logger.warn(f"No documents found for path {document}")
+                total_matching_documents += current_matching_documents
 
-        if total_matching_documents == 0:
-            # but raise an error if no documents are found for all paths
-            raise DolmaConfigError(f"No documents found for paths {documents}.")
+            if total_matching_documents == 0:
+                # but raise an error if no documents are found for all paths
+                raise DolmaConfigError(f"No documents found for paths {documents}.")
 
-        print_config(parsed_config)
-        create_and_run_tagger(
-            documents=documents,
-            destination=parsed_config.destination,
-            metadata=metadata,
-            taggers=taggers,
-            ignore_existing=parsed_config.ignore_existing,
-            num_processes=parsed_config.processes,
-            experiment=parsed_config.experiment,
-            debug=parsed_config.debug,
-        )
+            print_config(parsed_config)
+            create_and_run_tagger(
+                documents=documents,
+                destination=parsed_config.destination,
+                metadata=work_dirs.output,
+                taggers=taggers,
+                ignore_existing=parsed_config.ignore_existing,
+                num_processes=parsed_config.processes,
+                experiment=parsed_config.experiment,
+                debug=parsed_config.debug,
+            )
 
 
 @dataclass
