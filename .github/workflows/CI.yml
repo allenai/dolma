@@ -8,6 +8,9 @@ on:
      tags:
        - '*'
    pull_request:
+      branches:
+        - main
+        - master
    workflow_dispatch:
 
 
@@ -15,6 +18,21 @@ permissions:
   contents: read
 
 jobs:
+
+  info:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo environment variables
+        run: |
+          echo "reference:  ${{ github.ref }}"
+          echo "event name: ${{ github.event_name }}"
+          echo "run tests:  ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}"
+          echo "is main:    ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}"
+          echo "is release: ${{ startsWith(github.ref, 'refs/tags/') }}"
+          echo "commit:     ${{ github.sha }}"
+          echo "-------------------------------------------------------------------------"
+          echo "Full PR details:"
+          echo "${{ toJson(github.event.pull_request) }}"
 
   tests:
     runs-on: ubuntu-latest
@@ -93,7 +111,10 @@ jobs:
           source .venv/bin/activate
           pip uninstall -y dolma
 
+
+
   build-linux:
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     env:
       CC:   gcc-11
@@ -128,6 +149,7 @@ jobs:
           path: dist
 
   build-windows:
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: windows-latest
     strategy:
       matrix:
@@ -151,6 +173,7 @@ jobs:
           path: dist
 
   build-macos:
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: macos-latest
     strategy:
       matrix:
@@ -174,6 +197,7 @@ jobs:
 
   sdist:
     runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     steps:
       - uses: actions/checkout@v3
       - name: Build sdist

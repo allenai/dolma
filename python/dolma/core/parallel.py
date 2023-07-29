@@ -30,7 +30,8 @@ from .paths import (
 
 METADATA_SUFFIX = ".done.txt"
 
-QueueType: TypeAlias = Queue[Union[None, Tuple[int, ...]]]
+# we need to quote the type alias because we want to support Python 3.8
+QueueType: TypeAlias = "Queue[Union[None, Tuple[int, ...]]]"
 
 
 class BaseParallelProcessor:
