@@ -2,7 +2,6 @@ import multiprocessing
 import re
 import shutil
 from contextlib import ExitStack
-from queue import Queue
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Optional
 
@@ -16,7 +15,7 @@ from rich.table import Table
 from .binning import BucketsValTracker
 from .data_types import OutputSpec
 from .errors import DolmaError
-from .parallel import BaseParallelProcessor
+from .parallel import BaseParallelProcessor, QueueType
 from .paths import glob_path, mkdir_p
 
 NUM_BINS = 100_000
@@ -33,7 +32,7 @@ class SummarySpec(msgspec.Struct):
     bins: List[float]
 
     @classmethod
-    def from_tracker(self, name: str, tracker: "BucketsValTracker", n: int) -> "SummarySpec":
+    def from_tracker(cls, name: str, tracker: "BucketsValTracker", n: int) -> "SummarySpec":
         counts, bins = tracker.summarize(n=n)
         return SummarySpec(name=name, counts=counts, bins=bins)
 
@@ -50,7 +49,7 @@ class AnalyzerProcessor(BaseParallelProcessor):
     @classmethod
     def increment_progressbar(  # type: ignore
         cls,
-        queue,  # queue must be the first argument, and it should be a positional-only argument
+        queue: QueueType,  # queue must be the first argument, and it should be a positional-only argument
         /,
         files: int = 0,
         documents: int = 0,
@@ -66,7 +65,7 @@ class AnalyzerProcessor(BaseParallelProcessor):
         cls,
         source_path: str,
         destination_path: str,
-        queue: "Queue",
+        queue: QueueType,
         **kwargs,
     ):
         # instantiate a decoder for faster decoding

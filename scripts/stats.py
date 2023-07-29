@@ -3,12 +3,12 @@ import multiprocessing
 import os
 from queue import Queue
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, Generator, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, Dict, Generator, Tuple, Type, TypeVar, Union
 
 import tldextract
 import blingfire
 
-from dolma.core.parallel import BaseParallelProcessor
+from dolma.core.parallel import BaseParallelProcessor, QueueType
 from dolma.core.data_types import InputSpec, OutputSpec
 import msgspec
 import smart_open
@@ -79,12 +79,12 @@ class Registry:
 
 class BaseStatsProcessor(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(    # type: ignore
+    def increment_progressbar(  # type: ignore
         cls,
-        queue: Queue[Union[Tuple[int, ...], None]],
+        queue: QueueType,  # queue must be the first argument, and it should be a positional-only argument
         /,
         files: int = 0,
-        documents: int = 0
+        documents: int = 0,
     ) -> Dict[str, int]:
         return super().increment_progressbar(queue, files=files, documents=documents)
 

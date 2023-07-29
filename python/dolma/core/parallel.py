@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import smart_open
 import tqdm
+from typing_extensions import TypeAlias
 
 from .errors import DolmaError, DolmaRetryableFailure
 from .paths import (
@@ -28,6 +29,8 @@ from .paths import (
 )
 
 METADATA_SUFFIX = ".done.txt"
+
+QueueType: TypeAlias = Queue[Union[None, Tuple[int, ...]]]
 
 
 class BaseParallelProcessor:
@@ -129,7 +132,7 @@ class BaseParallelProcessor:
         cls,
         source_path: str,
         destination_path: str,
-        queue: "Queue[Union[None, Tuple[int, ...]]]",
+        queue: QueueType,
         **kwargs: Any,
     ):
         """Process a single file.
@@ -141,7 +144,7 @@ class BaseParallelProcessor:
         Args:
             source_path (str): The path to the source file to transform. Can be an S3 path or a local path.
             destination_path (str): The path to the destination file to save. Can be an S3 path or a local path.
-            queue (Queue[Union[None, Tuple[int, ...]]]): The queue to increment the progress bars.
+            queue (QueueType): The queue to increment the progress bars.
         """
         raise NotImplementedError()
 
@@ -151,7 +154,7 @@ class BaseParallelProcessor:
         source_path: str,
         destination_path: str,
         metadata_path: str,
-        queue: "Queue[Union[None, Tuple[int, ...]]]",
+        queue: QueueType,
         serialized_kwargs: bytes,
     ):
         """A wrapper around process single that saves a metadata file if processing is successful."""
@@ -173,9 +176,7 @@ class BaseParallelProcessor:
             f.write(datetime.now().isoformat())
 
     @classmethod
-    def increment_progressbar(
-        cls, queue: "Queue[Union[None, Tuple[int, ...]]]", /, **kwargs: int
-    ) -> Dict[str, int]:
+    def increment_progressbar(cls, queue: QueueType, /, **kwargs: int) -> Dict[str, int]:
         """Increment the progress bar by putting a tuple in the queue.
 
         When subclassing, we recommend defining which units to keep track of in the progress bar by
@@ -194,13 +195,13 @@ class BaseParallelProcessor:
     @classmethod
     def _run_threaded_progressbar(
         cls,
-        queue: "Queue[Union[None, Tuple[int, ...]]]",
+        queue: QueueType,
         timeout: float,
     ):
         """Run a progress bar in a separate thread.
 
         Args:
-            queue (Queue[Union[None, Tuple[int, ...]]]): The queue to increment the progress bars.
+            queue (QueueType): The queue to increment the progress bars.
             timeout (float): How often to update the progress bars in seconds.
         """
 
@@ -240,7 +241,7 @@ class BaseParallelProcessor:
         """
 
         it = zip(all_source_paths, all_destination_paths, all_metadata_paths)
-        pbar_queue: "Queue[Union[None, Tuple[int, ...]]]" = Queue()
+        pbar_queue: QueueType = Queue()
         thread = Thread(target=self._run_threaded_progressbar, args=(pbar_queue, self.pbar_timeout), daemon=True)
         thread.start()
 
@@ -276,7 +277,7 @@ class BaseParallelProcessor:
             assert multiprocessing.get_start_method() == "spawn", "Multiprocessing start method must be spawn"
 
         with multiprocessing.Pool(processes=self.num_processes) as pool:
-            pbar_queue: "Queue[Union[None, Tuple[int, ...]]]" = (manager := multiprocessing.Manager()).Queue()
+            pbar_queue: QueueType = (manager := multiprocessing.Manager()).Queue()
             thread = Thread(
                 target=self._run_threaded_progressbar, args=(pbar_queue, self.pbar_timeout), daemon=True
             )
