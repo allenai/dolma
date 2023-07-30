@@ -7,6 +7,9 @@ from yaml import safe_load
 from .analyzer import AnalyzerCli
 from .deduper import DeduperCli
 from .mixer import MixerCli
+
+# must import these to register the resolvers
+from .resolvers import *  # noqa: F401,F403
 from .tagger import ListTaggerCli, TaggerCli
 
 AVAILABLE_COMMANDS = {
