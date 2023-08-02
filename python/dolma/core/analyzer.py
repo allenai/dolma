@@ -12,7 +12,7 @@ from msgspec.json import Decoder
 from rich.console import Console
 from rich.table import Table
 
-from .binning import BucketsValTracker
+from .binning import BaseBucketApi, FixedBucketsValTracker, InferBucketsValTracker
 from .data_types import OutputSpec
 from .errors import DolmaError
 from .parallel import BaseParallelProcessor, QueueType
@@ -22,8 +22,9 @@ NUM_BINS = 100_000
 BUFF_SIZE = 1_000
 
 
-def _make_tracker() -> BucketsValTracker:
-    return BucketsValTracker(NUM_BINS, BUFF_SIZE)
+def _make_tracker() -> BaseBucketApi:
+    # return BucketsValTracker(NUM_BINS, BUFF_SIZE)
+    return FixedBucketsValTracker()
 
 
 class SummarySpec(msgspec.Struct):
@@ -32,11 +33,11 @@ class SummarySpec(msgspec.Struct):
     bins: List[float]
 
     @classmethod
-    def from_tracker(cls, name: str, tracker: "BucketsValTracker", n: int) -> "SummarySpec":
+    def from_tracker(cls, name: str, tracker: "InferBucketsValTracker", n: int) -> "SummarySpec":
         counts, bins = tracker.summarize(n=n)
         return SummarySpec(name=name, counts=counts, bins=bins)
 
-    def to_tracker(self) -> "BucketsValTracker":
+    def to_tracker(self) -> "InferBucketsValTracker":
         tracker = _make_tracker()
         try:
             tracker.add_many(values=self.bins, counts=self.counts)
@@ -78,7 +79,7 @@ class AnalyzerProcessor(BaseParallelProcessor):
         name_regex = re.compile(r) if (r := kwargs.get("name_regex", None)) else None
 
         # keep track of the length and score of each attribute
-        trackers: Dict[str, BucketsValTracker] = {}
+        trackers: Dict[str, InferBucketsValTracker] = {}
 
         # interval at which to update the progress bar; will double if queue is too full
         update_interval = 1
@@ -141,7 +142,7 @@ class AnalyzerProcessor(BaseParallelProcessor):
 
 def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[SummarySpec]:
     # keep track of the length and score of each attribute
-    trackers: Dict[str, BucketsValTracker] = {}
+    trackers: Dict[str, InferBucketsValTracker] = {}
 
     # instantiate a decoder for faster decoding
     decoder = Decoder(SummarySpec)

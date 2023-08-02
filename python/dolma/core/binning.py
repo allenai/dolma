@@ -1,5 +1,5 @@
-from abc import abstractmethod, abstractproperty
 import math
+from abc import abstractmethod, abstractproperty
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
@@ -114,7 +114,7 @@ class BaseBucketApi:
         raise NotImplementedError()
 
 
-class BucketsValTracker(BaseBucketApi):
+class InferBucketsValTracker(BaseBucketApi):
     """Keep track of running values by using two bucketed buffers"""
 
     _bins: npt.NDArray[np.float64]
@@ -236,12 +236,14 @@ class BucketsValTracker(BaseBucketApi):
 class FixedBucketsValTracker(BaseBucketApi):
     def __init__(self, n: int = 2):
         assert n >= 0
-        self.n = n
-        self._bins: Dict[Tuple[float, int], int] = {}
+        # we use n to determine the precision of the bins; for convenience we store it as a power of 10
+        self.n = 10**n
+        self._bins: Dict[Tuple[int, int], int] = {}
 
     def add(self, value: Union[int, float], count: int = 1):
         m, e = math.frexp(value)
-        k = (round(m, self.n), e)
+        k = int(m * self.n), e
+
         if k not in self._bins:
             self._bins[k] = 0
         self._bins[k] += count
@@ -249,8 +251,12 @@ class FixedBucketsValTracker(BaseBucketApi):
     def __len__(self) -> int:
         return len(self._bins)
 
+    @property
+    def full(self) -> bool:
+        return False
+
     def summarize(self, n: int, density: bool = False) -> SummaryTuple:
-        bins, counts = zip(*sorted((m * 2 ** e, c) for (m, e), c in self._bins.items()))
+        bins, counts = zip(*sorted((m / self.n * 2**e, c) for (m, e), c in self._bins.items()))
 
         if len(self) <= n:
             # if there are fewer than n buckets, return the buckets as is

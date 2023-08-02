@@ -2,7 +2,11 @@ import unittest
 
 import numpy as np
 
-from dolma.core.binning import BucketsValTracker, FixedBucketsValTracker, merge_bins
+from dolma.core.binning import (
+    FixedBucketsValTracker,
+    InferBucketsValTracker,
+    merge_bins,
+)
 
 
 class TestBinning(unittest.TestCase):
@@ -49,7 +53,7 @@ class TestBinning(unittest.TestCase):
         self.assertEqual(sum(count_c), sum(count_a) + sum(count_b))
 
     def test_bucket_val_trackers(self):
-        tracker = BucketsValTracker(n=100_000)
+        tracker = InferBucketsValTracker(n=100_000)
 
         values = np.random.randn(1_000_000)
 
