@@ -22,9 +22,14 @@ NUM_BINS = 100_000
 BUFF_SIZE = 1_000
 
 
-def _make_tracker() -> BaseBucketApi:
-    # return BucketsValTracker(NUM_BINS, BUFF_SIZE)
-    return FixedBucketsValTracker()
+def _make_tracker(type_: str = 'fixed', **kwargs: int) -> BaseBucketApi:
+    """Make a tracker of given type. Choose between `infer` or `fixed`"""
+    if type_ == 'infer':
+        return InferBucketsValTracker(**{'n': NUM_BINS, 'b': BUFF_SIZE, **kwargs})
+    elif type_ == 'fixed':
+        return FixedBucketsValTracker(**{'n': NUM_BINS, **kwargs})
+    else:
+        raise ValueError(f'Unknown tracker type {type_}')
 
 
 class SummarySpec(msgspec.Struct):
@@ -33,16 +38,13 @@ class SummarySpec(msgspec.Struct):
     bins: List[float]
 
     @classmethod
-    def from_tracker(cls, name: str, tracker: "InferBucketsValTracker", n: int) -> "SummarySpec":
+    def from_tracker(cls, name: str, tracker: "BaseBucketApi", n: int) -> "SummarySpec":
         counts, bins = tracker.summarize(n=n)
         return SummarySpec(name=name, counts=counts, bins=bins)
 
-    def to_tracker(self) -> "InferBucketsValTracker":
+    def to_tracker(self) -> "BaseBucketApi":
         tracker = _make_tracker()
-        try:
-            tracker.add_many(values=self.bins, counts=self.counts)
-        except ValueError:
-            breakpoint()
+        tracker.add_many(values=self.bins, counts=self.counts)
         return tracker
 
 
@@ -79,7 +81,7 @@ class AnalyzerProcessor(BaseParallelProcessor):
         name_regex = re.compile(r) if (r := kwargs.get("name_regex", None)) else None
 
         # keep track of the length and score of each attribute
-        trackers: Dict[str, InferBucketsValTracker] = {}
+        trackers: Dict[str, BaseBucketApi] = {}
 
         # interval at which to update the progress bar; will double if queue is too full
         update_interval = 1
@@ -142,7 +144,7 @@ class AnalyzerProcessor(BaseParallelProcessor):
 
 def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[SummarySpec]:
     # keep track of the length and score of each attribute
-    trackers: Dict[str, InferBucketsValTracker] = {}
+    trackers: Dict[str, BaseBucketApi] = {}
 
     # instantiate a decoder for faster decoding
     decoder = Decoder(SummarySpec)
