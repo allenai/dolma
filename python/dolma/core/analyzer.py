@@ -22,14 +22,14 @@ NUM_BINS = 100_000
 BUFF_SIZE = 1_000
 
 
-def _make_tracker(type_: str = 'fixed', **kwargs: int) -> BaseBucketApi:
+def _make_tracker(type_: str = "fixed", **kwargs: int) -> BaseBucketApi:
     """Make a tracker of given type. Choose between `infer` or `fixed`"""
-    if type_ == 'infer':
-        return InferBucketsValTracker(**{'n': NUM_BINS, 'b': BUFF_SIZE, **kwargs})
-    elif type_ == 'fixed':
-        return FixedBucketsValTracker(**{'n': NUM_BINS, **kwargs})
+    if type_ == "infer":
+        return InferBucketsValTracker(**{"n": NUM_BINS, "b": BUFF_SIZE, **kwargs})
+    elif type_ == "fixed":
+        return FixedBucketsValTracker(**{"n": NUM_BINS, **kwargs})
     else:
-        raise ValueError(f'Unknown tracker type {type_}')
+        raise ValueError(f"Unknown tracker type {type_}")
 
 
 class SummarySpec(msgspec.Struct):

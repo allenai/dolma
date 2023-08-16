@@ -396,6 +396,85 @@ class s2(BaseStatsProcessor):
             processor(**process_single_kwargs)
 
 
+@Registry.add
+class stack(BaseStatsProcessor):
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+    ):
+        attrs_path = source_path.replace("/documents/", "/attributes/decontamination/")
+
+        documents_decoder = msgspec.json.Decoder(C4InputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+
+        interval = 10_000
+
+        counts: dict = {
+            f: {"year": {}, "s2fos": {}, "documents": 0, "tokens": 0} for f in ["full_text", "abstract"]
+        }
+        key = "full_text" if "dataset=s2orc" in source_path else "abstract"
+        cnt = 0
+
+        with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, attributes_line in zip(doc_file, attrs_file):
+                cnt += 1
+
+                document = documents_decoder.decode(source_line)
+                attributes = attributes_decoder.decode(attributes_line)
+
+                text = document.text
+                for start, end, _ in sorted(
+                    attributes.attributes.get("bff_duplicate_paragraph_spans_decontamination", []),
+                    key=lambda t: -t[1],
+                ):
+                    # remove duplicate
+                    text = text[:start] + text[end:]
+
+                if not (text := text.strip()):
+                    continue
+
+                counts[key]["documents"] += 1
+                counts[key]["tokens"] += len(blingfire.text_to_words(text).split())
+
+                if document.metadata["year"] not in counts[key]["year"]:
+                    counts[key]["year"][document.metadata["year"]] = 0
+                counts[key]["year"][document.metadata["year"]] += 1
+
+                if len(document.metadata["s2fieldsofstudy"]) == 0:
+                    document.metadata["s2fieldsofstudy"] = ["null"]
+
+                for fos in document.metadata["s2fieldsofstudy"]:
+                    if fos not in counts[key]["s2fos"]:
+                        counts[key]["s2fos"][fos] = 0
+                    counts[key]["s2fos"][fos] += 1
+
+                if cnt % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=cnt % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counts, indent=2))
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+        with TemporaryDirectory() as tempdir:
+            documents = (
+                "s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=*/split=train/part_id=*/*.gz"
+            )
+            stats = "s3://ai2-llm/stats/olmo-mix/v1/papers/peS2o"
+            metadata = os.path.join(tempdir, "s2")
+
+            processor = cls(
+                source_prefix=documents,
+                destination_prefix=stats,
+                metadata_prefix=metadata,
+                num_processes=num_workers,
+                debug=debug,
+            )
+            processor(**process_single_kwargs)
+
+
 # # # BELOW HERE: AGGREGATION # # #
 
 
