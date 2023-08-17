@@ -1,9 +1,9 @@
-# dolma
+# Dolma
 
 *Data to feed OLMo's Appetite*
 
 
-<img alt="DOLMa logo. It's a watercolor of grape leaves with the word DOLMa in the top left." src="https://github.com/allenai/dolma/blob/main/res/logo.png?raw=true" width="256">
+<img alt="Dolma's official logo. It's dolma written in yellow, round lowercase letters over a blue background." src="https://github.com/allenai/dolma/blob/main/res/logo.png?raw=true" width="100%">
 
 Data and tools for generating and inspecting OLMo pre-training data.
 
