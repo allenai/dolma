@@ -513,29 +513,18 @@ class cc_v1_c4_cleaned(books):
     def process_single(
         cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
     ):
-        # /ai2-llm/pretraining-data/sources/common-crawl/v1/attributes/c4_and_gopher
-        # /ai2-llm/pretraining-data/sources/common-crawl/v1/attributes/decontamination
-        # /ai2-llm/pretraining-data/sources/common-crawl/v1/attributes/hatespeech_nsfw_tags_cc
-        # /ai2-llm/pretraining-data/sources/common-crawl/v1/attributes/pi_regex_count_tagger
-
         attributes = [
-            # source_path.replace("/documents/", "/attributes/c4_rules/"),
             source_path.replace("/documents/", "/attributes/gopher_rules/"),
             source_path.replace("/documents/", "/attributes/decontamination/"),
             source_path.replace("/documents/", "/attributes/hatespeech_nsfw_cc_v3/"),
             source_path.replace("/documents/", "/attributes/pii_detection/"),
         ]
 
-        # for the data sheet, what statistics you think we should include? I could
-        # do # of docs, # tokens, distribution of URLs, pronouns, s2 FOS, stack languages?
         doc_decoder = msgspec.json.Decoder(InputSpec)
         attr_decoder = msgspec.json.Decoder(OutputSpec)
         stats = {
             "length": 0,
             "count": 0,
-            # "c4_count": 0,
-            # "c4_length": 0,
-            # "c4_matches": 0,
             "gopher_count": 0,
             "gopher_length": 0,
             "gopher_matches": 0,
