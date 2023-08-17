@@ -1,9 +1,8 @@
-# dolma
+# Dolma
 
 *Data to feed OLMo's Appetite*
 
-
-<img alt="DOLMa logo. It's a watercolor of grape leaves with the word DOLMa in the top left." src="https://github.com/allenai/dolma/blob/main/res/logo.png?raw=true" width="256">
+<img alt="Dolma's official logo. It's dolma written in yellow, round lowercase letters over a blue background." src="https://github.com/allenai/dolma/blob/main/res/logo.png?raw=true" width="100%">
 
 Data and tools for generating and inspecting OLMo pre-training data.
 
@@ -62,7 +61,6 @@ The mix command is used to mix documents from multiple sources, optionally filte
 dolma mix -c tests/config/mixer.json
 ```
 
-
 ## Development
 
 Create a conda environment with Python >= 3.8. In this case, we use Python 3.10 and use Anaconda to create the environment.
@@ -91,7 +89,6 @@ make test
 ```
 
 You can choose to run just the Python or Rust tests by calling `make test-python` or `make test-rust` respectively.
-
 
 ## Citation
 
