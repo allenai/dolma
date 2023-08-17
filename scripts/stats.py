@@ -762,7 +762,7 @@ class stack(BaseStatsProcessor):
     ):
         attrs_basic = source_path.replace("/documents/", "/attributes/basic/")
         attrs_code_secrets = source_path.replace("/documents/", "/attributes/code_secrets/")
-        attrs_dedupe_documents = source_path.replace("/documents/", "/attributes/dedupe_documents/")
+        # attrs_dedupe_documents = source_path.replace("/documents/", "/attributes/dedupe_documents/")
         attrs_pii = source_path.replace("/documents/", "/attributes/pii/")
 
         documents_decoder = msgspec.json.Decoder(StackInputSpec)
