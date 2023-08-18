@@ -1,4 +1,6 @@
-from typing import List, NamedTuple, Optional, Tuple, Union
+import math
+from abc import abstractmethod, abstractproperty
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -94,7 +96,25 @@ def merge_bins(
     return bin_c, count_c
 
 
-class BucketsValTracker:
+class BaseBucketApi:
+    @abstractproperty
+    def full(self) -> bool:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def add(self, value: Union[int, float], count: int = 1):
+        raise NotImplementedError()
+
+    def add_many(self, values: List[Union[int, float]], counts: List[int]):
+        for value, count in zip(values, counts):
+            self.add(value, count)
+
+    @abstractmethod
+    def summarize(self, n: int, density: bool = False) -> SummaryTuple:
+        raise NotImplementedError()
+
+
+class InferBucketsValTracker(BaseBucketApi):
     """Keep track of running values by using two bucketed buffers"""
 
     _bins: npt.NDArray[np.float64]
@@ -196,10 +216,6 @@ class BucketsValTracker:
         else:
             self._add_full(value=value, count=count)
 
-    def add_many(self, values: List[Union[int, float]], counts: List[int]):
-        for value, count in zip(values, counts):
-            self.add(value, count)
-
     def summarize(self, n: int, density: bool = False) -> SummaryTuple:
         """Return up to n buckets with counts of merged values"""
 
@@ -212,6 +228,42 @@ class BucketsValTracker:
 
         # make weighted histogram using counts
         new_counts, new_values = np.histogram(a=self._bins, bins=n, weights=self._counts, density=density)
+
+        # return lists instead of numpy arrays
+        return SummaryTuple(counts=new_counts.tolist(), bins=new_values.tolist())
+
+
+class FixedBucketsValTracker(BaseBucketApi):
+    def __init__(self, n: int = 2):
+        assert n >= 0
+        # we use n to determine the precision of the bins; for convenience we store it as a power of 10
+        self.n = 10**n
+        self._bins: Dict[Tuple[int, int], int] = {}
+
+    def add(self, value: Union[int, float], count: int = 1):
+        m, e = math.frexp(value)
+        k = int(m * self.n), e
+
+        if k not in self._bins:
+            self._bins[k] = 0
+        self._bins[k] += count
+
+    def __len__(self) -> int:
+        return len(self._bins)
+
+    @property
+    def full(self) -> bool:
+        return False
+
+    def summarize(self, n: int, density: bool = False) -> SummaryTuple:
+        bins, counts = zip(*sorted((m / self.n * 2**e, c) for (m, e), c in self._bins.items()))
+
+        if len(self) <= n:
+            # if there are fewer than n buckets, return the buckets as is
+            return SummaryTuple(counts=[int(c) for c in counts], bins=[float(b) for b in bins])
+
+        # computing the weighted histograms
+        new_counts, new_values = np.histogram(a=bins, bins=n, weights=counts, density=density)
 
         # return lists instead of numpy arrays
         return SummaryTuple(counts=new_counts.tolist(), bins=new_values.tolist())

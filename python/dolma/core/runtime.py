@@ -2,7 +2,6 @@ import logging
 import multiprocessing
 import tempfile
 from contextlib import ExitStack, contextmanager
-from queue import Queue
 from typing import (
     IO,
     Any,
@@ -22,7 +21,7 @@ import smart_open
 from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .loggers import get_logger
-from .parallel import BaseParallelProcessor
+from .parallel import BaseParallelProcessor, QueueType
 from .paths import join_path, make_relative, mkdir_p, split_glob, split_path
 from .registry import TaggerRegistry
 from .utils import make_variable_name
@@ -206,7 +205,7 @@ class TaggerProcessor(BaseParallelProcessor):
     @classmethod
     def increment_progressbar(  # type: ignore
         cls,
-        queue,  # queue must be the first argument, and it should be a positional-only argument
+        queue: QueueType,  # queue must be the first argument, and it should be a positional-only argument
         /,
         files: int = 0,
         documents: int = 0,
@@ -222,7 +221,7 @@ class TaggerProcessor(BaseParallelProcessor):
         cls,
         source_path: str,
         destination_path: str,
-        queue: "Queue",
+        queue: QueueType,
         **kwargs,
     ):
         """Lets count run the taggers! We will use the destination path to save each tagger output."""
