@@ -641,8 +641,7 @@ pub fn get_object_sizes(locations: &Vec<String>) -> Result<Vec<usize>, io::Error
             .par_iter()
             .map(|location| {
                 let (bucket, key) = s3_util::split_url(location).unwrap();
-                let resp = rt.block_on(s3_util::object_size(&s3_client, &bucket, &key));
-                resp.unwrap_or(0)
+                rt.block_on(s3_util::object_size(&s3_client, &bucket, &key)).unwrap_or(0)
             })
             .collect();
         Ok(sizes)
