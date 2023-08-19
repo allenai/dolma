@@ -89,12 +89,8 @@ fn write_attributes(
     };
 
     let attrs_location = {
-        let mut attr_prefix = "/attributes/".to_owned();
-        attr_prefix.push_str(&dedupe_config.name);
-        attr_prefix.push('/');
-        docs_location
-            .to_owned()
-            .replace("/documents/", &attr_prefix)
+        let attr_prefix = format!("/attributes/{}/", &dedupe_config.name);
+        docs_location.replace("/documents/", &attr_prefix)
     };
     let local_output = cache.prepare_output(&attrs_location)?;
     if local_output.exists() {
