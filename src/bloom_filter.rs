@@ -237,7 +237,7 @@ impl BloomFilter {
         } else {
             log::info!("Creating new bloom filter...");
             let mut bloom_filter_size: usize = config.size_in_bytes;
-            if bloom_filter_size <= 0 {
+            if bloom_filter_size == 0 {
                 bloom_filter_size = BloomFilter::suggest_size_in_bytes(
                     config.estimated_doc_count,
                     config.desired_false_positive_rate,
