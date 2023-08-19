@@ -595,8 +595,8 @@ pub fn find_objects_matching_patterns(patterns: &Vec<String>) -> Result<Vec<Stri
     if s3_url_count == 0 {
         let mut matches = Vec::new();
         for pattern in patterns.iter() {
-            for entry in
-                glob(pattern).expect(format! {"Invalid file pattern: {}", pattern.clone()}.as_str())
+            for entry in glob(pattern)
+                .unwrap_or_else(|_| panic!("Invalid file pattern: {}", pattern.clone()))
             {
                 matches.push(entry.unwrap().to_str().unwrap().to_owned());
             }
