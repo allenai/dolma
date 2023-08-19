@@ -65,8 +65,7 @@ impl Shard {
                 })
                 .collect::<Vec<(DocumentPaths, usize)>>();
             let mut shard_size = inputs_with_sizes[0].1;
-            let mut shard_inputs: Vec<DocumentPaths> = Vec::new();
-            shard_inputs.push(inputs_with_sizes[0].0.clone());
+            let mut shard_inputs: Vec<DocumentPaths> = vec![inputs_with_sizes[0].0.clone()];
             for (input, size) in inputs_with_sizes[1..].iter() {
                 if *size == 0 {
                     log::warn!(
