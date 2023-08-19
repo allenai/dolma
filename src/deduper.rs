@@ -193,7 +193,7 @@ fn write_attributes(
                     let text = data["text"].as_str().unwrap();
                     let text_length = text.len();
                     let mut offset = 0;
-                    let paragraphs = text.split("\n");
+                    let paragraphs = text.split('\n');
                     let mut duplicate_paragraph_spans = Vec::new();
                     for p in paragraphs {
                         let par_start = offset;
