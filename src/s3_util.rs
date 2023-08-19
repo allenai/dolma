@@ -112,7 +112,7 @@ pub async fn object_size(
 // or:   a/*/b.txt -> a/1/b.txt, a/2/b.txt, a/3/b.txt
 pub fn find_objects_matching_patterns(
     s3_client: &S3Client,
-    patterns: &Vec<String>,
+    patterns: &[String],
 ) -> Result<Vec<String>, io::Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -141,7 +141,7 @@ pub fn find_objects_matching_patterns(
                     return Err(io::Error::new(io::ErrorKind::Other, e));
                 }
             };
-            let resp = if token.is_some() {
+            let resp = if let Some(token_value) = token {
                 log::info!("Listing objects in bucket={}, prefix={}", bucket, key);
                 rt.block_on(
                     s3_client
@@ -149,7 +149,7 @@ pub fn find_objects_matching_patterns(
                         .bucket(bucket)
                         .prefix(key)
                         .delimiter("/")
-                        .continuation_token(token.unwrap())
+                        .continuation_token(token_value)
                         .send(),
                 )
                 .unwrap()
