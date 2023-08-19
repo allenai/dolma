@@ -150,7 +150,7 @@ impl Shard {
                 let mut local_attr_readers = Vec::new();
                 let mut attr_reader_failure_counts = Vec::new();
                 for attr in &input_path.attribute_paths {
-                    let local_attr_file = cache.prepare_input(&attr)?;
+                    let local_attr_file = cache.prepare_input(attr)?;
                     let f = OpenOptions::new()
                         .read(true)
                         .write(false)
@@ -521,7 +521,7 @@ impl FileCache {
             rt.block_on(s3_util::download_to_file(
                 &self.s3_client,
                 bucket,
-                &key,
+                key,
                 &path,
             ))?;
             Ok(path.clone())
@@ -543,7 +543,7 @@ impl FileCache {
     pub fn finalize_input(&self, location: &str) -> Result<(), io::Error> {
         if location.starts_with("s3://") {
             let (_, _, path) = cached_s3_location!(location, &self.work.input);
-            std::fs::remove_file(&path)?;
+            std::fs::remove_file(path)?;
             Ok(())
         } else {
             Ok(())
@@ -575,7 +575,7 @@ impl FileCache {
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(s3_util::upload_file(&self.s3_client, &path, &bucket, &key))?;
+            rt.block_on(s3_util::upload_file(&self.s3_client, &path, bucket, key))?;
             std::fs::remove_file(&path)?;
             {
                 // Create empty file to indicate that the shard is done.
@@ -583,9 +583,8 @@ impl FileCache {
             }
             Ok(())
         } else {
-            let tmp_path = location.to_owned() + ".tmp";
-            let tmp_path = Path::new(tmp_path.as_str());
-            std::fs::rename(&tmp_path, &location)?;
+            std::fs::rename(Path::new(&(location.to_owned() + ".tmp")), location)?;
+
             Ok(())
         }
     }
@@ -638,7 +637,7 @@ pub fn get_object_sizes(locations: &Vec<String>) -> Result<Vec<usize>, io::Error
             .par_iter()
             .map(|location| {
                 let (bucket, key) = s3_util::split_url(location).unwrap();
-                rt.block_on(s3_util::object_size(&s3_client, &bucket, &key))
+                rt.block_on(s3_util::object_size(&s3_client, bucket, key))
                     .unwrap_or(0)
             })
             .collect();
