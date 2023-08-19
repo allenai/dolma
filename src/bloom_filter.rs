@@ -220,8 +220,7 @@ impl BloomFilter {
                 return false;
             }
         }
-
-        return true;
+        true
     }
 
     pub fn contains(&self, s: &VecDeque<&str>) -> bool {

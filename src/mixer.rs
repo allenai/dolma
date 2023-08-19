@@ -41,11 +41,11 @@ pub fn run(config: MixerConfig) -> Result<u32, u32> {
     match failure_count {
         0 => {
             log::info!("Done!");
-            return Ok(failure_count);
+            Ok(failure_count)
         }
         _ => {
             log::error!("{} shards failed to process.", failure_count);
-            return Err(failure_count);
+            Err(failure_count)
         }
     }
 }
