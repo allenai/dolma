@@ -335,8 +335,7 @@ impl Shard {
                                     i += 1;
                                     byte_index_with_char = chars.next();
                                 }
-                                if span_index < replacements.len() {
-                                    if !replacements[span_index].replacement.is_empty() {
+                                if span_index < replacements.len() && !replacements[span_index].replacement.is_empty() {
                                         let replacement_text = replacements[span_index]
                                             .replacement
                                             .to_owned()
@@ -347,7 +346,6 @@ impl Shard {
                                                     .as_str(),
                                             );
                                         new_text.push_str(&replacement_text);
-                                    }
                                 }
                                 data["text"] = Value::String(new_text);
                             }
