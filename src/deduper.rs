@@ -152,39 +152,36 @@ fn write_attributes(
             let data: Value = serde_json::from_str(&line)?;
             let mut attributes = json!({});
 
-            match dedupe_config.documents {
-                Some(ref cfg) => {
-                    let document_key = {
-                        let mut finder = jsonpath_rust::JsonPathFinder::from_str("{}", &cfg.key)
-                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                            .unwrap();
-                        finder.set_json(Box::new(data.clone()));
-                        finder
-                            .find()
-                            .as_array()
-                            .unwrap()
-                            .get(0)
-                            .unwrap()
-                            .as_str()
-                            .unwrap()
-                            .to_string()
-                    };
+            if let Some(ref cfg) = dedupe_config.documents {
+                let document_key = {
+                    let mut finder = jsonpath_rust::JsonPathFinder::from_str("{}", &cfg.key)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+                        .unwrap();
+                    finder.set_json(Box::new(data.clone()));
+                    finder
+                        .find()
+                        .as_array()
+                        .unwrap()
+                        .get(0)
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_string()
+                };
 
-                    if dedupe_config.skip_empty.unwrap_or(false) && document_key.trim().is_empty() {
-                        // skip empty documents if dedupe_config.skip_empty is true
-                        // and the document key is empty after trimming (i.e., removing whitespace)
-                        continue;
-                    } else {
-                        let mut dedupe_key = VecDeque::with_capacity(1);
-                        dedupe_key.push_back(document_key.as_str());
-                        if bloom_filter.contains(&dedupe_key) {
-                            attributes[&cfg.attribute_name] = Value::Bool(true);
-                        } else if !bloom_filter.read_only {
-                            bloom_filter.insert(&dedupe_key);
-                        }
+                if dedupe_config.skip_empty.unwrap_or(false) && document_key.trim().is_empty() {
+                    // skip empty documents if dedupe_config.skip_empty is true
+                    // and the document key is empty after trimming (i.e., removing whitespace)
+                    continue;
+                } else {
+                    let mut dedupe_key = VecDeque::with_capacity(1);
+                    dedupe_key.push_back(document_key.as_str());
+                    if bloom_filter.contains(&dedupe_key) {
+                        attributes[&cfg.attribute_name] = Value::Bool(true);
+                    } else if !bloom_filter.read_only {
+                        bloom_filter.insert(&dedupe_key);
                     }
                 }
-                None => {}
             }
             match dedupe_config.paragraphs {
                 None => {}
