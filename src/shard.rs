@@ -51,7 +51,7 @@ impl Shard {
                     for prefix in stream_config.attributes.iter() {
                         let mut attr_prefix = "/attributes/".to_owned();
                         attr_prefix.push_str(prefix);
-                        attr_prefix.push_str("/");
+                        attr_prefix.push('/');
                         let attr_path = input.replace("/documents/", &attr_prefix);
                         attr_paths.push(attr_path);
                     }
@@ -95,7 +95,7 @@ impl Shard {
                 }
                 shard_inputs.push(input.clone());
             }
-            if shard_inputs.len() > 0 {
+            if !shard_inputs.is_empty() {
                 let output = format!(
                     "{}/{}-{:04}.json.gz",
                     stream_config.output.path, stream_config.name, stream_shard_count
@@ -302,7 +302,7 @@ impl Shard {
                                         }
                                         if !is_inside_span {
                                             if i == replacements[span_index].end {
-                                                if replacements[span_index].replacement.len() > 0 {
+                                                if !replacements[span_index].replacement.is_empty() {
                                                     let replacement_text = replacements[span_index]
                                                         .replacement
                                                         .to_owned()
@@ -336,7 +336,7 @@ impl Shard {
                                     byte_index_with_char = chars.next();
                                 }
                                 if span_index < replacements.len() {
-                                    if replacements[span_index].replacement.len() > 0 {
+                                    if !replacements[span_index].replacement.is_empty() {
                                         let replacement_text = replacements[span_index]
                                             .replacement
                                             .to_owned()
@@ -476,7 +476,7 @@ pub mod shard_config {
         // Check the json for the existence of any element matching the configured include/exclude patterns
         // Determine whether to keep the document based on the include/exclude matches
         pub fn should_keep(&self, json: &Value) -> Result<bool, String> {
-            let mut keep = self.include.len() == 0;
+            let mut keep = self.include.is_empty();
             for pattern in self.include.iter() {
                 let mut finder = JsonPathFinder::from_str("{}", pattern)?;
                 finder.set_json(Box::new(json.clone()));
