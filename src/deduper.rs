@@ -91,7 +91,7 @@ fn write_attributes(
     let attrs_location = {
         let mut attr_prefix = "/attributes/".to_owned();
         attr_prefix.push_str(&dedupe_config.name);
-        attr_prefix.push_str("/");
+        attr_prefix.push('/');
         docs_location
             .to_owned()
             .replace("/documents/", &attr_prefix)
@@ -135,8 +135,8 @@ fn write_attributes(
             GzEncoder::new(tmp_output, Compression::default()),
         );
 
-        let mut line_number = 0;
-        for line in reader.lines() {
+        // let mut line_number = 0;
+        for (line_number,line) in reader.lines().enumerate() {
             match line {
                 Ok(_) => {}
                 Err(e) => {
@@ -149,7 +149,7 @@ fn write_attributes(
                     break;
                 }
             }
-            line_number += 1;
+            // line_number += 1;
             let line = line?;
             let data: Value = serde_json::from_str(&line)?;
             let mut attributes = json!({});
