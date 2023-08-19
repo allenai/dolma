@@ -135,7 +135,7 @@ fn write_attributes(
             GzEncoder::new(tmp_output, Compression::default()),
         );
 
-        for (line_number,line) in reader.lines().enumerate() {
+        for (line_number, line) in reader.lines().enumerate() {
             match line {
                 Ok(_) => {}
                 Err(e) => {
