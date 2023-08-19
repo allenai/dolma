@@ -32,7 +32,7 @@ test-python:
 	pytest -vs tests/python
 	rm -rf tests/work/*
 
-test-rust: test-rust-clean test-rust-setup
+test-rust:
 	cargo test -- --nocapture
 	rm -rf tests/work/*
 
