@@ -135,7 +135,6 @@ fn write_attributes(
             GzEncoder::new(tmp_output, Compression::default()),
         );
 
-        // let mut line_number = 0;
         for (line_number,line) in reader.lines().enumerate() {
             match line {
                 Ok(_) => {}
@@ -149,7 +148,6 @@ fn write_attributes(
                     break;
                 }
             }
-            // line_number += 1;
             let line = line?;
             let data: Value = serde_json::from_str(&line)?;
             let mut attributes = json!({});
