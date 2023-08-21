@@ -7,9 +7,9 @@ ifeq ($(UNAME), Darwin)
 	OPENSSL_SETUP := "which openssl || brew install openssl"
 else ifeq ($(UNAME), Linux)
 	OS_MESSAGE := "Linux detected"
-	CMAKE_SETUP := "which cmake || sudo apt-get install --yes build-essential cmake"
-	PROTOBUF_SETUP := "which protoc || sudo apt-get install --yes protobuf-compiler"
-	OPENSSL_SETUP := "which openssl || sudo apt-get install --yes libssl-dev"
+	CMAKE_SETUP := "which cmake || conda install -c anaconda cmake"
+	PROTOBUF_SETUP := "which protoc || conda install -c conda-forge protobuf"
+	OPENSSL_SETUP := "which openssl || conda install -c anaconda openssl"
 else
 	OS_MESSAGE := "Unsupported OS; please install rust, cmake, protobuf, and openssl manually"
 	CMAKE_SETUP := ""

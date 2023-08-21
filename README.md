@@ -5,7 +5,7 @@
 
 <img alt="DOLMa logo. It's a watercolor of grape leaves with the word DOLMa in the top left." src="https://github.com/allenai/dolma/blob/main/res/logo.png?raw=true" width="256">
 
-Data and tools for generating and inspecting OLMo pre-training data.
+Data and tools for generating and inspecting OLMo pre-training data. These tools are intended for use on a CPU.
 
 To get started, install dolma using [pip](https://pypi.org/project/dolma/).
 
@@ -43,7 +43,7 @@ dolma tag \
     --processes 2
 ```
 
-This command will run the `random_number_v1` tagger on all documents in the specified S3 paths. The results will be written to the `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v0/attributes/sample` and `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v1/attributes/sample` paths.
+This command will run the `random_number_v1` tagger on all documents in the specified S3 paths. The results will be written to the `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v0/attributes/sample` and `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v1/attributes/sample` paths, unless alternatives are specified by the `--destination` flag. 
 
 ### `dolma dedupe`
 

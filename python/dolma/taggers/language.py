@@ -109,18 +109,46 @@ class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
     def __init__(self):
         super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
 
-    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+    def predict_slice(self, text_slice: TextSlice, multilang: bool = False, **kwargs) -> Iterable[Prediction]:
         pred = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
         for label, score in zip(*pred):
             if label == "__label__en":
                 return Prediction(label="en", score=score), Prediction(label="not_en", score=1.0 - score)
         return Prediction(label="en", score=0.0), Prediction(label="not_en", score=1.0)
 
+@TaggerRegistry.add("ft_lang_id_multi_doc_v2")
+class FastTextMultiLanguageDocumentTagger(BaseFastTextTagger):
+    # return the score of the most likely language
+    MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+
+    def __init__(self):
+        super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+        pred = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip())
+        label = pred[0][0].split("__label__")[1]
+        score = pred[1][0]
+        return (Prediction(label=label, score=score),)
 
 @TaggerRegistry.add("ft_lang_id_en_paragraph_v2")
 class FastTextEnglishLanguageParagraphTagger(FastTextEnglishLanguageDocumentTagger):
     def __init__(self):
         BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
+
+@TaggerRegistry.add("ft_lang_id_en_sent_v2")
+class FastTextEnglishLanguageSentenceTagger(FastTextEnglishLanguageDocumentTagger):
+    def __init__(self):
+        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.SENTENCE_LEVEL_TAGGER)
+
+@TaggerRegistry.add("ft_lang_id_multi_paragraph_v2")
+class FastTextMultiLanguageParagraphTagger(FastTextMultiLanguageDocumentTagger):
+    def __init__(self):
+        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
+
+@TaggerRegistry.add("ft_lang_id_multi_sent_v2")
+class FastTextMultiLanguageSentenceTagger(FastTextMultiLanguageDocumentTagger):
+    def __init__(self):
+        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.SENTENCE_LEVEL_TAGGER)
 
 
 def add_global_language_score_from_slice_score(result: DocResult) -> DocResult:
