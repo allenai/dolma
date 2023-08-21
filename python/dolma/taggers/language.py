@@ -104,12 +104,13 @@ class Cld2LanguageFilterParagraph(Cld2LanguageFilter):
 
 @TaggerRegistry.add("ft_lang_id_en_doc_v2")
 class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
+    # return score for English
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
 
     def __init__(self):
         super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
 
-    def predict_slice(self, text_slice: TextSlice, multilang: bool = False, **kwargs) -> Iterable[Prediction]:
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
         pred = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
         for label, score in zip(*pred):
             if label == "__label__en":
@@ -118,7 +119,7 @@ class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
 
 @TaggerRegistry.add("ft_lang_id_multi_doc_v2")
 class FastTextMultiLanguageDocumentTagger(BaseFastTextTagger):
-    # return the score of the most likely language
+    # return score of most likely language
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
 
     def __init__(self):
