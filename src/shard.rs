@@ -186,8 +186,9 @@ impl Shard {
                     let line = line?;
                     let mut data: Value = serde_json::from_str(&line)?;
                     let mut attrs = serde_json::Map::new();
-                    for (attr_reader_index,(_, attr_reader)) in 
-                    local_attr_readers.iter_mut().enumerate() {
+                    for (attr_reader_index, (_, attr_reader)) in
+                        local_attr_readers.iter_mut().enumerate()
+                    {
                         match attr_reader.next() {
                             Some(Ok(line)) => {
                                 let attr_data: Value = serde_json::from_str(&line)?;
@@ -354,15 +355,16 @@ impl Shard {
                     }
                 }
                 cache.finalize_input(&input_path.doc_path)?;
-                for i in 0..input_path.attribute_paths.len() {
-                    if attr_reader_failure_counts[i] > 0 {
+                for (index, attribute_path) in input_path.attribute_paths.iter().enumerate() {
+                    let failure_count = attr_reader_failure_counts[index];
+                    if failure_count > 0 {
                         log::warn!(
                             "Failed to read {} attributes from {}",
-                            input_path.attribute_paths[i],
-                            attr_reader_failure_counts[i]
+                            attribute_path,
+                            failure_count
                         );
                     }
-                    cache.finalize_input(&input_path.attribute_paths[i])?;
+                    cache.finalize_input(attribute_path)?;
                 }
                 log::info!(
                     "Dropped {} of {} documents from {}",
