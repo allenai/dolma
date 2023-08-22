@@ -41,7 +41,7 @@ jobs:
           echo "skip AWS:   ${{ env.DOLMA_TEST_SKIP_AWS }}"
           echo "commit:     ${{ github.sha }}"
           echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
-          echo "PR head repo:  ${{ github.event.pull_request.head.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
+          echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
 
 
   tests:
