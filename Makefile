@@ -28,6 +28,8 @@ setup:
 publish:
 	maturin publish
 
+test: test-python test-rust
+
 test-python:
 	pytest -vs tests/python
 	rm -rf tests/work/*
