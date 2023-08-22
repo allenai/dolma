@@ -12,6 +12,7 @@ from .utils import (
     download_s3_prefix,
     get_test_prefix,
     load_jsonl,
+    skip_aws_tests,
     upload_s3_prefix,
 )
 
@@ -22,11 +23,17 @@ DEDUPE_PARAGRAPHS = Path(__file__).parent.parent / "config/dedupe-paragraphs.jso
 class TestDeduper(TestCase):
     def setUp(self) -> None:
         self.stack = ExitStack()
-        self.test_prefix = get_test_prefix()
         self.local_temp_dir = self.stack.enter_context(TemporaryDirectory()).rstrip("/")
 
-        # upload test data
-        upload_s3_prefix(s3_prefix=f"{self.test_prefix}", local_prefix="tests/data/provided/documents/*.gz")
+        if skip_aws_tests():
+            self.remote_test_prefix = None
+        else:
+            self.remote_test_prefix = get_test_prefix()
+
+            # upload test data
+            upload_s3_prefix(
+                s3_prefix=f"{self.remote_test_prefix}", local_prefix="tests/data/provided/documents/*.gz"
+            )
 
         # copy provided config files to local temp dir
         shutil.copytree(
@@ -36,7 +43,8 @@ class TestDeduper(TestCase):
         )
 
     def tearDown(self) -> None:
-        clean_test_data(self.test_prefix)
+        if self.remote_test_prefix is not None:
+            clean_test_data(self.remote_test_prefix)
         self.stack.close()
 
     def test_dedupe_by_url(self):
@@ -76,10 +84,13 @@ class TestDeduper(TestCase):
         self.assertEqual(expected, computed)
 
     def test_dedupe_by_url_remote_input(self):
+        if self.remote_test_prefix is None:
+            return self.skipTest("Skipping AWS tests")
+
         with open(DEDUPE_BY_URL, "r") as f:
             config = json.load(f)
 
-        config["documents"][0] = f'{self.test_prefix}/{config["documents"][0]}'
+        config["documents"][0] = f'{self.remote_test_prefix}/{config["documents"][0]}'
         config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
 
         with NamedTemporaryFile("w") as f:
@@ -88,7 +99,7 @@ class TestDeduper(TestCase):
 
             main(argv=["-c", f.name, "dedupe"])
 
-        download_s3_prefix(self.test_prefix, self.local_temp_dir)
+        download_s3_prefix(self.remote_test_prefix, self.local_temp_dir)
 
         expected = load_jsonl("tests/data/expected/dedupe-by-url.json.gz")
         computed = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/attributes/dedupe_by_url/000.json.gz")

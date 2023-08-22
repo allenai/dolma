@@ -12,6 +12,7 @@ from smart_open import open
 from dolma.core.paths import glob_path, mkdir_p
 
 DOLMA_TEST_S3_PREFIX_ENV_VAR = "DOLMA_TESTS_S3_PREFIX"
+DOLMA_TESTS_SKIP_AWS_ENV_VAR = "DOLMA_TESTS_SKIP_AWS"
 DOLMA_TEST_S3_PREFIX_DEFAULT = "s3://dolma-tests"
 
 
@@ -45,13 +46,18 @@ def get_test_prefix() -> str:
     try:
         s3.head_bucket(Bucket=bucket)
     except Exception:
-        raise RuntimeError(
-            f"Unable to access test bucket '{test_prefix}'. To provide a different bucket, "
-            f"set the '{DOLMA_TEST_S3_PREFIX_ENV_VAR}' environment variable before running the tests."
-        )
+        if not skip_aws_tests():
+            raise RuntimeError(
+                f"Unable to access test bucket '{test_prefix}'. To provide a different bucket, "
+                f"set the '{DOLMA_TEST_S3_PREFIX_ENV_VAR}' environment variable before running the tests."
+            )
 
     # add a uuid to the test prefix to avoid collisions
     return f"{test_prefix.rstrip()}/{uuid.uuid4()}"
+
+
+def skip_aws_tests() -> bool:
+    return os.environ.get(DOLMA_TESTS_SKIP_AWS_ENV_VAR, "false").lower() == "true"
 
 
 def upload_test_documents(local_input: str, test_prefix: str) -> Tuple[str, str]:
