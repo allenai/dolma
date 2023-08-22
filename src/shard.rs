@@ -186,8 +186,8 @@ impl Shard {
                     let line = line?;
                     let mut data: Value = serde_json::from_str(&line)?;
                     let mut attrs = serde_json::Map::new();
-                    let mut attr_reader_index = 0;
-                    for (_, attr_reader) in local_attr_readers.iter_mut() {
+                    for (attr_reader_index,(_, attr_reader)) in 
+                    local_attr_readers.iter_mut().enumerate() {
                         match attr_reader.next() {
                             Some(Ok(line)) => {
                                 let attr_data: Value = serde_json::from_str(&line)?;
@@ -246,7 +246,6 @@ impl Shard {
                                 break;
                             }
                         }
-                        attr_reader_index += 1;
                     }
 
                     if !attrs.is_empty() {
