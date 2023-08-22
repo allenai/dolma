@@ -11,14 +11,23 @@ on:
       branches:
         - main
         - master
+      paths:
+        - '**.py'
+        - '**.rs'
+        - 'pyproject.toml'
+        - 'Cargo.toml'
    workflow_dispatch:
 
 
 permissions:
   contents: read
 
-jobs:
+env:
+  DOLMA_TEST_SKIP_AWS: ${{ secrets.AWS_ACCESS_KEY_ID == '' && 'true' || 'false' }}
+  DOLMA_TEST_S3_PREFIX_ENV_VAR: s3://dolma-tests
 
+
+jobs:
   info:
     runs-on: ubuntu-latest
     steps:
@@ -29,10 +38,11 @@ jobs:
           echo "run tests:  ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}"
           echo "is main:    ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}"
           echo "is release: ${{ startsWith(github.ref, 'refs/tags/') }}"
+          echo "skip AWS:   ${{ env.DOLMA_TEST_SKIP_AWS }}"
           echo "commit:     ${{ github.sha }}"
-          echo "-------------------------------------------------------------------------"
-          echo "Full PR details:"
-          echo "${{ toJson(github.event.pull_request) }}"
+          echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
+          echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
+
 
   tests:
     runs-on: ubuntu-latest

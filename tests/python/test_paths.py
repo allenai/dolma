@@ -18,18 +18,22 @@ from dolma.core.paths import (
     sub_suffix,
 )
 
-from .utils import clean_test_data, get_test_prefix, upload_s3_prefix
+from .utils import clean_test_data, get_test_prefix, skip_aws_tests, upload_s3_prefix
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"
 
 
 class TestPaths(TestCase):
     def setUp(self) -> None:
-        self.test_prefix = get_test_prefix()
-        upload_s3_prefix(s3_prefix=f"{self.test_prefix}", local_prefix="tests/data/expected/*")
+        if skip_aws_tests():
+            self.remote_test_prefix = None
+        else:
+            self.remote_test_prefix = get_test_prefix()
+            upload_s3_prefix(s3_prefix=f"{self.remote_test_prefix}", local_prefix="tests/data/expected/*")
 
     def tearDown(self) -> None:
-        clean_test_data(self.test_prefix)
+        if self.remote_test_prefix is not None:
+            clean_test_data(self.remote_test_prefix)
 
     def test_pathify(self):
         path = "s3://path/to/file"
@@ -54,9 +58,12 @@ class TestPaths(TestCase):
         self.assertEqual(sorted(paths), sorted(expected))
 
     def test_remote_glob_path(self):
-        paths = list(glob_path(f"{self.test_prefix}/**/*.json.gz"))
+        if self.remote_test_prefix is None:
+            return self.skipTest("Skipping AWS tests")
+
+        paths = list(glob_path(f"{self.remote_test_prefix}/**/*.json.gz"))
         expected = [
-            f"{self.test_prefix}/tests/data/expected/{fn}"
+            f"{self.remote_test_prefix}/tests/data/expected/{fn}"
             for fn in os.listdir(LOCAL_DATA / "expected")
             if fn.endswith(".json.gz")
         ]
