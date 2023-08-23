@@ -25,12 +25,9 @@ pub fn run(config: MixerConfig) -> Result<u32, u32> {
 
         threadpool.execute(move || {
             log::info!("Building output {:?}...", shard.output);
-            match shard.clone().process(work_dirs) {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("Error processing {:?}: {}", shard.output, e);
-                    failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
-                }
+            if let Err(e) = shard.clone().process(work_dirs) {
+                log::error!("Error processing {:?}: {}", shard.output, e);
+                failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
             }
         });
     }
