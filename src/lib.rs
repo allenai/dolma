@@ -15,13 +15,13 @@ use std::env;
 fn deduper_entrypoint(config_str: &str) -> PyResult<()> {
     let config: DeduperConfig = DeduperConfig::parse_from_string(config_str).unwrap();
 
-    match deduper::run(config) {
-        Ok(_) => Ok(()),
-        Err(cnt) => Err(exceptions::PyRuntimeError::new_err(format!(
+    if let Err(cnt) = deduper::run(config) {
+        return Err(exceptions::PyRuntimeError::new_err(format!(
             "Failed with {} errors",
             cnt
-        ))),
+        )));
     }
+    Ok(())
 }
 
 #[pyfunction]
