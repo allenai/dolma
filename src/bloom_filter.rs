@@ -135,8 +135,7 @@ impl BloomFilter {
         }
 
         let number_of_elements = stream.read_u64::<LittleEndian>()?;
-        let mut bits = Vec::new();
-        bits.reserve_exact(number_of_elements as usize);
+        let mut bits = Vec::with_capacity(number_of_elements as usize);
         for _ in 0..number_of_elements {
             bits.push(AtomicU32::new(stream.read_u32::<NativeEndian>()?));
         }
