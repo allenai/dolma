@@ -56,8 +56,13 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
 
     let bloom_filter_file = PathBuf::from(&config.bloom_filter.file);
     log::info!("Writing bloom filter to {:?}...", config.bloom_filter.file);
-    bloom_filter.write_to_file(&bloom_filter_file).unwrap();
-    log::info!("Bloom filter written.");
+    match bloom_filter.write_to_file(&bloom_filter_file) {
+        Ok(_) => log::info!("Bloom filter written."),
+        Err(e) => {
+            log::error!("Write failed: {}", e);
+            panic!("Failed to write bloom filter");
+        }
+    }
 
     let failure_count = failed_shard_count_ref.load(Ordering::Relaxed);
     if failure_count == 0 {
