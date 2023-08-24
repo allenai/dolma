@@ -86,11 +86,9 @@ impl BloomFilter {
         }
 
         let number_of_u32 = size_in_bytes / size_of::<AtomicU32>();
-        let mut bits = Vec::with_capacity(number_of_u32);
-        for _ in 0..number_of_u32 {
-            bits.push(AtomicU32::new(0));
-        }
-
+        let bits: Vec<AtomicU32> = std::iter::repeat_with(|| AtomicU32::new(0))
+            .take(number_of_u32)
+            .collect();
         Self {
             bits,
             hash_builder_seeds,
