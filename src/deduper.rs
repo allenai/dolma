@@ -132,8 +132,8 @@ fn write_attributes(
         );
 
         for (line_number, line) in reader.lines().enumerate() {
-            match line {
-                Ok(_) => {}
+            let line = match line {
+                Ok(line) => line,
                 Err(e) => {
                     log::error!(
                         "Error reading line {} of {}: {}",
@@ -143,8 +143,7 @@ fn write_attributes(
                     );
                     break;
                 }
-            }
-            let line = line?;
+            };
             let data: Value = serde_json::from_str(&line)?;
             let mut attributes = json!({});
 
