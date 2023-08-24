@@ -59,7 +59,7 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     bloom_filter.write_to_file(&bloom_filter_file).unwrap();
     log::info!("Bloom filter written.");
 
-    let failure_count = failed_shard_count_ref.fetch_add(0, Ordering::Relaxed);
+    let failure_count = failed_shard_count_ref.load(Ordering::Relaxed);
     match failure_count {
         0 => {
             log::info!("Done!");
