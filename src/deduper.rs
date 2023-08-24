@@ -170,8 +170,7 @@ fn write_attributes(
                     // and the document key is empty after trimming (i.e., removing whitespace)
                     continue;
                 } else {
-                    let mut dedupe_key = VecDeque::with_capacity(1);
-                    dedupe_key.push_back(document_key.as_str());
+                    let dedupe_key = VecDeque::from([document_key.as_str()]);
                     if bloom_filter.contains(&dedupe_key) {
                         attributes[&cfg.attribute_name] = Value::Bool(true);
                     } else if !bloom_filter.read_only {
@@ -201,13 +200,12 @@ fn write_attributes(
                             // and the paragraph is empty after trimming (i.e., removing whitespace)
                             continue;
                         } else {
-                            let mut dedupe_key = VecDeque::with_capacity(1);
-                            dedupe_key.push_back(p);
+                            let dedupe_key = VecDeque::from([p]);
                             if bloom_filter.contains(&dedupe_key) {
                                 let span = vec![
                                     Value::Number(par_start.into()),
                                     Value::Number(par_end.into()),
-                                    Value::Number(1.into()),
+                                    Value::from(1),
                                 ];
                                 // add span to duplicate_paragraph_spans
                                 duplicate_paragraph_spans.push(Value::Array(span));
