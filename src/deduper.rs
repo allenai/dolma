@@ -60,17 +60,12 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     log::info!("Bloom filter written.");
 
     let failure_count = failed_shard_count_ref.load(Ordering::Relaxed);
-    match failure_count {
-        0 => {
-            log::info!("Done!");
-
-            Ok(failure_count)
-        }
-        _ => {
-            log::error!("{} shards failed to process.", failure_count);
-
-            Err(failure_count)
-        }
+    if failure_count == 0 {
+        log::info!("Done!");
+        Ok(failure_count)
+    } else {
+        log::error!("{} shards failed to process.", failure_count);
+        Err(failure_count)
     }
 }
 
