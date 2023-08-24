@@ -43,12 +43,9 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
         let failed_shard_count_ref = failed_shard_count_ref.clone();
         threadpool.execute(move || {
             let result = write_attributes(path, work_dirs, dedupe, bloom_filter);
-            match result {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("Failed to process {:?}: {}", p, e);
-                    failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
-                }
+            if let Err(e) = result {
+                log::error!("Failed to process {:?}: {}", p, e);
+                failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
             }
         });
     }
