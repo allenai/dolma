@@ -177,17 +177,17 @@ class FastTextEnglishLanguageParagraphTagger(FastTextEnglishLanguageDocumentTagg
     def __init__(self):
         BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
 
-@TaggerRegistry.add("ft_lang_id_en_sent_v2")
-class FastTextEnglishLanguageSentenceTagger(FastTextEnglishLanguageDocumentTagger):
-    # sentence-level, English / not English
-    def __init__(self):
-        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.SENTENCE_LEVEL_TAGGER)
-
 @TaggerRegistry.add("ft_lang_id_multi_paragraph_v2")
 class FastTextMultiLanguageParagraphTagger(FastTextMultiLanguageDocumentTagger):
     # paragraph-level, most likely language
     def __init__(self):
         BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
+
+@TaggerRegistry.add("ft_lang_id_en_sent_v2")
+class FastTextEnglishLanguageSentenceTagger(FastTextEnglishLanguageDocumentTagger):
+    # sentence-level, English / not English
+    def __init__(self):
+        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.SENTENCE_LEVEL_TAGGER)
 
 @TaggerRegistry.add("ft_lang_id_multi_sent_v2")
 class FastTextMultiLanguageSentenceTagger(FastTextMultiLanguageDocumentTagger):
