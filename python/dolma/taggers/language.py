@@ -15,15 +15,83 @@ except ImportError:
     CLD3_AVAILABLE = False
 
 import pycld2 as cld2
+from langdetect import detect_langs
 import regex
 from anyascii import anyascii
+import random
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.ft_tagger import BaseFastTextTagger, Prediction
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
-from ..core.utils import split_paragraphs
+from ..core.utils import split_paragraphs, split_sentences
 
+'''
+Langdetect
+- Document, paragraph, and sentence level taggers
+- Taggers that return score for English or score for most likely language
+'''
+
+@TaggerRegistry.add("langdetect_en_doc_v2")
+class LangdetectTagger(BaseTagger):
+    # document-level, english / not english
+    def _predict_text(self, text: str) -> Tuple[str, float]:
+        random.seed(0)
+        langs = detect_langs(text)
+        if not langs: return "en", 0.0
+        score = max([lang.prob for lang in langs if lang.lang == 'en'] or [0.0])
+        return "en", score
+
+    def predict(self, doc: Document) -> DocResult:
+        lang, score = self._predict_text(doc.text)
+        positive_span = Span(start=0, end=len(doc.text), type=lang, score=score)
+        negative_span = Span(start=0, end=len(doc.text), type=f"not_{lang}", score=1.0 - score)
+        return DocResult(doc=doc, spans=[positive_span, negative_span])
+
+@TaggerRegistry.add("langdetect_multi_doc_v2")
+class LangdetectMultiTagger(LangdetectTagger):
+    # doc-level, return most likely language
+    def _predict_text(self, text: str) -> Tuple[str, float]:
+        random.seed(0)
+        langs = detect_langs(text)
+        if not langs: return "none", 0.0
+        return langs[0].lang, langs[0].prob
+
+@TaggerRegistry.add("langdetect_en_paragraph_v2")
+class LangdetectTaggerParagraph(LangdetectTagger):
+    # paragraph-level, english / not english
+    def predict(self, doc: Document) -> DocResult:
+        paragraphs = split_paragraphs(doc.text)
+        spans: List[Span] = []
+        for paragraph in paragraphs:
+            lang, score = self._predict_text(paragraph.text)  # pyright: ignore
+            positive_span = Span(start=paragraph.start, end=paragraph.end, type=lang, score=score)
+            negative_span = Span(start=paragraph.start, end=paragraph.end, type=f"not_{lang}", score=1.0 - score)
+            spans.extend((positive_span, negative_span))
+        return DocResult(doc=doc, spans=spans)
+
+@TaggerRegistry.add("langdetect_multi_paragraph_v2")
+class LangdetectMultiTaggerParagraph(LangdetectTaggerParagraph, LangdetectMultiTagger):
+    # paragraph-level, return most likely language
+    pass
+
+@TaggerRegistry.add("langdetect_en_sent_v2")
+class LangdetectTaggerSentence(LangdetectTagger):
+    # sentence-level, english / not english
+    def predict(self, doc: Document) -> DocResult:
+        sentences = split_sentences(doc.text)
+        spans: List[Span] = []
+        for sent in sentences:
+            lang, score = self._predict_text(sent.text)  # pyright: ignore
+            positive_span = Span(start=sent.start, end=sent.end, type=lang, score=score)
+            negative_span = Span(start=sent.start, end=sent.end, type=f"not_{lang}", score=1.0 - score)
+            spans.extend((positive_span, negative_span))
+        return DocResult(doc=doc, spans=spans)
+
+@TaggerRegistry.add("langdetect_multi_sent_v2")
+class LangdetectMultiTaggerSentence(LangdetectTaggerSentence, LangdetectMultiTagger):
+    # sentence-level, return most likely language
+    pass
 
 '''
 CLD3 Language ID
@@ -49,6 +117,12 @@ class Cld3LanguageTagger(BaseTagger):
         negative_span = Span(start=0, end=len(doc.text), type=f"not_{lang}", score=1.0 - score)
         return DocResult(doc=doc, spans=[positive_span, negative_span])
 
+@TaggerRegistry.add("cld3_multi_doc_v2")
+class Cld3MultiLanguageTagger(Cld3LanguageTagger):
+    # doc-level, return most likely language
+    def _predict_text(self, text: str) -> Tuple[str, float]:
+        pred = cld3.get_language(text)
+        return pred.language, pred.probability
 
 @TaggerRegistry.add("cld3_en_paragraph_v2")
 class Cld3LanguageTaggerParagraph(Cld3LanguageTagger):
@@ -63,10 +137,35 @@ class Cld3LanguageTaggerParagraph(Cld3LanguageTagger):
             spans.extend((positive_span, negative_span))
         return DocResult(doc=doc, spans=spans)
 
+@TaggerRegistry.add("cld3_multi_paragraph_v2")
+class Cld3MultiLanguageTaggerParagraph(Cld3MultiLanguageTagger, Cld3LanguageTaggerParagraph):
+    # paragraph-level, return most likely language
+    pass
+
+@TaggerRegistry.add("cld3_en_sent_v2")
+class Cld3LanguageTaggerSentence(Cld3LanguageTagger):
+    # sentence-level, english / not english
+    def predict(self, doc: Document) -> DocResult:
+        sentences = split_sentences(doc.text)
+        spans: List[Span] = []
+        for sent in sentences:
+            lang, score = self._predict_text(sent.text)  # pyright: ignore
+            positive_span = Span(start=sent.start, end=sent.end, type=lang, score=score)
+            negative_span = Span(start=sent.start, end=sent.end, type=f"not_{lang}", score=1.0 - score)
+            spans.extend((positive_span, negative_span))
+        return DocResult(doc=doc, spans=spans)
+
+@TaggerRegistry.add("cld3_multi_sent_v2")
+class Cld3MultiLanguageTaggerSentence(Cld3MultiLanguageTagger, Cld3LanguageTaggerSentence):
+    # sentence-level, return most likely language
+    pass
+
 '''
 CLD2 Language ID
 - Document, paragraph, and sentence-level taggers
 - Taggers that return score for English or for most likely language
+
+Note: "Filter" in class names below is synonymous to "Tagger" in other class names.
 '''
 
 @TaggerRegistry.add("cld2_en_doc_v2")
@@ -114,6 +213,8 @@ class Cld2MultiLanguageFilter(Cld2LanguageFilter):
                 break
             except cld2.error:
                 ...
+        if not details:
+            return 'none', 0.0
         score = details[0][2]
         lang = details[0][1]
         return lang, score / 100.0
@@ -134,6 +235,24 @@ class Cld2LanguageFilterParagraph(Cld2LanguageFilter):
 @TaggerRegistry.add("cld2_multi_paragraph_v2")
 class Cld2MultiLanguageFilterParagraph(Cld2LanguageFilterParagraph, Cld2MultiLanguageFilter):
     # paragraph-level, return score of most likely language
+    pass
+
+@TaggerRegistry.add("cld2_en_sent_v2")
+class Cld2LanguageFilterSentence(Cld2LanguageFilter):
+    # sentence-level, english / not english
+    def predict(self, doc: Document) -> DocResult:
+        sentences = split_sentences(doc.text)
+        spans: List[Span] = []
+        for sent in sentences:
+            lang, score = self._predict_text(sent.text)  # pyright: ignore
+            positive_span = Span(start=sent.start, end=sent.end, type=lang, score=score)
+            negative_span = Span(start=sent.start, end=sent.end, type=f"not_{lang}", score=1.0 - score)
+            spans.extend((positive_span, negative_span))
+        return DocResult(doc=doc, spans=spans)
+
+@TaggerRegistry.add("cld2_multi_sent_v2")
+class Cld2MultiLanguageFilterSentence(Cld2MultiLanguageFilter, Cld2LanguageFilterSentence):
+    # sentence-level, return most likely language
     pass
 
 '''
