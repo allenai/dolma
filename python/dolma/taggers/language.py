@@ -2,7 +2,7 @@
 
 Filters.
 
-@kylel, @soldni
+@kylel, @soldni, @lucy3
 
 """
 from typing import Iterable, List, Tuple
@@ -25,8 +25,15 @@ from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
 
 
+'''
+CLD3 Language ID
+- Document, paragraph, and sentence level taggers
+- Taggers that return score for English or score for most likely language
+'''
+
 @TaggerRegistry.add("cld3_en_doc_v2")
 class Cld3LanguageTagger(BaseTagger):
+    # document-level, english / not english
     def __init__(self) -> None:
         if not CLD3_AVAILABLE:
             raise ImportError(f"cld3 is not install, cannot instantiate {self.__class__.__name__}")
@@ -45,6 +52,7 @@ class Cld3LanguageTagger(BaseTagger):
 
 @TaggerRegistry.add("cld3_en_paragraph_v2")
 class Cld3LanguageTaggerParagraph(Cld3LanguageTagger):
+    # paragraph-level, english / not english
     def predict(self, doc: Document) -> DocResult:
         paragraphs = split_paragraphs(doc.text)
         spans: List[Span] = []
@@ -55,9 +63,15 @@ class Cld3LanguageTaggerParagraph(Cld3LanguageTagger):
             spans.extend((positive_span, negative_span))
         return DocResult(doc=doc, spans=spans)
 
+'''
+CLD2 Language ID
+- Document, paragraph, and sentence-level taggers
+- Taggers that return score for English or for most likely language
+'''
 
 @TaggerRegistry.add("cld2_en_doc_v2")
 class Cld2LanguageFilter(BaseTagger):
+    # doc-level, english / not english
     RE_BAD_CHARS = regex.compile(r"[\p{Cc}\p{Cs}]+")
 
     def _sanitize_input(self, text: str) -> str:
@@ -88,9 +102,25 @@ class Cld2LanguageFilter(BaseTagger):
         negative_span = Span(start=0, end=len(doc.text), type=f"not_{lang}", score=1.0 - score)
         return DocResult(doc=doc, spans=[positive_span, negative_span])
 
+@TaggerRegistry.add("cld2_multi_doc_v2")
+class Cld2MultiLanguageFilter(Cld2LanguageFilter):
+    # doc-level, return score of most likely language
+    def _predict_text(self, text: str) -> Tuple[str, float]:
+        details = []
+        is_reliable = False
+        for fn in (self._identity_fn, self._to_ascii_input, self._sanitize_input):
+            try:
+                is_reliable, _, details = cld2.detect(fn(text))
+                break
+            except cld2.error:
+                ...
+        score = details[0][2]
+        lang = details[0][1]
+        return lang, score / 100.0
 
 @TaggerRegistry.add("cld2_en_paragraph_v2")
 class Cld2LanguageFilterParagraph(Cld2LanguageFilter):
+    # paragraph-level, english / not english
     def predict(self, doc: Document) -> DocResult:
         paragraphs = split_paragraphs(doc.text)
         spans: List[Span] = []
@@ -101,10 +131,20 @@ class Cld2LanguageFilterParagraph(Cld2LanguageFilter):
             spans.extend((positive_span, negative_span))
         return DocResult(doc=doc, spans=spans)
 
+@TaggerRegistry.add("cld2_multi_paragraph_v2")
+class Cld2MultiLanguageFilterParagraph(Cld2LanguageFilterParagraph, Cld2MultiLanguageFilter):
+    # paragraph-level, return score of most likely language
+    pass
+
+'''
+FastText language ID
+- document-level, paragraph-level, sentence-level
+- taggers that return score for English or most likely language
+'''
 
 @TaggerRegistry.add("ft_lang_id_en_doc_v2")
 class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
-    # return score for English
+    # doc-level, return score for English
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
 
     def __init__(self):
@@ -119,7 +159,7 @@ class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
 
 @TaggerRegistry.add("ft_lang_id_multi_doc_v2")
 class FastTextMultiLanguageDocumentTagger(BaseFastTextTagger):
-    # return score of most likely language
+    # doc-level, return score of most likely language
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
 
     def __init__(self):
@@ -133,24 +173,32 @@ class FastTextMultiLanguageDocumentTagger(BaseFastTextTagger):
 
 @TaggerRegistry.add("ft_lang_id_en_paragraph_v2")
 class FastTextEnglishLanguageParagraphTagger(FastTextEnglishLanguageDocumentTagger):
+    # paragraph-level, English / not English
     def __init__(self):
         BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
 
 @TaggerRegistry.add("ft_lang_id_en_sent_v2")
 class FastTextEnglishLanguageSentenceTagger(FastTextEnglishLanguageDocumentTagger):
+    # sentence-level, English / not English
     def __init__(self):
         BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.SENTENCE_LEVEL_TAGGER)
 
 @TaggerRegistry.add("ft_lang_id_multi_paragraph_v2")
 class FastTextMultiLanguageParagraphTagger(FastTextMultiLanguageDocumentTagger):
+    # paragraph-level, most likely language
     def __init__(self):
         BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
 
 @TaggerRegistry.add("ft_lang_id_multi_sent_v2")
 class FastTextMultiLanguageSentenceTagger(FastTextMultiLanguageDocumentTagger):
+    # sentence-level, most likely language
     def __init__(self):
         BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.SENTENCE_LEVEL_TAGGER)
 
+'''
+Additional taggers that aggregate scores from slices to document score
+- CLD2, CLD3, fasttext
+'''
 
 def add_global_language_score_from_slice_score(result: DocResult) -> DocResult:
     # the total document score is # of characters in each "english" span multiplied by the likelihood
