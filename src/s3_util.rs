@@ -272,9 +272,8 @@ mod test {
 
     #[test]
     fn test_object_size() -> Result<(), io::Error> {
-        if std::env::var("DOLMA_TESTS_SKIP_AWS")
-            .ok()
-            .map_or(false, |v| v.to_lowercase() == "true")
+        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
+            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
         {
             println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
             return Ok(());
@@ -295,9 +294,8 @@ mod test {
 
     #[test]
     fn test_download_file() -> Result<(), io::Error> {
-        if std::env::var("DOLMA_TESTS_SKIP_AWS")
-            .ok()
-            .map_or(false, |v| v.to_lowercase() == "true")
+        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
+            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
         {
             println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
             return Ok(());
@@ -325,9 +323,8 @@ mod test {
 
     #[test]
     fn test_find_objects_matching_patterns() -> Result<(), io::Error> {
-        if std::env::var("DOLMA_TESTS_SKIP_AWS")
-            .ok()
-            .map_or(false, |v| v.to_lowercase() == "true")
+        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
+            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
         {
             println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
             return Ok(());
