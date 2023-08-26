@@ -1,17 +1,16 @@
 import hashlib
+import json
+import sys
 from dataclasses import dataclass, field
 from queue import Queue
-import sys
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, Tuple, Union
 
-import msgspec
+import smart_open
 from omegaconf import MISSING
 from omegaconf.omegaconf import OmegaConf as om
-import smart_open
 
 from dolma.core.parallel import BaseParallelProcessor
-from dolma.core.paths import glob_path, make_relative
 
 
 class TrafilaturaReformatter(BaseParallelProcessor):
@@ -27,36 +26,37 @@ class TrafilaturaReformatter(BaseParallelProcessor):
 
     @classmethod
     def process_single(
-        cls,
-        source_path: str,
-        destination_path: str,
-        queue: Queue[Union[Tuple[int, ...], None]],
-        **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
     ):
         documents = 0
         interval = 10_000
 
-        root, (_, rel_dst) = make_relative([source_path, destination_path])
-        rel_dst = rel_dst.replace('/', '_') + '.gz'
-        destination_path = f'{root}/{rel_dst}'
+        destination_prefix = kwargs.get("destination_prefix", None)
 
-        with smart_open.open(source_path, "rb") as source_file, \
-                smart_open.open(destination_path, "wb") as destination_file:
+        new_destination_suffix = (
+            destination_path.replace(destination_prefix, "").lstrip("/").replace("/", "_") + ".gz"
+        )
+        destination_path = f"{destination_prefix.rstrip()}/{new_destination_suffix}"
+
+        with smart_open.open(source_path, "rt") as source_file, smart_open.open(
+            destination_path, "wt"
+        ) as destination_file:
             for line in source_file:
-                document = msgspec.json.decode(line)
+                document = json.loads(line)
                 documents += 1
 
                 transformed = {
                     # use hash of the whole document as the id
-                    "id": hashlib.md5(line).hexdigest(),
+                    "id": hashlib.md5(line.encode("utf-8")).hexdigest(),
                     "text": document["content"],
-                    "metadata": document
+                    "source": "trafilatura",
+                    "metadata": document,
                 }
 
                 if documents % interval == 0:
                     cls.increment_progressbar(queue, documents=interval)
 
-                destination_file.write(msgspec.json.encode(transformed) + b"\n")
+                destination_file.write(json.dumps(transformed) + "\n")
 
         cls.increment_progressbar(queue, files=1, documents=documents % interval)
 
@@ -69,7 +69,7 @@ class Config:
     debug: bool = field(default=False)
 
 
-def reformat_files(config):
+def reformat_files(config: Config):
     with TemporaryDirectory() as tempdir:
         processor = TrafilaturaReformatter(
             source_prefix=config.src,
@@ -78,7 +78,7 @@ def reformat_files(config):
             num_processes=config.proc,
             debug=config.debug,
         )
-        processor()
+        processor(destination_prefix=config.dst)
 
 
 if __name__ == "__main__":

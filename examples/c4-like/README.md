@@ -11,7 +11,7 @@ python examples/c4-like/reformat_trafilatura.py \
     debug=False
 ```
 
-**Step 1**: Tag with fasttext language id and
+**Step 1**: Tag with fasttext language id and c4 rules.
 
 
 ```bash
