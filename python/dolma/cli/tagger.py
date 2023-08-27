@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-from typing import List, Optional
 from pstats import SortKey
+from typing import List, Optional
 
 from rich.console import Console
 from rich.table import Table
@@ -29,8 +29,8 @@ class ProfilerConfig:
         help="List of steps to profile; if not provided, all steps will be profiled.",
     )
     sort_key: str = field(
-        defualt='tottime',
-        choices=[str(k) for k in SortKey._value2member_map_],   # pylint: disable=no-member,protected-access
+        defualt="tottime",
+        choices=[str(k) for k in SortKey._value2member_map_],  # pylint: disable=no-member,protected-access
         help="Sort key for the profiling output.",
     )
     lines: int = field(

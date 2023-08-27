@@ -345,7 +345,7 @@ def create_and_run_tagger(
     profile_enable: bool = False,
     profile_output: Optional[str] = None,
     profile_steps: Optional[int] = None,
-    profile_sort_key: str = 'tottime',
+    profile_sort_key: str = "tottime",
     profile_lines: int = 100,
 ):
     """This function creates a tagger and runs it on a list of documents.
@@ -408,7 +408,7 @@ def create_and_run_tagger(
             source_prefix=documents,
             destination_prefix=destination,
             metadata_prefix=metadata,
-            debug=debug or profile_enable,     # if profile is true, debug must be true
+            debug=debug or profile_enable,  # if profile is true, debug must be true
             seed=seed,
             ignore_existing=ignore_existing,
             retries_on_error=retries_on_error,
@@ -426,5 +426,5 @@ def create_and_run_tagger(
                 experiment_name=experiment,
                 taggers_names=taggers,
                 skip_on_failure=skip_on_failure,
-                steps=profile_steps
+                steps=profile_steps,
             )
