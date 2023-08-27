@@ -345,8 +345,7 @@ mod test {
             match entry {
                 Ok(entry) => {
                     let mut remote_path =
-                        String::from_str("s3://ai2-llm/pretraining-data/tests/mixer/expected/")
-                            .unwrap();
+                        "s3://ai2-llm/pretraining-data/tests/mixer/expected/".to_string();
                     remote_path.push_str(entry.file_name().to_str().unwrap());
                     matches.remove(&remote_path);
                 }
