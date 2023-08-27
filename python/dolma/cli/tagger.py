@@ -29,7 +29,7 @@ class ProfilerConfig:
         help="List of steps to profile; if not provided, all steps will be profiled.",
     )
     sort_key: str = field(
-        defualt="tottime",
+        default="tottime",
         choices=[str(k) for k in SortKey._value2member_map_],  # pylint: disable=no-member,protected-access
         help="Sort key for the profiling output.",
     )
