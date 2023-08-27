@@ -6,7 +6,10 @@ streams:
 
     output:
       path: s3://ai2-llm/experimental/dcnlp_beta_ai2/v1/documents
-      max_size_in_bytes: 1048576000
+
+      # this should result in files around ~100MB. We keep this number small to
+      # ensure adequate parallelism during benchmarking.
+      max_size_in_bytes: 100_000_000
       discard_fields:
         - attributes
         - metadata
