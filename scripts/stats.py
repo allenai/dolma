@@ -206,7 +206,7 @@ class Registry:
 
 class BaseStatsProcessor(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(  # type: ignore[override]
+    def increment_progressbar(
         cls,
         queue: Queue[Union[Tuple[int, ...], None]],
         /,
@@ -434,7 +434,7 @@ class just_cc_dedup(books):
                 attrs = attr_decoder.decode(ln).attributes
 
                 # Duplicates stats
-                dups = [p for p in attrs.get('bff_duplicate_paragraph_spans', []) if p[1] - p[0] > 0]
+                dups = [p for p in attrs.get("bff_duplicate_paragraph_spans", []) if p[1] - p[0] > 0]
                 stats["dedupe_paragraphs_count"] += len(dups)
                 stats["dedupe_paragraphs_length"] += sum(s[1] - s[0] for s in dups)
                 stats["dedupe_paragraphs_matches"] += 1 if dups else 0
@@ -564,7 +564,7 @@ class cc_v1_c4_cleaned(books):
             source_path.replace("/documents/", "/attributes/decontamination/"),
             source_path.replace("/documents/", "/attributes/hatespeech_nsfw_cc_v3/"),
             source_path.replace("/documents/", "/attributes/pii_detection/"),
-            source_path.replace("/documents/", "/attributes/dedupe_paragraphs/")
+            source_path.replace("/documents/", "/attributes/dedupe_paragraphs/"),
         ]
 
         doc_decoder = msgspec.json.Decoder(InputSpec)
@@ -651,7 +651,7 @@ class cc_v1_c4_cleaned(books):
                 stats["pii_matches_gt_5"] += 1 if len(pii_removal) > 5 else 0
 
                 # Duplicates stats
-                dups = [p for p in attrs.get('bff_duplicate_paragraph_spans', []) if p[1] - p[0] > 0]
+                dups = [p for p in attrs.get("bff_duplicate_paragraph_spans", []) if p[1] - p[0] > 0]
                 stats["dedupe_paragraphs_count"] += len(dups)
                 stats["dedupe_paragraphs_length"] += sum(s[1] - s[0] for s in dups)
                 stats["dedupe_paragraphs_matches"] += 1 if dups else 0
@@ -977,7 +977,6 @@ class stack_v3(stack_v2):
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(counts, indent=2))
-
 
 
 # # # BELOW HERE: AGGREGATION # # #

@@ -15,7 +15,7 @@ from dolma.core.parallel import BaseParallelProcessor
 
 class TrafilaturaReformatter(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(  # type: ignore[override]
+    def increment_progressbar(
         cls,
         queue: Queue[Union[Tuple[int, ...], None]],
         /,

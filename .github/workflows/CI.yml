@@ -52,8 +52,8 @@ jobs:
         task:
           - name: Check Python style
             run: |
-              isort --check tests/python/ && isort --check python/
-              black --check tests/python/ && black --check python/
+              isort --check .
+              black --check .
 
           - name: Check Rust style
             run: |
@@ -61,11 +61,11 @@ jobs:
 
           - name: Lint
             run: |
-              flake8 tests/python/ && flake8 python/
+              flake8 .
 
           - name: Type check
             run: |
-              mypy tests/python/ && mypy python/
+              mypy .
 
           - name: Test
             run: |
