@@ -342,9 +342,10 @@ mod test {
         // list the contents of `tests/data/expected` and check that they match
         let entries = read_dir("tests/data/expected")?;
         for entry in entries {
-            let entry_path = entry?;
-            let mut remote_path = "s3://ai2-llm/pretraining-data/tests/mixer/expected/".to_string();
-            remote_path.push_str(entry_path.file_name().to_str().unwrap());
+            let remote_path = format!(
+                "s3://ai2-llm/pretraining-data/tests/mixer/expected/{}",
+                entry?.file_name().to_str().unwrap()
+            );
             matches.remove(&remote_path);
         }
 
