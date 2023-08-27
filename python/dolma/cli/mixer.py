@@ -50,6 +50,10 @@ class MixerConfig:
     streams: List[StreamConfig] = field(default=[], help="List configurations of streams to be mixed")
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
     processes: int = field(default=1, help="Number of processes to use for mixing. By default 1 process is used.")
+    dryrun: bool = field(
+        default=False,
+        help="If true, only print the configuration and exit without running the mixer.",
+    )
 
 
 class MixerCli(BaseCli):
@@ -128,4 +132,8 @@ class MixerCli(BaseCli):
                 raise DolmaConfigError("No streams to mix")
 
             print_config(dict_config)
+            if parsed_config.dryrun:
+                logger.info("Exiting due to dryrun.")
+                return
+
             return mixer(dict_config)

@@ -24,7 +24,7 @@ class ProfilerConfig:
         default=None,
         help="Path to save the profiling output; if not provided, the output will be printed to stdout.",
     )
-    steps: Optional[List[str]] = field(
+    steps: Optional[int] = field(
         default=None,
         help="List of steps to profile; if not provided, all steps will be profiled.",
     )
@@ -78,6 +78,10 @@ class TaggerConfig:
         help="Whether to run in profiling mode.",
     )
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
+    dryrun: bool = field(
+        default=False,
+        help="If true, only print the configuration and exit without running the taggers.",
+    )
 
 
 class TaggerCli(BaseCli):
@@ -109,6 +113,10 @@ class TaggerCli(BaseCli):
                 raise DolmaConfigError(f"No documents found for paths {documents}.")
 
             print_config(parsed_config)
+            if parsed_config.dryrun:
+                logger.info("Exiting due to dryrun.")
+                return
+
             create_and_run_tagger(
                 documents=documents,
                 destination=parsed_config.destination,

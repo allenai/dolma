@@ -2,7 +2,7 @@ import io
 import logging
 import multiprocessing
 import tempfile
-from contextlib import ExitStack, contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager
 from typing import (
     IO,
     Any,
@@ -415,13 +415,16 @@ def create_and_run_tagger(
             num_processes=num_processes,
         )
 
-        with (
-            profiler(output=profile_output, sort_key=profile_sort_key, lines=profile_lines) 
-            if profile_enable else nullcontext()
-        ):
+        with ExitStack() as stack:
+            if profile_enable:
+                # start profiling
+                stack.enter_context(
+                    profiler(output=profile_output, sort_key=profile_sort_key, lines=profile_lines)
+                )
+
             tagger(
                 experiment_name=experiment,
                 taggers_names=taggers,
                 skip_on_failure=skip_on_failure,
-                steps=profile_steps,
+                steps=profile_steps
             )

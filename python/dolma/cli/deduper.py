@@ -70,6 +70,10 @@ class DeduperConfig:
     processes: int = field(
         default=1, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
     )
+    dryrun: bool = field(
+        default=False,
+        help="If true, only print the configuration and exit without running the deduper.",
+    )
 
 
 class DeduperCli(BaseCli):
@@ -137,4 +141,8 @@ class DeduperCli(BaseCli):
                 raise ValueError("At least one document must be specified")
 
             print_config(dict_config)
+            if parsed_config.dryrun:
+                logger.info("Exiting due to dryrun.")
+                return
+
             return deduper(dict_config)

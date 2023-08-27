@@ -4,7 +4,7 @@ import sys
 from dataclasses import dataclass, field
 from queue import Queue
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Tuple, Union, cast
 
 import smart_open
 from omegaconf import MISSING
@@ -83,4 +83,4 @@ def reformat_files(config: Config):
 
 if __name__ == "__main__":
     config = om.merge(om.structured(Config), om.from_cli(sys.argv[1:]))
-    reformat_files(config)
+    reformat_files(cast(Config, config))
