@@ -206,7 +206,7 @@ class Registry:
 
 class BaseStatsProcessor(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(  # type: ignore[override]
+    def increment_progressbar(  # type: ignore
         cls,
         queue: Queue[Union[Tuple[int, ...], None]],
         /,
@@ -405,6 +405,52 @@ class cc_v1(books):
 
 
 @Registry.add
+class just_cc_dedup(books):
+    documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
+    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/cc/just_cc_dedup/**/*.gz"
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+    ):
+        dedup = source_path.replace("/documents/", "/attributes/dedupe_paragraphs/")
+
+        attr_decoder = msgspec.json.Decoder(OutputSpec)
+        stats = {
+            "dedupe_paragraphs_count": 0,
+            "dedupe_paragraphs_length": 0,
+            "dedupe_paragraphs_matches": 0,
+        }
+        documents = 0
+        interval = 10_000
+
+        with ExitStack() as stack:
+            try:
+                dedup_file = stack.enter_context(smart_open.open(dedup, "rb"))
+            except Exception:
+                return
+
+            for ln in dedup_file:
+                attrs = attr_decoder.decode(ln).attributes
+
+                # Duplicates stats
+                dups = [p for p in attrs.get("bff_duplicate_paragraph_spans", []) if p[1] - p[0] > 0]
+                stats["dedupe_paragraphs_count"] += len(dups)
+                stats["dedupe_paragraphs_length"] += sum(s[1] - s[0] for s in dups)
+                stats["dedupe_paragraphs_matches"] += 1 if dups else 0
+
+                documents += 1
+
+                if documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=documents % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(stats, indent=2))
+
+
+@Registry.add
 class cc_v1_c4_cleaned(books):
     documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
     stats: str = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1_c4_cleaned/**/*.gz"
@@ -518,6 +564,7 @@ class cc_v1_c4_cleaned(books):
             source_path.replace("/documents/", "/attributes/decontamination/"),
             source_path.replace("/documents/", "/attributes/hatespeech_nsfw_cc_v3/"),
             source_path.replace("/documents/", "/attributes/pii_detection/"),
+            source_path.replace("/documents/", "/attributes/dedupe_paragraphs/"),
         ]
 
         doc_decoder = msgspec.json.Decoder(InputSpec)
@@ -531,12 +578,15 @@ class cc_v1_c4_cleaned(books):
             "decontamination_count": 0,
             "decontamination_length": 0,
             "decontamination_matches": 0,
+            "dedupe_paragraphs_count": 0,
+            "dedupe_paragraphs_length": 0,
+            "dedupe_paragraphs_matches": 0,
             "hatespeech_nsfw_count": 0,
             "hatespeech_nsfw_length": 0,
             "hatespeech_nsfw_matches": 0,
             "pii_count": 0,
             "pii_length": 0,
-            "pii_matches": 0,
+            "pii_matches_le_5": 0,
             "pii_matches_gt_5": 0,
         }
         documents = 0
@@ -544,7 +594,11 @@ class cc_v1_c4_cleaned(books):
 
         with ExitStack() as stack:
             doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
-            atts_files = [stack.enter_context(smart_open.open(path, "rb")) for path in attributes]
+
+            try:
+                atts_files = [stack.enter_context(smart_open.open(path, "rb")) for path in attributes]
+            except Exception:
+                return
 
             for doc_line, *attr_lines in zip(doc_file, *atts_files):
                 doc = doc_decoder.decode(doc_line)
@@ -554,12 +608,6 @@ class cc_v1_c4_cleaned(books):
                 attrs = {}
                 for line in attr_lines:
                     attrs.update(attr_decoder.decode(line).attributes)
-
-                # # C4 stats
-                # c4_removal = attrs.get('c4_rules__c4_v1__lines_with_no_ending_punctuation', [])
-                # stats["c4_count"] += len(c4_removal)
-                # stats["c4_length"] += sum(s[-1] for s in c4_removal)
-                # stats["c4_matches"] += 1 if c4_removal else 0
 
                 # Gopher stats
                 gopher_removal = cls.gopher_rules(attrs)
@@ -599,8 +647,14 @@ class cc_v1_c4_cleaned(books):
                 )
                 stats["pii_count"] += len(pii_removal)
                 stats["pii_length"] += sum(s[1] - s[0] for s in pii_removal)
-                stats["pii_matches"] += 1 if pii_removal else 0
+                stats["pii_matches_le_5"] += 1 if 0 < len(pii_removal) <= 5 else 0
                 stats["pii_matches_gt_5"] += 1 if len(pii_removal) > 5 else 0
+
+                # Duplicates stats
+                dups = [p for p in attrs.get("bff_duplicate_paragraph_spans", []) if p[1] - p[0] > 0]
+                stats["dedupe_paragraphs_count"] += len(dups)
+                stats["dedupe_paragraphs_length"] += sum(s[1] - s[0] for s in dups)
+                stats["dedupe_paragraphs_matches"] += 1 if dups else 0
 
                 documents += 1
 
@@ -755,56 +809,77 @@ class StackInputSpec(InputSpec):
 
 
 @Registry.add
-class stack(BaseStatsProcessor):
+class stack_v2(books):
+    documents: str = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v1-mixer/documents/*.gz"
+    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/stack/v1-mixer/*.gz"
+
     @classmethod
     def process_single(
         cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
     ):
         attrs_basic = source_path.replace("/documents/", "/attributes/basic/")
-        attrs_code_secrets = source_path.replace("/documents/", "/attributes/code_secrets/")
+        attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
         # attrs_dedupe_documents = source_path.replace("/documents/", "/attributes/dedupe_documents/")
-        attrs_pii = source_path.replace("/documents/", "/attributes/pii/")
+        # attrs_pii = source_path.replace("/documents/", "/attributes/pii/")
 
         documents_decoder = msgspec.json.Decoder(StackInputSpec)
         attributes_decoder = msgspec.json.Decoder(OutputSpec)
 
         interval = 10_000
 
-        counts: dict = {"extension": defaultdict(int), "license": defaultdict(int), "documents": 0, "tokens": 0}
+        counts: dict = {
+            "extension": defaultdict(int),
+            "license": defaultdict(int),
+            "length": 0,
+            "count": 0,
+            "rpj_count": 0,
+            "rpj_length": 0,
+            "rpj_matches": 0,
+        }
         cnt = 0
 
         with ExitStack() as stack:
             doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
-            attrs_basic_file = stack.enter_context(smart_open.open(attrs_basic, "rb"))
-            attrs_code_secrets_file = stack.enter_context(smart_open.open(attrs_code_secrets, "rb"))
-            # attrs_dedupe_documents_file = stack.enter_context(smart_open.open(attrs_dedupe_documents, "rb"))
-            attrs_pii_file = stack.enter_context(smart_open.open(attrs_pii, "rb"))
+            attributes_files = [
+                stack.enter_context(smart_open.open(attrs_basic, "rb")),
+                stack.enter_context(smart_open.open(attrs_code_secrets, "rb")),
+                # stack.enter_context(smart_open.open(attrs_dedupe_documents, "rb")),
+                # stack.enter_context(smart_open.open(attrs_pii, "rb")),
+            ]
 
             # with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
-            for source_line, *attributes_line in zip(
-                doc_file,
-                attrs_basic_file,
-                attrs_code_secrets_file,
-                # attrs_dedupe_documents_file,
-                attrs_pii_file,
-            ):
+            for source_line, *attributes_line in zip(doc_file, *attributes_files):
                 cnt += 1
 
-                document = documents_decoder.decode(source_line)
+                doc = documents_decoder.decode(source_line)
                 for ln in attributes_line:
                     attributes = attributes_decoder.decode(ln)
-                    document.attributes.update(attributes.attributes)
+                    doc.attributes.update(attributes.attributes)
 
-                if document.attributes["basic__random_number_v1__random"][-1][-1] > 0.996:
+                if doc.attributes["basic__random_number_v1__random"][-1][-1] > 0.996:
                     # test set; see
                     # https://github.com/allenai/LLM/blob/642d0fad3fb2efd816af507250c4c65c8678cb44/pretrain_data/the_stack/v2-mixer/ablations/v2-mixer-held-out.json#L15
                     continue
 
-                counts["documents"] += 1
-                counts["tokens"] += len(blingfire.text_to_words(document.text).split())
+                spans = []
+                if doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__max_line_length_doc"][0][2] > 1000:
+                    spans.append((0, len(doc.text), 1.0))
+                elif doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__avg_line_length_doc"][0][2] > 100:
+                    spans.append((0, len(doc.text), 1.0))
+                elif doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__alnum_prop_doc"][0][2] < 0.25:
+                    spans.append((0, len(doc.text), 1.0))
+                elif doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__alpha_token_prop_doc"][0][2] < 1.5:
+                    spans.append((0, len(doc.text), 1.0))
 
-                counts["extension"][document.metadata["ext"]] += 1
-                for license in document.metadata["max_forks_repo_licenses"]:
+                counts["rpj_count"] += len(spans)
+                counts["rpj_length"] += sum(s[1] - s[0] for s in spans)
+                counts["rpj_matches"] += 1 if spans else 0
+
+                counts["count"] += 1
+                counts["length"] += len(doc.text)
+
+                counts["extension"][doc.metadata["ext"]] += 1
+                for license in doc.metadata["max_forks_repo_licenses"]:
                     counts["license"][license] += 1
 
                 cnt += 1
@@ -817,50 +892,91 @@ class stack(BaseStatsProcessor):
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(counts, indent=2))
 
-    @staticmethod
-    # read all paths in using threads
-    def _read_json(path: str) -> dict:
-        with smart_open.open(path, "rt") as source_file:
-            content = msgspec.json.decode(source_file.read())
-            return content
+
+@Registry.add
+class stack_v3(stack_v2):
+    documents: str = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v2-mixer/documents/*.gz"
+    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/stack/v2-mixer/*.gz"
 
     @classmethod
-    def _merge_dicts(cls, d1, d2):
-        d1 = copy.deepcopy(d1)
-        for k, v in d2.items():
-            if isinstance(v, dict):
-                d1[k] = cls._merge_dicts(d1.get(k, {}), v)
-            else:
-                d1[k] = d1.get(k, 0) + v
-        return d1
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+    ):
+        attrs_basic = source_path.replace("/documents/", "/attributes/basic/")
+        # attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
+        attrs_dedupe_documents = source_path.replace("/documents/", "/attributes/dedupe_documents/")
+        attrs_pii = source_path.replace("/documents/", "/attributes/pii/")
 
-    @classmethod
-    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
-        with TemporaryDirectory() as tempdir:
-            documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v2-mixer/documents/*.gz"
-            stats = "s3://ai2-llm/stats/olmo-mix/v1/code/stack"
-            metadata = os.path.join(tempdir, "stack")
+        documents_decoder = msgspec.json.Decoder(StackInputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
 
-            processor = cls(
-                source_prefix=documents,
-                destination_prefix=stats,
-                metadata_prefix=metadata,
-                num_processes=num_workers,
-                debug=debug,
-            )
-            processor(**process_single_kwargs)
+        interval = 10_000
 
-        paths = list(glob_path(f"{stats}/*.gz"))
-        counts: dict = {}
+        counts: dict = {
+            "extension": defaultdict(int),
+            "license": defaultdict(int),
+            "length": 0,
+            "count": 0,
+            "rpj_count": 0,
+            "rpj_length": 0,
+            "rpj_matches": 0,
+        }
+        cnt = 0
 
-        with multiprocessing.Pool(num_workers) as pool:
-            data = (cls._read_json(path) for path in paths) if debug else pool.imap(cls._read_json, paths)
+        with ExitStack() as stack:
+            doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
+            attributes_files = [
+                stack.enter_context(smart_open.open(attrs_basic, "rb")),
+                stack.enter_context(smart_open.open(attrs_dedupe_documents, "rb")),
+                stack.enter_context(smart_open.open(attrs_pii, "rb")),
+            ]
 
-            for content in tqdm.tqdm(data, desc="Merging code stats", unit=" files", total=len(paths)):
-                counts = cls._merge_dicts(counts, content)
+            # with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, *attributes_line in zip(doc_file, *attributes_files):
+                cnt += 1
 
-        with smart_open.open("s3://ai2-llm/stats/olmo-mix/v1/code/summary.json", "wt") as destination_file:
-            destination_file.write(json.dumps(counts, indent=2, sort_keys=True))
+                doc = documents_decoder.decode(source_line)
+                for ln in attributes_line:
+                    attributes = attributes_decoder.decode(ln)
+                    doc.attributes.update(attributes.attributes)
+
+                if doc.attributes["basic__random_number_v1__random"][-1][-1] > 0.996:
+                    # test set; see
+                    # https://github.com/allenai/LLM/blob/642d0fad3fb2efd816af507250c4c65c8678cb44/pretrain_data/the_stack/v2-mixer/ablations/v2-mixer-held-out.json#L15
+                    continue
+
+                breakpoint()
+
+                spans = []
+                if doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__max_line_length_doc"][0][2] > 1000:
+                    spans.append((0, len(doc.text), 1.0))
+                elif doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__avg_line_length_doc"][0][2] > 100:
+                    spans.append((0, len(doc.text), 1.0))
+                elif doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__alnum_prop_doc"][0][2] < 0.25:
+                    spans.append((0, len(doc.text), 1.0))
+                elif doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__alpha_token_prop_doc"][0][2] < 1.5:
+                    spans.append((0, len(doc.text), 1.0))
+
+                counts["rpj_count"] += len(spans)
+                counts["rpj_length"] += sum(s[1] - s[0] for s in spans)
+                counts["rpj_matches"] += 1 if spans else 0
+
+                counts["count"] += 1
+                counts["length"] += len(doc.text)
+
+                counts["extension"][doc.metadata["ext"]] += 1
+                for license in doc.metadata["max_forks_repo_licenses"]:
+                    counts["license"][license] += 1
+
+                cnt += 1
+
+                if cnt % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=cnt % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counts, indent=2))
 
 
 # # # BELOW HERE: AGGREGATION # # #

@@ -59,7 +59,7 @@ class AnalyzerCli(BaseCli):
             current_matching_documents = sum(1 for _ in glob_path(document))
             if current_matching_documents == 0:
                 # only raise a warning if no documents are found for a single path
-                logger.warn(f"No documents found for path {document}")
+                logger.warning("No documents found for path %s", document)
             total_matching_documents += current_matching_documents
 
         if total_matching_documents == 0:

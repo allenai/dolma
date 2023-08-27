@@ -70,6 +70,10 @@ class DeduperConfig:
     processes: int = field(
         default=1, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
     )
+    dryrun: bool = field(
+        default=False,
+        help="If true, only print the configuration and exit without running the deduper.",
+    )
 
 
 class DeduperCli(BaseCli):
@@ -103,7 +107,7 @@ class DeduperCli(BaseCli):
                 current_matching_documents = sum(1 for _ in glob_path(document))
                 if current_matching_documents == 0:
                     # only raise a warning if no documents are found for a single path
-                    logger.warn(f"No documents found for path {document}")
+                    logger.warning("No documents found for path %s", document)
                 total_matching_documents += current_matching_documents
 
             if total_matching_documents == 0:
@@ -137,4 +141,8 @@ class DeduperCli(BaseCli):
                 raise ValueError("At least one document must be specified")
 
             print_config(dict_config)
+            if parsed_config.dryrun:
+                logger.info("Exiting due to dryrun.")
+                return
+
             return deduper(dict_config)

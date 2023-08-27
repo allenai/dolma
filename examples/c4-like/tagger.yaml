@@ -1,0 +1,8 @@
+documents:
+  - s3://ai2-llm/experimental/dcnlp_beta_ai2/v0/documents/*.gz
+
+taggers:
+  - c4_v2
+  - ft_lang_id_en_doc_v2
+
+processes: 8
