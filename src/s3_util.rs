@@ -212,7 +212,6 @@ mod test {
     use std::io;
     use std::io::{BufRead, BufReader};
     use std::path::Path;
-    use std::str::FromStr;
 
     use flate2::read::MultiGzDecoder;
 
@@ -331,10 +330,7 @@ mod test {
         let s3_client = new_client(None)?;
 
         let patterns =
-            vec![
-                String::from_str("s3://ai2-llm/pretraining-data/tests/mixer/expected/*.json.gz")
-                    .unwrap(),
-            ];
+            vec!["s3://ai2-llm/pretraining-data/tests/mixer/expected/*.json.gz".to_string()];
 
         let resp = find_objects_matching_patterns(&s3_client, &patterns).unwrap();
         let mut matches: HashSet<String> = HashSet::from_iter(resp.iter().map(|s| s.to_owned()));
