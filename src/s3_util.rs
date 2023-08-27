@@ -166,11 +166,26 @@ pub fn find_objects_matching_patterns(
                 .unwrap()
             };
 
-            let to_validate_stream_inputs: Vec<String> = resp.contents().unwrap_or_default().iter().map(
-                |prefix| {
-                    format!("s3://{}/{}", bucket, prefix.key().unwrap())
-                }
-            ).collect();
+            // unrwrap resp.contents() and create a to_validate_stream_inputs vector
+            // containing all prefixes that do NOT end with "/"
+            let to_validate_stream_inputs: Vec<String> = resp
+                .contents()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|prefix| {
+                    if !prefix.key().unwrap().ends_with("/") {
+                        Some(format!("s3://{}/{}", bucket, prefix.key().unwrap()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // let to_validate_stream_inputs: Vec<String> = resp.contents().unwrap_or_default().iter().map(
+            //     |prefix| {
+            //         format!("s3://{}/{}", bucket, prefix.key().unwrap())
+            //     }
+            // ).collect();
 
             match suffix {
                 None => {
