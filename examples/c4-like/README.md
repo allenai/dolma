@@ -39,5 +39,5 @@ Timing on a `c6a.4xlarge` instance (8 cores, 16 threads, 32 GB memory, gp3 volum
 |:-------------:|:-----------:|
 |       1       |     ???     |
 |       4       |     ???     |
-|       8       |     769     |
+|       8       |    1,069    |
 |      16       |     ???     |

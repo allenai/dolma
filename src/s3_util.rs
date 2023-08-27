@@ -181,12 +181,6 @@ pub fn find_objects_matching_patterns(
                 })
                 .collect();
 
-            // let to_validate_stream_inputs: Vec<String> = resp.contents().unwrap_or_default().iter().map(
-            //     |prefix| {
-            //         format!("s3://{}/{}", bucket, prefix.key().unwrap())
-            //     }
-            // ).collect();
-
             match suffix {
                 None => {
                     // if suffix is none, push all the objects in to_validate_stream_inputs to stream_inputs
