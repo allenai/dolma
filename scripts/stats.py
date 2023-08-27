@@ -206,7 +206,7 @@ class Registry:
 
 class BaseStatsProcessor(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(
+    def increment_progressbar(  # type: ignore
         cls,
         queue: Queue[Union[Tuple[int, ...], None]],
         /,
