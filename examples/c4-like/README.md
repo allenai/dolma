@@ -13,7 +13,31 @@ python examples/c4-like/reformat_trafilatura.py \
 
 **Step 1**: Tag with fasttext language id and c4 rules.
 
+```bash
+time dolma -c examples/c4-like/tagger.yaml tag
+```
+
+Timing on a `c6a.4xlarge` instance (8 cores, 16 threads, 32 GB memory, gp3 volume, 16000 IOPS, 125 MB/s throughput):
+
+| **Processes** | **Seconds** |
+|:-------------:|:-----------:|
+|       1       |     ???     |
+|       4       |     ???     |
+|       8       |     ???     |
+|      16       |     ???     |
+
+
+**Step 2**: Run mixer to generate the final dataset.
 
 ```bash
-dolma -c examples/c4-like/tagger.yaml tag
+time dolma -c examples/c4-like/mixer.yaml mix
 ```
+
+Timing on a `c6a.4xlarge` instance (8 cores, 16 threads, 32 GB memory, gp3 volume, 16000 IOPS, 125 MB/s throughput):
+
+| **Processes** | **Seconds** |
+|:-------------:|:-----------:|
+|       1       |     ???     |
+|       4       |     ???     |
+|       8       |     769     |
+|      16       |     ???     |

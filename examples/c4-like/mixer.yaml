@@ -1,10 +1,16 @@
 streams:
-  - name: c4
+  - name: dcnlp_beta_ai2
+
     documents:
-      - s3://ai2-llm/experimental/dcnlp_beta_ai2/v0/documents/*
+      - s3://ai2-llm/experimental/dcnlp_beta_ai2/v0/documents/*.jsonl.gz
+
     output:
       path: s3://ai2-llm/experimental/dcnlp_beta_ai2/v1/documents
       max_size_in_bytes: 1048576000
+      discard_fields:
+        - attributes
+        - metadata
+
     attributes:
       - c4_v2
       - ft_lang_id_en_doc_v2

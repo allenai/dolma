@@ -71,7 +71,7 @@ class TestMixer(TestCase):
         if self.remote_test_prefix is None:
             return self.skipTest("Skipping AWS tests")
 
-        with open(MIXER, "r") as f:
+        with open(MIXER, mode="r", encoding='utf8') as f:
             config = json.load(f)
 
         # keep track of local output path
@@ -97,7 +97,7 @@ class TestMixer(TestCase):
         if self.remote_test_prefix is None:
             return self.skipTest("Skipping AWS tests")
 
-        with open(MIXER, "r") as f:
+        with open(MIXER, mode="r", encoding='utf8') as f:
             config = json.load(f)
 
         # keep track of local output path
@@ -127,7 +127,7 @@ class TestMixer(TestCase):
         if self.remote_test_prefix is None:
             return self.skipTest("Skipping AWS tests")
 
-        with open(MIXER, "r") as f:
+        with open(MIXER, mode="r", encoding='utf8') as f:
             config = json.load(f)
 
         # keep track of local output path
