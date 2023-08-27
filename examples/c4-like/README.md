@@ -1,5 +1,7 @@
 # C4-like processing
 
+Please run this experiment from mainline.
+
 ## Step 0
 
 Convert data to dolma format. For example, we reformat the [trafilatura](https://trafilatura.readthedocs.io/en/latest/) output to dolma format.
@@ -27,8 +29,7 @@ Timing on a `c6a.4xlarge` instance (8 cores/16 threads, 32 GB memory, gp3 volume
 |:-------------:|:-----------:|
 |       1       |     N/A     |
 |       8       |     655     |
-|      16       |     ???     |
-
+|      16       |     493     |
 
 ## Step 2
 
