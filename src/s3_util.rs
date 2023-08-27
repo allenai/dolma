@@ -340,26 +340,19 @@ mod test {
         let mut matches: HashSet<String> = HashSet::from_iter(resp.iter().map(|s| s.to_owned()));
 
         // list the contents of `tests/data/expected` and check that they match
-        match read_dir("tests/data/expected") {
-            Ok(entries) => {
-                for entry in entries {
-                    match entry {
-                        Ok(entry) => {
-                            let mut remote_path = String::from_str(
-                                "s3://ai2-llm/pretraining-data/tests/mixer/expected/",
-                            )
+        let entries = read_dir("tests/data/expected")?;
+        for entry in entries {
+            match entry {
+                Ok(entry) => {
+                    let mut remote_path =
+                        String::from_str("s3://ai2-llm/pretraining-data/tests/mixer/expected/")
                             .unwrap();
-                            remote_path.push_str(entry.file_name().to_str().unwrap());
-                            matches.remove(&remote_path);
-                        }
-                        Err(err) => {
-                            return Err(err);
-                        }
-                    }
+                    remote_path.push_str(entry.file_name().to_str().unwrap());
+                    matches.remove(&remote_path);
                 }
-            }
-            Err(err) => {
-                return Err(err);
+                Err(err) => {
+                    return Err(err);
+                }
             }
         }
 
