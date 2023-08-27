@@ -1,3 +1,4 @@
+import io
 import logging
 import multiprocessing
 import tempfile
@@ -246,6 +247,9 @@ class TaggerProcessor(BaseParallelProcessor):
         # skip on failure
         skip_on_failure = kwargs.get("skip_on_failure", False)
 
+        # maximum numbers of lines to process
+        steps: Union[int, None] = kwargs.get("steps", None)
+
         # interval at which to update the progress bar; will double if it gets
         # too full
         update_interval = 1
@@ -276,6 +280,10 @@ class TaggerProcessor(BaseParallelProcessor):
                     # increment the number of documents processed so far
                     docs_cnt += 1
 
+                    if steps is not None and docs_cnt >= steps:
+                        # if we have reached the maximum number of steps, we break
+                        break
+
                     if docs_cnt % update_interval == 0:
                         # update the progress bar every 1000 documents to prevent
                         # buffering
@@ -286,20 +294,40 @@ class TaggerProcessor(BaseParallelProcessor):
                             # double the update interval if the queue is full
                             update_interval *= 2
 
-            except Exception as e:
+            except Exception as exp:
                 # handle any exception that might have occurred
-                msg = f"Failed to process {source_path} due to {e.__class__.__name__}: {' '.join(e.args)}"
-                if e.__class__.__name__ == "IncompleteReadError":
+                msg = f"Failed to process {source_path} due to {exp.__class__.__name__}: {' '.join(exp.args)}"
+                if exp.__class__.__name__ == "IncompleteReadError":
                     # Intermittent error that occurs when reading from S3
-                    raise DolmaRetryableFailure(msg) from e
+                    raise DolmaRetryableFailure(msg) from exp
                 else:
                     if skip_on_failure:
-                        raise DolmaShardError(msg) from e
+                        raise DolmaShardError(msg) from exp
                     else:
-                        raise DolmaFatalError(msg) from e
+                        raise DolmaFatalError(msg) from exp
 
         # increment the files progress bar
         cls.increment_progressbar(queue, files=1, documents=docs_cnt)
+
+
+@contextmanager
+def profiler(
+    output: Optional[str] = None,
+    sort_key: str = "tottime",
+    lines: int = 100,
+) -> Generator[None, None, None]:
+    import cProfile
+    import pstats
+
+    profile = cProfile.Profile()
+    profile.enable()
+    yield
+    profile.disable()
+
+    with ExitStack() as stack:
+        output_stream = io.StringIO() if output is None else stack.enter_context(smart_open.open(output, "w"))
+        ps = pstats.Stats(profile, stream=output_stream).sort_stats(sort_key)
+        ps.print_stats(lines)
 
 
 def create_and_run_tagger(
@@ -314,6 +342,11 @@ def create_and_run_tagger(
     skip_on_failure: bool = False,
     retries_on_error: int = 0,
     num_processes: int = 1,
+    profile_enable: bool = False,
+    profile_output: Optional[str] = None,
+    profile_steps: Optional[int] = None,
+    profile_sort_key: str = "tottime",
+    profile_lines: int = 100,
 ):
     """This function creates a tagger and runs it on a list of documents.
 
@@ -339,6 +372,12 @@ def create_and_run_tagger(
         retries_on_error (int, optional): Number of times to retry processing a document if it fails.
             Defaults to 0 (fail immediately)
         num_processes (int, optional): Number of processes to use. Defaults to 1.
+        profile_enable (bool, optional): Whether to enable profiling. Defaults to False.
+        profile_output (Optional[str], optional): Path to save the profiling output; if not provided, the
+            output will be printed to stdout. Defaults to None.
+        profile_steps (Optional[int], optional): Number of steps to profile; if not provided, all steps will
+            be profiled. Defaults to None.
+        profile_sort_key (str, optional): Sort key for the profiling output. Defaults to 'tottime'.
     """
 
     # use placeholder experiment name if none is provided; raise an error if the placeholder name is used
@@ -350,33 +389,42 @@ def create_and_run_tagger(
     if destination is None:
         try:
             destination = _make_paths_from_substitution(documents, "documents", f"attributes/{experiment}")
-        except Exception as e:
-            raise RuntimeError("Could not make destination paths from documents paths") from e
+        except Exception as exp:
+            raise RuntimeError("Could not make destination paths from documents paths") from exp
     elif isinstance(destination, str):
         try:
             destination = _make_paths_from_prefix(documents, join_path(None, destination, experiment))
-        except Exception as e:
-            raise RuntimeError(f"Could not make destination paths from prefix {destination}") from e
+        except Exception as exp:
+            raise RuntimeError(f"Could not make destination paths from prefix {destination}") from exp
 
     metadata = metadata or tempfile.mkdtemp()
     if isinstance(metadata, str):
         try:
             metadata = _make_paths_from_prefix(documents, metadata)
-        except Exception as e:
-            raise RuntimeError(f"Could not make metadata paths from prefix {metadata}") from e
+        except Exception as exp:
+            raise RuntimeError(f"Could not make metadata paths from prefix {metadata}") from exp
 
         tagger = TaggerProcessor(
             source_prefix=documents,
             destination_prefix=destination,
             metadata_prefix=metadata,
-            debug=debug,
+            debug=debug or profile_enable,  # if profile is true, debug must be true
             seed=seed,
             ignore_existing=ignore_existing,
             retries_on_error=retries_on_error,
             num_processes=num_processes,
         )
-        tagger(
-            experiment_name=experiment,
-            taggers_names=taggers,
-            skip_on_failure=skip_on_failure,
-        )
+
+        with ExitStack() as stack:
+            if profile_enable:
+                # start profiling
+                stack.enter_context(
+                    profiler(output=profile_output, sort_key=profile_sort_key, lines=profile_lines)
+                )
+
+            tagger(
+                experiment_name=experiment,
+                taggers_names=taggers,
+                skip_on_failure=skip_on_failure,
+                steps=profile_steps,
+            )
