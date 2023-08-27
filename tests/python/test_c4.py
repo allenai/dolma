@@ -9,7 +9,7 @@ Unit tests for taggers/*.py
 from unittest import TestCase
 
 from dolma.core.data_types import Document
-from dolma.taggers.c4 import C4Tagger
+from dolma.taggers.c4 import C4Tagger, FasterC4Tagger
 
 
 class TestC4Tagger(TestCase):
@@ -84,3 +84,56 @@ class TestC4Tagger(TestCase):
                 'score': 1.0
             }]
         )
+
+    def test_lines_with_too_few_words(self):
+        doc = Document(source="", version="", id="", text="Short!\nThis short.\nBarely above the limit!\nthis is last frontier.")
+
+        result = self.tagger.predict(doc=doc)
+        self.assertEqual(
+            [r.to_json() for r in result.spans if r.type == "lines_with_too_few_words"],
+            [{
+                'start': 0,
+                'end': 7,
+                'type': 'lines_with_too_few_words',
+                'score': 1.0
+            }, {
+                'start': 7,
+                'end': 19,
+                'type': 'lines_with_too_few_words',
+                'score': 1.0
+            }]
+        )
+
+    def test_naughty_words(self):
+        doc = Document(source="", version="", id="", text="This sentence has no bad words.")
+        result = self.tagger.predict(doc=doc)
+        self.assertEqual(
+            [r.to_json() for r in result.spans if r.type == "has_naughty_word"],
+            []
+        )
+
+        doc = Document(source="", version="", id="", text="This sentence mentions viagra as a bad word.")
+        result = self.tagger.predict(doc=doc)
+        self.assertEqual(
+            [r.to_json() for r in result.spans if r.type == "has_naughty_word"],
+            [{'start': 0, 'end': len(doc.text), 'type': 'has_naughty_word', 'score': 1.0}]
+        )
+
+        doc = Document(source="", version="", id="", text="This sentence has ass, but not a bad word because of comma.")
+        result = self.tagger.predict(doc=doc)
+        self.assertEqual(
+            [r.to_json() for r in result.spans if r.type == "has_naughty_word"],
+            []
+        )
+
+        doc = Document(source="", version="", id="", text="If I say strap on because we are on a plane, it's still a bad word.")
+        result = self.tagger.predict(doc=doc)
+        self.assertEqual(
+            [r.to_json() for r in result.spans if r.type == "has_naughty_word"],
+            [{'start': 0, 'end': len(doc.text), 'type': 'has_naughty_word', 'score': 1.0}]
+        )
+
+
+class TestFasterC4Tagger(TestC4Tagger):
+    def setUp(self):
+        self.tagger = FasterC4Tagger()
