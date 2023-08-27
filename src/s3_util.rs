@@ -100,8 +100,7 @@ pub async fn object_size(
         .send()
         .await
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
-    let content_length = resp?.content_length as usize;
-    Ok(content_length)
+    Ok(resp?.content_length as usize)
 }
 
 // Expand wildcard patterns into a list of object paths
