@@ -21,9 +21,6 @@ with necessary("warcio", soft=True) as WARCIO_AVAILABLE:
 with necessary("justext", soft=True) as JUSTEXT_AVAILABLE:
     from justext import justext
 
-with necessary("newspaper3k", soft=True) as NEWSPAPER_AVAILABLE:
-    from newspaper import Article
-
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     import dateparser
 
@@ -84,7 +81,6 @@ class WarcProcessor(BaseParallelProcessor):
         assert WARCIO_AVAILABLE, raise_dependency_error("warcio")
         assert TRAFILATURA_AVAILABLE, raise_dependency_error("trafilatura")
         assert JUSTEXT_AVAILABLE, raise_dependency_error("justext")
-        assert NEWSPAPER_AVAILABLE, raise_dependency_error("newspaper3k")
         assert DATEPARSER_AVAILABLE, raise_dependency_error("dateparser")
 
     @classmethod
@@ -111,23 +107,24 @@ class WarcProcessor(BaseParallelProcessor):
 
     @classmethod
     def _extract_text(
-        cls, content: bytes, backend: Union[Literal["trafilatura"], Literal["justext"], Literal["newspaper3k"]]
+        cls, content: bytes, backend: Union[Literal["trafilatura"], Literal["justext"]]
     ) -> Union[str, None]:
         if not content.strip():
             return None
 
         if backend == "trafilatura":
             output = trafilatura_extract(
-                content, include_comments=False, include_links=False, include_tables=False, no_fallback=True
+                content,
+                include_comments=False,
+                include_links=False,
+                include_tables=False,
+                no_fallback=False,
+                favor_precision=True,
             )
         elif backend == "justext":
             output = "\n".join(
                 paragraph.text for paragraph in justext(content, frozenset()) if not paragraph.is_boilerplate
             )
-        elif backend == "newspaper3k":
-            (article := Article("")).set_html(content)
-            article.parse()
-            output = article.text
         else:
             raise DolmaFatalError(f"Unknown backend: {backend}")
 

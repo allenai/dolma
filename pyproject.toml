@@ -110,7 +110,12 @@ warc = [
     "warcio>=1.7.4",
     "trafilatura>=1.6.1",
     "justext>=3.0.0",
-    "newspaper3k>=0.2.8",
+    # following are all for speeding up trafilatura
+    "brotli",
+    "cchardet >= 2.1.7; python_version < '3.11'",  # build issue
+    "faust-cchardet >= 2.1.18; python_version >= '3.11'",  # fix for build
+    "htmldate[speed] >= 1.4.3",
+    "py3langid >= 0.2.2",
 ]
 
 [build-system]
