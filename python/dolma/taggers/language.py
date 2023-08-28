@@ -20,7 +20,8 @@ from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
 
 with necessary.necessary("cld3", soft=True) as CLD3_AVAILABLE:
-    import cld3
+    if CLD3_AVAILABLE:
+        import cld3
 
 
 @TaggerRegistry.add("cld3_en_doc_v2")
