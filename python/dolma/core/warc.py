@@ -201,7 +201,7 @@ class WarcProcessor(BaseParallelProcessor):
                         metadata=metadata,
                     )
 
-                    output_file.write(encoder.encode(document) + b"\n")  # type: ignore
+                    output_file.write(encoder.encode(document) + b"\n")  # pyright: ignore
 
                     records_cnt += 1
 
