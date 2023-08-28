@@ -16,6 +16,7 @@ except ImportError:
 
 import pycld2 as cld2
 from langdetect import detect_langs
+from langdetect.lang_detect_exception import LangDetectException
 import regex
 from anyascii import anyascii
 import random
@@ -37,7 +38,10 @@ class LangdetectTagger(BaseTagger):
     # document-level, english / not english
     def _predict_text(self, text: str) -> Tuple[str, float]:
         random.seed(0)
-        langs = detect_langs(text)
+        try:
+            langs = detect_langs(text)
+        except LangDetectException as e:
+            return "en", 0.0
         if not langs: return "en", 0.0
         score = max([lang.prob for lang in langs if lang.lang == 'en'] or [0.0])
         return "en", score
@@ -50,10 +54,13 @@ class LangdetectTagger(BaseTagger):
 
 @TaggerRegistry.add("langdetect_multi_doc_v2")
 class LangdetectMultiTagger(LangdetectTagger):
-    # doc-level, return most likely language
+    # doc-level, return most likely language / not that language
     def _predict_text(self, text: str) -> Tuple[str, float]:
         random.seed(0)
-        langs = detect_langs(text)
+        try:
+            langs = detect_langs(text)
+        except LangDetectException as e:
+            return "none", 0.0
         if not langs: return "none", 0.0
         return langs[0].lang, langs[0].prob
 
@@ -72,7 +79,7 @@ class LangdetectTaggerParagraph(LangdetectTagger):
 
 @TaggerRegistry.add("langdetect_multi_paragraph_v2")
 class LangdetectMultiTaggerParagraph(LangdetectTaggerParagraph, LangdetectMultiTagger):
-    # paragraph-level, return most likely language
+    # paragraph-level, return most likely language / not that language
     pass
 
 @TaggerRegistry.add("langdetect_en_sent_v2")
@@ -90,7 +97,7 @@ class LangdetectTaggerSentence(LangdetectTagger):
 
 @TaggerRegistry.add("langdetect_multi_sent_v2")
 class LangdetectMultiTaggerSentence(LangdetectTaggerSentence, LangdetectMultiTagger):
-    # sentence-level, return most likely language
+    # sentence-level, return most likely language / not that language
     pass
 
 '''
@@ -119,7 +126,7 @@ class Cld3LanguageTagger(BaseTagger):
 
 @TaggerRegistry.add("cld3_multi_doc_v2")
 class Cld3MultiLanguageTagger(Cld3LanguageTagger):
-    # doc-level, return most likely language
+    # doc-level, return most likely language / not that language
     def _predict_text(self, text: str) -> Tuple[str, float]:
         pred = cld3.get_language(text)
         return pred.language, pred.probability
@@ -139,7 +146,7 @@ class Cld3LanguageTaggerParagraph(Cld3LanguageTagger):
 
 @TaggerRegistry.add("cld3_multi_paragraph_v2")
 class Cld3MultiLanguageTaggerParagraph(Cld3MultiLanguageTagger, Cld3LanguageTaggerParagraph):
-    # paragraph-level, return most likely language
+    # paragraph-level, return most likely language / not that language
     pass
 
 @TaggerRegistry.add("cld3_en_sent_v2")
@@ -157,7 +164,7 @@ class Cld3LanguageTaggerSentence(Cld3LanguageTagger):
 
 @TaggerRegistry.add("cld3_multi_sent_v2")
 class Cld3MultiLanguageTaggerSentence(Cld3MultiLanguageTagger, Cld3LanguageTaggerSentence):
-    # sentence-level, return most likely language
+    # sentence-level, return most likely language / not that language
     pass
 
 '''
@@ -203,7 +210,7 @@ class Cld2LanguageFilter(BaseTagger):
 
 @TaggerRegistry.add("cld2_multi_doc_v2")
 class Cld2MultiLanguageFilter(Cld2LanguageFilter):
-    # doc-level, return score of most likely language
+    # doc-level, return score of most likely language / not that language
     def _predict_text(self, text: str) -> Tuple[str, float]:
         details = []
         is_reliable = False
@@ -234,7 +241,7 @@ class Cld2LanguageFilterParagraph(Cld2LanguageFilter):
 
 @TaggerRegistry.add("cld2_multi_paragraph_v2")
 class Cld2MultiLanguageFilterParagraph(Cld2LanguageFilterParagraph, Cld2MultiLanguageFilter):
-    # paragraph-level, return score of most likely language
+    # paragraph-level, return score of most likely language / not that language
     pass
 
 @TaggerRegistry.add("cld2_en_sent_v2")
@@ -252,7 +259,7 @@ class Cld2LanguageFilterSentence(Cld2LanguageFilter):
 
 @TaggerRegistry.add("cld2_multi_sent_v2")
 class Cld2MultiLanguageFilterSentence(Cld2MultiLanguageFilter, Cld2LanguageFilterSentence):
-    # sentence-level, return most likely language
+    # sentence-level, return most likely language / not that language
     pass
 
 '''
@@ -263,7 +270,7 @@ FastText language ID
 
 @TaggerRegistry.add("ft_lang_id_en_doc_v2")
 class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
-    # doc-level, return score for English
+    # doc-level, return score for English / not English
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
 
     def __init__(self):
