@@ -1,5 +1,4 @@
 import io
-import logging
 import multiprocessing
 import tempfile
 from contextlib import ExitStack, contextmanager
@@ -21,7 +20,6 @@ import smart_open
 
 from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
-from .loggers import get_logger
 from .parallel import BaseParallelProcessor, QueueType
 from .paths import join_path, make_relative, mkdir_p, split_glob, split_path
 from .registry import TaggerRegistry
@@ -199,10 +197,6 @@ def _write_sample_to_streams(
 
 
 class TaggerProcessor(BaseParallelProcessor):
-    @classmethod
-    def get_logger(cls) -> logging.Logger:
-        return get_logger(cls.__name__)
-
     @classmethod
     def increment_progressbar(  # type: ignore
         cls,
