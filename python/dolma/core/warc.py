@@ -27,6 +27,9 @@ with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
     from trafilatura import extract as trafilatura_extract
 
+with necessary("goose3", soft=True) as GOOSE3_AVAILABLE:
+    from goose3 import Goose
+
 
 DATE_FORMATS = [
     "%a, %d %b %Y %H:%M:%S %Z",
@@ -118,7 +121,7 @@ class WarcProcessor(BaseParallelProcessor):
                 include_comments=False,
                 include_links=False,
                 include_tables=False,
-                no_fallback=False,
+                no_fallback=True,
                 favor_precision=True,
             )
         elif backend == "justext":

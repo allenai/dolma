@@ -30,6 +30,7 @@ dependencies = [
     "uniseg",
     "numpy",
     "necessary>=0.4.3",
+    "langdetect>=1.0.9"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -110,6 +111,8 @@ warc = [
     "warcio>=1.7.4",
     "trafilatura>=1.6.1",
     "justext>=3.0.0",
+    "goose3>=3.1.17",
+
     # following are all for speeding up trafilatura
     "brotli",
     "cchardet >= 2.1.7; python_version < '3.11'",  # build issue

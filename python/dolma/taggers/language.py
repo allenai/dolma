@@ -7,22 +7,20 @@ Filters.
 """
 from typing import Iterable, List, Tuple
 
-try:
-    import cld3
-
-    CLD3_AVAILABLE = True
-except ImportError:
-    CLD3_AVAILABLE = False
-
+import necessary
 import pycld2 as cld2
 import regex
 from anyascii import anyascii
+from langdetect import detect_langs
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.ft_tagger import BaseFastTextTagger, Prediction
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
+
+with necessary.necessary("cld3", soft=True) as CLD3_AVAILABLE:
+    import cld3
 
 
 @TaggerRegistry.add("cld3_en_doc_v2")
@@ -164,3 +162,20 @@ class FastTextEnglishLanguageParagraphWithDocScoreTagger(FastTextEnglishLanguage
         doc_result = super().predict(doc)
         doc_result = add_global_language_score_from_slice_score(doc_result)
         return doc_result
+
+
+@TaggerRegistry.add("langdetect_en_doc_v1")
+class LangdetectTagger(BaseTagger):
+    # document-level, english / not english
+    def _predict_text(self, text: str) -> Tuple[str, float]:
+        langs = detect_langs(text)
+        if not langs:
+            return "en", 0.0
+        score = max([lang.prob for lang in langs if lang.lang == "en"] or [0.0])
+        return "en", score
+
+    def predict(self, doc: Document) -> DocResult:
+        lang, score = self._predict_text(doc.text)
+        positive_span = Span(start=0, end=len(doc.text), type=lang, score=score)
+        negative_span = Span(start=0, end=len(doc.text), type=f"not_{lang}", score=1.0 - score)
+        return DocResult(doc=doc, spans=[positive_span, negative_span])
