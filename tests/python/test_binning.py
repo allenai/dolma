@@ -2,7 +2,11 @@ import unittest
 
 import numpy as np
 
-from dolma.core.binning import BucketsValTracker, merge_bins
+from dolma.core.binning import (
+    FixedBucketsValTracker,
+    InferBucketsValTracker,
+    merge_bins,
+)
 
 
 class TestBinning(unittest.TestCase):
@@ -49,7 +53,7 @@ class TestBinning(unittest.TestCase):
         self.assertEqual(sum(count_c), sum(count_a) + sum(count_b))
 
     def test_bucket_val_trackers(self):
-        tracker = BucketsValTracker(n=100_000)
+        tracker = InferBucketsValTracker(n=100_000)
 
         values = np.random.randn(1_000_000)
 
@@ -69,3 +73,36 @@ class TestBinning(unittest.TestCase):
 
         for tb, hb in zip(tracker_bins, hist_bins):
             self.assertAlmostEqual(np.abs(tb - hb), 0, delta=0.5)
+
+
+class FixedBinning(unittest.TestCase):
+    def setUp(self) -> None:
+        np.random.seed(0)
+
+    def test_normal_bins(self):
+        tr = FixedBucketsValTracker()
+        vals = np.random.randn(2_000_000) * 100
+        total_count = len(vals)
+
+        for v in vals:
+            tr.add(v)
+
+        for (tr_c, tr_b), (hist_c, hist_b) in zip(zip(*tr.summarize(10)), zip(*np.histogram(vals, bins=10))):
+            count_diff = np.abs(tr_c - hist_c) / total_count
+            bin_diff = np.abs(tr_b - hist_b)
+            self.assertLess(count_diff, 0.01)
+            self.assertLess(bin_diff, 10)
+
+    def test_uniform_bins(self):
+        tr = FixedBucketsValTracker()
+        vals = np.random.rand(2_000_000)
+        total_count = len(vals)
+
+        for v in vals:
+            tr.add(v)
+
+        for (tr_c, tr_b), (hist_c, hist_b) in zip(zip(*tr.summarize(10)), zip(*np.histogram(vals, bins=10))):
+            count_diff = np.abs(tr_c - hist_c) / total_count
+            bin_diff = np.abs(tr_b - hist_b)
+            self.assertLess(count_diff, 0.01)
+            self.assertLess(bin_diff, 0.01)

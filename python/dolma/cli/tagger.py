@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pstats import SortKey
 from typing import List, Optional
 
 from rich.console import Console
@@ -11,6 +12,31 @@ from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
 from dolma.core.registry import TaggerRegistry
 from dolma.core.runtime import create_and_run_tagger
+
+
+@dataclass
+class ProfilerConfig:
+    enable: bool = field(
+        default=False,
+        help="Whether to enable profiling.",
+    )
+    output: Optional[str] = field(
+        default=None,
+        help="Path to save the profiling output; if not provided, the output will be printed to stdout.",
+    )
+    steps: Optional[int] = field(
+        default=None,
+        help="List of steps to profile; if not provided, all steps will be profiled.",
+    )
+    sort_key: str = field(
+        default="tottime",
+        choices=[str(k) for k in SortKey._value2member_map_],  # pylint: disable=no-member,protected-access
+        help="Sort key for the profiling output.",
+    )
+    lines: int = field(
+        default=100,
+        help="Number of rows to print in the profiling output.",
+    )
 
 
 @dataclass
@@ -47,7 +73,15 @@ class TaggerConfig:
         default=False,
         help="Whether to run in debug mode.",
     )
+    profile: ProfilerConfig = field(
+        default=ProfilerConfig(),
+        help="Whether to run in profiling mode.",
+    )
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
+    dryrun: bool = field(
+        default=False,
+        help="If true, only print the configuration and exit without running the taggers.",
+    )
 
 
 class TaggerCli(BaseCli):
@@ -71,7 +105,7 @@ class TaggerCli(BaseCli):
                 current_matching_documents = sum(1 for _ in glob_path(document))
                 if current_matching_documents == 0:
                     # only raise a warning if no documents are found for a single path
-                    logger.warn(f"No documents found for path {document}")
+                    logger.warning("No documents found for path %s", document)
                 total_matching_documents += current_matching_documents
 
             if total_matching_documents == 0:
@@ -79,6 +113,10 @@ class TaggerCli(BaseCli):
                 raise DolmaConfigError(f"No documents found for paths {documents}.")
 
             print_config(parsed_config)
+            if parsed_config.dryrun:
+                logger.info("Exiting due to dryrun.")
+                return
+
             create_and_run_tagger(
                 documents=documents,
                 destination=parsed_config.destination,
@@ -88,6 +126,10 @@ class TaggerCli(BaseCli):
                 num_processes=parsed_config.processes,
                 experiment=parsed_config.experiment,
                 debug=parsed_config.debug,
+                profile_enable=parsed_config.profile.enable,
+                profile_output=parsed_config.profile.output,
+                profile_steps=parsed_config.profile.steps,
+                profile_sort_key=parsed_config.profile.sort_key,
             )
 
 

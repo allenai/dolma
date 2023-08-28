@@ -154,6 +154,7 @@ pub fn find_objects_matching_patterns(
                 )
                 .unwrap()
             } else {
+                log::info!("Listing objects in bucket={}, prefix={}", bucket, key);
                 rt.block_on(
                     s3_client
                         .list_objects_v2()
@@ -164,24 +165,42 @@ pub fn find_objects_matching_patterns(
                 )
                 .unwrap()
             };
-            resp.contents().unwrap_or_default().iter().for_each(|obj| {
-                let s3_url = format!("s3://{}/{}", bucket, obj.key().unwrap());
-                stream_inputs.push(s3_url);
-            });
-            suffix.iter().for_each(|s| {
-                resp.common_prefixes()
-                    .unwrap_or_default()
-                    .iter()
-                    .for_each(|sub_folder| {
-                        let mut full_path = sub_folder.prefix().unwrap().to_owned();
-                        full_path.push_str(s);
-                        let s3_url = format!("s3://{}/{}", bucket, full_path);
-                        stream_inputs.push(s3_url);
+
+            // unrwrap resp.contents() and create a to_validate_stream_inputs vector
+            // containing all prefixes that do NOT end with "/"
+            let to_validate_stream_inputs: Vec<String> = resp
+                .contents()
+                .unwrap_or_default()
+                .iter()
+                .filter_map(|prefix| {
+                    if !prefix.key().unwrap().ends_with("/") {
+                        Some(format!("s3://{}/{}", bucket, prefix.key().unwrap()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            match suffix {
+                None => {
+                    // if suffix is none, push all the objects in to_validate_stream_inputs to stream_inputs
+                    to_validate_stream_inputs.iter().for_each(|path| {
+                        stream_inputs.push(path.to_owned());
                     });
-            });
+                }
+                _ => {
+                    // push only the objects that match the suffix to stream_inputs
+                    to_validate_stream_inputs.iter().for_each(|path| {
+                        if path.ends_with(suffix.clone().unwrap().as_str()) {
+                            stream_inputs.push(path.to_owned());
+                        }
+                    });
+                }
+            }
             token = resp.next_continuation_token().map(String::from);
             has_more = token.is_some();
         }
+
         log::info!(
             "Found {} objects for pattern \"{}\"",
             stream_inputs.len() - start_size,
@@ -272,6 +291,12 @@ mod test {
 
     #[test]
     fn test_object_size() -> Result<(), io::Error> {
+        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
+            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
+        {
+            println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
+            return Ok(());
+        }
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -288,6 +313,12 @@ mod test {
 
     #[test]
     fn test_download_file() -> Result<(), io::Error> {
+        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
+            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
+        {
+            println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
+            return Ok(());
+        }
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -311,6 +342,12 @@ mod test {
 
     #[test]
     fn test_find_objects_matching_patterns() -> Result<(), io::Error> {
+        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
+            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
+        {
+            println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
+            return Ok(());
+        }
         let s3_client = new_client(None)?;
 
         let patterns =

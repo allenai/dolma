@@ -8,13 +8,36 @@ on:
      tags:
        - '*'
    pull_request:
+      branches:
+        - main
+        - master
    workflow_dispatch:
 
 
 permissions:
   contents: read
 
+env:
+  DOLMA_TESTS_SKIP_AWS: ${{ secrets.AWS_ACCESS_KEY_ID == '' && 'true' || 'false' }}
+  DOLMA_TEST_S3_PREFIX: s3://dolma-tests
+
+
 jobs:
+  info:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo environment variables
+        run: |
+          echo "reference:  ${{ github.ref }}"
+          echo "event name: ${{ github.event_name }}"
+          echo "run tests:  ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}"
+          echo "is main:    ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}"
+          echo "is release: ${{ startsWith(github.ref, 'refs/tags/') }}"
+          echo "skip AWS:   ${{ env.DOLMA_TESTS_SKIP_AWS }}"
+          echo "commit:     ${{ github.sha }}"
+          echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
+          echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
+
 
   tests:
     runs-on: ubuntu-latest
@@ -23,14 +46,14 @@ jobs:
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         python: [3.8]
         task:
           - name: Check Python style
             run: |
-              isort --check .
-              black --check .
+              isort --check tests/python/ && isort --check python/
+              black --check tests/python/ && black --check python/
 
           - name: Check Rust style
             run: |
@@ -38,15 +61,15 @@ jobs:
 
           - name: Lint
             run: |
-              flake8 .
+              flake8 tests/python/ && flake8 python/
 
           - name: Type check
             run: |
-              mypy .
+              mypy tests/python/ && mypy python/
 
           - name: Test
             run: |
-              pytest -v --color=yes tests/python/
+              pytest -vs --color=yes tests/python/
 
     steps:
       - name: Checkout repository
@@ -93,7 +116,10 @@ jobs:
           source .venv/bin/activate
           pip uninstall -y dolma
 
+
+
   build-linux:
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     env:
       CC:   gcc-11
@@ -128,6 +154,7 @@ jobs:
           path: dist
 
   build-windows:
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: windows-latest
     strategy:
       matrix:
@@ -151,6 +178,7 @@ jobs:
           path: dist
 
   build-macos:
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: macos-latest
     strategy:
       matrix:
@@ -174,6 +202,7 @@ jobs:
 
   sdist:
     runs-on: ubuntu-latest
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     steps:
       - uses: actions/checkout@v3
       - name: Build sdist

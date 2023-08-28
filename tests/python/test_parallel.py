@@ -2,14 +2,13 @@
 
 import os
 from pathlib import Path
-from queue import Queue
 from tempfile import TemporaryDirectory
-from typing import Any, Tuple, Union
+from typing import Any
 from unittest import TestCase
 
 import smart_open
 
-from dolma.core.parallel import BaseParallelProcessor
+from dolma.core.parallel import BaseParallelProcessor, QueueType
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"
 
@@ -24,7 +23,7 @@ class MockProcessor(BaseParallelProcessor):
         cls,
         source_path: str,
         destination_path: str,
-        queue: "Queue[Union[None, Tuple[int, ...]]]",
+        queue: QueueType,
         **kwargs: Any,
     ):
         with smart_open.open(source_path, "rb") as f, smart_open.open(destination_path, "wb") as g:

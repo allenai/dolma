@@ -1,6 +1,6 @@
 import logging
-import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Set
 
 from ..core.data_types import DocResult, Document, Span
@@ -8,13 +8,10 @@ from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
 
 MIN_WORDS_PER_LINE = 3
-naughty_lines = (
-    open(os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "naughty_words_en.txt"))
-    .read()
-    .splitlines()
-)
-NAUGHTY_WORDS: Set[str] = set(w for w in naughty_lines if " " not in w)
-NAUGHTY_PHRASES: Set[str] = set(w for w in naughty_lines if " " in w)
+NAUGHTY_LINES = (Path(__file__).parent / "../data/naughty_words_en.txt").absolute().open().read().splitlines()
+NAUGHTY_WORDS: Set[str] = set(w for w in NAUGHTY_LINES if " " not in w)
+NAUGHTY_PHRASES: Set[str] = set(w for w in NAUGHTY_LINES if " " in w)
+EOL_PUNCTUATION = {".", "?", "!", '"'}
 
 
 @dataclass
@@ -85,3 +82,46 @@ class C4Tagger(BaseTagger):
         attrs = get_attributes(doc.text)
         result = DocResult(doc=doc, spans=attrs.as_spans())
         return result
+
+
+@TaggerRegistry.add("c4_v2")
+class FasterC4Tagger(BaseTagger):
+    def predict(self, doc: Document) -> DocResult:
+        spans: List[Span] = []
+        text = doc.text.lower()
+
+        if "{" in text:
+            spans.append(Span(0, len(doc.text), type="has_curly_brace"))
+
+        if "lorem ipsum" in text:
+            spans.append(Span(0, len(doc.text), type="has_lorem_ipsum"))
+
+        if "javascript" in text:
+            spans.append(Span(0, len(doc.text), type="has_javascript"))
+
+        if any(word in NAUGHTY_WORDS for word in text.split()) or any(
+            phrase in text for phrase in NAUGHTY_PHRASES
+        ):
+            spans.append(Span(0, len(doc.text), type="has_naughty_word"))
+
+        start = count = 0
+        for sent in text.split("\n"):
+            end = start + len(sent)
+            if end != len(text):
+                # account for the newline
+                end += 1
+
+            # strip any trailing whitespace
+            sent = sent.strip()
+
+            if not sent.endswith((".", "?", "!", '"')):
+                spans.append(Span(start, end, type="lines_with_no_ending_punctuation"))
+
+            if len(sent.split()) < MIN_WORDS_PER_LINE:
+                spans.append(Span(start, end, type="lines_with_too_few_words"))
+
+            count += 1
+            start = end
+
+        spans.append(Span(0, len(doc.text), type="line_count", score=count))
+        return DocResult(doc=doc, spans=spans)

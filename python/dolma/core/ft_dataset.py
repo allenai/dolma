@@ -17,14 +17,11 @@ from multiprocessing import Manager, Pool, Process, Queue
 from threading import Event
 from typing import Generator, List, Optional
 
-from smashed.utils.io_utils import (
-    open_file_for_read,
-    open_file_for_write,
-    recursively_list_files,
-)
+import smart_open
 
 from .data_types import TextSlice
 from .ft_tagger import BaseFastTextTagger
+from .paths import glob_path
 from .utils import split_paragraphs, split_sentences
 
 _WRITER_EXIT_MSG = "__WRITE__EXIT__"
@@ -75,14 +72,14 @@ def process_file(config: Config, q: "Queue[str]", flag: Event, label: str, fn):
 
     print(f"Processing {fn}")
 
-    with open_file_for_read(fn, "rb", open_fn=gzip_open) as f:
+    with smart_open.open(fn, "rt") as f:
         for line in f:
             # Abort part way through processing this file is flag set
             if flag.is_set():
                 return
 
             # Expected JSONL format following OLMo data spec
-            data = json.loads(line.decode("utf-8"))
+            data = json.loads(line)
             line_text = data["text"]
 
             if len(line_text) == 0:
@@ -103,7 +100,7 @@ def process_file(config: Config, q: "Queue[str]", flag: Event, label: str, fn):
 def write_results(config: Config, q: "Queue[str]", flag: Event):
     written = 0
 
-    with open_file_for_write(config.out_path) as o:
+    with smart_open.open(config.out_path, "wb") as o:
         while True:
             msg = q.get()
 
@@ -121,7 +118,7 @@ def write_results(config: Config, q: "Queue[str]", flag: Event):
 
 
 def process_paths(paths: List[str], config: Config, q: "Queue[str]", flag: Event, label: str):
-    fns = [fn for p in paths for fn in recursively_list_files(p)]
+    fns = [fn for p in paths for fn in glob_path(p)]
     random.shuffle(fns)
 
     work_fn = partial(process_file, config, q, flag, label)

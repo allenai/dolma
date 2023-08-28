@@ -23,16 +23,18 @@ setup:
 	$(shell "${PROTOBUF_SETUP}")
 	$(shell "${OPENSSL_SETUP}")
 	which cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-	which maturin || pip install maturin
+	which maturin || pip install maturin[patchelf]
 
 publish:
 	maturin publish
+
+test: test-python test-rust
 
 test-python:
 	pytest -vs tests/python
 	rm -rf tests/work/*
 
-test-rust: test-rust-clean test-rust-setup
+test-rust:
 	cargo test -- --nocapture
 	rm -rf tests/work/*
 

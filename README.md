@@ -1,13 +1,13 @@
-# dolma
-
-*Data to feed OLMo's Appetite*
+<img alt="Dolma's official logo. It's dolma written in yellow, round lowercase letters over a blue background." src="https://github.com/allenai/dolma/blob/main/res/logo.png?raw=true" width="100%">
 
 
-<img alt="DOLMa logo. It's a watercolor of grape leaves with the word DOLMa in the top left." src="https://github.com/allenai/dolma/blob/main/res/logo.png?raw=true" width="256">
+Dolma is an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
+It was created as a training corpus for [OLMo](https://allenai.org/olmo), AI2 language model.
 
-Data and tools for generating and inspecting OLMo pre-training data. These tools are intended for use on a CPU.
+Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr).
+You can also read more about Dolma in [our announcement](https://blog.allenai.org/dolma-3-trillion-tokens-open-llm-corpus-9a0ff4b8da64), as well as by consulting its [data sheet](https://drive.google.com/file/d/12gOf5I5RytsD159nSP7iim_5zN31FCXq/view?usp=drive_link).
 
-To get started, install dolma using [pip](https://pypi.org/project/dolma/).
+This repository contains tools for generating and inspecting Dolma. To get started, install the Dolma Python library from [PyPI](https://pypi.org/project/dolma/).
 
 ```shell
 pip install dolma
@@ -29,7 +29,9 @@ For all commands, configurations can be specified from command line, or by passi
 dolma -c config.yaml dedupe --dedupe.name "test"
 ```
 
-### `dolma tag`
+These tools are intended for use on a CPU.
+
+### The `tag` command
 
 The tag command is used to run any of the built-in taggers on a set of documents. For example:
 
@@ -45,7 +47,7 @@ dolma tag \
 
 This command will run the `random_number_v1` tagger on all documents in the specified S3 paths. The results will be written to the `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v0/attributes/sample` and `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v1/attributes/sample` paths, unless alternatives are specified by the `--destination` flag. 
 
-### `dolma dedupe`
+### The `dedupe` command
 
 The dedupe command is used to deduplicate a set of documents at the attribute level using a bloom filter.
 For example configurations, see directory `tests/config`. For example:
@@ -54,7 +56,7 @@ For example configurations, see directory `tests/config`. For example:
 dolma dedupe -c tests/config/dedupe-paragraphs.json
 ```
 
-### `dolma mix`
+### The `mix` command
 
 The mix command is used to mix documents from multiple sources, optionally filtering by attributes and/or performing string replacement. For example configurations, see directory `tests/config`. For example:
 
@@ -89,9 +91,20 @@ To run tests, use the following command.
 ```shell
 make test
 ```
-
 You can choose to run just the Python or Rust tests by calling `make test-python` or `make test-rust` respectively.
 
+You can skip S3 related tests by exporting `DOLMA_TESTS_SKIP_AWS=True`
+
+```shell
+DOLMA_TESTS_SKIP_AWS=True make test
+```
+
+## Contributing
+
+Before committing, use the following command
+```shell
+make style
+```
 
 ## Citation
 
@@ -101,7 +114,7 @@ If you use this repository, please cite it as:
 @software{dolma,
     author = {{Soldaini, Luca and Lo, Kyle and Kinney, Rodney and Naik, Aakanksha and Ravichander, Abhilasha and Bhagia, Akshita and Groeneveld, Dirk and Schwenk, Dustin and Magnusson, Ian and Chandu, Khyathi}},
     license = {{Apache-2.0}},
-    title = {{DOLMa}},
+    title = {{Dolma}},
     url = {https://github.com/allenai/dolma}
 }
 ```
