@@ -1,0 +1,48 @@
+streams:
+  - name: dcnlp_beta_ai2
+
+    documents:
+      - s3://ai2-llm/experimental/dcnlp_beta_ai2/v0/documents/*.jsonl.gz
+
+    output:
+      path: s3://ai2-llm/experimental/dcnlp_beta_ai2/v1/documents
+
+      # this should result in files around ~100MB. We keep this number small to
+      # ensure adequate parallelism during benchmarking.
+      max_size_in_bytes: 100_000_000
+      discard_fields:
+        - attributes
+        - metadata
+
+    attributes:
+      - c4_v2
+      - ft_lang_id_en_doc_v2
+    filter:
+      exclude:
+        # same filter as dolma: we remove documents whose English score is less than 0.5 according to fasttext
+        - $.attributes[?(@.ft_lang_id_en_doc_v2__ft_lang_id_en_doc_v2__en && @.ft_lang_id_en_doc_v2__ft_lang_id_en_doc_v2__en[0] && @.ft_lang_id_en_doc_v2__ft_lang_id_en_doc_v2__en[0][2] < 0.5)]
+
+        # exclude documents that contain a curly brace
+        - $.attributes[?(@.c4_v2__c4_v2__has_curly_brace && @.c4_v2__c4_v2__has_curly_brace[0] && @.c4_v2__c4_v2__has_curly_brace[0][2] > 0.5)]
+
+        # exclude documents that contain lorem ipsum
+        - $.attributes[?(@.c4_v2__c4_v2__has_lorem_ipsum && @.c4_v2__c4_v2__has_lorem_ipsum[0] && @.c4_v2__c4_v2__has_lorem_ipsum[0][2] > 0.5)]
+
+        # exclude documents that contain javascript
+        - $.attributes[?(@.c4_v2__c4_v2__has_javascript && @.c4_v2__c4_v2__has_javascript[0] && @.c4_v2__c4_v2__has_javascript[0][2] > 0.5)]
+
+        # exclude documents that contain one or more naughty words
+        - $.attributes[?(@.c4_v2__c4_v2__has_naughty_word && @.c4_v2__c4_v2__has_naughty_word[0] && @.c4_v2__c4_v2__has_naughty_word[0][2] > 0.5)]
+
+    span_replacement:
+      # remove lines that do not end in punctuation
+      - span: $.attributes.c4_v2__c4_v2__lines_with_no_ending_punctuation
+        min_score: 0.5
+        replacement: ""
+
+      # remove lines that are too short (less than 3 words as defined by C4 rules)
+      - span: $.attributes.c4_v2__c4_v2__lines_with_too_few_words
+        min_score: 0.5
+        replacement: ""
+
+processes: 8
