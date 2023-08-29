@@ -1,79 +1,30 @@
 import datetime
 import io
-import logging
 import multiprocessing
-import os
 import re
-import tempfile
-from typing import Dict, Generator, Literal, Optional, Union
+from typing import Dict, Generator, Optional, Type, Union, TYPE_CHECKING
 
 import msgspec
 import smart_open
 from necessary import necessary
 
-from .errors import DolmaFatalError
-from .parallel import BaseParallelProcessor, QueueType
+
+from .types import WarcDocument, WarcDocumentMetadata
+from .utils import raise_dependency_error
+from .html import HTML_EXTRACTORS, BaseHtmlExtractor
+from ..parallel import BaseParallelProcessor, QueueType
 
 with necessary("warcio", soft=True) as WARCIO_AVAILABLE:
-    from warcio.archiveiterator import ArchiveIterator
-    from warcio.recordloader import ArcWarcRecord
-
-with necessary("justext", soft=True) as JUSTEXT_AVAILABLE:
-    from justext import justext
+    if WARCIO_AVAILABLE or TYPE_CHECKING:
+        from warcio.archiveiterator import ArchiveIterator
+        from warcio.recordloader import ArcWarcRecord
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
-    import dateparser
-
-with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
-    from trafilatura import extract as trafilatura_extract
-
-with necessary("goose3", soft=True) as GOOSE3_AVAILABLE:
-    from goose3 import Goose
+    if DATEPARSER_AVAILABLE or TYPE_CHECKING:
+        import dateparser
 
 
-DATE_FORMATS = [
-    "%a, %d %b %Y %H:%M:%S %Z",
-    "%Y-%m-%dT%H:%M:%SZ",
-]
-
-
-class WarcDocumentMetadata(msgspec.Struct):
-    content: bytes
-    url: str
-    content_type: str
-    warc_date: str
-    warc_filename: str
-
-
-class WarcDocument(msgspec.Struct):
-    """A document extracted from a WARC file."""
-
-    source: str
-    id: str
-    text: str
-    added: str
-    created: str
-    metadata: WarcDocumentMetadata
-
-
-def format_timestamp(ts: Optional[datetime.datetime] = None) -> str:
-    if ts is None:
-        ts = datetime.datetime.now()
-    return ts.strftime("%Y-%m-%dT%H:%M:%S.%f")[:23] + "Z"
-
-
-def parse_warc_timestamp(ts: Optional[str]) -> datetime.datetime:
-    if not ts:
-        return datetime.datetime.now()
-
-    return dateparser.parse(date_string=ts, date_formats=DATE_FORMATS) or datetime.datetime.now()
-
-
-def raise_dependency_error(package: str):
-    raise DolmaFatalError(
-        f"Package {package} is required to run this processor. "
-        f"Please install it with `pip install dolma[warc]`."
-    )
+DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
 
 
 class WarcProcessor(BaseParallelProcessor):
@@ -82,9 +33,22 @@ class WarcProcessor(BaseParallelProcessor):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         assert WARCIO_AVAILABLE, raise_dependency_error("warcio")
-        assert TRAFILATURA_AVAILABLE, raise_dependency_error("trafilatura")
-        assert JUSTEXT_AVAILABLE, raise_dependency_error("justext")
         assert DATEPARSER_AVAILABLE, raise_dependency_error("dateparser")
+
+    @staticmethod
+    def _format_to_dolma_timestamp(timestamp: Optional[datetime.datetime] = None) -> str:
+        """Format a timestamp as a string using near ISO-8601 format."""
+        if timestamp is None:
+            timestamp = datetime.datetime.now()
+        return timestamp.strftime("%Y-%m-%dT%H:%M:%S.%f")[:23] + "Z"
+
+    @staticmethod
+    def _parse_warc_timestamp(timestamp_str: Optional[str]) -> datetime.datetime:
+        """Parse a WARC timestamp into a datetime object."""
+        if not timestamp_str:
+            return datetime.datetime.now()
+
+        return dateparser.parse(date_string=timestamp_str, date_formats=DATE_FORMATS) or datetime.datetime.now()
 
     @classmethod
     def increment_progressbar(  # type: ignore
@@ -109,31 +73,6 @@ class WarcProcessor(BaseParallelProcessor):
             yield record
 
     @classmethod
-    def _extract_text(
-        cls, content: bytes, backend: Union[Literal["trafilatura"], Literal["justext"]]
-    ) -> Union[str, None]:
-        if not content.strip():
-            return None
-
-        if backend == "trafilatura":
-            output = trafilatura_extract(
-                content,
-                include_comments=False,
-                include_links=False,
-                include_tables=False,
-                no_fallback=True,
-                favor_precision=True,
-            )
-        elif backend == "justext":
-            output = "\n".join(
-                paragraph.text for paragraph in justext(content, frozenset()) if not paragraph.is_boilerplate
-            )
-        else:
-            raise DolmaFatalError(f"Unknown backend: {backend}")
-
-        return output
-
-    @classmethod
     def process_single(
         cls,
         source_path: str,
@@ -156,8 +95,13 @@ class WarcProcessor(BaseParallelProcessor):
         # encoder
         encoder = msgspec.json.Encoder()
 
-        # make the trafilatura logger quiet
-        logging.getLogger("trafilatura").setLevel(logging.CRITICAL)
+        # create the html extractor
+        extractor_name: str = kwargs.get("extractor", "trafilatura")
+        extractor_cls: Union[Type[BaseHtmlExtractor], None] = HTML_EXTRACTORS.get(extractor_name)
+        if extractor_cls is None:
+            raise ValueError(f"Extractor {kwargs.get('extractor', 'trafilatura')} is not supported.")
+        assert extractor_name in HTML_EXTRACTORS, f"Extractor {extractor_name} is not supported."
+        extractor = extractor_cls(**kwargs.get("extractor_kwargs", {}))
 
         # play with extensions
         if not destination_path.endswith(".jsonl.gz"):
@@ -168,13 +112,11 @@ class WarcProcessor(BaseParallelProcessor):
         ) as output_file:
             for record in cls._record_iterator(warc_file):
                 if record.rec_type == "warcinfo":
-                    warc_date = parse_warc_timestamp(record.rec_headers.get_header("WARC-Date"))
+                    warc_date = cls._parse_warc_timestamp(record.rec_headers.get_header("WARC-Date"))
                     warc_filename = record.rec_headers.get_header("WARC-Filename")
 
                 elif record.rec_type == "response":
-                    content_type, *_ = record.http_headers.get_header("Content-Type", record.content_type).split(
-                        ";"
-                    )
+                    cont_type, *_ = record.http_headers.get_header("Content-Type", record.content_type).split(";")
 
                     date = record.http_headers.get_header("Date")
 
@@ -182,21 +124,21 @@ class WarcProcessor(BaseParallelProcessor):
                     payload_id = record.rec_headers.get_header("WARC-Payload-Digest").split(":")[1].lower()
 
                     content = record.content_stream().read()
-                    text = cls._extract_text(content=content, backend="trafilatura")
+                    text = extractor(content=content)
 
                     metadata = WarcDocumentMetadata(
                         url=target_uri,
                         content=content,
-                        warc_date=format_timestamp(warc_date),
+                        warc_date=cls._format_to_dolma_timestamp(warc_date),
                         warc_filename=warc_filename or "",
-                        content_type=content_type,
+                        content_type=cont_type,
                     )
 
                     document = WarcDocument(
                         source="warc",
                         id=payload_id,
-                        created=format_timestamp(parse_warc_timestamp(date)),
-                        added=format_timestamp(date_now),
+                        created=cls._format_to_dolma_timestamp(cls._parse_warc_timestamp(date)),
+                        added=cls._format_to_dolma_timestamp(date_now),
                         text=text or "",
                         metadata=metadata,
                     )
@@ -214,18 +156,3 @@ class WarcProcessor(BaseParallelProcessor):
                             update_interval *= 2
 
         cls.increment_progressbar(queue, files=1, records=records_cnt % update_interval)
-
-
-if __name__ == "__main__":
-    os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"
-    temp = "s3://ai2-russella/crawl-data/CC-MAIN-2019-18/segments/1555578517558.8/warc/CC-MAIN-20190418101243-20190418122311-00016.warc.gz"
-
-    with tempfile.TemporaryDirectory() as tempdir:
-        processor = WarcProcessor(
-            source_prefix=temp,
-            destination_prefix="s3://ai2-llm/experimental/cc-main-2019-18/v0/documents",
-            metadata_prefix=tempdir,
-            debug=False,
-            num_processes=8,
-        )
-        processor()

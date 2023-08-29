@@ -5,13 +5,12 @@ Filters.
 @kylel, @soldni
 
 """
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Tuple, TYPE_CHECKING
 
 import necessary
 import pycld2 as cld2
 import regex
 from anyascii import anyascii
-from langdetect import detect_langs
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.ft_tagger import BaseFastTextTagger, Prediction
@@ -20,8 +19,8 @@ from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
 
 with necessary.necessary("cld3", soft=True) as CLD3_AVAILABLE:
-    if CLD3_AVAILABLE:
-        import cld3
+    if CLD3_AVAILABLE or TYPE_CHECKING:
+        import cld3     # pyright:ignore pylint:disable=import-error
 
 
 @TaggerRegistry.add("cld3_en_doc_v2")
@@ -165,18 +164,30 @@ class FastTextEnglishLanguageParagraphWithDocScoreTagger(FastTextEnglishLanguage
         return doc_result
 
 
-@TaggerRegistry.add("langdetect_en_doc_v1")
-class LangdetectTagger(BaseTagger):
-    # document-level, english / not english
-    def _predict_text(self, text: str) -> Tuple[str, float]:
-        langs = detect_langs(text)
-        if not langs:
-            return "en", 0.0
-        score = max([lang.prob for lang in langs if lang.lang == "en"] or [0.0])
-        return "en", score
+# @TaggerRegistry.add("langdetect_en_doc_v1")
+# class LangdetectTagger(BaseTagger):
+#     def __init__(self) -> None:
+#         (factory := DetectorFactory()).load_profile(PROFILES_DIRECTORY)
+#         factory.set_seed(0)
+#         self.detector = factory.create()
+#         super().__init__()
 
-    def predict(self, doc: Document) -> DocResult:
-        lang, score = self._predict_text(doc.text)
-        positive_span = Span(start=0, end=len(doc.text), type=lang, score=score)
-        negative_span = Span(start=0, end=len(doc.text), type=f"not_{lang}", score=1.0 - score)
-        return DocResult(doc=doc, spans=[positive_span, negative_span])
+#     # document-level, english / not english
+#     def _predict_text(self, text: str) -> Tuple[str, float]:
+#         try:
+#             self.detector.append(text)
+#             langs = self.detector.get_probabilities()
+#             score, *_ = ([lang.prob for lang in langs if lang.lang == "en"] or [0.0])
+#         except LangDetectException:
+#             score = 0.0
+#         finally:
+#             self.detector.text = ""
+#             self.detector.langprob = None
+
+#         return "en", score
+
+#     def predict(self, doc: Document) -> DocResult:
+#         lang, score = self._predict_text(doc.text)
+#         positive_span = Span(start=0, end=len(doc.text), type=lang, score=score)
+#         negative_span = Span(start=0, end=len(doc.text), type=f"not_{lang}", score=1.0 - score)
+#         return DocResult(doc=doc, spans=[positive_span, negative_span])
