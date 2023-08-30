@@ -11,6 +11,7 @@ use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+mod bloom_test;
 // A thread-safe bloom filter.
 pub struct BloomFilter {
     bits: Vec<AtomicU32>,
