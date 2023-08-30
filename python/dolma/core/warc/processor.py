@@ -3,6 +3,7 @@ import io
 import multiprocessing
 import re
 from typing import Dict, Generator, Optional, Type, Union, TYPE_CHECKING
+from charset_normalizer import detect
 
 import msgspec
 import smart_open
@@ -12,6 +13,7 @@ from necessary import necessary
 from .types import WarcDocument, WarcDocumentMetadata
 from .utils import raise_dependency_error
 from .html import HTML_EXTRACTORS, BaseHtmlExtractor
+from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
 from ..parallel import BaseParallelProcessor, QueueType
 
 with necessary("warcio", soft=True) as WARCIO_AVAILABLE:
@@ -57,11 +59,12 @@ class WarcProcessor(BaseParallelProcessor):
         /,
         files: int = 0,
         records: int = 0,
+        extracted: int = 0,
     ) -> Dict[str, int]:
         """Records (documents) and records are the units we use to track progress."""
 
         # we call the super method to increment the progress bar
-        return super().increment_progressbar(queue, files=files, records=records)
+        return super().increment_progressbar(queue, files=files, records=records, extracted=extracted)
 
     @classmethod
     def _record_iterator(
@@ -71,6 +74,12 @@ class WarcProcessor(BaseParallelProcessor):
 
         for record in ArchiveIterator(stream):
             yield record
+
+    @classmethod
+    def _decode_content(cls, content: bytes) -> Union[str, None]:
+        if not (encoding := detect(content)['encoding']):
+            return None
+        return content.decode(str(encoding))
 
     @classmethod
     def process_single(
@@ -91,17 +100,27 @@ class WarcProcessor(BaseParallelProcessor):
 
         # hold the number of records processed in this variable
         records_cnt = 0
+        extracted_cnt = 0
 
         # encoder
         encoder = msgspec.json.Encoder()
 
+        # skip license if unknown
+        skip_unknown_license: bool = kwargs.get("skip_unknown_license", False)
+
         # create the html extractor
-        extractor_name: str = kwargs.get("extractor", "trafilatura")
-        extractor_cls: Union[Type[BaseHtmlExtractor], None] = HTML_EXTRACTORS.get(extractor_name)
-        if extractor_cls is None:
+        html_extractor_name: str = kwargs.get("html_extractor", "trafilatura")
+        html_extractor_cls: Union[Type[BaseHtmlExtractor], None] = HTML_EXTRACTORS.get(html_extractor_name)
+        if html_extractor_cls is None:
             raise ValueError(f"Extractor {kwargs.get('extractor', 'trafilatura')} is not supported.")
-        assert extractor_name in HTML_EXTRACTORS, f"Extractor {extractor_name} is not supported."
-        extractor = extractor_cls(**kwargs.get("extractor_kwargs", {}))
+        html_extractor = html_extractor_cls(**kwargs.get("extractor_kwargs", {}))
+
+        # create the license extractor
+        license_extr_name: str = kwargs.get("license_extractor", "cc_regex")
+        license_extr_cls: Union[Type[BaseLicenseExtractor], None] = LICENSE_EXTRACTORS.get(license_extr_name)
+        if license_extr_cls is None:
+            raise ValueError(f"License extractor {license_extr_name} is not supported.")
+        license_extractor = license_extr_cls()
 
         # play with extensions
         if not destination_path.endswith(".jsonl.gz"):
@@ -116,22 +135,35 @@ class WarcProcessor(BaseParallelProcessor):
                     warc_filename = record.rec_headers.get_header("WARC-Filename")
 
                 elif record.rec_type == "response":
-                    cont_type, *_ = record.http_headers.get_header("Content-Type", record.content_type).split(";")
+                    content = record.content_stream().read()
+                    cc_license = license_extractor(content=content)
 
+                    records_cnt += 1
+
+                    if skip_unknown_license and cc_license.type_ == "unk":
+                        continue
+
+                    str_content = cls._decode_content(content)
+                    if str_content is None:
+                        continue
+
+                    text = html_extractor(content=str_content)
+
+                    # metadata
+                    content_type, *_ = (
+                        record.http_headers.get_header("Content-Type", record.content_type).split(";")
+                    )
                     date = record.http_headers.get_header("Date")
-
                     target_uri = record.rec_headers.get_header("WARC-Target-URI")
                     payload_id = record.rec_headers.get_header("WARC-Payload-Digest").split(":")[1].lower()
 
-                    content = record.content_stream().read()
-                    text = extractor(content=content)
-
                     metadata = WarcDocumentMetadata(
                         url=target_uri,
-                        content=content,
+                        content=str_content,
                         warc_date=cls._format_to_dolma_timestamp(warc_date),
                         warc_filename=warc_filename or "",
-                        content_type=cont_type,
+                        content_type=content_type,
+                        cc_license=cc_license,
                     )
 
                     document = WarcDocument(
@@ -145,14 +177,18 @@ class WarcProcessor(BaseParallelProcessor):
 
                     output_file.write(encoder.encode(document) + b"\n")  # pyright: ignore
 
-                    records_cnt += 1
+                    extracted_cnt += 1
 
-                    if records_cnt % update_interval == 0:
+                    if extracted_cnt % update_interval == 0:
                         # update the progress bar every update_interval documents to prevent buffering
-                        cls.increment_progressbar(queue, records=update_interval)
+                        cls.increment_progressbar(queue, records=records_cnt, extracted=extracted_cnt)
+
+                        # reset the counters
+                        extracted_cnt = 0
+                        records_cnt = 0
 
                         if queue.qsize() >= multiprocessing.cpu_count():
                             # double the update interval if the queue is full
                             update_interval *= 2
 
-        cls.increment_progressbar(queue, files=1, records=records_cnt % update_interval)
+        cls.increment_progressbar(queue, files=1, records=records_cnt, extracted=extracted_cnt)

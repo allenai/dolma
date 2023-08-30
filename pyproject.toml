@@ -30,7 +30,8 @@ dependencies = [
     "uniseg",
     "numpy",
     "necessary>=0.4.3",
-    "langdetect>=1.0.9"
+    "langdetect>=1.0.9",
+    "charset-normalizer>=3.2.0"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
