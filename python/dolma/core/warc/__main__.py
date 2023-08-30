@@ -2,9 +2,9 @@ import multiprocessing
 import os
 import tempfile
 
-from . import WarcProcessor
-from ..runtime import _make_paths_from_prefix
 from ..paths import glob_path
+from ..runtime import _make_paths_from_prefix
+from . import WarcProcessor
 
 if __name__ == "__main__":
     os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"

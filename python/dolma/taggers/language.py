@@ -5,7 +5,7 @@ Filters.
 @kylel, @soldni
 
 """
-from typing import Iterable, List, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterable, List, Tuple
 
 import necessary
 import pycld2 as cld2
@@ -20,7 +20,7 @@ from ..core.utils import split_paragraphs
 
 with necessary.necessary("cld3", soft=True) as CLD3_AVAILABLE:
     if CLD3_AVAILABLE or TYPE_CHECKING:
-        import cld3     # pyright:ignore pylint:disable=import-error
+        import cld3  # pyright:ignore pylint:disable=import-error
 
 
 @TaggerRegistry.add("cld3_en_doc_v2")

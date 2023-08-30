@@ -18,6 +18,7 @@ class TaggerRegistry:
     @classmethod
     def add(cls, name: str) -> Callable[[Type[T]], Type[T]]:
         """Add a tagger to the registry."""
+
         def _add(
             tagger_cls: Type[T],
             tagger_name: str = name,

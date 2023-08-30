@@ -1,10 +1,10 @@
-from abc import abstractmethod
 import logging
-from typing import Union, TYPE_CHECKING, Dict, Type
+from abc import abstractmethod
+from typing import TYPE_CHECKING, Dict, Type, Union
 
 from necessary import necessary
-from .utils import raise_dependency_error
 
+from .utils import raise_dependency_error
 
 with necessary("justext", soft=True) as JUSTEXT_AVAILABLE:
     if JUSTEXT_AVAILABLE or TYPE_CHECKING:

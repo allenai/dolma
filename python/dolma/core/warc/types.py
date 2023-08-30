@@ -1,4 +1,5 @@
 from typing import Union
+
 import msgspec
 
 from .license import License
