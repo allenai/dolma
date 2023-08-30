@@ -49,9 +49,7 @@ impl Shard {
                 .map(|(input, size)| {
                     let mut attr_paths = Vec::new();
                     for prefix in stream_config.attributes.iter() {
-                        let mut attr_prefix = "/attributes/".to_owned();
-                        attr_prefix.push_str(prefix);
-                        attr_prefix.push_str("/");
+                        let attr_prefix = format!("/attributes/{}/", prefix);
                         let attr_path = input.replace("/documents/", &attr_prefix);
                         attr_paths.push(attr_path);
                     }
@@ -65,8 +63,7 @@ impl Shard {
                 })
                 .collect::<Vec<(DocumentPaths, usize)>>();
             let mut shard_size = inputs_with_sizes[0].1;
-            let mut shard_inputs: Vec<DocumentPaths> = Vec::new();
-            shard_inputs.push(inputs_with_sizes[0].0.clone());
+            let mut shard_inputs: Vec<DocumentPaths> = vec![inputs_with_sizes[0].0.clone()];
             for (input, size) in inputs_with_sizes[1..].iter() {
                 if *size == 0 {
                     log::warn!(
@@ -95,7 +92,7 @@ impl Shard {
                 }
                 shard_inputs.push(input.clone());
             }
-            if shard_inputs.len() > 0 {
+            if !shard_inputs.is_empty() {
                 let output = format!(
                     "{}/{}-{:04}.json.gz",
                     stream_config.output.path, stream_config.name, stream_shard_count
@@ -153,7 +150,7 @@ impl Shard {
                 let mut local_attr_readers = Vec::new();
                 let mut attr_reader_failure_counts = Vec::new();
                 for attr in &input_path.attribute_paths {
-                    let local_attr_file = cache.prepare_input(&attr)?;
+                    let local_attr_file = cache.prepare_input(attr)?;
                     let f = OpenOptions::new()
                         .read(true)
                         .write(false)
@@ -189,8 +186,9 @@ impl Shard {
                     let line = line?;
                     let mut data: Value = serde_json::from_str(&line)?;
                     let mut attrs = serde_json::Map::new();
-                    let mut attr_reader_index = 0;
-                    for (_, attr_reader) in local_attr_readers.iter_mut() {
+                    for (attr_reader_index, (_, attr_reader)) in
+                        local_attr_readers.iter_mut().enumerate()
+                    {
                         match attr_reader.next() {
                             Some(Ok(line)) => {
                                 let attr_data: Value = serde_json::from_str(&line)?;
@@ -249,7 +247,6 @@ impl Shard {
                                 break;
                             }
                         }
-                        attr_reader_index += 1;
                     }
 
                     if !attrs.is_empty() {
@@ -302,7 +299,8 @@ impl Shard {
                                         }
                                         if !is_inside_span {
                                             if i == replacements[span_index].end {
-                                                if replacements[span_index].replacement.len() > 0 {
+                                                if !replacements[span_index].replacement.is_empty()
+                                                {
                                                     let replacement_text = replacements[span_index]
                                                         .replacement
                                                         .to_owned()
@@ -335,19 +333,15 @@ impl Shard {
                                     i += 1;
                                     byte_index_with_char = chars.next();
                                 }
-                                if span_index < replacements.len() {
-                                    if replacements[span_index].replacement.len() > 0 {
-                                        let replacement_text = replacements[span_index]
-                                            .replacement
-                                            .to_owned()
-                                            .replace(
-                                                "{}",
-                                                old_text[span_start_byte_index..]
-                                                    .to_owned()
-                                                    .as_str(),
-                                            );
-                                        new_text.push_str(&replacement_text);
-                                    }
+                                if span_index < replacements.len()
+                                    && !replacements[span_index].replacement.is_empty()
+                                {
+                                    let replacement_text =
+                                        replacements[span_index].replacement.to_owned().replace(
+                                            "{}",
+                                            old_text[span_start_byte_index..].to_owned().as_str(),
+                                        );
+                                    new_text.push_str(&replacement_text);
                                 }
                                 data["text"] = Value::String(new_text);
                             }
@@ -361,15 +355,16 @@ impl Shard {
                     }
                 }
                 cache.finalize_input(&input_path.doc_path)?;
-                for i in 0..input_path.attribute_paths.len() {
-                    if attr_reader_failure_counts[i] > 0 {
+                for (index, attribute_path) in input_path.attribute_paths.iter().enumerate() {
+                    let failure_count = attr_reader_failure_counts[index];
+                    if failure_count > 0 {
                         log::warn!(
                             "Failed to read {} attributes from {}",
-                            input_path.attribute_paths[i],
-                            attr_reader_failure_counts[i]
+                            attribute_path,
+                            failure_count
                         );
                     }
-                    cache.finalize_input(&input_path.attribute_paths[i])?;
+                    cache.finalize_input(attribute_path)?;
                 }
                 log::info!(
                     "Dropped {} of {} documents from {}",
@@ -476,7 +471,7 @@ pub mod shard_config {
         // Check the json for the existence of any element matching the configured include/exclude patterns
         // Determine whether to keep the document based on the include/exclude matches
         pub fn should_keep(&self, json: &Value) -> Result<bool, String> {
-            let mut keep = self.include.len() == 0;
+            let mut keep = self.include.is_empty();
             for pattern in self.include.iter() {
                 let mut finder = JsonPathFinder::from_str("{}", pattern)?;
                 finder.set_json(Box::new(json.clone()));
@@ -527,7 +522,7 @@ impl FileCache {
             rt.block_on(s3_util::download_to_file(
                 &self.s3_client,
                 bucket,
-                &key,
+                key,
                 &path,
             ))?;
             Ok(path.clone())
@@ -549,7 +544,7 @@ impl FileCache {
     pub fn finalize_input(&self, location: &str) -> Result<(), io::Error> {
         if location.starts_with("s3://") {
             let (_, _, path) = cached_s3_location!(location, &self.work.input);
-            std::fs::remove_file(&path)?;
+            std::fs::remove_file(path)?;
             Ok(())
         } else {
             Ok(())
@@ -581,7 +576,7 @@ impl FileCache {
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(s3_util::upload_file(&self.s3_client, &path, &bucket, &key))?;
+            rt.block_on(s3_util::upload_file(&self.s3_client, &path, bucket, key))?;
             std::fs::remove_file(&path)?;
             {
                 // Create empty file to indicate that the shard is done.
@@ -589,9 +584,8 @@ impl FileCache {
             }
             Ok(())
         } else {
-            let tmp_path = location.to_owned() + ".tmp";
-            let tmp_path = Path::new(tmp_path.as_str());
-            std::fs::rename(&tmp_path, &location)?;
+            std::fs::rename(Path::new(&(location.to_owned() + ".tmp")), location)?;
+
             Ok(())
         }
     }
@@ -602,8 +596,8 @@ pub fn find_objects_matching_patterns(patterns: &Vec<String>) -> Result<Vec<Stri
     if s3_url_count == 0 {
         let mut matches = Vec::new();
         for pattern in patterns.iter() {
-            for entry in
-                glob(pattern).expect(format! {"Invalid file pattern: {}", pattern.clone()}.as_str())
+            for entry in glob(pattern)
+                .unwrap_or_else(|_| panic!("Invalid file pattern: {}", pattern.clone()))
             {
                 matches.push(entry.unwrap().to_str().unwrap().to_owned());
             }
@@ -644,11 +638,8 @@ pub fn get_object_sizes(locations: &Vec<String>) -> Result<Vec<usize>, io::Error
             .par_iter()
             .map(|location| {
                 let (bucket, key) = s3_util::split_url(location).unwrap();
-                let resp = rt.block_on(s3_util::object_size(&s3_client, &bucket, &key));
-                match resp {
-                    Ok(size) => size,
-                    Err(_) => 0,
-                }
+                rt.block_on(s3_util::object_size(&s3_client, bucket, key))
+                    .unwrap_or(0)
             })
             .collect();
         Ok(sizes)
