@@ -12,8 +12,7 @@ pub fn run(config: MixerConfig) -> Result<u32, u32> {
     let shards = Shard::split_streams(&config.streams).unwrap();
 
     let threadpool = ThreadPool::new(config.processes);
-    let failed_shard_count = AtomicU32::new(0);
-    let failed_shard_count_ref = Arc::new(failed_shard_count);
+    let failed_shard_count_ref = Arc::new(AtomicU32::new(0));
     for shard in shards {
         let output_path = Path::new(&config.work_dir.output.clone()).join(&shard.output);
         if output_path.exists() {
@@ -26,27 +25,21 @@ pub fn run(config: MixerConfig) -> Result<u32, u32> {
 
         threadpool.execute(move || {
             log::info!("Building output {:?}...", shard.output);
-            match shard.clone().process(work_dirs) {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("Error processing {:?}: {}", shard.output, e);
-                    failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
-                }
+            if let Err(e) = shard.clone().process(work_dirs) {
+                log::error!("Error processing {:?}: {}", shard.output, e);
+                failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
             }
         });
     }
     threadpool.join();
 
-    let failure_count = failed_shard_count_ref.fetch_add(0, Ordering::Relaxed);
-    match failure_count {
-        0 => {
-            log::info!("Done!");
-            return Ok(failure_count);
-        }
-        _ => {
-            log::error!("{} shards failed to process.", failure_count);
-            return Err(failure_count);
-        }
+    let failure_count = failed_shard_count_ref.load(Ordering::Relaxed);
+    if failure_count == 0 {
+        log::info!("Done!");
+        Ok(failure_count)
+    } else {
+        log::error!("{} shards failed to process.", failure_count);
+        Err(failure_count)
     }
 }
 

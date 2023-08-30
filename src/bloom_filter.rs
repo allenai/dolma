@@ -85,13 +85,10 @@ impl BloomFilter {
             hash_builder_seeds.push(seeds);
         }
 
-        let mut bits = Vec::new();
         let number_of_u32 = size_in_bytes / size_of::<AtomicU32>();
-        bits.reserve_exact(number_of_u32);
-        for _ in 0..number_of_u32 {
-            bits.push(AtomicU32::new(0));
-        }
-
+        let bits: Vec<AtomicU32> = std::iter::repeat_with(|| AtomicU32::new(0))
+            .take(number_of_u32)
+            .collect();
         Self {
             bits,
             hash_builder_seeds,
@@ -138,8 +135,7 @@ impl BloomFilter {
         }
 
         let number_of_elements = stream.read_u64::<LittleEndian>()?;
-        let mut bits = Vec::new();
-        bits.reserve_exact(number_of_elements as usize);
+        let mut bits = Vec::with_capacity(number_of_elements as usize);
         for _ in 0..number_of_elements {
             bits.push(AtomicU32::new(stream.read_u32::<NativeEndian>()?));
         }
@@ -220,8 +216,7 @@ impl BloomFilter {
                 return false;
             }
         }
-
-        return true;
+        true
     }
 
     pub fn contains(&self, s: &VecDeque<&str>) -> bool {
@@ -237,7 +232,7 @@ impl BloomFilter {
         } else {
             log::info!("Creating new bloom filter...");
             let mut bloom_filter_size: usize = config.size_in_bytes;
-            if bloom_filter_size <= 0 {
+            if bloom_filter_size == 0 {
                 bloom_filter_size = BloomFilter::suggest_size_in_bytes(
                     config.estimated_doc_count,
                     config.desired_false_positive_rate,

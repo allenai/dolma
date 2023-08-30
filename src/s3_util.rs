@@ -100,10 +100,7 @@ pub async fn object_size(
         .send()
         .await
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
-    match resp {
-        Ok(resp) => Ok(resp.content_length as usize),
-        Err(e) => Err(e),
-    }
+    Ok(resp?.content_length as usize)
 }
 
 // Expand wildcard patterns into a list of object paths
@@ -112,7 +109,7 @@ pub async fn object_size(
 // or:   a/*/b.txt -> a/1/b.txt, a/2/b.txt, a/3/b.txt
 pub fn find_objects_matching_patterns(
     s3_client: &S3Client,
-    patterns: &Vec<String>,
+    patterns: &[String],
 ) -> Result<Vec<String>, io::Error> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -141,7 +138,7 @@ pub fn find_objects_matching_patterns(
                     return Err(io::Error::new(io::ErrorKind::Other, e));
                 }
             };
-            let resp = if token.is_some() {
+            let resp = if let Some(token_value) = token {
                 log::info!("Listing objects in bucket={}, prefix={}", bucket, key);
                 rt.block_on(
                     s3_client
@@ -149,7 +146,7 @@ pub fn find_objects_matching_patterns(
                         .bucket(bucket)
                         .prefix(key)
                         .delimiter("/")
-                        .continuation_token(token.unwrap())
+                        .continuation_token(token_value)
                         .send(),
                 )
                 .unwrap()
@@ -234,9 +231,18 @@ mod test {
     use std::io;
     use std::io::{BufRead, BufReader};
     use std::path::Path;
-    use std::str::FromStr;
 
     use flate2::read::MultiGzDecoder;
+
+    fn skip_dolma_aws_tests() -> bool {
+        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
+            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
+        {
+            println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
+            return true;
+        }
+        false
+    }
 
     fn compare_contents(expected: &str, actual: &str) {
         let expected_lines = BufReader::new(MultiGzDecoder::new(
@@ -291,12 +297,10 @@ mod test {
 
     #[test]
     fn test_object_size() -> Result<(), io::Error> {
-        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
-            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
-        {
-            println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
+        if skip_dolma_aws_tests() {
             return Ok(());
         }
+
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -313,10 +317,7 @@ mod test {
 
     #[test]
     fn test_download_file() -> Result<(), io::Error> {
-        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
-            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
-        {
-            println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
+        if skip_dolma_aws_tests() {
             return Ok(());
         }
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -342,45 +343,25 @@ mod test {
 
     #[test]
     fn test_find_objects_matching_patterns() -> Result<(), io::Error> {
-        if std::env::var_os("DOLMA_TESTS_SKIP_AWS")
-            .is_some_and(|var| var.eq_ignore_ascii_case("true"))
-        {
-            println!("Skipping test_download_file because DOLMA_TESTS_SKIP_AWS=True");
+        if skip_dolma_aws_tests() {
             return Ok(());
         }
         let s3_client = new_client(None)?;
 
         let patterns =
-            vec![
-                String::from_str("s3://ai2-llm/pretraining-data/tests/mixer/expected/*.json.gz")
-                    .unwrap(),
-            ];
+            vec!["s3://ai2-llm/pretraining-data/tests/mixer/expected/*.json.gz".to_string()];
 
         let resp = find_objects_matching_patterns(&s3_client, &patterns).unwrap();
         let mut matches: HashSet<String> = HashSet::from_iter(resp.iter().map(|s| s.to_owned()));
 
         // list the contents of `tests/data/expected` and check that they match
-        match read_dir("tests/data/expected") {
-            Ok(entries) => {
-                for entry in entries {
-                    match entry {
-                        Ok(entry) => {
-                            let mut remote_path = String::from_str(
-                                "s3://ai2-llm/pretraining-data/tests/mixer/expected/",
-                            )
-                            .unwrap();
-                            remote_path.push_str(entry.file_name().to_str().unwrap());
-                            matches.remove(&remote_path);
-                        }
-                        Err(err) => {
-                            return Err(err);
-                        }
-                    }
-                }
-            }
-            Err(err) => {
-                return Err(err);
-            }
+        let entries = read_dir("tests/data/expected")?;
+        for entry in entries {
+            let remote_path = format!(
+                "s3://ai2-llm/pretraining-data/tests/mixer/expected/{}",
+                entry?.file_name().to_str().unwrap()
+            );
+            matches.remove(&remote_path);
         }
 
         assert_eq!(matches.len(), 0);

@@ -43,12 +43,9 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
         let failed_shard_count_ref = failed_shard_count_ref.clone();
         threadpool.execute(move || {
             let result = write_attributes(path, work_dirs, dedupe, bloom_filter);
-            match result {
-                Ok(_) => {}
-                Err(e) => {
-                    log::error!("Failed to process {:?}: {}", p, e);
-                    failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
-                }
+            if let Err(e) = result {
+                log::error!("Failed to process {:?}: {}", p, e);
+                failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
             }
         });
     }
@@ -56,19 +53,21 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
 
     let bloom_filter_file = PathBuf::from(&config.bloom_filter.file);
     log::info!("Writing bloom filter to {:?}...", config.bloom_filter.file);
-    bloom_filter.write_to_file(&bloom_filter_file).unwrap();
-    log::info!("Bloom filter written.");
+    match bloom_filter.write_to_file(&bloom_filter_file) {
+        Ok(_) => log::info!("Bloom filter written."),
+        Err(e) => {
+            log::error!("Write failed: {}", e);
+            panic!("Failed to write bloom filter");
+        }
+    }
 
-    let failure_count = failed_shard_count_ref.fetch_add(0, Ordering::Relaxed);
-    match failure_count {
-        0 => {
-            log::info!("Done!");
-            return Ok(failure_count);
-        }
-        _ => {
-            log::error!("{} shards failed to process.", failure_count);
-            return Err(failure_count);
-        }
+    let failure_count = failed_shard_count_ref.load(Ordering::Relaxed);
+    if failure_count == 0 {
+        log::info!("Done!");
+        Ok(failure_count)
+    } else {
+        log::error!("{} shards failed to process.", failure_count);
+        Err(failure_count)
     }
 }
 
@@ -87,12 +86,8 @@ fn write_attributes(
     };
 
     let attrs_location = {
-        let mut attr_prefix = "/attributes/".to_owned();
-        attr_prefix.push_str(&dedupe_config.name);
-        attr_prefix.push_str("/");
-        docs_location
-            .to_owned()
-            .replace("/documents/", &attr_prefix)
+        let attr_prefix = format!("/attributes/{}/", &dedupe_config.name);
+        docs_location.replace("/documents/", &attr_prefix)
     };
     let local_output = cache.prepare_output(&attrs_location)?;
     if local_output.exists() {
@@ -133,10 +128,9 @@ fn write_attributes(
             GzEncoder::new(tmp_output, Compression::default()),
         );
 
-        let mut line_number = 0;
-        for line in reader.lines() {
-            match line {
-                Ok(_) => {}
+        for (line_number, line) in reader.lines().enumerate() {
+            let line = match line {
+                Ok(line) => line,
                 Err(e) => {
                     log::error!(
                         "Error reading line {} of {}: {}",
@@ -146,45 +140,39 @@ fn write_attributes(
                     );
                     break;
                 }
-            }
-            line_number += 1;
-            let line = line?;
+            };
             let data: Value = serde_json::from_str(&line)?;
             let mut attributes = json!({});
 
-            match dedupe_config.documents {
-                Some(ref cfg) => {
-                    let document_key = {
-                        let mut finder = jsonpath_rust::JsonPathFinder::from_str("{}", &cfg.key)
-                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-                            .unwrap();
-                        finder.set_json(Box::new(data.clone()));
-                        finder
-                            .find()
-                            .as_array()
-                            .unwrap()
-                            .get(0)
-                            .unwrap()
-                            .as_str()
-                            .unwrap()
-                            .to_string()
-                    };
+            if let Some(ref cfg) = dedupe_config.documents {
+                let document_key = {
+                    let mut finder = jsonpath_rust::JsonPathFinder::from_str("{}", &cfg.key)
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+                        .unwrap();
+                    finder.set_json(Box::new(data.clone()));
+                    finder
+                        .find()
+                        .as_array()
+                        .unwrap()
+                        .get(0)
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                        .to_string()
+                };
 
-                    if dedupe_config.skip_empty.unwrap_or(false) && document_key.trim().is_empty() {
-                        // skip empty documents if dedupe_config.skip_empty is true
-                        // and the document key is empty after trimming (i.e., removing whitespace)
-                        continue;
-                    } else {
-                        let mut dedupe_key = VecDeque::with_capacity(1);
-                        dedupe_key.push_back(document_key.as_str());
-                        if bloom_filter.contains(&dedupe_key) {
-                            attributes[&cfg.attribute_name] = Value::Bool(true);
-                        } else if !bloom_filter.read_only {
-                            bloom_filter.insert(&dedupe_key);
-                        }
+                if dedupe_config.skip_empty.unwrap_or(false) && document_key.trim().is_empty() {
+                    // skip empty documents if dedupe_config.skip_empty is true
+                    // and the document key is empty after trimming (i.e., removing whitespace)
+                    continue;
+                } else {
+                    let dedupe_key = VecDeque::from([document_key.as_str()]);
+                    if bloom_filter.contains(&dedupe_key) {
+                        attributes[&cfg.attribute_name] = Value::Bool(true);
+                    } else if !bloom_filter.read_only {
+                        bloom_filter.insert(&dedupe_key);
                     }
                 }
-                None => {}
             }
             match dedupe_config.paragraphs {
                 None => {}
@@ -193,7 +181,7 @@ fn write_attributes(
                     let text = data["text"].as_str().unwrap();
                     let text_length = text.len();
                     let mut offset = 0;
-                    let paragraphs = text.split("\n");
+                    let paragraphs = text.split('\n');
                     let mut duplicate_paragraph_spans = Vec::new();
                     for p in paragraphs {
                         let par_start = offset;
@@ -208,13 +196,12 @@ fn write_attributes(
                             // and the paragraph is empty after trimming (i.e., removing whitespace)
                             continue;
                         } else {
-                            let mut dedupe_key = VecDeque::with_capacity(1);
-                            dedupe_key.push_back(p);
+                            let dedupe_key = VecDeque::from([p]);
                             if bloom_filter.contains(&dedupe_key) {
                                 let span = vec![
                                     Value::Number(par_start.into()),
                                     Value::Number(par_end.into()),
-                                    Value::Number(1.into()),
+                                    Value::from(1),
                                 ];
                                 // add span to duplicate_paragraph_spans
                                 duplicate_paragraph_spans.push(Value::Array(span));
