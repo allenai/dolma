@@ -40,16 +40,15 @@ mod tests {
 
     #[test]
     fn bloom_suggest_size() {
+        use std::f64::consts::LN_2;
         // it's hard to derive this exactly since the algorithm is doing closest power of 2
         // instead of exact theoretical optimum
         let expected_elements = 1_000_000;
-        let desired_false_positive_rate = 0.0001 as f64;
-        let theoretical_optimum = ((expected_elements as f64 * desired_false_positive_rate.ln())
-            / f64::ln(1.0 / 2.0f64.powf(2.0f64.ln())))
-        .ceil()
-        .div_euclid(8f64) as usize;
-        let suggested_size =
-            BloomFilter::suggest_size_in_bytes(expected_elements, desired_false_positive_rate);
+        let target_fp_rate = 0.0001 as f64;
+        let theoretical_optimum = (expected_elements as f64 * target_fp_rate.ln() / (-LN_2 * LN_2))
+            .ceil()
+            .div_euclid(8f64) as usize;
+        let suggested_size = BloomFilter::suggest_size_in_bytes(expected_elements, target_fp_rate);
         assert_eq!(suggested_size, 4_194_304);
         assert_eq!(suggested_size, theoretical_optimum.next_power_of_two())
     }
