@@ -12,9 +12,10 @@ mod tests {
     fn simplified_suggest_size(expected_elements: usize, target_fp_rate: f64) -> usize {
         // m = ceil((n * log(p)) / log(1 / pow(2, log(2))));
         use std::f64::consts::LN_2;
-        (expected_elements as f64 * target_fp_rate.ln() / (-LN_2 * LN_2))
+        let theoretical_optimum = (expected_elements as f64 * target_fp_rate.ln() / (-LN_2 * LN_2))
             .ceil()
-            .div_euclid(8.0) as usize
+            .div_euclid(8.0) as usize;
+        theoretical_optimum.next_power_of_two()
     }
 
     #[test]
@@ -52,10 +53,10 @@ mod tests {
         // instead of exact theoretical optimum
         let expected_elements = 1_000_000;
         let target_fp_rate = 0.0001 as f64;
-        
-        let theoretical_optimum = simplified_suggest_size(expected_elements, target_fp_rate);
+
+        let simplified_suggest_size = simplified_suggest_size(expected_elements, target_fp_rate);
         let suggested_size = BloomFilter::suggest_size_in_bytes(expected_elements, target_fp_rate);
         assert_eq!(suggested_size, 4_194_304);
-        assert_eq!(suggested_size, theoretical_optimum.next_power_of_two())
+        assert_eq!(suggested_size, simplified_suggest_size)
     }
 }
