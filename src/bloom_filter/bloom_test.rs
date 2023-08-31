@@ -10,7 +10,6 @@ use super::BloomFilter;
 #[cfg(test)]
 pub fn simplified_suggest_size(expected_elements: usize, target_fp_rate: f64) -> usize {
     // m = ceil((n * log(p)) / log(1 / pow(2, log(2))));
-    use std::cmp::{max, min};
     use std::f64::consts::LN_2;
     let theoretical_optimum = (expected_elements as f64 * target_fp_rate.ln() / (-LN_2 * LN_2))
         .ceil()
@@ -19,7 +18,7 @@ pub fn simplified_suggest_size(expected_elements: usize, target_fp_rate: f64) ->
 
     let min_size: usize = 1 << 20; //1 MiB
     let max_size: usize = usize::MAX / 2; // 9E18 bytes 8exbi-bytes
-    min(max(suggested_size, min_size), max_size)
+    suggested_size.clamp(min_size, max_size)
 }
 
 #[test]
