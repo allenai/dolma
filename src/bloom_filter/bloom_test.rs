@@ -9,6 +9,14 @@ mod tests {
     // m = ceil((n * log(p)) / log(1 / pow(2, log(2))));
     // k = round((m / n) * log(2));
 
+    fn simplified_suggest_size(expected_elements: usize, target_fp_rate: f64) -> usize {
+        // m = ceil((n * log(p)) / log(1 / pow(2, log(2))));
+        use std::f64::consts::LN_2;
+        (expected_elements as f64 * target_fp_rate.ln() / (-LN_2 * LN_2))
+            .ceil()
+            .div_euclid(8.0) as usize
+    }
+
     #[test]
     fn bloom_optimal_hasher_number() {
         let size_in_bytes = 1_000_000_000;
@@ -40,17 +48,11 @@ mod tests {
 
     #[test]
     fn bloom_suggest_size() {
-        
         // it's hard to derive this exactly since the algorithm is doing closest power of 2
         // instead of exact theoretical optimum
         let expected_elements = 1_000_000;
         let target_fp_rate = 0.0001 as f64;
-        fn simplified_suggest_size (expected_elements: usize, target_fp_rate: f64) {
-            use std::f64::consts::LN_2;
-            (expected_elements as f64 * target_fp_rate.ln() / (-LN_2 * LN_2))
-            .ceil()
-            .div_euclid(8f64) as usize
-        }
+        
         let theoretical_optimum = simplified_suggest_size(expected_elements, target_fp_rate);
         let suggested_size = BloomFilter::suggest_size_in_bytes(expected_elements, target_fp_rate);
         assert_eq!(suggested_size, 4_194_304);
