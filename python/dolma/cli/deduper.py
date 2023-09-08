@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from cached_path import cached_path
 
 from omegaconf import OmegaConf as om
 
@@ -115,7 +116,7 @@ class DeduperCli(BaseCli):
                 raise DolmaConfigError(f"No documents found for the paths {parsed_config.documents}.")
 
             dict_config["bloom_filter"] = {
-                "file": parsed_config.bloom_filter.file,
+                "file": cached_path(parsed_config.bloom_filter.file),
                 "read_only": parsed_config.bloom_filter.read_only,
                 "size_in_bytes": getattr(parsed_config.bloom_filter, "size_in_bytes", 0),
                 "estimated_doc_count": getattr(parsed_config.bloom_filter, "estimated_doc_count", 0),
