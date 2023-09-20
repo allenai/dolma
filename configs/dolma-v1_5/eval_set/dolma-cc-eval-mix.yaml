@@ -1,0 +1,26 @@
+streams:
+  - name: dolma_eval
+
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1/documents/common-crawl/cc_en_head/*.gz
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1/documents/common-crawl/cc_en_middle/*.gz
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1/documents/common-crawl/cc_en_tail/*.gz
+
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-eval/documents/common-crawl
+
+      #feed about ~50GB per process
+      max_size_in_bytes: 10_000_000_000
+      discard_fields:
+        - attributes
+        - metadata
+
+    attributes:
+      - random
+
+    filter:
+      include:
+        # only keep documents whose random score is less than 0.00002
+        - $.attributes[?(@.random__random_number_v1__random[0][2] < 0.00002)]
+
+processes: 188

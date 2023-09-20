@@ -22,8 +22,8 @@ def make_workdirs(config: WorkDirConfig) -> Generator[WorkDirConfig, None, None]
 
     with ExitStack() as stack:
         if config.input is None:
-            config.input = stack.enter_context(tempfile.TemporaryDirectory())
+            config.input = stack.enter_context(tempfile.TemporaryDirectory(prefix="dolma-input-"))
         if config.output is None:
-            config.output = stack.enter_context(tempfile.TemporaryDirectory())
+            config.output = stack.enter_context(tempfile.TemporaryDirectory(prefix="dolma-output-"))
 
         yield config
