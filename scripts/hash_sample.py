@@ -7,9 +7,11 @@ from queue import Queue
 import re
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, Tuple, Union, List
+from dolma.core.paths import join_path
+from dolma.core.runtime import _make_paths_from_prefix
 
 import msgspec
-
+import uniseg.wordbreak
 import smart_open
 
 from dolma.core.data_types import InputSpec
@@ -47,9 +49,16 @@ class HashSampler(BaseParallelProcessor):
         /,
         files: int = 0,
         documents: int = 0,
-        extracted: int = 0
+        words: int = 0,
+        extracted: int = 0,
     ) -> Dict[str, int]:
-        return super().increment_progressbar(queue, files=files, documents=documents, extracted=extracted)
+        return super().increment_progressbar(
+            queue,
+            files=files,
+            documents=documents,
+            extracted=extracted,
+            uniseg_words=words
+        )
 
     @classmethod
     def process_single(
@@ -64,7 +73,7 @@ class HashSampler(BaseParallelProcessor):
 
         suffixes = calculate_md5_suffix(probability)
         re_suffixes = re.compile(rf'({"|".join(suffixes)})$')
-        extracted_count = documents_count = 0
+        extracted_count = documents_count = words_count = 0
         update_interval = 1
 
         with ExitStack() as stack:
@@ -77,6 +86,7 @@ class HashSampler(BaseParallelProcessor):
 
                 if re_suffixes.search(md5):
                     extracted_count += 1
+                    words_count += sum(1 for w in uniseg.wordbreak.words(data.text.strip()) if w.strip())
                     destination.write(line)
 
                 documents_count += 1
@@ -84,28 +94,53 @@ class HashSampler(BaseParallelProcessor):
                 if documents_count % update_interval == 0:
                     # update the progress bar every 1000 documents to prevent
                     # buffering
-                    cls.increment_progressbar(queue, documents=documents_count, extracted=extracted_count)
-                    extracted_count = documents_count = 0
+                    cls.increment_progressbar(
+                        queue,
+                        documents=documents_count,
+                        extracted=extracted_count,
+                        words=words_count
+                    )
+                    extracted_count = documents_count = words_count = 0
 
                     if queue.qsize() >= multiprocessing.cpu_count():
                         # double the update interval if the queue is full
                         update_interval *= 2
 
-        cls.increment_progressbar(queue, documents=documents_count, extracted=extracted_count, files=1)
+        cls.increment_progressbar(
+            queue,
+            files=1,
+            documents=documents_count,
+            extracted=extracted_count,
+            words=words_count
+        )
 
 
 def main(
-    source: List[str],
+    source: Union[List[str], str],
     destination: str,
     probability: float,
     num_workers: int = 1,
     debug: bool = False
 ) -> None:
+
+    # make source always a list
+    source = [source] if isinstance(source, str) else source
+
+    pattern = calculate_md5_suffix(probability)
+    print(f"Sampling with probability {probability} using MD5 suffixes {pattern}")
+
     with TemporaryDirectory() as tempdir:
+        if len(source) > 1:
+            dest_prefixes = _make_paths_from_prefix(source, join_path(None, destination))
+            meta_prefixes = _make_paths_from_prefix(source, join_path(None, tempdir))
+        else:
+            dest_prefixes = [destination]
+            meta_prefixes = [tempdir]
+
         processor = HashSampler(
             source_prefix=source,
-            destination_prefix=destination,
-            metadata_prefix=tempdir,
+            destination_prefix=dest_prefixes,
+            metadata_prefix=meta_prefixes,
             num_processes=num_workers,
             debug=debug,
         )
