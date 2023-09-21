@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import json
 import multiprocessing
 from contextlib import ExitStack
 from itertools import product
@@ -120,7 +121,8 @@ def main(
     destination: str,
     probability: float,
     num_workers: int = 1,
-    debug: bool = False
+    debug: bool = False,
+    dryrun: bool = False
 ) -> None:
 
     # make source always a list
@@ -128,6 +130,9 @@ def main(
 
     pattern = calculate_md5_suffix(probability)
     print(f"Sampling with probability {probability} using MD5 suffixes {pattern}")
+
+    if dryrun:
+        return
 
     with TemporaryDirectory() as tempdir:
         if len(source) > 1:
@@ -154,8 +159,11 @@ def parse_args():
     ap.add_argument("-p", '--probability', type=float, required=True, help="sampling probability")
     ap.add_argument("-n", '--num-workers', type=int, default=1, help="number of workers")
     ap.add_argument("--debug", action="store_true", help="debug mode")
+    ap.add_argument("--dryrun", action="store_true", help="dry run")
+    opts = ap.parse_args()
 
-    return ap.parse_args()
+    print(json.dumps(vars(opts), indent=2, sort_keys=True))
+    return opts
 
 
 if __name__ == "__main__":
