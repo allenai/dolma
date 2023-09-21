@@ -32,7 +32,10 @@ class BaseFastTextTagger(BaseTagger):
     def __init__(self, model_path: str, model_mode: str) -> None:
         # we use this private attribute to avoid a warning from the fasttext library. See this comment:
         # https://github.com/facebookresearch/fastText/issues/1056#issuecomment-1278058705
-        self.classifier = _FastText(str(cached_path(model_path)))
+        if model_path:
+            self.classifier = _FastText(str(cached_path(model_path)))
+        else:
+            self.classifier = None # needs to be trained
         self.mode = model_mode
 
     @classmethod
@@ -116,7 +119,7 @@ class BaseFastTextTagger(BaseTagger):
             if local_save_path is not None and os.path.exists(local_save_path):
                 os.remove(local_save_path)
 
-        return classifier
+        self.classifier = classifier
 
     @classmethod
     def test(
