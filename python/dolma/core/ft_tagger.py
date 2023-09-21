@@ -32,10 +32,7 @@ class BaseFastTextTagger(BaseTagger):
     def __init__(self, model_path: str, model_mode: str) -> None:
         # we use this private attribute to avoid a warning from the fasttext library. See this comment:
         # https://github.com/facebookresearch/fastText/issues/1056#issuecomment-1278058705
-        if model_path:
-            self.classifier = _FastText(str(cached_path(model_path)))
-        else:
-            self.classifier = None # needs to be trained
+        self.classifier = _FastText(str(cached_path(model_path)))
         self.mode = model_mode
 
     @classmethod
@@ -62,6 +59,7 @@ class BaseFastTextTagger(BaseTagger):
         verbose: int = 2,
         pretrained_vectors: Optional[str] = None,
     ) -> _FastText:
+
         # download potentially remote files
         local_train_file = cached_path(train_file)
         local_pretrained_vectors = cached_path(pretrained_vectors) if pretrained_vectors else None
@@ -80,7 +78,7 @@ class BaseFastTextTagger(BaseTagger):
 
         # train the fasttext model
         classifier = train_supervised(
-            input=local_train_file,
+            input=str(local_train_file),
             lr=learning_rate,
             dim=word_vectors_dim,
             ws=context_window_size,
@@ -98,7 +96,7 @@ class BaseFastTextTagger(BaseTagger):
             t=sampling_threshold,
             label=label_prefix,
             verbose=verbose,
-            pretrainedVectors=local_pretrained_vectors,
+            #pretrainedVectors=local_pretrained_vectors,
         )
 
         local_save_path = None
@@ -119,7 +117,7 @@ class BaseFastTextTagger(BaseTagger):
             if local_save_path is not None and os.path.exists(local_save_path):
                 os.remove(local_save_path)
 
-        self.classifier = classifier
+        return classifier
 
     @classmethod
     def test(

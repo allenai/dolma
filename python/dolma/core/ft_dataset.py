@@ -100,7 +100,7 @@ def process_file(config: Config, q: "Queue[str]", flag: Event, label: str, fn):
 def write_results(config: Config, q: "Queue[str]", flag: Event):
     written = 0
 
-    with smart_open.open(config.out_path, "wb") as o:
+    with smart_open.open(config.out_path, "w") as o:
         while True:
             msg = q.get()
 
