@@ -17,10 +17,16 @@ python scripts/hash_sample.py \
 ```
 
 Output:
+> Sampling with probability 1e-06 using MD5 suffixes ['fffff']
+>
 > Found 2,878 files to process
+>
 > uniseg_words: 2.04Mu [19:22, 1.76ku/s]
+>
 > extracted: 3.87ke [19:22, 3.33e/s]
+>
 > documents: 4.60Gd [19:22, 3.96Md/s]
+>
 > files: 2.88kf [19:22, 2.48f/s]55u/s
 
 
@@ -36,8 +42,14 @@ python scripts/hash_sample.py \
 ```
 
 Output:
+> Sampling with probability 0.008 using MD5 suffixes ['ff', 'fe']
+>
 > Found 600 files to process
+>
 > uniseg_words: 2.57Mu [00:06, 376ku/s]
+>
 > extracted: 1.23ke [00:06, 179e/s]
+>
 > documents: 161kd [00:06, 23.6kd/s]
+>
 > files: 600f [00:06, 87.8f/s] 135ku/s
