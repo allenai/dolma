@@ -1,0 +1,36 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=0/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=1/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=2/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=3/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=4/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=5/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=6/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=7/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=8/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=9/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=0/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=1/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=2/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=3/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=4/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=5/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=6/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=7/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=8/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=9/*.g
+
+
+dedupe:
+  name: perplexity_suite_v3
+  paragraphs:
+    attribute_name: bff_duplicate_paragraph_spans
+  skip_empty: true
+
+bloom_filter:
+  read_only: true
+  estimated_doc_count: 759208
+  desired_false_positive_rate: 0.00001
+  file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option1.bin
+
+processes: 188
