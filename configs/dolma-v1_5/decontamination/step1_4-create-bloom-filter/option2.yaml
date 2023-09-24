@@ -1,5 +1,5 @@
 documents:
-  - ${oc.env:HOME}/perplexity/option3/documents/*.gz
+  - ${oc.env:HOME}/perplexity/option2/documents/*.gz
 
 dedupe:
   name: perplexity_suite_v3
@@ -10,7 +10,7 @@ dedupe:
 bloom_filter:
   read_only: false
   estimated_doc_count: 488541
-  desired_false_positive_rate: 0.00001
+  desired_false_positive_rate: 0.000001
   file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option2.bin
 
 processes: 188

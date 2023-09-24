@@ -106,6 +106,8 @@ class DeduperCli(BaseCli):
             # perform some path validation to make sure we don't call the mixer with invalid config
             total_matching_documents = 0
             for document in parsed_config.documents:
+                dict_config.setdefault("documents", []).append(str(document))
+
                 if document.count("*") > 1:
                     raise DolmaConfigError("Only one wildcard is allowed in the document path")
 
@@ -117,7 +119,7 @@ class DeduperCli(BaseCli):
 
             if total_matching_documents == 0:
                 # but raise an error if no documents are found for all paths
-                raise DolmaConfigError(f"No documents found for the paths {parsed_config.documents}.")
+                raise DolmaConfigError(f"No documents found for the paths {dict_config['documents']}.")
 
             # The rust deduper does not work with remote files, so we need to download the bloom filter
             # if it is not local. If the remote file does not exists, and the bloom filter is read-only,
@@ -135,10 +137,10 @@ class DeduperCli(BaseCli):
 
             dict_config["bloom_filter"] = {
                 "file": str(local_bloom_file),
-                "read_only": parsed_config.bloom_filter.read_only,
-                "size_in_bytes": parsed_config.bloom_filter.size_in_bytes,
-                "estimated_doc_count": parsed_config.bloom_filter.estimated_doc_count,
-                "desired_false_positive_rate": parsed_config.bloom_filter.desired_false_positive_rate,
+                "read_only": bool(parsed_config.bloom_filter.read_only),
+                "size_in_bytes": int(parsed_config.bloom_filter.size_in_bytes),
+                "estimated_doc_count": int(parsed_config.bloom_filter.estimated_doc_count),
+                "desired_false_positive_rate": float(parsed_config.bloom_filter.desired_false_positive_rate),
             }
 
             if dict_config["bloom_filter"]["size_in_bytes"] <= 0 and (
@@ -150,9 +152,8 @@ class DeduperCli(BaseCli):
                     "bloom_filter.desired_false_positive_rate must be specified"
                 )
 
-            dict_config["work_dir"] = {"input": work_dirs.input, "output": work_dirs.output}
-            dict_config["processes"] = parsed_config.processes
-            dict_config["documents"] = list(om.to_container(parsed_config.documents))  # pyright: ignore
+            dict_config["work_dir"] = {"input": str(work_dirs.input), "output": str(work_dirs.output)}
+            dict_config["processes"] = int(parsed_config.processes)
 
             if len(dict_config["documents"]) == 0:
                 raise ValueError("At least one document must be specified")

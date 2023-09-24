@@ -30,6 +30,7 @@ dedupe:
 bloom_filter:
   read_only: true
   estimated_doc_count: 759208
+  size_in_bytes: 4195316
   desired_false_positive_rate: 0.00001
   file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option1.bin
 

@@ -75,9 +75,9 @@ $ zcat $HOME/perplexity/option3/documents/* | wc -l
 We use this numbers in the config files at `bloom_filter.estimated_doc_count`. For all three options, we set a `bloom_filter.desired_false_positive_rate` of 0.00001.
 
 ```bash
-dolma -c configs/dolma-v1_5/decontamination/step1_4-create-bloom-filter/option1.yaml dedup
-dolma -c configs/dolma-v1_5/decontamination/step1_4-create-bloom-filter/option2.yaml dedup
-dolma -c configs/dolma-v1_5/decontamination/step1_4-create-bloom-filter/option3.yaml dedup
+dolma -c configs/dolma-v1_5/decontamination/step1_4-create-bloom-filter/option1.yaml dedupe
+dolma -c configs/dolma-v1_5/decontamination/step1_4-create-bloom-filter/option2.yaml dedupe
+dolma -c configs/dolma-v1_5/decontamination/step1_4-create-bloom-filter/option3.yaml dedupe
 ```
 
 ## Step 2: Run decontamination
