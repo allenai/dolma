@@ -4,13 +4,13 @@ documents:
 dedupe:
   name: perplexity_suite_v3
   paragraphs:
-    attribute_name: bff_duplicate_paragraph_spans
+    attribute_name: bff_duplicate_paragraph_spans_decontamination
   skip_empty: true
 
 bloom_filter:
   read_only: false
   estimated_doc_count: 328571
-  desired_false_positive_rate: 0.000001
+  size_in_bytes: 104857600  # 100 MB; smaller causes too many FPs
   file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option3.bin
 
 processes: 188
