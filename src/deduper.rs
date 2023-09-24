@@ -109,6 +109,7 @@ fn write_attributes(
     );
     {
         let local_input = cache.prepare_input(&docs_location)?;
+
         let input_file = OpenOptions::new()
             .read(true)
             .write(false)
@@ -183,30 +184,35 @@ fn write_attributes(
                     let mut offset = 0;
                     let paragraphs = text.split('\n');
                     let mut duplicate_paragraph_spans = Vec::new();
-                    for p in paragraphs {
-                        let par_start = offset;
-                        offset += p.chars().count();
-                        if offset < text_length - 1 {
-                            offset += 1; // For the newline
-                        }
-                        let par_end = offset;
 
-                        if dedupe_config.skip_empty.unwrap_or(false) && p.trim().is_empty() {
-                            // skip empty paragraphs if dedupe_config.skip_empty is true
-                            // and the paragraph is empty after trimming (i.e., removing whitespace)
-                            continue;
-                        } else {
-                            let dedupe_key = VecDeque::from([p]);
-                            if bloom_filter.contains(&dedupe_key) {
-                                let span = vec![
-                                    Value::Number(par_start.into()),
-                                    Value::Number(par_end.into()),
-                                    Value::from(1),
-                                ];
-                                // add span to duplicate_paragraph_spans
-                                duplicate_paragraph_spans.push(Value::Array(span));
-                            } else if !bloom_filter.read_only {
-                                bloom_filter.insert(&dedupe_key);
+                    if text_length > 0 {
+                        // skip empty documents if text_length is 0
+
+                        for p in paragraphs {
+                            let par_start = offset;
+                            offset += p.chars().count();
+                            if offset < text_length - 1 {
+                                offset += 1; // For the newline
+                            }
+                            let par_end = offset;
+
+                            if dedupe_config.skip_empty.unwrap_or(false) && p.trim().is_empty() {
+                                // skip empty paragraphs if dedupe_config.skip_empty is true
+                                // and the paragraph is empty after trimming (i.e., removing whitespace)
+                                continue;
+                            } else {
+                                let dedupe_key = VecDeque::from([p]);
+                                if bloom_filter.contains(&dedupe_key) {
+                                    let span = vec![
+                                        Value::Number(par_start.into()),
+                                        Value::Number(par_end.into()),
+                                        Value::from(1),
+                                    ];
+                                    // add span to duplicate_paragraph_spans
+                                    duplicate_paragraph_spans.push(Value::Array(span));
+                                } else if !bloom_filter.read_only {
+                                    bloom_filter.insert(&dedupe_key);
+                                }
                             }
                         }
                     }
@@ -219,7 +225,20 @@ fn write_attributes(
             serde_json::to_writer(&mut writer, &output_object)?;
             writer.write_all(b"\n")?;
         }
-        std::fs::remove_file(local_input)?;
+
+        // only remove the local_input file if it is different from docs_location
+        // this is to prevent deleting the original file if docs_location is a local file
+        let local_input_string = String::from(local_input.to_str().unwrap());
+        if local_input_string != docs_location {
+            log::info!(
+                "Removing local temporary file {:?} (since != {:?})",
+                local_input,
+                docs_location
+            );
+            std::fs::remove_file(local_input)?;
+        } else {
+            log::info!("Keeping local file {:?} after deduping...", local_input);
+        }
     }
     cache.finalize_output(&attrs_location)?;
     Ok(())

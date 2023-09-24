@@ -3,7 +3,6 @@ documents:
   # - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_middle/*.gz
   # - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_tail/*.gz
   - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_head/cc_en_head-0000.json.gz
-  # - ${oc.env:HOME}/perplexity/option1/documents/*.gz
 
 dedupe:
   name: perplexity_suite_v3_option1
@@ -12,16 +11,10 @@ dedupe:
   skip_empty: true
 
 bloom_filter:
-  # read_only: true
-  # size_in_bytes: 4195316
-  # estimated_doc_count: 759208
-  # desired_false_positive_rate: 0.000001
-  # file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option1.bin
-
-  file: /tmp/decontamination/deduper_decontamination_lucas_20230525.bin
-  size_in_bytes: 8388608
   read_only: true
-  estimated_doc_count: 3898706
-  desired_false_positive_rate: 0.001
+  size_in_bytes: 4195316
+  estimated_doc_count: 759208
+  desired_false_positive_rate: 0.000001
+  file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option1.bin
 
 processes: 188
