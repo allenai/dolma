@@ -6,11 +6,13 @@ Filters.
 
 """
 
+from typing import Generator
+
 import regex
 import uniseg.wordbreak
 from tokenizers import Regex, pre_tokenizers
 
-from ..core.data_types import DocResult, Document, Span
+from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
@@ -55,9 +57,14 @@ class WhitespaceLengthParagraphsV1(WhitespaceLengthV1):
 
 @TaggerRegistry.add("uniseg_length_paragraphs_v1")
 class UnisegParagraphsV1(BaseTagger):
+    def do_split_paragraphs(self, text: str) -> Generator[TextSlice, None, None]:
+        for paragraph in split_paragraphs(text, remove_empty=True):
+            yield paragraph
+
     def predict(self, doc: Document) -> DocResult:
         spans = []
-        for para in split_paragraphs(doc.text):
+
+        for para in self.do_split_paragraphs(doc.text):
             # we ignore whitespace-only tokens when counting words
             para_length = sum(1 for w in uniseg.wordbreak.words(para.text.strip()) if w.strip())
             spans.append(Span(start=para.start, end=para.end, type="paragraph", score=para_length))
@@ -67,6 +74,13 @@ class UnisegParagraphsV1(BaseTagger):
             # to filter on >= n
             spans.append(Span(start=para.start, end=para.end, type="negative_paragraph", score=-para_length))
         return DocResult(doc=doc, spans=spans)
+
+
+@TaggerRegistry.add("uniseg_length_paragraphs_with_empty_v1")
+class UnisegParagraphsWithEmptyV1(UnisegParagraphsV1):
+    def do_split_paragraphs(self, text: str) -> Generator[TextSlice, None, None]:
+        for paragraph in split_paragraphs(text, remove_empty=False):
+            yield paragraph
 
 
 @TaggerRegistry.add("uniseg_length_paragraphs_with_doc_length_v1")

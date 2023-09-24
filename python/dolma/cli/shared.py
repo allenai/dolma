@@ -3,6 +3,7 @@ import os
 import tempfile
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Generator, Optional
 
 from dolma.cli import field
@@ -15,11 +16,13 @@ class WorkDirConfig:
 
 
 @contextmanager
-def make_temp_bloom() -> Generator[str, None, None]:
-    with tempfile.NamedTemporaryFile(prefix="dolma-bloom-", suffix=".bloom", delete=False) as f:
-        ...
-    yield f.name
-    os.remove(f.name)
+def get_path_to_temp_file(prefix="dolma-", suffix=None) -> Generator[Path, None, None]:
+    with tempfile.NamedTemporaryFile(prefix=prefix, suffix=suffix, delete=True) as f:
+        path = Path(f.name)
+    yield path
+
+    if path.exists():
+        os.remove(path)
 
 
 @contextmanager
