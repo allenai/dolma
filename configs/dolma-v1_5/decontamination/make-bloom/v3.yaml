@@ -1,0 +1,49 @@
+documents:
+  - s3://ai2-llm/eval-data/perplexity/v3/4chan_meta_sep/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/4chan_meta_sep/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/c4_100_domains/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/c4_100_domains/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/c4_en/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/c4_en/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/dolma_100_subreddits/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/dolma_100_subreddits/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/dolma-v1_5/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/dolma-v1_5/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/falcon-refinedweb/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/falcon-refinedweb/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/gab/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/gab/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/ice_fixed/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/ice_fixed/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/m2d2_s2orc_unsplit/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/m2d2_s2orc_unsplit/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/m2d2_wikipedia_unsplit/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/m2d2_wikipedia_unsplit/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/manosphere_meta_sep/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/manosphere_meta_sep/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/mc4/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/mc4/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/pile/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/pile/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/ptb/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/ptb/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/redpajama/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/redpajama/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/twitterAAE_HELM_fixed/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/twitterAAE_HELM_fixed/test/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/wikitext_103/val/*.gz
+  - s3://ai2-llm/eval-data/perplexity/v3/wikitext_103/test/*.gz
+
+dedupe:
+  name: perplexity_suite_v3
+  paragraphs:
+    attribute_name: bff_duplicate_paragraph_spans
+  skip_empty: true
+
+bloom_filter:
+  size_in_bytes: 50000000
+  read_only: false
+  desired_false_positive_rate: 0.001
+  file: s3://ai2-llm/bloom-filters/perplexity-suite-v3.bin
+
+processes: 188

@@ -1,12 +1,14 @@
+from contextlib import ExitStack
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
-from cached_path import cached_path
 
+import smart_open
+from cached_path import cached_path
 from omegaconf import OmegaConf as om
 
 from dolma import deduper
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, make_workdirs
+from dolma.cli.shared import WorkDirConfig, make_temp_bloom, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
@@ -87,7 +89,9 @@ class DeduperCli(BaseCli):
 
         dict_config: Dict[str, Any] = {}
 
-        with make_workdirs(parsed_config.work_dir) as work_dirs:
+        with ExitStack() as stack:
+            work_dirs = stack.enter_context(make_workdirs(parsed_config.work_dir))
+
             dict_config["dedupe"] = {
                 "name": parsed_config.dedupe.name,
                 "skip_empty": parsed_config.dedupe.skip_empty,
@@ -115,14 +119,19 @@ class DeduperCli(BaseCli):
                 # but raise an error if no documents are found for all paths
                 raise DolmaConfigError(f"No documents found for the paths {parsed_config.documents}.")
 
+            try:
+                local_bloom_file = cached_path(parsed_config.bloom_filter.file)
+            except FileNotFoundError as ex:
+                if parsed_config.bloom_filter.read_only:
+                    raise ex
+                local_bloom_file = stack.enter_context(make_temp_bloom())
+
             dict_config["bloom_filter"] = {
-                "file": cached_path(parsed_config.bloom_filter.file),
+                "file": local_bloom_file,
                 "read_only": parsed_config.bloom_filter.read_only,
-                "size_in_bytes": getattr(parsed_config.bloom_filter, "size_in_bytes", 0),
-                "estimated_doc_count": getattr(parsed_config.bloom_filter, "estimated_doc_count", 0),
-                "desired_false_positive_rate": getattr(
-                    parsed_config.bloom_filter, "desired_false_positive_rate", 0
-                ),
+                "size_in_bytes": parsed_config.bloom_filter.size_in_bytes,
+                "estimated_doc_count": parsed_config.bloom_filter.estimated_doc_count,
+                "desired_false_positive_rate": parsed_config.bloom_filter.desired_false_positive_rate,
             }
 
             if dict_config["bloom_filter"]["size_in_bytes"] <= 0 and (
@@ -133,6 +142,10 @@ class DeduperCli(BaseCli):
                     "Either bloom_filter.size_in_bytes or bloom_filter.estimated_doc_count and "
                     "bloom_filter.desired_false_positive_rate must be specified"
                 )
+
+            for k in list(dict_config["bloom_filter"].keys()):
+                if dict_config["bloom_filter"][k] == -1:
+                    del dict_config["bloom_filter"][k]
 
             dict_config["work_dir"] = {"input": work_dirs.input, "output": work_dirs.output}
             dict_config["processes"] = parsed_config.processes
@@ -146,4 +159,12 @@ class DeduperCli(BaseCli):
                 logger.info("Exiting due to dryrun.")
                 return
 
-            return deduper(dict_config)
+            # run the deduper
+            deduper(dict_config)
+
+            # upload to remote file if necessary
+            if not parsed_config.bloom_filter.read_only:
+                logger.info("Saving bloom filter to %s", parsed_config.bloom_filter.file)
+                local = stack.enter_context(smart_open.open(local_bloom_file, "rb"))
+                remote = stack.enter_context(smart_open.open(parsed_config.bloom_filter.file, "wb"))
+                remote.write(local.read())

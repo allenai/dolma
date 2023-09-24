@@ -8,16 +8,16 @@ from .utils import raise_dependency_error
 
 with necessary("justext", soft=True) as JUSTEXT_AVAILABLE:
     if JUSTEXT_AVAILABLE or TYPE_CHECKING:
-        from justext import justext     # noqa: F401
+        from justext import justext  # noqa: F401
 
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
     if TRAFILATURA_AVAILABLE or TYPE_CHECKING:
-        import trafilatura              # noqa: F401
-        import trafilatura.meta         # noqa: F401
+        import trafilatura  # noqa: F401
+        import trafilatura.meta  # noqa: F401
 
 with necessary("goose3", soft=True) as GOOSE3_AVAILABLE:
     if GOOSE3_AVAILABLE or TYPE_CHECKING:
-        from goose3 import Goose        # noqa: F401
+        from goose3 import Goose  # noqa: F401
 
 
 class BaseHtmlExtractor:

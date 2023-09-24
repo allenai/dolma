@@ -2,19 +2,18 @@ import datetime
 import io
 import multiprocessing
 import re
-from typing import Dict, Generator, Optional, Type, Union, TYPE_CHECKING
-from charset_normalizer import detect
+from typing import TYPE_CHECKING, Dict, Generator, Optional, Type, Union
 
 import msgspec
 import smart_open
+from charset_normalizer import detect
 from necessary import necessary
 
-
-from .types import WarcDocument, WarcDocumentMetadata
-from .utils import raise_dependency_error
+from ..parallel import BaseParallelProcessor, QueueType
 from .html import HTML_EXTRACTORS, BaseHtmlExtractor
 from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
-from ..parallel import BaseParallelProcessor, QueueType
+from .types import WarcDocument, WarcDocumentMetadata
+from .utils import raise_dependency_error
 
 with necessary("warcio", soft=True) as WARCIO_AVAILABLE:
     if WARCIO_AVAILABLE or TYPE_CHECKING:
@@ -77,7 +76,7 @@ class WarcProcessor(BaseParallelProcessor):
 
     @classmethod
     def _decode_content(cls, content: bytes) -> Union[str, None]:
-        if not (encoding := detect(content)['encoding']):
+        if not (encoding := detect(content)["encoding"]):
             return None
         return content.decode(str(encoding))
 
@@ -150,8 +149,8 @@ class WarcProcessor(BaseParallelProcessor):
                     text = html_extractor(content=str_content)
 
                     # metadata
-                    content_type, *_ = (
-                        record.http_headers.get_header("Content-Type", record.content_type).split(";")
+                    content_type, *_ = record.http_headers.get_header("Content-Type", record.content_type).split(
+                        ";"
                     )
                     date = record.http_headers.get_header("Date")
                     target_uri = record.rec_headers.get_header("WARC-Target-URI")
