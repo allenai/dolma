@@ -22,7 +22,7 @@ documents:
 
 
 dedupe:
-  name: perplexity_suite_v3
+  name: perplexity_suite_v3_option1
   paragraphs:
     attribute_name: bff_duplicate_paragraph_spans
   skip_empty: true

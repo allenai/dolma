@@ -4,7 +4,7 @@ documents:
   - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_tail/*.gz
 
 dedupe:
-  name: perplexity_suite_v3
+  name: perplexity_suite_v3_option1
   paragraphs:
     attribute_name: bff_duplicate_paragraph_spans
   skip_empty: true
