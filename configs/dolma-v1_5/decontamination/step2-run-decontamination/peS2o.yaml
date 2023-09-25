@@ -18,7 +18,7 @@ documents:
   - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=6/*.gz
   - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=7/*.gz
   - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=8/*.gz
-  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=9/*.g
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=9/*.gz
 
 
 dedupe:
@@ -30,8 +30,7 @@ dedupe:
 bloom_filter:
   read_only: true
   estimated_doc_count: 759208
-  size_in_bytes: 4195316
-  desired_false_positive_rate: 0.00001
+  size_in_bytes: 104857600  # 100 MB; smaller causes too many FPs
   file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option1.bin
 
 processes: 188

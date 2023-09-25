@@ -454,6 +454,7 @@ class just_cc_dedup(books):
 class cc_v1_c4_cleaned(books):
     documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
     stats: str = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1_c4_cleaned/**/*.gz"
+    decontamination_key: str = 'decontamination'
 
     @classmethod
     def gopher_rules(cls, attrs: Dict[str, List[Tuple[int, int, float]]]) -> List[Tuple[int, int, float]]:
@@ -561,7 +562,7 @@ class cc_v1_c4_cleaned(books):
     ):
         attributes = [
             source_path.replace("/documents/", "/attributes/gopher_rules/"),
-            source_path.replace("/documents/", "/attributes/decontamination/"),
+            source_path.replace("/documents/", f"/attributes/{cls.decontamination_key}/"),
             source_path.replace("/documents/", "/attributes/hatespeech_nsfw_cc_v3/"),
             source_path.replace("/documents/", "/attributes/pii_detection/"),
             source_path.replace("/documents/", "/attributes/dedupe_paragraphs/"),
@@ -665,6 +666,13 @@ class cc_v1_c4_cleaned(books):
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(stats, indent=2))
+
+
+@Registry.add
+class v15_cc_c4_cleaned(cc_v1_c4_cleaned):
+    documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_head/*.gz"
+    stats: str = "s3://ai2-llm/stats/olmo-mix/v15/cc/v1_c4_cleaned/cc_en_head/*.gz"
+    decontamination_key: str = 'perplexity_suite_v3_option1'
 
 
 class C4InputSpec(InputSpec):
