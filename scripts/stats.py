@@ -670,9 +670,9 @@ class cc_v1_c4_cleaned(books):
 
 @Registry.add
 class v15_cc_c4_cleaned(cc_v1_c4_cleaned):
-    documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_head/*.gz"
-    stats: str = "s3://ai2-llm/stats/olmo-mix/v15/cc/v1_c4_cleaned/cc_en_head/*.gz"
-    decontamination_key: str = 'perplexity_suite_v3_option1'
+    documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
+    stats: str = "s3://ai2-llm/stats/olmo-mix/v15/cc/v1_c4_cleaned/**/*.gz"
+    decontamination_key: str = 'perplexity_suite_v3_option2'
 
 
 class C4InputSpec(InputSpec):

@@ -86,6 +86,11 @@ Tag content for Dolma V1.5 for decontamination:
 
 
 ```bash
-dolma -c configs/dolma-v1_5/decontamination/step2-run-decontamination/cc.yaml dedup
-
+dolma -c configs/dolma-v1_5/decontamination/step2-run-decontamination/cc.yaml dedupe
+dolma -c configs/dolma-v1_5/decontamination/step2-run-decontamination/c4.yaml dedupe
+dolma -c configs/dolma-v1_5/decontamination/step2-run-decontamination/stack.yaml dedupe
+dolma -c configs/dolma-v1_5/decontamination/step2-run-decontamination/reddit.yaml dedupe
+dolma -c configs/dolma-v1_5/decontamination/step2-run-decontamination/peS2o.yaml dedupe
+dolma -c configs/dolma-v1_5/decontamination/step2-run-decontamination/books.yaml dedupe
+dolma -c configs/dolma-v1_5/decontamination/step2-run-decontamination/wiki.yaml dedupe
 ```
