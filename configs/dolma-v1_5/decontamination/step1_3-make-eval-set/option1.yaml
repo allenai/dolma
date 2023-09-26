@@ -34,10 +34,14 @@ streams:
 
     attributes: &attributes
       - uniseg_length_paragraphs_with_empty_v1
+      - not_alphanum_paragraph_v1
 
     span_replacement: &span_replacement
-      - span: $.attributes.uniseg_length_paragraphs_with_empty_v1__negative_paragraph
+      - span: $.attributes.uniseg_length_paragraphs_with_empty_v1__uniseg_length_paragraphs_with_empty_v1__negative_paragraph
         min_score: -12
+        replacement: ""
+      - span: $.attributes.not_alphanum_paragraph_v1__not_alphanum_paragraph_v1__all_punct
+        min_score: 0.5
         replacement: ""
 
   - name: "v3"

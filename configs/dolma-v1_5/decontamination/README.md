@@ -41,10 +41,10 @@ For dolma, we want to decontaminate against paragraphs that are at least 13 unis
 so we need to compute their length first.
 
 ```bash
-dolma tag --documents "${HOME}/perplexity/v2/documents/*/*/*.gz" --taggers uniseg_length_paragraphs_with_empty_v1 --processes 64
-dolma tag --documents "${HOME}/perplexity/v2_small/documents/*/*/*.gz" --taggers uniseg_length_paragraphs_with_empty_v1 --processes 64
-dolma tag --documents "${HOME}/perplexity/v3/documents/*/*/*.gz" --taggers uniseg_length_paragraphs_with_empty_v1 --processes 64
-dolma tag --documents "${HOME}/perplexity/v2_small_subset/documents/*/*/*.gz" --taggers uniseg_length_paragraphs_with_empty_v1 --processes 64
+dolma tag --documents "${HOME}/perplexity/v2/documents/*/*/*.gz" --taggers uniseg_length_paragraphs_with_empty_v1 not_alphanum_paragraph_v1 --processes 188
+dolma tag --documents "${HOME}/perplexity/v2_small/documents/*/*/*.gz" --taggers uniseg_length_paragraphs_with_empty_v1 not_alphanum_paragraph_v1 --processes 188
+dolma tag --documents "${HOME}/perplexity/v3/documents/*/*/*.gz" --taggers uniseg_length_paragraphs_with_empty_v1 not_alphanum_paragraph_v1 --processes 188
+dolma tag --documents "${HOME}/perplexity/v2_small_subset/documents/*/*/*.gz" --taggers uniseg_length_paragraphs_with_empty_v1 not_alphanum_paragraph_v1 --processes 188
 ```
 
 ### Step 1.3: filter out paragraphs that are too short
@@ -64,12 +64,12 @@ dolma -c configs/dolma-v1_5/decontamination/step1_3-make-eval-set/option3.yaml m
 First, we cat the contents of each dataset to get number of documents:
 
 ```bash
-$ zcat $HOME/perplexity/option1/documents/* | wc -l
-759208
-$ zcat $HOME/perplexity/option2/documents/* | wc -l
-488541
-$ zcat $HOME/perplexity/option3/documents/* | wc -l
-328571
+zcat $HOME/perplexity/option1/documents/* | jq '.text' -cr | wc -l
+>>> 3681169
+zcat $HOME/perplexity/option2/documents/* | jq '.text' -cr | wc -l
+>>> 2336120
+zcat $HOME/perplexity/option3/documents/* | jq '.text' -cr | wc -l
+>>> 2020471
 ```
 
 We use this numbers in the config files at `bloom_filter.estimated_doc_count`. For all three options, we set a `bloom_filter.desired_false_positive_rate` of 0.00001.

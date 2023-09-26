@@ -35,7 +35,7 @@ streams:
     attributes:
       - uniseg_length_paragraphs_with_empty_v1
 
-    span_replacement:
-      - span: $.attributes.uniseg_length_paragraphs_with_empty_v1__negative_paragraph
+    span_replacement: &span_replacement
+      - span: $.attributes.uniseg_length_paragraphs_with_empty_v1__uniseg_length_paragraphs_with_empty_v1__negative_paragraph
         min_score: -12
         replacement: ""

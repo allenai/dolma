@@ -6,6 +6,7 @@ Filters.
 
 """
 from abc import abstractmethod
+from functools import cached_property
 from typing import List
 
 from .data_types import DocResult, Document, InputSpec, TaggerOutputDictType
@@ -25,6 +26,12 @@ class BaseTagger:
     def test(cls, *args, **kwargs):
         raise RuntimeError("This tagger does not support testing")
 
+    @property
+    def defaults(self) -> List[str]:
+        """Returns the default span types for this tagger.
+        If not provided, no defaults are set when creating output."""
+        return []
+
     @abstractmethod
     def predict(self, doc: Document) -> DocResult:
         raise NotImplementedError
@@ -34,8 +41,9 @@ class BaseTagger:
         doc = Document(source=row.source, version=row.version, id=row.id, text=row.text)
         doc_result = self.predict(doc)
 
-        tagger_output: TaggerOutputDictType = {}
+        tagger_output: TaggerOutputDictType = {field: [] for field in self.defaults}
         for span in doc_result.spans:
             output = (span.start, span.end, round(float(span.score), TAGGER_SCORE_PRECISION))
             tagger_output.setdefault(span.type, []).append(output)
+
         return tagger_output
