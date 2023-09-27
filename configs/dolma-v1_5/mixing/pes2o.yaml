@@ -1,0 +1,40 @@
+---
+streams:
+- name: pes2o_v2
+  documents:
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=0/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=1/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=2/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=3/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=4/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=5/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=6/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=7/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=8/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/part_id=9/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=0/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=1/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=2/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=3/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=4/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=5/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=6/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=7/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=8/*.gz
+  - pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/part_id=9/*.gz
+  output:
+    path: pretraining-data/sources/olmo-mix/v1_5/documents/pes2o
+    max_size_in_bytes: 3894967296
+  attributes:
+    - perplexity_suite_v3_option2
+
+  filter:
+    include: []
+    exclude:
+    - "$@.attributes[?(@.bff_duplicate_paragraph_spans && @.bff_duplicate_paragraph_spans[0]
+      && @.bff_duplicate_paragraph_spans[0][2] >= 1.0)]"
+
+work_dir:
+  input: "/tmp/olmo-mix-v1_5/input"
+  output: "/tmp/olmo-mix-v1_5/output"
+processes: 188

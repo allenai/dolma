@@ -26,7 +26,6 @@ streams:
 
 
 work_dir:
-  input: "/tmp/olmo-mix-v15/books/input"
-  output: "/tmp/olmo-mix-v15/books/output"
-
+  input: "/tmp/olmo-mix-v1_5/input"
+  output: "/tmp/olmo-mix-v1_5/output"
 processes: 188
