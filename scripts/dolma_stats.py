@@ -228,8 +228,7 @@ class BaseStatsProcessor(BaseParallelProcessor):
         queue: Queue[Union[Tuple[int, ...], None]],
         /,
         files: int = 0,
-        documents: int = 0,
-        **kwargs: Any,
+        documents: int = 0
     ) -> Dict[str, int]:
         return super().increment_progressbar(queue, files=files, documents=documents)
 
@@ -250,12 +249,13 @@ class BaseStatsProcessor(BaseParallelProcessor):
         return d1
 
     @classmethod
-    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
-        stats_root = cls.stats.split("*", 1)[0].rstrip("/")
-
+    def _run_parallel_processor(cls, stats_root: str, num_workers: int, debug: bool, **process_single_kwargs: Any):
         with TemporaryDirectory() as tempdir:
-            metadata = os.path.join(tempdir, hashlib.md5(cls.documents.encode()).hexdigest())
+            h = hashlib.md5()
+            for path in (cls.documents if isinstance(cls.documents, list) else [cls.documents]):
+                h.update(path.encode())
 
+            metadata = os.path.join(tempdir, h.hexdigest())
             processor = cls(
                 source_prefix=cls.documents,
                 destination_prefix=stats_root,
@@ -264,6 +264,17 @@ class BaseStatsProcessor(BaseParallelProcessor):
                 debug=debug,
             )
             processor(**process_single_kwargs)
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+        stats_root = cls.stats.split("*", 1)[0].rstrip("/")
+
+        cls._run_parallel_processor(
+            stats_root=stats_root,
+            num_workers=num_workers,
+            debug=debug,
+            **process_single_kwargs,
+        )
 
         paths = list(glob_path(cls.stats))
         counts: dict = {}
@@ -952,6 +963,81 @@ class stack_v3(stack_v2):
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(counts, indent=2))
+
+
+@Registry.add
+class stack_v4(stack_v2):
+    documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v4-train/documents/*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1_5/stack/v4-train/**/*.gz"
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+    ):
+        attrs_basic = source_path.replace("/documents/", "/attributes/perplexity_suite_v3_option2/")
+        # attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
+        # attrs_dedupe_documents = source_path.replace("/documents/", "/attributes/dedupe_documents/")
+        # attrs_pii = source_path.replace("/documents/", "/attributes/pii/")
+
+        documents_decoder = msgspec.json.Decoder(StackInputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+
+        interval = 10_000
+
+        counts: dict = {
+            "extension": defaultdict(int),
+            "license": defaultdict(int),
+            "length": 0,
+            "count": 0,
+            "decontamination_count": 0,
+            "decontamination_length": 0,
+            "decontamination_matches": 0,
+        }
+        cnt = 0
+
+        with ExitStack() as stack:
+            doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
+            attributes_files = [
+                stack.enter_context(smart_open.open(attrs_basic, "rb")),
+            ]
+
+            # with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, *attributes_line in zip(doc_file, *attributes_files):
+                cnt += 1
+
+                doc = documents_decoder.decode(source_line)
+                for ln in attributes_line:
+                    attributes = attributes_decoder.decode(ln)
+                    doc.attributes.update(attributes.attributes)
+
+                attrs = {}
+                for line in attributes_line:
+                    attrs.update(attributes_decoder.decode(line).attributes)
+
+                # Deduplication stats
+                decontamination_removal = attrs.get("bff_duplicate_paragraph_spans_decontamination", [])
+                counts["decontamination_count"] += len(decontamination_removal)
+                counts["decontamination_length"] += sum(s[1] - s[0] for s in decontamination_removal)
+                counts["decontamination_matches"] += 1 if decontamination_removal else 0
+
+                counts["count"] += 1
+                counts["length"] += len(doc.text)
+
+                counts["extension"][doc.metadata["ext"]] += 1
+                for license in doc.metadata["max_forks_repo_licenses"]:
+                    counts["license"][license] += 1
+
+                cnt += 1
+
+                if cnt % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=cnt % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counts, indent=2))
+
+
 
 
 @Registry.add

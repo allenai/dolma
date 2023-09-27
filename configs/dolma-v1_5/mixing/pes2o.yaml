@@ -25,6 +25,9 @@ streams:
   output:
     path: pretraining-data/sources/olmo-mix/v1_5/documents/pes2o
     max_size_in_bytes: 3894967296
+    discard_fields:
+    - attributes
+
   attributes:
     - perplexity_suite_v3_option2
 
