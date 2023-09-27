@@ -12,8 +12,8 @@ streams:
   - pii_detection
 
   output:
-    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/common-crawl-middle
-    max_size_in_bytes: 8589934592
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_middle
+    max_size_in_bytes: 4294967296
     discard_fields:
     - attributes
 

@@ -4,7 +4,7 @@ streams:
   - pretraining-data/sources/stack-dedup/v2-train/documents/*.gz
   output:
     path: pretraining-data/sources/olmo-mix/v1_5/documents/stack
-    max_size_in_bytes: 3894967296
+    max_size_in_bytes: 4294967296
     discard_fields:
     - attributes
 
