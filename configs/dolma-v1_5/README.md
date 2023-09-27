@@ -9,8 +9,5 @@ Tagging is largely the same as v1, but we report it here for completeness.
 ### C4
 
 ```bash
-dolma tag
-    --documents "s3://ai2-llm/pretraining-data/sources/c4/v0/documents/*/*.gz"
-    --taggers pii_regex_with_counts_v2 \
-    --processes 188
+dolma tag --documents 's3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/*.gz' --taggers pii_regex_with_counts_v2 --processes 188
 ```
