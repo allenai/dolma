@@ -1,16 +1,16 @@
 ---
 streams:
-- name: en_simple_wiki
+- name: en_simple_wiki_v0
   documents:
-  - pretraining-data/sources/wikipedia/v0/documents/lang=en/*.gz
-  - pretraining-data/sources/wikipedia/v0/documents/lang=simple/*.gz
-  - pretraining-data/sources/wikibooks/v0/documents/lang=en/*.gz
-  - pretraining-data/sources/wikibooks/v0/documents/lang=simple/*.gz
+  - s3://ai2-llm/pretraining-data/sources/wikipedia/v0/documents/lang=en/*.gz
+  - s3://ai2-llm/pretraining-data/sources/wikipedia/v0/documents/lang=simple/*.gz
+  - s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=en/*.gz
+  - s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=simple/*.gz
   attributes:
   - perplexity_suite_v3_option2
   - olmo_mix_v1_taggers
   output:
-    path: pretraining-data/sources/olmo-mix/v1_5/documents/wiki
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/wiki
     max_size_in_bytes: 4294967296
     discard_fields:
     - attributes

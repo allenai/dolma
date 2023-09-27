@@ -1,13 +1,12 @@
 
 streams:
-- name: reddit
+- name: reddit-v5-dedupe-pii-nsfw-toxic
 
   documents:
-  - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/*.gz
+  - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/*.gz
 
   attributes:
   - perplexity_suite_v3_option2
-  - olmo_mix_v1_taggers
 
   output:
     path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/reddit
