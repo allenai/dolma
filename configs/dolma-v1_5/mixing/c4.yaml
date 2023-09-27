@@ -1,0 +1,26 @@
+---
+streams:
+- name: c4
+  documents:
+  - pretraining-data/sources/c4/v0/documents/*
+
+  attributes:
+  - olmo_mix_v1_taggers
+  - perplexity_suite_v3_option2
+
+  output:
+    path: pretraining-data/sources/olmo-mix/v1_5/documents/c4
+    max_size_in_bytes: 4294967296
+    discard_fields:
+    - attributes
+
+  filter:
+    include: []
+    exclude:
+    - "$@.attributes[?(@.bff_duplicate_paragraph_spans_decontamination && @.bff_duplicate_paragraph_spans_decontamination[0]
+      && @.bff_duplicate_paragraph_spans_decontamination[0][2] >= 1.0)]"
+  span_replacement: []
+work_dir:
+  input: "/tmp/olmo-mix-v15/c4/input"
+  output: "/tmp/olmo-mix-v15/c4/output"
+processes: 128

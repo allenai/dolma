@@ -12,6 +12,8 @@ python scripts/prepare_memmap_dataset.py test_fixtures/*.json.gz -o /tmp/out.npy
 """
 
 import concurrent.futures
+from csv import writer
+import csv
 import functools
 from io import BytesIO
 import itertools
@@ -21,12 +23,11 @@ import multiprocessing as mp
 from enum import Enum
 import os
 import random
-from concurrent.futures import Future
 from contextlib import ExitStack
 from pathlib import Path
 import re
 from tempfile import NamedTemporaryFile
-from typing import Generator, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import IO, Any, Generator, List, NamedTuple, Optional, Sequence, TextIO, Tuple, TypeVar, Union
 
 import click
 import msgspec
@@ -180,18 +181,23 @@ def get_progress() -> Progress:
     )
 
 
-class OutputSpec(msgspec.Struct):
+class OutputSpec(NamedTuple):
     id: str
     src: str
     loc: int
     tokens: List[int]
-    start: int = -1
-    end: int = -1
+    start: int
+    end: int
 
-    def __post_init__(self):
-        self.start = max(self.start, 0)
-        if self.end < 0:
-            self.end = len(self.tokens)
+    @classmethod
+    def from_tokens(cls, id: str, src: str, loc: int, tokens: List[int]) -> "OutputSpec":
+        return cls(id=id, src=src, loc=loc, tokens=tokens, start=0, end=len(tokens))
+
+    @classmethod
+    def from_output_spec(cls, output_spec: "OutputSpec", start: int = -1, end: int = -1) -> "OutputSpec":
+        start = start if start >= 0 else output_spec.start
+        end = end if end >= 0 else output_spec.end
+        return cls(id=output_spec.id, src=output_spec.src, loc=output_spec.loc, tokens=output_spec.tokens, start=start, end=end)
 
 
 def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[OutputSpec, None, None]:
@@ -206,18 +212,21 @@ def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[OutputSpec, None
                 if text := row.text.strip():
                     # skip empty docs
                     tokens = tokenizer.encode(text, add_special_tokens=True)
-                    yield OutputSpec(id=row.id, src=path, loc=i, tokens=tokens)
+                    yield OutputSpec.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)
                 i += 1
             except Exception as ex:
                 log.error("Error processing %s:%d", path, i, exc_info=ex)
 
 
-class Metadata(msgspec.Struct):
+class Metadata(NamedTuple):
     id: str
     src: str
     loc: int
     start: int
     end: int
+
+    def to_csv(self) -> str:
+        return f"{self.id},{self.src},{self.loc},{self.start},{self.end}"
 
 
 class MemMapWriter:
@@ -241,7 +250,7 @@ class MemMapWriter:
             dtype (np.dtype): Data type for the memmap file; must be a valid numpy dtype.
             max_tokens (int, optional): Maximum number of tokens per file. Defaults to 500M tokens, which is 1GB.
         """
-        base_path = re.sub(r"\.[a-zA-Z]*(\.npy?)\.[a-zA-Z]*$", "", path)
+        base_path = re.sub(r"(\.npy?)?(\.[a-zA-Z]+)*$", "", path)
         self.memmap_path = f"{base_path}{self.MEMMAP_EXTENSION}"
         self.metadata_path = f"{base_path}{self.METADATA_EXTENSION}"
         self.dtype = dtype
@@ -251,11 +260,17 @@ class MemMapWriter:
         self._local_metadata_path: Optional[Path] = None
         self._written_tokens = 0
         self._memmap_file: Optional[np.memmap] = None
-        self._metadata_file: Optional[BytesIO] = None
+        self._metadata_file: Optional[TextIO] = None
 
     def __len__(self) -> int:
         """Length of the memmap file in tokens that have been written."""
         return self._written_tokens
+
+    @functools.cached_property
+    def metadata_writer(self):
+        if self._metadata_file is None:
+            raise RuntimeError("Metadata file is not open")
+        return writer(self._metadata_file)
 
     # def write(self, values: List[int], flush: bool = False) -> Optional[List[int]]:
     def write(self, output: OutputSpec, flush: bool = False) -> Optional[OutputSpec]:
@@ -277,15 +292,7 @@ class MemMapWriter:
             values = output.tokens[: self.max_tokens - self._written_tokens]
             start = 0
             end = self.max_tokens - self._written_tokens
-
-            rest = OutputSpec(
-                id=output.id,
-                src=output.src,
-                loc=output.loc,
-                tokens=output.tokens[end:],
-                start=end,
-                end=len(output.tokens),
-            )
+            rest = OutputSpec.from_output_spec(output_spec=output, start=end)
         else:
             values = output.tokens
             start = 0
@@ -299,10 +306,11 @@ class MemMapWriter:
             start=start,
             end=end,
         )
-        self._memmap_file[self._written_tokens : self._written_tokens + start] = values
+        self._memmap_file[self._written_tokens : self._written_tokens + end] = values
         self._written_tokens += end - start
 
-        self._metadata_file.write(msgspec.json.encode(metadata) + b"\n")
+        # self._metadata_file.write(msgspec.json.encode(metadata) + b"\n")
+        self.metadata_writer.writerow(metadata)
 
         if flush:
             self._memmap_file.flush()
@@ -347,7 +355,7 @@ class MemMapWriter:
             dtype=self.dtype,
             shape=(self.max_tokens,)
         )
-        self._metadata_file = smart_open.open(self._local_metadata_path, mode="wb")     # type: ignore
+        self._metadata_file = smart_open.open(self._local_metadata_path, mode="wt")
 
         log.info(f"Created memmap file at {self._local_memmap_path} of size {self._memmap_file.nbytes:,} bytes")
 
@@ -367,6 +375,8 @@ class MemMapWriter:
         try:
             # write the memmap to the destination
             self._memmap_file.flush()
+            self._metadata_file.flush()
+            self._metadata_file.close()
 
             # we resize the memmap to the number of tokens actually written
             if self._written_tokens < self.max_tokens:
@@ -388,11 +398,14 @@ class MemMapWriter:
                     g.write(f.read())
                 log.info(f"Written memmap file to {self.memmap_path}")
         finally:
-            if not self.is_remote_path:
+            if self.is_remote_path:
                 # delete the temporary file under any circumstances
                 os.remove(self._local_memmap_path)
 
-        self._local_memmap_path = self._memmap = None
+        # reset to none, clear cache
+        self._local_memmap_path = self._memmap_file = None
+        self._local_metadata_path = self._metadata_file = None
+        del self.metadata_writer
 
 
 def fill_memmap(
@@ -432,7 +445,12 @@ def fill_memmap(
             for _ in range(repeat_sequence)
             for path in path_or_paths
         )
-        for line_no, output in enumerate(it, start=1):
+
+        import tqdm
+        import time
+        start = time.time()
+
+        for line_no, output in tqdm.tqdm(enumerate(it, start=1)):
             # perform sampling if necessary
             if sample_rate < 1.0 and np.random.rand() > sample_rate:
                 continue
@@ -467,8 +485,14 @@ def fill_memmap(
                 # do the actual writing
                 memmap_writer.write(leftovers_to_write)
 
+            if line_no > 50_000:
+                break
+
         # close the last memmap
         stack.pop_all().close()
+
+        end = time.time()
+        print(f"Time elapsed: {end - start:.2f}s")
 
     return total_tokens
 
@@ -611,7 +635,7 @@ def main(
         # Now tokenizer all documents again and populate the memmap array. We do this in parallel.
         workers_cnt = min(max_workers or os.cpu_count() or 1, len(exploded_src))
         with concurrent.futures.ProcessPoolExecutor(max_workers=workers_cnt) as executor:
-            futures: List[Future[int]] = []
+            futures: List[concurrent.futures.Future[int]] = []
             for src_path, dst_path in zip(exploded_src, exploded_dst):
                 future = executor.submit(fill_memmap_fn, path_or_paths=src_path, memmap_path=dst_path)
                 futures.append(future)
@@ -641,6 +665,8 @@ def main(
                     total_tokens += len(encode_fn(row))
 
         for output_path in glob_path(output):
+            if not output_path.endswith(".npy"):
+                continue
             memmap = np.memmap(output_path, mode="r", dtype=dtype)
             total_tokens -= len(memmap)
             total_docs -= (memmap == tokenizer.eos_token_id).sum()
