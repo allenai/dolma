@@ -2,20 +2,27 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Generator
 from omegaconf import DictConfig
 from omegaconf.omegaconf import OmegaConf as om
 
 from tokenizers import Tokenizer as BaseTokenizer
 from enum import Enum
 from os import PathLike
+import smart_open
+import msgspec
 
 from ..core.errors import DolmaConfigError
+from .data_types import InputSpec, TokenizerOutputSpec
+from ..core.loggers import get_logger
 
 PathOrStr = Union[str, PathLike]
 
+log = get_logger(__name__)
+
 
 __all__ = ["Tokenizer"]
+
 
 class StrEnum(str, Enum):
     """
@@ -185,3 +192,21 @@ class Tokenizer:
         Decode a list of token IDs to a string.
         """
         return self.base_tokenizer.decode(token_ids, skip_special_tokens=skip_special_tokens)
+
+
+def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[TokenizerOutputSpec, None, None]:
+    """Tokenize a file of documents using the provided tokenizer; file is expected to be a gzipped JSON lines
+    file, each containing a field named `text`.
+    """
+    decoder = msgspec.json.Decoder(InputSpec)
+    with smart_open.open(path, mode="rt") as input_stream:
+        for i, line in enumerate(input_stream, start=1):
+            try:
+                row = decoder.decode(line)
+                if text := row.text.strip():
+                    # skip empty docs
+                    tokens = tokenizer.encode(text, add_special_tokens=True)
+                    yield TokenizerOutputSpec.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)
+                i += 1
+            except Exception as ex:
+                log.error("Error processing %s:%d", path, i, exc_info=ex)
