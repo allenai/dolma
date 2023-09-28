@@ -13,7 +13,7 @@ import smart_open
 import msgspec
 
 from ..core.errors import DolmaConfigError
-from .data_types import InputSpec, TokenizerOutputSpec
+from .data_types import InputSpec, TokenizerOutput
 from ..core.loggers import get_logger
 
 PathOrStr = Union[str, PathLike]
@@ -194,7 +194,7 @@ class Tokenizer:
         return self.base_tokenizer.decode(token_ids, skip_special_tokens=skip_special_tokens)
 
 
-def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[TokenizerOutputSpec, None, None]:
+def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[TokenizerOutput, None, None]:
     """Tokenize a file of documents using the provided tokenizer; file is expected to be a gzipped JSON lines
     file, each containing a field named `text`.
     """
@@ -206,7 +206,7 @@ def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[TokenizerOutputS
                 if text := row.text.strip():
                     # skip empty docs
                     tokens = tokenizer.encode(text, add_special_tokens=True)
-                    yield TokenizerOutputSpec.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)
+                    yield TokenizerOutput.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)
                 i += 1
             except Exception as ex:
                 log.error("Error processing %s:%d", path, i, exc_info=ex)
