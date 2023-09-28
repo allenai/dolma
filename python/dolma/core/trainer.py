@@ -10,7 +10,7 @@ import argparse
 from .ft_tagger import BaseFastTextTagger
 
 def main(args):
-    tagger = BaseFastTextTagger.train(args.train_file, args.save_path)
+    tagger = BaseFastTextTagger.train(**vars(args))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -25,6 +25,24 @@ if __name__ == "__main__":
         required=True,
         type=str,
         help="Path to save trained model",
+    )
+    parser.add_argument(
+        "--min-word-count",
+        required=False,
+        type=int,
+        default=1
+    )
+    parser.add_argument(
+        "--word-vectors-dim",
+        required=False,
+        type=int,
+        default=100
+    )
+    parser.add_argument(
+        "--max-word-ngram",
+        required=False,
+        type=int,
+        default=2
     )
 
     args = parser.parse_args()
