@@ -23,5 +23,6 @@ dolma tag --documents 's3://ai2-llm/pretraining-data/sources/c4/v0/documents/tra
 
 
 ```bash
-dolma tag --documents 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_head//*.gz' 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_tail/*.gz' --taggers random_number_v1 --processes 188
+dolma tag --documents 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_head/*.gz' 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_tail/*.gz' --taggers random_number_v1 --processes 188
 ```
+dolma tag --documents 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_middle/*.gz' --taggers random_number_v1 --processes 188

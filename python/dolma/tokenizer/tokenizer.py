@@ -1,20 +1,20 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
-from typing import List, Optional, Union, Generator
-from omegaconf import DictConfig
-from omegaconf.omegaconf import OmegaConf as om
-
-from tokenizers import Tokenizer as BaseTokenizer
 from enum import Enum
 from os import PathLike
-import smart_open
+from pathlib import Path
+from typing import Generator, List, Optional, Union
+
 import msgspec
+import smart_open
+from omegaconf import DictConfig
+from omegaconf.omegaconf import OmegaConf as om
+from tokenizers import Tokenizer as BaseTokenizer
 
 from ..core.errors import DolmaConfigError
-from .data_types import InputSpec, TokenizerOutput
 from ..core.loggers import get_logger
+from .data_types import InputSpec, TokenizerOutput
 
 PathOrStr = Union[str, PathLike]
 

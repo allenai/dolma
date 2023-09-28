@@ -2,12 +2,7 @@ from typing import List, NamedTuple
 
 from ..core.data_types import InputSpec
 
-
-__all__ = [
-    "InputSpec",
-    "TokenizerOutput",
-    "Metadata"
-]
+__all__ = ["InputSpec", "TokenizerOutput", "Metadata"]
 
 
 class TokenizerOutput(NamedTuple):
@@ -26,7 +21,14 @@ class TokenizerOutput(NamedTuple):
     def from_output_spec(cls, output_spec: "TokenizerOutput", start: int = -1, end: int = -1) -> "TokenizerOutput":
         start = start if start >= 0 else output_spec.start
         end = end if end >= 0 else output_spec.end
-        return cls(id=output_spec.id, src=output_spec.src, loc=output_spec.loc, tokens=output_spec.tokens, start=start, end=end)
+        return cls(
+            id=output_spec.id,
+            src=output_spec.src,
+            loc=output_spec.loc,
+            tokens=output_spec.tokens,
+            start=start,
+            end=end,
+        )
 
 
 class Metadata(NamedTuple):
@@ -38,3 +40,11 @@ class Metadata(NamedTuple):
 
     def to_csv(self) -> str:
         return f"{self.id},{self.src},{self.loc},{self.start},{self.end}"
+
+
+class MemmapMetadata(NamedTuple):
+    start: int
+    end: int
+    id: str
+    src: str
+    loc: int
