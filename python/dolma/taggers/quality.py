@@ -15,11 +15,9 @@ class FastTextWikiWebBooksDocTagger(BaseFastTextTagger):
         pred = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
         preds = []
         for label, score in zip(*pred):
-            if label == 'wikiwebbooks':
+            if label == '__label__wikiwebbooks':
                 preds.append(Prediction(label='neg', score=score))
-            if label == 'random_cc':
+            if label == '__label__random_cc':
                 preds.append(Prediction(label='pos', score=score))
         assert len(preds) == 2
         return preds[0], preds[1]
-
-'''if you create a new file, there is an init and then add the script to the init'''

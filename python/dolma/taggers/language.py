@@ -164,22 +164,3 @@ class FastTextEnglishLanguageParagraphWithDocScoreTagger(FastTextEnglishLanguage
         doc_result = super().predict(doc)
         doc_result = add_global_language_score_from_slice_score(doc_result)
         return doc_result
-
-# this is temporary patch
-@TaggerRegistry.add("wikiwebbooks_doc")
-class FastTextWikiWebBooksDocTagger(BaseFastTextTagger):
-    MODEL_PATH = "/home/lucyl/llm_social_identities/data/filter_data/wikiwebbooks_cc.bin"
-
-    def __init__(self):
-        super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
-
-    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
-        pred = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
-        preds = []
-        for label, score in zip(*pred):
-            if label == '__label__wikiwebbooks':
-                preds.append(Prediction(label='neg', score=score))
-            if label == '__label__random_cc':
-                preds.append(Prediction(label='pos', score=score))
-        assert len(preds) == 2
-        return preds[0], preds[1]
