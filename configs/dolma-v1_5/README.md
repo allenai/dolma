@@ -26,3 +26,26 @@ dolma tag --documents 's3://ai2-llm/pretraining-data/sources/c4/v0/documents/tra
 dolma tag --documents 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_head/*.gz' 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_tail/*.gz' --taggers random_number_v1 --processes 188
 ```
 dolma tag --documents 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_middle/*.gz' --taggers random_number_v1 --processes 188
+
+
+## Tokenization
+
+```bash
+python -m dolma.tokenizer --sources 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/*/*' --destination $HOME/preprocessed/olmo-mix/v1_5/gpt-neox-20b-pii-special --num-writers 188 --max-size 17179869184
+```
+
+```bash
+python -m dolma.tokenizer \
+    --sources 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/books/*' \
+        's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/c4/*' \
+        's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-sample/documents/cc_en_head/*' \
+        's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-sample/documents/cc_en_middle/*' \
+        's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-sample/documents/cc_en_tail/*' \
+        's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/pes2o/*' \
+        's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/reddit/*' \
+        's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/stack/*' \
+        's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/wiki/*' \
+    --destination $HOME/preprocessed/olmo-mix/v1_5-sample/gpt-neox-20b-pii-special \
+    --num-writers 188 \
+    --max-size 17179869184
+```
