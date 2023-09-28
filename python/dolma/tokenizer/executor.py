@@ -5,7 +5,7 @@ import random
 import tempfile
 from contextlib import ExitStack
 from math import ceil, log10
-from queue import Queue, Empty
+from queue import Empty, Queue
 from time import sleep
 from typing import Any, Dict, List, Optional
 
@@ -25,7 +25,7 @@ PathsQueueType: TypeAlias = Queue[str]
 
 class MemMapParallelWriter(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(      # type: ignore[override]
+    def increment_progressbar(  # type: ignore[override]
         cls,
         queue: QueueType,
         /,
@@ -37,7 +37,6 @@ class MemMapParallelWriter(BaseParallelProcessor):
         return super().increment_progressbar(
             queue, files=files, documents=documents, tokens=tokens, memmaps=memmaps
         )
-
 
     @classmethod
     def process_single(cls, source_path: List[str], destination_path: str, queue: QueueType, **kwargs: Any):
@@ -59,7 +58,9 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
         with ExitStack() as stack:
             memwriter = stack.enter_context(
-                MemmapWriter(path=destination_path + f"-{mm_cnt:05d}", dtype=np.dtype("uint16"), max_tokens=max_size)
+                MemmapWriter(
+                    path=destination_path + f"-{mm_cnt:05d}", dtype=np.dtype("uint16"), max_tokens=max_size
+                )
             )
             cls.increment_progressbar(queue, memmaps=1)
 
@@ -89,7 +90,11 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         mm_cnt += 1
                         stack.pop_all().close()
                         memwriter = stack.enter_context(
-                            MemmapWriter(path=destination_path + f"-{mm_cnt:05d}", dtype=np.dtype("uint16"), max_tokens=max_size)
+                            MemmapWriter(
+                                path=destination_path + f"-{mm_cnt:05d}",
+                                dtype=np.dtype("uint16"),
+                                max_tokens=max_size,
+                            )
                         )
                         cls.increment_progressbar(queue, memmaps=1)
 
@@ -122,6 +127,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
             all_metadata_paths=self.meta_prefixes,
             **process_single_kwargs,
         )
+
 
 def tokenize_in_parallel(
     sources: List[str],

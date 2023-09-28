@@ -5,7 +5,7 @@ import random
 import tempfile
 from contextlib import ExitStack
 from math import ceil, log10
-from queue import Queue, Empty
+from queue import Empty, Queue
 from time import sleep
 from typing import Any, Dict, List, Optional
 
@@ -25,12 +25,8 @@ PathsQueueType: TypeAlias = Queue[str]
 
 class MemMapParallelWriter(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(      # type: ignore[override]
-        cls,
-        queue: QueueType,
-        /,
-        documents: int = 0,
-        tokens: int = 0
+    def increment_progressbar(  # type: ignore[override]
+        cls, queue: QueueType, /, documents: int = 0, tokens: int = 0
     ) -> Dict[str, int]:
         return super().increment_progressbar(queue, documents=documents, tokens=tokens)
 
