@@ -47,5 +47,5 @@ python -m dolma.tokenizer \
         's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/wiki/*' \
     --destination $HOME/preprocessed/olmo-mix/v1_5-sample/gpt-neox-20b-pii-special \
     --num-writers 188 \
-    --max-size 17179869184
+    --max-size 5368709120
 ```
