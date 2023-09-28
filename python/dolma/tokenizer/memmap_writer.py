@@ -111,10 +111,10 @@ class MemmapWriter:
 
     def flush(self):
         """Flush the memmap file."""
-        if self._memmap_file:
+        if self._memmap_file is not None:
             self._memmap_file.flush()
 
-        if self._metadata_file:
+        if self._metadata_file is not None:
             self._metadata_file.flush()
 
     @property
@@ -172,12 +172,11 @@ class MemmapWriter:
 
         try:
             # write the memmap to the destination
-            self._memmap_file.flush()
-            self._metadata_file.flush()
+            self.flush()
             self._metadata_file.close()
 
             # we resize the memmap to the number of tokens actually written
-            if self._written_tokens < self.max_tokens:
+            if self._written_tokens < self.max_tokens and self._written_tokens > 0:
                 del self._memmap_file
                 os.rename(self._local_memmap_path, (temp_path := self._local_memmap_path.with_suffix(".tmp")))
                 new_memmap = np.memmap(
@@ -203,4 +202,9 @@ class MemmapWriter:
         # reset to none, clear cache
         self._local_memmap_path = self._memmap_file = None
         self._local_metadata_path = self._metadata_file = None
-        del self.metadata_writer
+
+        try:
+            del self.metadata_writer
+        except AttributeError:
+            # this is in case the metadata file was never opened
+            pass
