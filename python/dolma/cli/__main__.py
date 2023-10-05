@@ -11,6 +11,7 @@ from .mixer import MixerCli
 # must import these to register the resolvers
 from .resolvers import *  # noqa: F401,F403
 from .tagger import ListTaggerCli, TaggerCli
+from .tokenizer import TokenizerCli
 
 AVAILABLE_COMMANDS = {
     "dedupe": DeduperCli,
@@ -18,6 +19,7 @@ AVAILABLE_COMMANDS = {
     "tag": TaggerCli,
     "list": ListTaggerCli,
     "stat": AnalyzerCli,
+    "tokens": TokenizerCli,
     # following functionality is not yet implemented
     # "train-ft": None,
     # "train-lm": None,

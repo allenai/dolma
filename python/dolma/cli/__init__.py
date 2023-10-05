@@ -16,8 +16,11 @@ from typing import Any, Dict, Generic, Literal, Optional, Protocol, Type, TypeVa
 
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
+from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
+
+from dolma.core.errors import DolmaConfigError
 
 __all__ = [
     "BaseCli",
@@ -67,12 +70,29 @@ def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None
             continue
 
         field_name = f"{prefix}.{field_name}" if prefix else field_name
-        parser.add_argument(
-            f"--{field_name}",
-            help=field.metadata.get("help"),
-            nargs=field.metadata.get("nargs", "?"),
-            default=MISSING,
-        )
+
+        if typ_ is bool:
+            # for boolean values, we add two arguments: --field_name and --no-field_name
+            parser.add_argument(
+                f"--{field_name}",
+                help=field.metadata.get("help"),
+                dest=field_name,
+                action="store_true",
+            )
+            parser.add_argument(
+                f"--no-{field_name}",
+                help=f"Disable {field_name}",
+                dest=field_name,
+                action="store_false",
+            )
+        else:
+            # else it's just a normal argument
+            parser.add_argument(
+                f"--{field_name}",
+                help=field.metadata.get("help"),
+                nargs=field.metadata.get("nargs", "?"),
+                default=MISSING,
+            )
 
     return parser
 
@@ -126,7 +146,13 @@ class BaseCli(Generic[D]):
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
         parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)
-        return cls.run(parsed_config)
+        try:
+            return cls.run(parsed_config)
+        except OmegaConfBaseException as ex:
+            raise DolmaConfigError(
+                f"Invalid error while parsing key `{ex.full_key}` of `{ex.object_type_str}`: "
+                f"{type(ex).__name__}"
+            ) from ex
 
     @classmethod
     def run(cls, parsed_config: D):
