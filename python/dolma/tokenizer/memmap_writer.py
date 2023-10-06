@@ -193,6 +193,11 @@ class MemmapWriter:
                     f = stack.enter_context(smart_open.open(self._local_memmap_path, "rb"))
                     g = stack.enter_context(smart_open.open(self.memmap_path, mode="wb"))
                     g.write(f.read())
+
+                    f = stack.enter_context(smart_open.open(self._local_metadata_path, "rb"))
+                    g = stack.enter_context(smart_open.open(self.metadata_path, mode="wb"))
+                    g.write(f.read())
+
                 log.info(f"Written memmap file to {self.memmap_path}")
         finally:
             if self.is_remote_path:

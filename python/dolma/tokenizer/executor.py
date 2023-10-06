@@ -56,7 +56,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
         tokenizer = Tokenizer.from_pretrained("allenai/eleuther-ai-gpt-neox-20b-pii-special")
         tokenizer_ring = []
-        for _ in range(ring_size):
+        for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
             tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
 
@@ -68,7 +68,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
             )
             cls.increment_progressbar(queue, memmaps=1)
 
-            while len(source_path) > 0 or len(tokenizer_ring) > 0:
+            while len(source_paths) > 0 or len(tokenizer_ring) > 0:
                 for i in range(local_shuffle):
                     j = i % len(tokenizer_ring)
                     try:
@@ -79,7 +79,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         tokenizer_ring.pop(j)
                         if len(tokenizer_ring) == 0:
                             break
-                        if len(source_path) > 0:
+                        if len(source_paths) > 0:
                             path = source_paths.pop()
                             tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
 
@@ -137,6 +137,9 @@ class MemMapParallelWriter(BaseParallelProcessor):
             grouped_source_prefixes.append(all_source_paths[int(i) : int(i + num_readers_per_writer)])
             i += num_readers_per_writer
 
+        # redefine num_processes to be the number of groups
+        self.num_processes = min(len(grouped_source_prefixes), self.num_processes)
+
         # this is a bit of a hack but: we pass indices to grouped_source_prefixes to the processors
         # so that they can load the correct source paths
         source_indices = [str(i) for i in range(len(grouped_source_prefixes))]
@@ -158,7 +161,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
         # same for metadata
         metadata = self.meta_prefixes[0]
         mkdir_p(metadata)
-        metadatas = [metadata for _ in range(len(destinations))]
+        metadatas = [join_path(None, metadata, f'{i}.done') for i in range(len(destinations))]
 
         # finally run the processors
         fn = self._debug_run_all if self.debug else self._multiprocessing_run_all

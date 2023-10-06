@@ -141,8 +141,12 @@ def join_path(protocol: Union[str, None], *parts: Union[str, Iterable[str]]) -> 
     """
     Join a path from its protocol and path components.
     """
-    all_parts = (_escape_glob(p) for p in chain.from_iterable([p] if isinstance(p, str) else p for p in parts))
+    all_prots, all_parts = zip(
+        *(_pathify(p) for p in chain.from_iterable([p] if isinstance(p, str) else p for p in parts))
+    )
     path = str(Path(*all_parts)).rstrip("/")
+    protocol = protocol or str(all_prots[0])
+
     if protocol:
         path = f"{protocol}://{path.lstrip('/')}"
     return _unescape_glob(path)
@@ -152,12 +156,11 @@ def glob_path(path: Union[Path, str], hidden_files: bool = False, autoglob_dirs:
     """
     Expand a glob path into a list of paths.
     """
-    path = str(path)
-    protocol = urlparse(path).scheme
+    protocol, parsed_path = _pathify(path)
     fs = _get_fs(path)
 
     if fs.isdir(path) and autoglob_dirs:
-        path = join_path(None, path, "*")
+        path = join_path(protocol, _unescape_glob(parsed_path), "*")
 
     for gl in fs.glob(path):
         gl = str(gl)

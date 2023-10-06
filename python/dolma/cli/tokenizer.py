@@ -12,28 +12,30 @@ from dolma.tokenizer import tokenize_in_parallel
 @dataclass
 class TokenizerConfig:
     documents: List[str] = field(
-        help="One or more document paths to process; Can be either local or S3 paths. Globs are supported.",
+        default=[],
+        help=(
+            "One or more document paths to process; Can be either local or S3 paths. "
+            "Globs are supported. Required"
+        )
     )
-    destination: str = field(
+    destination: Optional[str] = field(
+        default=None,
         help=(
             "Destination paths to save the outputs; should match the number of document paths. "
-            "If not provided, destination will be derived from the document path."
+            "If not provided, destination will be derived from the document path. Required."
         ),
     )
-    tokenizer_id: str = field(
-        help="Name of the tokenizer to use.",
-    )
-    taggers: List[str] = field(
-        default=[],
-        help="List of taggers to run.",
-    )
-    experiment: Optional[str] = field(
+    tokenizer_id: Optional[str] = field(
         default=None,
-        help="Name of the experiment.",
+        help="Name of the tokenizer to use. Required.",
     )
     processes: int = field(
         default=1,
         help="Number of parallel processes to use.",
+    )
+    files_per_process: Optional[int] = field(
+        default=None,
+        help="Number of files to process per process.",
     )
     batch_size: int = field(
         default=10_000,
@@ -92,11 +94,17 @@ class TokenizerCli(BaseCli):
                 logger.info("Exiting due to dryrun.")
                 return
 
+            if parsed_config.destination is None:
+                raise DolmaConfigError("Destination must be provided.")
+
+            if parsed_config.tokenizer_id is None:
+                raise DolmaConfigError("Tokenizer ID must be provided.")
+
             tokenize_in_parallel(
                 sources=documents,
                 destination=parsed_config.destination,
                 num_writers=parsed_config.processes,
-                num_readers=parsed_config.processes,
+                num_readers=parsed_config.files_per_process,
                 local_shuffle=parsed_config.batch_size,
                 ring_size=parsed_config.ring_size,
                 tokenizer_id=parsed_config.tokenizer_id,
