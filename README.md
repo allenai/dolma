@@ -1,4 +1,4 @@
-<img alt="Dolma's official logo. It's dolma written in yellow, round lowercase letters over a blue background." src="https://github.com/allenai/dolma/blob/main/docs/assets/AI2_Blog_1400x685_2x.webp?raw=true" width="100%">
+<img alt="Dolma's official logo. It's dolma written in yellow, round lowercase letters over a blue background." src="https://raw.githubusercontent.com/allenai/dolma/main/docs/assets/AI2_Blog_1400x685_2x.webp" width="100%">
 
 
 Dolma is two things:
