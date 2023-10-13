@@ -16,7 +16,7 @@ class TokenizerConfig:
         help=(
             "One or more document paths to process; Can be either local or S3 paths. "
             "Globs are supported. Required"
-        )
+        ),
     )
     destination: Optional[str] = field(
         default=None,

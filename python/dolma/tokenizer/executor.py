@@ -161,7 +161,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
         # same for metadata
         metadata = self.meta_prefixes[0]
         mkdir_p(metadata)
-        metadatas = [join_path(None, metadata, f'{i}.done') for i in range(len(destinations))]
+        metadatas = [join_path(None, metadata, f"{i}.done") for i in range(len(destinations))]
 
         # finally run the processors
         fn = self._debug_run_all if self.debug else self._multiprocessing_run_all

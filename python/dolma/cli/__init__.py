@@ -12,7 +12,19 @@ from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
 from logging import warn
-from typing import Any, Dict, Generic, Literal, Optional, Protocol, Type, TypeVar, Union, get_origin, get_args
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Literal,
+    Optional,
+    Protocol,
+    Type,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om

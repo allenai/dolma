@@ -21,7 +21,7 @@ import smart_open
 from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
-from .paths import join_path, make_relative, mkdir_p, split_glob, split_path, delete_dir
+from .paths import delete_dir, join_path, make_relative, mkdir_p, split_glob, split_path
 from .registry import TaggerRegistry
 from .utils import make_variable_name
 
