@@ -21,7 +21,7 @@ import smart_open
 from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
-from .paths import join_path, make_relative, mkdir_p, split_glob, split_path
+from .paths import join_path, make_relative, mkdir_p, split_glob, split_path, delete_dir
 from .registry import TaggerRegistry
 from .utils import make_variable_name
 
@@ -255,9 +255,11 @@ class TaggerProcessor(BaseParallelProcessor):
         # creating dedicated decoder speeds up the process
         decoder = msgspec.json.Decoder(InputSpec)
 
-        with smart_open.open(source_path, "rt", encoding="utf-8") as in_stream, _make_output_streams(
-            taggers_paths=taggers_paths, mode="wt", encoding="utf-8"
-        ) as output_streams:
+        with ExitStack() as stack:
+            in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))
+            output_streams = stack.enter_context(
+                _make_output_streams(taggers_paths=taggers_paths, mode="wt", encoding="utf-8")
+            )
             try:
                 for raw in in_stream:
                     row = decoder.decode(raw)
@@ -422,3 +424,8 @@ def create_and_run_tagger(
                 skip_on_failure=skip_on_failure,
                 steps=profile_steps,
             )
+
+        for path in destination:
+            # remove any placeholder directories after computation is done
+            if path.endswith(EXPERIMENT_PLACEHOLDER_NAME):
+                delete_dir(path, ignore_missing=True)

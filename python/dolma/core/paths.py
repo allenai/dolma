@@ -109,6 +109,21 @@ def delete_file(path: str, ignore_missing: bool = False) -> bool:
     return deleted
 
 
+def delete_dir(path: str, ignore_missing: bool = False) -> bool:
+    """Delete a directory."""
+
+    fs = _get_fs(path)
+    try:
+        fs.rm(path, recursive=True)
+        deleted = True
+    except FileNotFoundError as ex:
+        if not ignore_missing:
+            raise ex
+        deleted = False
+
+    return deleted
+
+
 def partition_path(path: str) -> Tuple[str, Tuple[str, ...], Tuple[str, ...]]:
     """Partition a path into its protocol, symbols before a glob, and symbols after a glob."""
     # split the path into its protocol and path components
