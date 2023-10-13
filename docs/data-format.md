@@ -91,61 +91,24 @@ Note that it's very important that the `*.jsonl.gz` files for attributes lines u
 
 For something like Language identification, this JSON might look like:
 
-```
+```yaml
 {
-    "source": "...",
     "id": "...",
-    "attributes": {
-      "lang": {"en": 0.9, "fr": 0.2, "de": 0.1 }
+    attributes: {
+        "olmo_mix_v1_taggers__ft_lang_id_en_paragraph_with_doc_score_v2__en": [
+            [0, 300, 0.9],         # this means text[0:300] is tagged with score 0.9
+            [300, 540, 0.3],       # this means text[300:540] is tagged with score 0.3
+            ...
+        ],
+        ...
     }
 }
 ```
 
-###### `attribute` names
+Each attribute can have one or more scores associated with it; in the example above, each paragraph in the document is tagged with a language score.
+For each paragraph, the tuple indicate the start and end index of the paragraph, and the score associated with it.
 
-We need a separate versioning schemes for Attributes and Documents. To keep things simple, just increment the name of the attribute as you make updates (e.g. `toxicity-0` vs `toxicity-1`).
-
-### tools
-
-To make progress on dataset versions, we will employ tools. These are still TBD, but the idea is that the input & output of these tools always preserves the JSON format in each `jsonl.gz` dump, so we can re-run functions applied to earlier dataset versions onto later dataset versions without worrying about format changes.
-
-More details can be found in this [Proposal Doc](https://docs.google.com/document/d/18T5_v3QeWPiiuSsUi09_6-ZxW_i47cBatblABb9IZ0M/edit?usp=sharing).
-
-##### validate files on s3
-
-Try running the tool like this:
-
-```python
-python pretrain_data/toolkit/src/ai2_llm_toolkit/api.py --source stack-dedup --version raw
-python pretrain_data/toolkit/src/ai2_llm_toolkit/api.py --source s2 --version v2_hard_dedup
-python pretrain_data/toolkit/src/ai2_llm_toolkit/api.py --source common-crawl --version v0
-```
-
-A good outcome would be something like:
-
-```python
-python pretrain_data/api.py --source common-crawl --version v0
-2023-03-28 22:42:45,903 INFO Creating Dataset from S3: source=common-crawl version=v0
-2023-03-28 22:42:45,903 INFO Found one dataset from source=common-crawl version=v0
-2023-03-28 22:42:45,919 INFO Found credentials in shared credentials file: ~/.aws/credentials
-2023-03-28 22:42:46,895 INFO Inspecting first file at s3://ai2-llm/pretraining-data/sources/common-crawl/v0/documents/mined_split/2021-49/0000/af_all.json.gz
-2023-03-28 22:42:46,900 INFO Downloading s3://ai2-llm/pretraining-data/sources/common-crawl/v0/documents/mined_split/2021-49/0000/af_all.json.gz to a temporary file
-2023-03-28 22:42:47,602 INFO Finished verifying format of file s3://ai2-llm/pretraining-data/sources/common-crawl/v0/documents/mined_split/2021-49/0000/af_all.json.gz
-```
-
-A bad outcome would be something like:
-
-```python
-Traceback (most recent call last):
-  File "/Users/kylel/ai2/LLM/pretrain_data/api.py", line 177, in <module>
-    dataset.verify_one_file(s3_filepath=first_s3_filepath)
-  File "/Users/kylel/ai2/LLM/pretrain_data/api.py", line 156, in verify_one_file
-    for example in self._read_examples_from_file(s3_filepath=s3_filepath):
-  File "/Users/kylel/ai2/LLM/pretrain_data/api.py", line 142, in _read_examples_from_file
-    example = Example.from_json(example_json=example_dict)
-  File "/Users/kylel/ai2/LLM/pretrain_data/api.py", line 83, in from_json
-    source=example_json['source'],
-KeyError: 'source'
-```
-
-The issue in this case is probably the JSON schema uploaded doesn't adhere to the data contract specified above.
+The idea that we're going with is that attributes identify spans of text within a document that might be problematic.
+These signal get cached during tagging and allow for "building" of the dataset to happen as a configuration afterwards. so for example, given signal data like this, we might try different confidence thresholds on mean_word_length when creating final data mixture
+how does your signals data look?
+}
