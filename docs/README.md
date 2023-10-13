@@ -1,6 +1,5 @@
 # Dolma Toolkit Documentation
 
-## Introduction
 
 Dolma is a toolkit to curate dataset for pretraining AI models. Reason to use the Dolma toolkit are:
 

@@ -13,34 +13,22 @@ $ dolma --help
 
 usage: dolma [command] [options]
 
-Command line interface for the DOLMa dataset
-processing toolkit
+Command line interface for the DOLMa dataset processing toolkit
 
 positional arguments:
   {dedupe,mix,tag,list,stat,tokens}
-    dedupe          Deduplicate documents or
-                    paragraphs using a bloom
-                    filter.
-    mix             Mix documents from multiple
-                    streams.
-    tag             Tag documents or spans of
-                    documents
-                    using one or more taggers.
-                    For a list of available
-                    taggers, run `dolma list`.
-    list            List available taggers.
-    stat            Analyze the distribution
-                    of attributes values in a
-                    dataset.
-    tokens          Tokenize documents using
-                    the provided tokenizer.
+    dedupe              Deduplicate documents or paragraphs using a bloom filter.
+    mix                 Mix documents from multiple streams.
+    tag                 Tag documents or spans of documents using one or more taggers. For a
+                        list of available taggers, run `dolma list`.
+    list                List available taggers.
+    stat                Analyze the distribution of attributes values in a dataset.
+    tokens              Tokenize documents using the provided tokenizer.
 
 options:
-  -h, --help        Show this help message
-                    and exit
+  -h, --help            show this help message and exit
   -c CONFIG, --config CONFIG
-                    Path to configuration
-                    optional file
+                        Path to configuration optional file
 ```
 
 The CLI supports six commands: `dedupe`, `mix`, `tag`, `list`, `stat`, and `tokens`.
@@ -53,11 +41,11 @@ In this tutorial, we will show how to use the `tag`, `dedupe`, and `mix` command
 
 Run all following commands from root of this repository.
 
-## Step 0: Obtain Wikipedia
+### Step 0: Obtain Wikipedia
 
 We use the script at [this gist]() to download and process Wikipedia. After running it, you will have a directory called `wikipedia/v0` with Wikipedia articles in it.
 
-## Step 1: Run Taggers
+### Step 1: Run Taggers
 
 Our first step in preparing the Wikipedia is to tag it with a few taggers. We will use the following taggers:
 
@@ -85,7 +73,7 @@ dolma tag \
 
 To learn more about the taggers, see the [taggers documentation](taggers.md).
 
-## Step 2: Deduplicate Paragraphs
+### Step 2: Deduplicate Paragraphs
 
 After tagging, we deduplicate the dataset at a paragraph level.
 
@@ -104,7 +92,7 @@ dolma dedupe \
 
 The above command will create an attribute directory called `dups` in `wikipedia/v0/attributes`. The `bff_duplicate_paragraph_spans` attribute will contain a list of duplicate paragraphs for each paragraph in the dataset.
 
-## Step 3: Run Mixer
+### Step 3: Run Mixer
 
 After running the taggers and and marking which paragraphs are duplicates, we can run the mixer to create a dataset with a subset of the languages and documents.
 
@@ -171,3 +159,6 @@ Further, we override the number of processes to use to 96 using the `--processes
   "processes": 1
 }
 ```
+
+
+### Step 4: Tokenize The Dataset
