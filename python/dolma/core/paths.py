@@ -273,7 +273,12 @@ def split_glob(path: str) -> Tuple[str, str]:
     Partition a path on the first wildcard.
     """
     if not is_glob(path):
+        # it's not a glob, so it's all path
         return path, ""
+
+    if path[0] == "*":
+        # starts with a glob, so it's all glob
+        return "", path
 
     protocol, parts = split_path(path)
 
