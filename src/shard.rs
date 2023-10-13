@@ -349,6 +349,10 @@ impl Shard {
                         for f in self.discard_fields.iter().flatten() {
                             data.as_object_mut().unwrap().remove(f);
                         }
+
+                        // TODO: add check to make sure that the text field is not empty. Something like
+                        // if !data["text"].as_str().unwrap().is_empty() || skip_empty
+                        // make it configurable and off by default
                         lines_written += 1;
                         serde_json::to_writer(&mut writer, &data)?;
                         writer.write_all(b"\n")?;
