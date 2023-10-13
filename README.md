@@ -1,11 +1,25 @@
 <img alt="Dolma's official logo. It's dolma written in yellow, round lowercase letters over a blue background." src="https://github.com/allenai/dolma/blob/main/res/logo.png?raw=true" width="100%">
 
 
+Dolma is two things:
+
+1. **Dolma Dataset**: an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
+2. **Dolma Toolkit**: a high-performance toolkit for curating datasets for language modeling.
+
+## Dolma Dataset
+
 Dolma is an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
 It was created as a training corpus for [OLMo](https://allenai.org/olmo), AI2 language model.
 
 Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr).
 You can also read more about Dolma in [our announcement](https://blog.allenai.org/dolma-3-trillion-tokens-open-llm-corpus-9a0ff4b8da64), as well as by consulting its [data sheet](https://drive.google.com/file/d/12gOf5I5RytsD159nSP7iim_5zN31FCXq/view?usp=drive_link).
+
+
+## Dolma Toolkit
+
+The Dolma Toolkit is a series of high-performance tools for curating datasets for language modeling. It is designed to be highly portable between different compute environments, including local machines, clusters, and cloud computing environments.
+
+The toolkit opera
 
 This repository contains tools for generating and inspecting Dolma. To get started, install the Dolma Python library from [PyPI](https://pypi.org/project/dolma/).
 
@@ -62,47 +76,6 @@ The mix command is used to mix documents from multiple sources, optionally filte
 dolma mix -c tests/config/mixer.json
 ```
 
-
-## Development
-
-Create a conda environment with Python >= 3.8. In this case, we use Python 3.10 and use Anaconda to create the environment.
-
-```shell
-conda create -n dolma python=3.10
-```
-
-After creating the environment, activate it and install necessary tools using the included makefile.
-
-```shell
-conda activate dolma
-make setup
-```
-
-and restart your shell. Finally, to begin development, install the repository in editable mode using maturin.
-
-```shell
-make develop
-```
-
-To run tests, use the following command.
-
-```shell
-make test
-```
-You can choose to run just the Python or Rust tests by calling `make test-python` or `make test-rust` respectively.
-
-You can skip S3 related tests by exporting `DOLMA_TESTS_SKIP_AWS=True`
-
-```shell
-DOLMA_TESTS_SKIP_AWS=True make test
-```
-
-## Contributing
-
-Before committing, use the following command
-```shell
-make style
-```
 
 ## Citation
 
