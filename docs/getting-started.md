@@ -8,7 +8,7 @@ pip install dolma
 
 After installing Dolma, you get access to the `dolma` command line tool. To see the available commands, use the `--help` flag.
 
-```
+```plain-text
 $ dolma --help
 
 usage: dolma [command] [options]
@@ -53,108 +53,121 @@ In this tutorial, we will show how to use the `tag`, `dedupe`, and `mix` command
 
 Run all following commands from root of this repository.
 
+## Step 0: Obtain Wikipedia
+
+We use the script at [this gist]() to download and process Wikipedia. After running it, you will have a directory called `wikipedia/v0` with Wikipedia articles in it.
+
 ## Step 1: Run Taggers
 
-We once
+Our first step in preparing the Wikipedia is to tag it with a few taggers. We will use the following taggers:
 
-```shell
-ai2_llm_filters \
-    -d wikipedia/v0 \
-    -n abl0 \
-    -t random_number_v1 \
-        cld2_en_paragraph_with_doc_score_v2 \
-        ft_lang_id_en_paragraph_with_doc_score_v2 \
-        char_length_with_paragraphs_v1 \
-        whitespace_tokenizer_with_paragraphs_v1 \
-    -p 96   # run on 96 cores
+- `random_number_v1`: Assigns a random number to each document. This allows us to split the dataset into train, validation, and test sets.
+- `cld2_en_paragraph_with_doc_score_v2`: Uses the cld2 language detector to tag each paragraph as English or not English. It also assigns a score to each document based on the fraction of paragraphs that are English.
+- `ft_lang_id_en_paragraph_with_doc_score_v2`: Uses the fastText language detector to tag each paragraph as English or not English. It also assigns a score to each document based on the fraction of paragraphs that are English.
+- `char_length_with_paragraphs_v1`: Counts the number of characters in each document and each paragraph.
+- `whitespace_tokenizer_with_paragraphs_v1`: Counts the number of whitespace-separated tokens in each document and each paragraph.
+
+To get a list of available taggers, run `dolma list`.
+
+To invoke the tagger, run:
+
+```bash
+dolma tag \
+    --dataset wikipedia/v0/* \
+    --experiment exp \ # optional; assigning a name groups taggers in a single directory
+    --taggers random_number_v1 \
+              cld2_en_paragraph_with_doc_score_v2 \
+              ft_lang_id_en_paragraph_with_doc_score_v2 \
+              char_length_with_paragraphs_v1 \
+              whitespace_tokenizer_with_paragraphs_v1 \
+    --processes 96   # run on 96 cores
 ```
 
-## Step 2: Deduplicate Against Perplexity Eval Set
+To learn more about the taggers, see the [taggers documentation](taggers.md).
 
-Compile and install mixer/deduper:
+## Step 2: Deduplicate Paragraphs
 
-```shell
-cd pretrain_data/mixer
-make build-tools    # will install rust and tools to build the mixer
-make mixer          # will build the mixer; available at ./target/release/mixer
-```
-
-Download the bloom filter for decontamination:
+After tagging, we deduplicate the dataset at a paragraph level.
 
 ```shell
-aws s3 cp \
-    s3://ai2-llm/eval-data/perplexity/blocklists/eval_subset_v2/deduper_decontamination_lucas_20230525.bin \
-    /tmp/decontamination/deduper_decontamination_lucas_20230525.bin
+dolma dedupe \
+    --documents wikipedia/v0/documents/* \
+    --dedupe.name dups \
+    --dedupe.paragraphs.attribute_name bff_duplicate_paragraph_spans \
+    --dedupe.skip_empty \
+    --bloom_filter.file /tmp/deduper_bloom_filter.bin \
+    --no-bloom_filter.read_only \
+    --bloom_filter.estimated_doc_count '6_000_000' \
+    --bloom_filter.desired_false_positive_rate '0.0001' \
+    --processes 188
 ```
 
-Now run the deduper:
-
-```shell
-DEDUPER_BIN="pretrain_data/mixer/target/release/deduper"
-$DEDUPER_BIN \
-    examples/wikipedia_ablation/deduper_config.json
-```
+The above command will create an attribute directory called `dups` in `wikipedia/v0/attributes`. The `bff_duplicate_paragraph_spans` attribute will contain a list of duplicate paragraphs for each paragraph in the dataset.
 
 ## Step 3: Run Mixer
 
-Run mixer with `mixer_config.json`:
+After running the taggers and and marking which paragraphs are duplicates, we can run the mixer to create a dataset with a subset of the languages and documents.
+
+For this step, we will pass a configuration file to the mix command instead of passing all the options on the command line. CLI invocation looks like this:
 
 ```shell
-MIXER_BIN="pretrain_data/mixer/target/release/mixer"
-$MIXER_BIN \
-    examples/wikipedia_ablation/mixer_config.json
+dolma -c mix_config.json mix --processes 96
 ```
 
-You can check out the mixer config to see how it works. In particular, it applies four operations:
+Note how the configuration in this case is a JSON file; a YAML file would also work.
+Further, we override the number of processes to use to 96 using the `--processes` flag.
 
-- Include all documents with length less than 100,000 whitespace-separated words:
+`mix_config.json` looks like the following:
 
-    ```yaml
-    "include": [
-        "$.attributes[?(@.abl0__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 100000)]"
-    ]
-    ```
-
-- Remove any document that is shorter than 50 words:
-
-    ```yaml
-    "exclude": [
-        "$.attributes[?(@.abl0__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 50)]",
-        ...
-    ]
-    ```
-
-- Remove any document whose total English cld2 score is below 0.5:
-
-    ```yaml
-    "exclude": [
-        ...,
-        "$.attributes[?(@.abl0__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0][2] <= 0.5)]",
-        ...
-    ]
-    ```
-
-- Replace paragraphs whose not-English cld2 socre is below 0.9 in a document with an empty string
-
-    ```yaml
-    "span_replacement": [
+```yaml
+{
+  # mix command operates on one or more stream; each can correspond to a different data source
+  # and can have its own set of filters and transformations
+  "streams": [
+    {
+      # name of the stream; this will be used as a prefix for the output files
+      "name": "getting-started",
+      # the documents to mix; note how we use a glob pattern to match all documents
+      "documents": [
+        "wikipedia/v0/documents/lang=en/*.gz",
+      ]
+      # this is the directory where the output will be written
+      # note how the toolkit will try to create files of size ~1GB
+      "output": {
+        "path": "wikipedia/example0/documents",
+        "max_size_in_bytes": 1000000000
+      },
+      "attributes": [
+        "exp",  # load the attributes from the taggers
+        "dups"  # load the attributes from the deduper
+      ],
+      # filers remove or include whole documents based on the value of their attributes
+      "filter": {
+        "include": [
+           # Include all documents with length less than 100,000 whitespace-separated words
+          "$.attributes[?(@.abl0__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 100000)]"
+        ],
+        "exclude": [
+          # Remove any document that is shorter than 50 words
+          "$.attributes[?(@.abl0__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 50)]",
+          # Remove any document whose total English fasttext score is below 0.5
+          "$.attributes[?(@.abl0__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0][2] <= 0.5)]",
+          # Remove all documents that contain a duplicate paragraph
+          "$@.attributes[?(@.bff_duplicate_paragraph_spans && @.bff_duplicate_paragraph_spans[0] && @.bff_duplicate_paragraph_spans[0][2] >= 1.0)]"
+        ]
+      },
+      # span replacement allows you to replace spans of text with a different string
+      "span_replacement": [
         {
-            "span": "$.attributes.abl0__cld2_en_paragraph_with_doc_score_v2__not_en",
-            "min_score": 0.1,
-            "replacement": ""
-        },
-        ...
-    ]
-    ```
-
-- Remove all documents that contain a paragraph that has tagged as duplicates with the validation set using bff
-
-    ```yaml
-    "exclude": [
-        ...,
-        "$@.attributes[?(@.bff_duplicate_paragraph_spans && @.bff_duplicate_paragraph_spans[0] && @.bff_duplicate_paragraph_spans[0][2] >= 1.0)]"
-    ]
-    ```
-
-Note how the configuration only runs the mixing on 27 languages.
-Nevertheless, with the filters above, we went from 27GB to just over 8.4GB.
+          # remove paragraphs whose not-English cld2 socre is below 0.9 in a document
+          "span": "$.attributes.abl0__cld2_en_paragraph_with_doc_score_v2__not_en",
+          "min_score": 0.1,
+          "replacement": ""
+        }
+      ]
+    }
+  ],
+  # this process option is overridden by the command line flag
+  "processes": 1
+}
+```
