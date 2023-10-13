@@ -1,3 +1,9 @@
+'''
+Convert a dataset that is in the format used by the WIMBD project to the format used in Dolma.
+
+Author: Luca Soldaini (@soldni)
+'''
+
 import argparse
 import datetime
 import hashlib
