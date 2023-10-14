@@ -47,11 +47,16 @@ We use [this script](https://github.com/allenai/dolma/blob/main/scripts/make_wik
 
 ```shell
 python scripts/make_wikipedia.py \
-  --output wikipedia
+  --output wikipedia \
+  --languages simple \
+  --date 20231001 \
+  --lang simple \
+  --num_processes 96
 ```
 
-
+The code above will download and process Wikipedia articles in the `simple` language from the October 1, 2023 wikipedia dump.
 After running it, you will have a directory called `wikipedia/v0` with Wikipedia articles in it.
+Wikipedia articles are going to be grouped in compressed JSONL files in dolma
 
 ### Step 1: Run Taggers
 
@@ -69,7 +74,7 @@ To invoke the tagger, run:
 
 ```bash
 dolma tag \
-    --dataset wikipedia/v0/* \
+    --dataset wikipedia/v0/documents/* \
     --experiment exp \ # optional; assigning a name groups taggers in a single directory
     --taggers random_number_v1 \
               cld2_en_paragraph_with_doc_score_v2 \

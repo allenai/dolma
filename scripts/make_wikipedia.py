@@ -202,53 +202,66 @@ class WikiExtractorParallel(BaseParallelProcessor):
 
         created_time = convert_timestamp(datetime.datetime.strptime(date, "%Y%m%d"))
         current_time = convert_timestamp(datetime.datetime.now())
+        logger = cls.get_logger()
 
         documents_count = 0
         update_interval = 1
 
         with smart_open.open(source_path) as f, smart_open.open(destination_path, 'w') as g:
-            for line in f:
-                data = json.loads(line)
+            try:
+                for i, line in enumerate(f):
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError as exp:
+                        logger.warning("Failed to parse %s:%s `%s...`: %s", source_path, i, line[:80], exp)
+                        continue
 
-                id_ = data.pop("id")
-                title = data.pop("title", "").strip()
-                body = data.pop("text", "").strip()
+                    id_ = data.pop("id")
+                    title = data.pop("title", "").strip()
+                    body = data.pop("text", "").strip()
 
-                if not id_ or not title or not body:
-                    continue
+                    if not id_ or not title or not body:
+                        # logger.warning("Skipping %s:%s: missing id, title or body", source_path, i)
+                        continue
 
-                text = f"{title}\n\n{body}".strip()
+                    text = f"{title}\n\n{body}".strip()
 
-                json_data = {
-                    "id": id_,
-                    "source": "wikipedia",
-                    "version": "v0",
-                    "text": text,
-                    "created": created_time,
-                    "added": current_time,
-                    "metadata": {**data, "length": len(get_words(text))},
-                }
+                    json_data = {
+                        "id": id_,
+                        "source": "wikipedia",
+                        "version": "v0",
+                        "text": text,
+                        "created": created_time,
+                        "added": current_time,
+                        "metadata": {**data, "length": len(get_words(text))},
+                    }
 
-                g.write(json.dumps(json_data) + "\n")
-                documents_count += 1
+                    g.write(json.dumps(json_data) + "\n")
+                    documents_count += 1
 
-                if documents_count % update_interval == 0:
-                    # update the progress bar every 1000 documents to prevent
-                    # buffering
-                    cls.increment_progressbar(queue, documents=documents_count)
+                    if documents_count % update_interval == 0:
+                        # update the progress bar every 1000 documents to prevent
+                        # buffering
+                        cls.increment_progressbar(queue, documents=documents_count)
 
-                    if queue.qsize() >= multiprocessing.cpu_count():
-                        # double the update interval if the queue is full
-                        update_interval *= 2
+                        if queue.qsize() >= multiprocessing.cpu_count():
+                            # double the update interval if the queue is full
+                            update_interval *= 2
 
-        cls.increment_progressbar(queue, files=1, documents=documents_count)
+                        documents_count = 0
+
+            except Exception as exp:
+                logger.warning("Failed to process %s: %s", source_path, exp)
+                return
+
+            cls.increment_progressbar(queue, files=1, documents=documents_count)
 
 
 def main():
     args = get_arguments()
     output_gzip = Path(args.output) / f'wiki_{args.date}_{args.lang}.xml.bz2'
     output_json = Path(args.output) / f'wiki_{args.date}_{args.lang}'
-    output_final = Path(args.output) / 'v0'
+    output_final = Path(args.output) / 'v0/documents'
 
     download_wiki(date=args.date, lang=args.lang, output_path=output_gzip, overwrite=args.overwrite)
     wiki_extract(output_gzip=output_gzip, output_json=output_json, processes=args.processes)
