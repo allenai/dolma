@@ -94,6 +94,14 @@ def _unpathify(protocol: str, path: Path) -> str:
     return path_str
 
 
+def is_local(path: str) -> bool:
+    """
+    Check if a path is local.
+    """
+    prot, _ = _pathify(path)
+    return prot == "" or prot == "file"
+
+
 def delete_file(path: str, ignore_missing: bool = False) -> bool:
     """Delete a file."""
 

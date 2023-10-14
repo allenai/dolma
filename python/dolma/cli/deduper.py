@@ -11,7 +11,7 @@ from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig, get_path_to_temp_file, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
-from dolma.core.paths import glob_path
+from dolma.core.paths import glob_path, is_local
 
 
 @dataclass
@@ -94,18 +94,18 @@ class DeduperCli(BaseCli):
 
             # create a dedupe config to populate
             dedupe_dict_config: Dict[str, Any] = {"skip_empty": parsed_config.dedupe.skip_empty}
-            try_name = parsed_config.dedupe.name if not om.is_missing(parsed_config.dedupe, 'name') else None
+            try_name = parsed_config.dedupe.name if not om.is_missing(parsed_config.dedupe, "name") else None
 
             # add either the document or paragraph dedupe config
             if not (
-                om.is_missing(parsed_config.dedupe.documents, 'attribute_name') and
-                om.is_missing(parsed_config.dedupe.documents, 'key')
+                om.is_missing(parsed_config.dedupe.documents, "attribute_name")
+                and om.is_missing(parsed_config.dedupe.documents, "key")
             ):
                 cfg = om.to_container(parsed_config.dedupe.documents)
                 assert isinstance(cfg, dict), "Expected dedupe.documents to be a dict"
                 dedupe_dict_config["documents"] = cfg
                 try_name = try_name or cfg["attribute_name"]
-            elif not om.is_missing(parsed_config.dedupe.paragraphs, 'attribute_name'):
+            elif not om.is_missing(parsed_config.dedupe.paragraphs, "attribute_name"):
                 cfg = om.to_container(parsed_config.dedupe.paragraphs)
                 assert isinstance(cfg, dict), "Expected dedupe.paragraphs to be a dict"
                 dedupe_dict_config["paragraphs"] = cfg
@@ -141,8 +141,7 @@ class DeduperCli(BaseCli):
             # The rust deduper does not work with remote files, so we need to download the bloom filter
             # if it is not local. If the remote file does not exists, and the bloom filter is read-only,
             # we raise an error.
-            path_is_local = (local_bloom_file := Path(parsed_config.bloom_filter.file)).exists()
-            if not path_is_local:
+            if not (path_is_local := is_local(parsed_config.bloom_filter.file)):
                 local_bloom_file = stack.enter_context(get_path_to_temp_file())
                 try:
                     with smart_open.open(parsed_config.bloom_filter.file, "rb") as f:
@@ -151,6 +150,8 @@ class DeduperCli(BaseCli):
                 except (FileNotFoundError, OSError) as ex:
                     if parsed_config.bloom_filter.read_only:
                         raise ex
+            else:
+                local_bloom_file = Path(parsed_config.bloom_filter.file)
 
             dict_config["bloom_filter"] = {
                 "file": str(local_bloom_file),
