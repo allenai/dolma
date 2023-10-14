@@ -181,7 +181,7 @@ def tokenize_in_parallel(
     num_readers: Optional[int] = None,
     local_shuffle: int = 10_000,
     ring_size: int = 8,
-    tokenizer_id: str = "allenai/eleuther-ai-gpt-neox-20b-pii-special",
+    tokenizer_name_or_path: str = "allenai/eleuther-ai-gpt-neox-20b-pii-special",
     seed: int = 3920,
     metadata_dir: Optional[str] = None,
     max_size: int = 1024 * 1024 * 1024,
@@ -195,10 +195,10 @@ def tokenize_in_parallel(
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     # do it once so it gets cached
-    Tokenizer.from_pretrained(tokenizer_id, truncate_to=None)
+    Tokenizer.from_pretrained(tokenizer_name_or_path, truncate_to=None)
 
     # get a run hash
-    run_hash = hashlib.sha256(("".join(sources) + tokenizer_id).encode("utf-8")).hexdigest()[:8]
+    run_hash = hashlib.sha256(("".join(sources) + tokenizer_name_or_path).encode("utf-8")).hexdigest()[:8]
     metadata_dir = metadata_dir or join_path(None, tempfile.gettempdir(), f"dolma-{run_hash}")
 
     parallel_writer = MemMapParallelWriter(
@@ -209,4 +209,10 @@ def tokenize_in_parallel(
         seed=seed,
         debug=debug,
     )
-    parallel_writer(num_readers=num_readers, local_shuffle=local_shuffle, ring_size=ring_size, max_size=max_size)
+    parallel_writer(
+        num_readers=num_readers,
+        local_shuffle=local_shuffle,
+        ring_size=ring_size,
+        max_size=max_size,
+        dtype=dtype,
+    )

@@ -20,7 +20,7 @@ def main():
     tokenize_in_parallel(
         sources=args.sources,
         destination=args.destination,
-        tokenizer_id=args.tokenizer_id,
+        tokenizer_name_or_path=args.tokenizer_id,
         metadata_dir=args.metadata_dir,
         num_tokenizers=args.num_tokenizers,
         num_writers=args.num_writers,

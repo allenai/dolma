@@ -1,3 +1,10 @@
+'''
+Minimal example to download a Wikipedia dump, process via WikiExtractor, and transform to Dolma format.
+
+Author: Luca Soldaini (@soldni)
+'''
+
+
 import argparse
 from contextlib import ExitStack
 import datetime
@@ -158,7 +165,7 @@ def wiki_extract(
     WikiExtractor.Extractor.keepLinks = False
     WikiExtractor.Extractor.HtmlFormatting = False
     WikiExtractor.ignoreTag('a')
-    WikiExtractor.Extractor.to_json = True
+    WikiExtractor.Extractor.to_json = True  # type: ignore
     WikiExtractor.acceptedNamespaces = ["Article"]
     # input_file = output_gzip
 
@@ -186,7 +193,9 @@ def wiki_extract(
 
 class WikiExtractorParallel(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(cls, queue, /, files: int = 0, documents: int = 0) -> Dict[str, int]:
+    def increment_progressbar(  # type: ignore[override]
+        cls, queue, /, files: int = 0, documents: int = 0
+    ) -> Dict[str, int]:
         return super().increment_progressbar(
             queue,
             files=files,

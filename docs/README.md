@@ -40,5 +40,5 @@ To read Dolma's documentation, visit the following pages:
 - [Taggers](taggers.md)
 - [Deduplication](deduplication.md)
 - [Mixer](mixer.md)
-- [Tokenizer](tokenizer.md)
+- [Tokenization](tokenize.md)
 - [Contributing to Dolma](develop.md)

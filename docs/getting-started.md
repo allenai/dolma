@@ -173,5 +173,14 @@ Further, we override the number of processes to use to 96 using the `--processes
 }
 ```
 
-
 ### Step 4: Tokenize The Dataset
+
+Finally, we tokenize the dataset using the `tokens` command. In this example, we use EleutherAI's excellent [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b) tokenizer.
+
+```shell
+dolma tokens \
+    --documents wikipedia/example0/documents/*.gz \
+    --tokenizer_name_or_path "EleutherAI/gpt-neox-20b" \
+    --destination wikipedia/example0/tokens \
+    --processes 96
+```

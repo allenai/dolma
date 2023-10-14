@@ -9,7 +9,7 @@ from .deduper import DeduperCli
 from .mixer import MixerCli
 
 # must import these to register the resolvers
-from .resolvers import *  # noqa: F401,F403
+from .resolvers import *  # noqa: F401,F403,W0401
 from .tagger import ListTaggerCli, TaggerCli
 from .tokenizer import TokenizerCli
 

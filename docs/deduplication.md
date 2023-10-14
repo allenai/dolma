@@ -1,6 +1,6 @@
-### The `dedupe` command
+# Deduplication
 
-The dedupe command is used to deduplicate a set of documents at the attribute level using a bloom filter.
+The dedupe command is used to deduplicate a set of documents at the attribute level using a [Bloom filter](https://en.wikipedia.org/wiki/Bloom_filter).
 
 As an example let's consider the following command from the getting started guide:
 
