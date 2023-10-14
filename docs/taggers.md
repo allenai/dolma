@@ -20,7 +20,7 @@ The following parameters are supported either via CLI (e.g. `dolma tag --paramet
 
 |Parameter|Required?|Description|
 |:---:|---|---|
-|`documents`|Yes| One or more paths for input document files. Each accepts a single wildcard `*` character. Can be local, or an S3-compatible cloud path. |
+|`documents`|Yes| One or more paths for input document files. Paths can contain arbitrary wildcards. Can be local, or an S3-compatible cloud path. |
 |`destination`|No| One or more paths for output attribute files. Each accepts a single wildcard `*` character. Can be local, or an S3-compatible cloud path. If not provided, the destination will be derived from the document path. |
 |`experiment`|No| Used to name output attribute files. One output file will be created for each input document file, where the key is obtained by substituting `documents` with `attributes/<experiment>`. If not provided, we will use `attributes/<tagger_name>`. |
 |`taggers`|Yes| One or more taggers to run. |
