@@ -51,7 +51,7 @@ python scripts/make_wikipedia.py \
   --languages simple \
   --date 20231001 \
   --lang simple \
-  --num_processes 96
+  --num_processes 16
 ```
 
 The code above will download and process Wikipedia articles in the `simple` language from the October 1, 2023 wikipedia dump.
@@ -74,14 +74,14 @@ To invoke the tagger, run:
 
 ```bash
 dolma tag \
-    --dataset wikipedia/v0/documents/* \
+    --documents "wikipedia/v0/documents/*" \
     --experiment exp \ # optional; assigning a name groups taggers in a single directory
     --taggers random_number_v1 \
               cld2_en_paragraph_with_doc_score_v2 \
               ft_lang_id_en_paragraph_with_doc_score_v2 \
               char_length_with_paragraphs_v1 \
               whitespace_tokenizer_with_paragraphs_v1 \
-    --processes 96   # run on 96 cores
+    --processes 16   # run on 96 cores
 ```
 
 To learn more about the taggers, see the [taggers documentation](taggers.md).
@@ -92,9 +92,8 @@ After tagging, we deduplicate the dataset at a paragraph level.
 
 ```shell
 dolma dedupe \
-    --documents wikipedia/v0/documents/* \
-    --dedupe.name dups \
-    --dedupe.paragraphs.attribute_name bff_duplicate_paragraph_spans \
+    --documents "wikipedia/v0/documents/*" \
+    --dedupe.paragraphs.attribute_name 'bff_duplicate_paragraph_spans' \
     --dedupe.skip_empty \
     --bloom_filter.file /tmp/deduper_bloom_filter.bin \
     --no-bloom_filter.read_only \
@@ -103,7 +102,7 @@ dolma dedupe \
     --processes 188
 ```
 
-The above command will create an attribute directory called `dups` in `wikipedia/v0/attributes`. The `bff_duplicate_paragraph_spans` attribute will contain a list of duplicate paragraphs for each paragraph in the dataset.
+The above command will create an attribute directory called `bff_duplicate_paragraph_spans` in `wikipedia/v0/attributes`. The `bff_duplicate_paragraph_spans` attribute will contain a list of duplicate paragraphs for each paragraph in the dataset.
 
 ### Step 3: Run Mixer
 
@@ -112,13 +111,14 @@ After running the taggers and and marking which paragraphs are duplicates, we ca
 For this step, we will pass a configuration file to the mix command instead of passing all the options on the command line. CLI invocation looks like this:
 
 ```shell
-dolma -c mix_config.json mix --processes 96
+dolma -c wikipedia-mixer.json mix --processes 16
 ```
 
 Note how the configuration in this case is a JSON file; a YAML file would also work.
 Further, we override the number of processes to use to 96 using the `--processes` flag.
 
-`mix_config.json` looks like the following:
+`wikipedia-mixer.json` looks like the following (A YAML-equivalent version is available at [`wikipedia-mixer.yaml`](examples/wikipedia-mixer.yaml)):
+
 
 ```yaml
 {
@@ -130,7 +130,7 @@ Further, we override the number of processes to use to 96 using the `--processes
       "name": "getting-started",
       # the documents to mix; note how we use a glob pattern to match all documents
       "documents": [
-        "wikipedia/v0/documents/lang=en/*.gz",
+        "wikipedia/v0/documents/*.gz",
       ]
       # this is the directory where the output will be written
       # note how the toolkit will try to create files of size ~1GB
@@ -139,20 +139,20 @@ Further, we override the number of processes to use to 96 using the `--processes
         "max_size_in_bytes": 1000000000
       },
       "attributes": [
-        "exp",  # load the attributes from the taggers
-        "dups"  # load the attributes from the deduper
+        "exp",                           # load the attributes from the taggers
+        "bff_duplicate_paragraph_spans"  # load the attributes from the deduper
       ],
       # filers remove or include whole documents based on the value of their attributes
       "filter": {
         "include": [
            # Include all documents with length less than 100,000 whitespace-separated words
-          "$.attributes[?(@.abl0__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 100000)]"
+          "$.attributes[?(@.exp__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 100000)]"
         ],
         "exclude": [
           # Remove any document that is shorter than 50 words
-          "$.attributes[?(@.abl0__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 50)]",
+          "$.attributes[?(@.exp__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 50)]",
           # Remove any document whose total English fasttext score is below 0.5
-          "$.attributes[?(@.abl0__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0][2] <= 0.5)]",
+          "$.attributes[?(@.exp__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0][2] <= 0.5)]",
           # Remove all documents that contain a duplicate paragraph
           "$@.attributes[?(@.bff_duplicate_paragraph_spans && @.bff_duplicate_paragraph_spans[0] && @.bff_duplicate_paragraph_spans[0][2] >= 1.0)]"
         ]
@@ -161,7 +161,7 @@ Further, we override the number of processes to use to 96 using the `--processes
       "span_replacement": [
         {
           # remove paragraphs whose not-English cld2 socre is below 0.9 in a document
-          "span": "$.attributes.abl0__cld2_en_paragraph_with_doc_score_v2__not_en",
+          "span": "$.attributes.exp__cld2_en_paragraph_with_doc_score_v2__not_en",
           "min_score": 0.1,
           "replacement": ""
         }
@@ -173,14 +173,18 @@ Further, we override the number of processes to use to 96 using the `--processes
 }
 ```
 
+The above configuration will create a directory called `wikipedia/example0/documents` with a set of files that contain the documents that pass the filters.
+
 ### Step 4: Tokenize The Dataset
 
 Finally, we tokenize the dataset using the `tokens` command. In this example, we use EleutherAI's excellent [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b) tokenizer.
 
 ```shell
 dolma tokens \
-    --documents wikipedia/example0/documents/*.gz \
+    --documents "wikipedia/example0/documents/*.gz" \
     --tokenizer_name_or_path "EleutherAI/gpt-neox-20b" \
     --destination wikipedia/example0/tokens \
-    --processes 96
+    --processes 16
 ```
+
+Tokenized documents will be written to `wikipedia/example0/tokens`.

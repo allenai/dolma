@@ -155,7 +155,7 @@ def print_config(config: Any, console: Optional[Console] = None) -> None:
     if not isinstance(config, (DictConfig, ListConfig)):
         config = om.create(config)
     console = console or Console()
-    syntax = Syntax(code=om.to_yaml(config).strip(), lexer="yaml", theme="ansi_dark")
+    syntax = Syntax(code=om.to_yaml(config, sort_keys=True).strip(), lexer="yaml", theme="ansi_dark")
     console.print(syntax)
 
 

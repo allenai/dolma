@@ -14,6 +14,24 @@ dolma tag \
 
 This command will run the `random_number_v1` tagger on all documents in the specified S3 paths. The results will be written to the `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v0/attributes/sample` and `s3://ai2-llm/pretraining-data/sources/common-crawl/test/v1/attributes/sample` paths.
 
+## Parameters
+
+The following parameters are supported either via CLI (e.g. `dolma tag --parameter.name value`) or via config file (e.g. `dolma -c config.json tag`, where `config.json` contains `{"parameter" {"name": "value"}}`):
+
+|Parameter|Required?|Description|
+|:---:|---|---|
+|`documents`|Yes| One or more paths for input document files. Each accepts a single wildcard `*` character. Can be local, or an S3-compatible cloud path. |
+|`destination`|No| One or more paths for output attribute files. Each accepts a single wildcard `*` character. Can be local, or an S3-compatible cloud path. If not provided, the destination will be derived from the document path. |
+|`experiment`|No| Used to name output attribute files. One output file will be created for each input document file, where the key is obtained by substituting `documents` with `attributes/<experiment>`. If not provided, we will use `attributes/<tagger_name>`. |
+|`taggers`|Yes| One or more taggers to run. |
+|`processes`|No| Number of processes to use for tagging. One process is used by default. |
+|`ignore_existing`|No| If true, ignore existing outputs and re-run the taggers. |
+|`dryrun`|No| If true, only print the configuration and exit without running the taggers. |
+|`debug`|No| If true, run in debug mode (i.e., disable parallelism). Useful when developing new taggers. |
+|`profile.enable`|No| If true, enable profiling. Useful when benchmarking taggers during development. |
+|`profile.output`|No| Path to save the profiling output; if not provided, the output will be printed to stdout. |
+
+
 ## Built-in Taggers
 
 A list of built-in taggers can be obtained by running `dolma list` command. At the time of writing, the following taggers are available:

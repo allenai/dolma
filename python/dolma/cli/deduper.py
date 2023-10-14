@@ -16,12 +16,12 @@ from dolma.core.paths import glob_path
 
 @dataclass
 class ParagraphDedupeConfig:
-    attribute_name: str = field(help="Name of the output field in the tagger")
+    attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
 
 
 @dataclass
 class DocumentDedupeConfig:
-    attribute_name: str = field(help="Name of the output field in the tagger")
+    attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
     key: str = field(help="Name of the input field to use for deduplication, e.g. `$.metadata.url`")
 
 
@@ -92,16 +92,33 @@ class DeduperCli(BaseCli):
         with ExitStack() as stack:
             work_dirs = stack.enter_context(make_workdirs(parsed_config.work_dir))
 
-            dict_config["dedupe"] = {
-                "name": parsed_config.dedupe.name,
-                "skip_empty": parsed_config.dedupe.skip_empty,
-            }
-            if parsed_config.dedupe.documents is not None:
-                dict_config["dedupe"]["documents"] = om.to_container(parsed_config.dedupe.documents)
-            elif parsed_config.dedupe.paragraphs is not None:
-                dict_config["dedupe"]["paragraphs"] = om.to_container(parsed_config.dedupe.paragraphs)
+            # create a dedupe config to populate
+            dedupe_dict_config: Dict[str, Any] = {"skip_empty": parsed_config.dedupe.skip_empty}
+            try_name = parsed_config.dedupe.name if not om.is_missing(parsed_config.dedupe, 'name') else None
+
+            # add either the document or paragraph dedupe config
+            if not (
+                om.is_missing(parsed_config.dedupe.documents, 'attribute_name') and
+                om.is_missing(parsed_config.dedupe.documents, 'key')
+            ):
+                cfg = om.to_container(parsed_config.dedupe.documents)
+                assert isinstance(cfg, dict), "Expected dedupe.documents to be a dict"
+                dedupe_dict_config["documents"] = cfg
+                try_name = try_name or cfg["attribute_name"]
+            elif not om.is_missing(parsed_config.dedupe.paragraphs, 'attribute_name'):
+                cfg = om.to_container(parsed_config.dedupe.paragraphs)
+                assert isinstance(cfg, dict), "Expected dedupe.paragraphs to be a dict"
+                dedupe_dict_config["paragraphs"] = cfg
+                try_name = try_name or cfg["attribute_name"]
             else:
                 raise ValueError("Either dedupe.documents or dedupe.paragraphs must be specified")
+
+            if try_name is None:
+                raise ValueError("dedupe.name must be specified")
+            dedupe_dict_config["name"] = try_name
+
+            # add the dedupe config to the main config
+            dict_config["dedupe"] = dedupe_dict_config
 
             # perform some path validation to make sure we don't call the mixer with invalid config
             total_matching_documents = 0
