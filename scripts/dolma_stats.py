@@ -1038,8 +1038,6 @@ class stack_v4(stack_v2):
             destination_file.write(json.dumps(counts, indent=2))
 
 
-
-
 @Registry.add
 class decon_ppl_v3(BaseStatsProcessor):
     documents = [

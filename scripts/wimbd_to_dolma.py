@@ -72,8 +72,6 @@ class WimbdToDolmaProcessor(BaseParallelProcessor):
 
         current_time = convert_timestamp(datetime.datetime.now())
 
-        breakpoint()
-
         with ExitStack() as stack:
             source = stack.enter_context(smart_open.open(source_path, "rt"))
             destination = stack.enter_context(smart_open.open(destination_path, "wb"))

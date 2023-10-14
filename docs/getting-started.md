@@ -43,7 +43,15 @@ Run all following commands from root of this repository.
 
 ### Step 0: Obtain Wikipedia
 
-We use the script at [this gist]() to download and process Wikipedia. After running it, you will have a directory called `wikipedia/v0` with Wikipedia articles in it.
+We use [this script](https://github.com/allenai/dolma/blob/main/scripts/make_wikipedia.py) to download and process Wikipedia:
+
+```shell
+python scripts/make_wikipedia.py \
+  --output wikipedia
+```
+
+
+After running it, you will have a directory called `wikipedia/v0` with Wikipedia articles in it.
 
 ### Step 1: Run Taggers
 
