@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from msgspec import Struct
 from typing_extensions import TypeAlias
 
-TaggerOutputValueType: TypeAlias = Tuple[int, int, float]
+TaggerOutputValueType: "TypeAlias" = Tuple[int, int, float]
 TaggerOutputType: TypeAlias = List[TaggerOutputValueType]
 TaggerOutputDictType: TypeAlias = Dict[str, TaggerOutputType]
 
