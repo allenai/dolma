@@ -33,6 +33,7 @@ To learn more about how to use the Dolma Toolkit, please visit the [documentatio
 
 If you use the Dolma dataset or toolkit, please cite the following items:
 
+<!-- {% raw %} -->
 ```bibtex
 @techreport{DolmaDataset,
     author = {Soldaini, Luca and Kinney, Rodney and Bhagia, Akshita and Schwenk, Dustin and Atkinson, David and Authur, Russell and Chandu, Khyathi and Dumas, Jennifer and Lucy, Li and Lyu, Xinxi and Magnusson, Ian and Naik, Aakanksha and Nam , Crystal and  Peters, Matthew E.  and Ravichander, Abhilasha and Shen, Zejiang and Strubell, Emma and Subramani, Nishant and Tafjord, Oyvind and Walsh, Evan Pete and Hajishirzi, Hannaneh and Smith, Noah A. and Zettlemoyer, Luke and Beltagy, Iz and Groeneveld, Dirk and Dodge, Jesse and Lo, Kyle},
@@ -42,7 +43,9 @@ If you use the Dolma dataset or toolkit, please cite the following items:
     note = {Released under ImpACT License as Medium Risk artifact, \url{https://github.com/allenai/dolma}}
 }
 ```
+<!-- {% endraw %} -->
 
+<!-- {% raw %} -->
 ```bibtex
 @software{DolmaToolkit,
     author = {{Soldaini, Luca and Lo, Kyle and Kinney, Rodney and Naik, Aakanksha and Ravichander, Abhilasha and Bhagia, Akshita and Groeneveld, Dirk and Schwenk, Dustin and Magnusson, Ian and Chandu, Khyathi}},
@@ -51,3 +54,4 @@ If you use the Dolma dataset or toolkit, please cite the following items:
     note = {{Apache 2.0 License, Version \texttt{0.9.0}, \url{https://github.com/allenai/dolma}}}
 }
 ```
+<!-- {% endraw %} -->

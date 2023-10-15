@@ -17,8 +17,8 @@ from .data_types import TokenizerOutput
 from .memmap_writer import MemmapWriter
 from .tokenizer import Tokenizer, tokenize_file
 
-TokenizedSeqsQueueType: TypeAlias = Queue[List[TokenizerOutput]]
-PathsQueueType: TypeAlias = Queue[str]
+TokenizedSeqsQueueType: TypeAlias = "Queue[List[TokenizerOutput]]"
+PathsQueueType: TypeAlias = "Queue[str]"
 
 
 class MemMapParallelWriter(BaseParallelProcessor):

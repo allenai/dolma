@@ -63,7 +63,7 @@ class HashSampler(BaseParallelProcessor):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         decoder = msgspec.json.Decoder(InputSpec)
 
