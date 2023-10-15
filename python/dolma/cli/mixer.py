@@ -66,8 +66,8 @@ class MixerCli(BaseCli):
 
         with make_workdirs(parsed_config.work_dir) as work_dirs:
             dict_config: Dict[str, Any] = {
-                "work_dir": {"input": work_dirs.input, "output": work_dirs.output},
-                "processes": parsed_config.processes,
+                "work_dir": {"input": str(work_dirs.input), "output": str(work_dirs.output)},
+                "processes": int(parsed_config.processes),
                 "streams": [],
             }
 
@@ -79,16 +79,16 @@ class MixerCli(BaseCli):
                         raise DolmaConfigError("Either `include` or `exclude` must be specified for filter")
 
                     stream_config_dict["filter"] = {
-                        "include": list(stream_config.filter.include),
-                        "exclude": list(stream_config.filter.exclude),
+                        "include": [str(i) for i in stream_config.filter.include],
+                        "exclude": [str(i) for i in stream_config.filter.exclude],
                     }
 
                 for span_replacement in stream_config.span_replacement:
                     stream_config_dict.setdefault("span_replacement", []).append(
                         {
-                            "span": span_replacement.span,
-                            "min_score": span_replacement.min_score,
-                            "replacement": span_replacement.replacement,
+                            "span": str(span_replacement.span),
+                            "min_score": float(span_replacement.min_score),
+                            "replacement": str(span_replacement.replacement),
                         }
                     )
 
@@ -113,15 +113,17 @@ class MixerCli(BaseCli):
 
                 # populate the stream config dict
                 stream_config_dict["name"] = stream_config.name
-                stream_config_dict["documents"] = list(stream_config.documents)
-                stream_config_dict["attributes"] = list(stream_config.attributes)
+                stream_config_dict["documents"] = [str(d) for d in stream_config.documents]
+                stream_config_dict["attributes"] = [str(a) for a in list(stream_config.attributes)]
                 stream_config_dict["output"] = {
-                    "path": stream_config.output.path,
-                    "max_size_in_bytes": stream_config.output.max_size_in_bytes,
+                    "path": str(stream_config.output.path),
+                    "max_size_in_bytes": int(stream_config.output.max_size_in_bytes),
                 }
 
                 if stream_config.output.discard_fields:
-                    stream_config_dict["output"]["discard_fields"] = list(stream_config.output.discard_fields)
+                    stream_config_dict["output"]["discard_fields"] = [
+                        str(f) for f in stream_config.output.discard_fields
+                    ]
 
                 if len(stream_config_dict["documents"]) == 0:
                     raise ValueError("No documents to mix")

@@ -63,3 +63,4 @@ target/
 
 # ignoring test output
 /tests/work/
+/python/dolma/core/warc

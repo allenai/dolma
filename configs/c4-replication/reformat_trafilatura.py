@@ -17,7 +17,7 @@ class TrafilaturaReformatter(BaseParallelProcessor):
     @classmethod
     def increment_progressbar(  # type: ignore
         cls,
-        queue: Queue[Union[Tuple[int, ...], None]],
+        queue: "Queue[Union[Tuple[int, ...], None]]",
         /,
         files: int = 0,
         documents: int = 0,
@@ -26,7 +26,7 @@ class TrafilaturaReformatter(BaseParallelProcessor):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         documents = 0
         interval = 10_000

@@ -28,7 +28,10 @@ dependencies = [
     "tokenizers>=0.13.3,<1.0.0",
     "tqdm",
     "uniseg",
-    "numpy"
+    "numpy",
+    "necessary>=0.4.3",
+    "langdetect>=1.0.9",
+    "charset-normalizer>=3.2.0"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -105,6 +108,20 @@ dev = [
     "flake8-pyi>=22.8.1",
     "Flake8-pyproject>=1.1.0",
 ]
+warc = [
+    "warcio>=1.7.4",
+    "trafilatura>=1.6.1",
+    "justext>=3.0.0",
+    "goose3>=3.1.17",
+
+    # following are all for speeding up trafilatura
+    "brotli",
+    "cchardet >= 2.1.7; python_version < '3.11'",  # build issue
+    "faust-cchardet >= 2.1.18; python_version >= '3.11'",  # fix for build
+    "htmldate[speed] >= 1.4.3",
+    "py3langid >= 0.2.2",
+]
+
 [build-system]
 requires = [
     "maturin[patchelf]>=1.1,<2.0",

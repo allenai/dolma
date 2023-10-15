@@ -12,12 +12,27 @@ from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
 from logging import warn
-from typing import Any, Dict, Generic, Literal, Optional, Protocol, Type, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    Generic,
+    Literal,
+    Optional,
+    Protocol,
+    Type,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
+from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
+
+from dolma.core.errors import DolmaConfigError
 
 __all__ = [
     "BaseCli",
@@ -61,18 +76,49 @@ def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None
             warn(f"No type annotation for field {field_name} in {config.__name__}")
             continue
 
+        # join prefix and field name
+        field_name = f"{prefix}.{field_name}" if prefix else field_name
+
+        # This section here is to handle Optional[T] types
+        # We only care for cases where T is a dataclass
+        # So we first check if type is Union since Optional[T] is just a shorthand for Union[T, None]
+        # and that the union contains only one non-None type
+        if get_origin(typ_) == Union:
+            # get all non-None types
+            args = [a for a in get_args(typ_) if a is not type(None)]  # noqa: E721
+
+            if len(args) == 1:
+                # simple Optional[T] type
+                typ_ = args[0]
+
+        # here's where we check if T is a dataclass
         if is_dataclass(typ_):
             # recursively add subparsers
             make_parser(parser, typ_, prefix=field_name)
             continue
 
-        field_name = f"{prefix}.{field_name}" if prefix else field_name
-        parser.add_argument(
-            f"--{field_name}",
-            help=field.metadata.get("help"),
-            nargs=field.metadata.get("nargs", "?"),
-            default=MISSING,
-        )
+        if typ_ is bool:
+            # for boolean values, we add two arguments: --field_name and --no-field_name
+            parser.add_argument(
+                f"--{field_name}",
+                help=field.metadata.get("help"),
+                dest=field_name,
+                action="store_true",
+            )
+            parser.add_argument(
+                f"--no-{field_name}",
+                help=f"Disable {field_name}",
+                dest=field_name,
+                action="store_false",
+            )
+        else:
+            # else it's just a normal argument
+            parser.add_argument(
+                f"--{field_name}",
+                help=field.metadata.get("help"),
+                nargs=field.metadata.get("nargs", "?"),
+                default=MISSING,
+            )
 
     return parser
 
@@ -109,7 +155,7 @@ def print_config(config: Any, console: Optional[Console] = None) -> None:
     if not isinstance(config, (DictConfig, ListConfig)):
         config = om.create(config)
     console = console or Console()
-    syntax = Syntax(code=om.to_yaml(config).strip(), lexer="yaml", theme="ansi_dark")
+    syntax = Syntax(code=om.to_yaml(config, sort_keys=True).strip(), lexer="yaml", theme="ansi_dark")
     console.print(syntax)
 
 
@@ -126,7 +172,13 @@ class BaseCli(Generic[D]):
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
         parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)
-        return cls.run(parsed_config)
+        try:
+            return cls.run(parsed_config)
+        except OmegaConfBaseException as ex:
+            raise DolmaConfigError(
+                f"Invalid error while parsing key `{ex.full_key}` of `{ex.object_type_str}`: "
+                f"{type(ex).__name__}"
+            ) from ex
 
     @classmethod
     def run(cls, parsed_config: D):

@@ -94,12 +94,35 @@ def _unpathify(protocol: str, path: Path) -> str:
     return path_str
 
 
+def is_local(path: str) -> bool:
+    """
+    Check if a path is local.
+    """
+    prot, _ = _pathify(path)
+    return prot == "" or prot == "file"
+
+
 def delete_file(path: str, ignore_missing: bool = False) -> bool:
     """Delete a file."""
 
     fs = _get_fs(path)
     try:
         fs.rm(path)
+        deleted = True
+    except FileNotFoundError as ex:
+        if not ignore_missing:
+            raise ex
+        deleted = False
+
+    return deleted
+
+
+def delete_dir(path: str, ignore_missing: bool = False) -> bool:
+    """Delete a directory."""
+
+    fs = _get_fs(path)
+    try:
+        fs.rm(path, recursive=True)
         deleted = True
     except FileNotFoundError as ex:
         if not ignore_missing:
@@ -141,8 +164,12 @@ def join_path(protocol: Union[str, None], *parts: Union[str, Iterable[str]]) -> 
     """
     Join a path from its protocol and path components.
     """
-    all_parts = (_escape_glob(p) for p in chain.from_iterable([p] if isinstance(p, str) else p for p in parts))
+    all_prots, all_parts = zip(
+        *(_pathify(p) for p in chain.from_iterable([p] if isinstance(p, str) else p for p in parts))
+    )
     path = str(Path(*all_parts)).rstrip("/")
+    protocol = protocol or str(all_prots[0])
+
     if protocol:
         path = f"{protocol}://{path.lstrip('/')}"
     return _unescape_glob(path)
@@ -152,12 +179,11 @@ def glob_path(path: Union[Path, str], hidden_files: bool = False, autoglob_dirs:
     """
     Expand a glob path into a list of paths.
     """
-    path = str(path)
-    protocol = urlparse(path).scheme
+    protocol, parsed_path = _pathify(path)
     fs = _get_fs(path)
 
     if fs.isdir(path) and autoglob_dirs:
-        path = join_path(None, path, "*")
+        path = join_path(protocol, _unescape_glob(parsed_path), "*")
 
     for gl in fs.glob(path):
         gl = str(gl)
@@ -270,7 +296,12 @@ def split_glob(path: str) -> Tuple[str, str]:
     Partition a path on the first wildcard.
     """
     if not is_glob(path):
+        # it's not a glob, so it's all path
         return path, ""
+
+    if path[0] == "*":
+        # starts with a glob, so it's all glob
+        return "", path
 
     protocol, parts = split_path(path)
 

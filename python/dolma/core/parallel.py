@@ -1,5 +1,6 @@
 import inspect
 import itertools
+import logging
 import multiprocessing
 import os
 import pickle
@@ -18,6 +19,7 @@ import tqdm
 from typing_extensions import TypeAlias
 
 from .errors import DolmaError, DolmaRetryableFailure
+from .loggers import get_logger
 from .paths import (
     add_suffix,
     glob_path,
@@ -129,6 +131,11 @@ class BaseParallelProcessor:
             raise ValueError("Destination and metadata prefixes cannot contain wildcards.")
 
     @classmethod
+    def get_logger(cls) -> logging.Logger:
+        """Get the logger for the class."""
+        return get_logger(cls.__name__)
+
+    @classmethod
     def process_single(
         cls,
         source_path: str,
@@ -168,10 +175,10 @@ class BaseParallelProcessor:
                     source_path=source_path, destination_path=destination_path, queue=queue, **kwargs
                 )
                 break
-            except DolmaRetryableFailure as e:
+            except DolmaRetryableFailure as exception:
                 retries_on_error -= 1
                 if retries_on_error == 0:
-                    raise DolmaError from e
+                    raise DolmaError from exception
 
         with smart_open.open(metadata_path, "wt") as f:
             f.write(datetime.now().isoformat())
@@ -342,7 +349,8 @@ class BaseParallelProcessor:
 
             # get a list of which metadata files already exist
             existing_metadata_names = set(
-                sub_prefix(path, meta_prefix).strip(METADATA_SUFFIX) for path in glob_path(meta_prefix)
+                re.sub(rf"{METADATA_SUFFIX}$", "", sub_prefix(path, meta_prefix))
+                for path in glob_path(meta_prefix)
             )
 
             for path in rel_paths:

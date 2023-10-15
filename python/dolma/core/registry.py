@@ -6,19 +6,25 @@ T = TypeVar("T", bound=BaseTagger)
 
 
 class TaggerRegistry:
+    """A registry for taggers."""
+
     __taggers: Dict[str, Type[BaseTagger]] = {}
 
     @classmethod
     def taggers(cls) -> Generator[Tuple[str, Type[BaseTagger]], None, None]:
+        """Yield all taggers."""
         yield from cls.__taggers.items()
 
     @classmethod
     def add(cls, name: str) -> Callable[[Type[T]], Type[T]]:
+        """Add a tagger to the registry."""
+
         def _add(
             tagger_cls: Type[T],
             tagger_name: str = name,
             taggers_dict: Dict[str, Type[BaseTagger]] = cls.__taggers,
         ) -> Type[T]:
+            """Add a tagger to the registry using tagger_name as the name."""
             if tagger_name in taggers_dict and taggers_dict[tagger_name] != tagger_cls:
                 if tagger_cls.__module__ == "__main__":
                     return tagger_cls
@@ -32,6 +38,7 @@ class TaggerRegistry:
 
     @classmethod
     def get(cls, name: str) -> Type[BaseTagger]:
+        """Get a tagger from the registry; raise ValueError if it doesn't exist."""
         if name not in cls.__taggers:
             raise ValueError(
                 f"Unknown tagger {name}; available taggers: " + ", ".join([tn for tn, _ in cls.taggers()])

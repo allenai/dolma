@@ -89,14 +89,14 @@ class Domains:
         return True
 
     def shrink(self, to_size: bool = False) -> bool:
-        th = 1
+        threshold = 1
         if to_size:
             # find the threshold that will keep the top self._size domains
-            p = max((1 - self._size / len(self.pages)) * 100, 0)
-            th = max(th, round(np.percentile(sorted(self.pages.values()), p)))
+            prob = max((1 - self._size / len(self.pages)) * 100, 0)
+            threshold = max(threshold, round(np.percentile(sorted(self.pages.values()), prob)))
 
         previous_size = len(self.pages)
-        self.pages = {k: v for k, v in self.pages.items() if v > th}
+        self.pages = {k: v for k, v in self.pages.items() if v > threshold}
         self.words = {k: v for k, v in self.words.items() if k in self.pages}
         current_size = len(self.pages)
         return previous_size < current_size
@@ -112,15 +112,15 @@ class Domains:
         return cls(pages=d["pages"], words=d["words"])
 
     def merge(self, other: "Domains", inplace: bool = True, shrink: bool = False) -> "Domains":
-        self = self if inplace else deepcopy(self)
+        to_return = self if inplace else deepcopy(self)
 
         for page in other.pages:
-            self.add(domain=page, count_words=other.words[page], count_pages=other.pages[page], no_limit=True)
+            to_return.add(domain=page, count_words=other.words[page], count_pages=other.pages[page], no_limit=True)
 
         if shrink:
-            self.shrink(to_size=True)
+            to_return.shrink(to_size=True)
 
-        return self
+        return to_return
 
 
 @dataclass
@@ -178,13 +178,12 @@ class Counts:
         )
 
     def merge(self, other: "Counts", inplace: bool = True, shrink: bool = False) -> "Counts":
-        self = self if inplace else deepcopy(self)
-        self.documents += other.documents
-        self.tokens += other.tokens
-        self.domains.merge(other.domains, inplace=True, shrink=shrink)
+        (to_return := self if inplace else deepcopy(self)).documents += other.documents
+        to_return.tokens += other.tokens
+        to_return.domains.merge(other.domains, inplace=True, shrink=shrink)
         for pronoun, count in other.pronouns.items():
-            self.pronouns[pronoun] += count
-        return self
+            to_return.pronouns[pronoun] += count
+        return to_return
 
 
 class Registry:
@@ -205,70 +204,18 @@ class Registry:
 
 
 class BaseStatsProcessor(BaseParallelProcessor):
+    documents: Union[str, List[str]]
+    stats: str
+
     @classmethod
-    def increment_progressbar(  # type: ignore
+    def increment_progressbar(
         cls,
-        queue: Queue[Union[Tuple[int, ...], None]],
+        queue: "Queue[Union[Tuple[int, ...], None]]",
         /,
         files: int = 0,
-        documents: int = 0,
+        documents: int = 0
     ) -> Dict[str, int]:
         return super().increment_progressbar(queue, files=files, documents=documents)
-
-    @classmethod
-    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
-        raise NotImplementedError()
-
-
-@Registry.add
-class common_crawl(BaseStatsProcessor):
-    @classmethod
-    def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
-    ):
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-        # for the data sheet, what statistics you think we should include? I could
-        # do # of docs, # tokens, distribution of URLs, pronouns, s2 FOS, stack
-        # languages?
-        decoder = msgspec.json.Decoder(InputSpec)
-        counts = Counts()
-        interval = 10_000
-
-        with smart_open.open(source_path, "rb") as source_file:
-            for line in source_file:
-                document = decoder.decode(line)
-                counts.add(text=document.text, url=document.id)
-
-                if counts.documents % interval == 0:
-                    cls.increment_progressbar(queue, documents=interval)
-
-        cls.increment_progressbar(queue, files=1, documents=counts.documents % interval)
-
-        with smart_open.open(destination_path, "wt") as destination_file:
-            destination_file.write(json.dumps(counts.to_dict(), indent=2))
-
-    @classmethod
-    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
-        with TemporaryDirectory() as tempdir:
-            documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1/documents/common-crawl/cc_en_*/*.gz"
-            stats = "s3://ai2-llm/stats/olmo-mix/v1/web/common-crawl"
-            metadata = os.path.join(tempdir, "common-crawl")
-
-            processor = cls(
-                source_prefix=documents,
-                destination_prefix=stats,
-                metadata_prefix=metadata,
-                num_processes=num_workers,
-                debug=debug,
-            )
-            processor(**process_single_kwargs)
-
-
-@Registry.add
-class books(BaseStatsProcessor):
-    documents: str = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1/documents/books/*.gz"
-    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/books/gutenberg/*.gz"
 
     @staticmethod
     # read all paths in using threads
@@ -277,8 +224,65 @@ class books(BaseStatsProcessor):
             return msgspec.json.decode(source_file.read())
 
     @classmethod
+    def _merge_dicts(cls, d1, d2):
+        d1 = copy.deepcopy(d1)
+        for k, v in d2.items():
+            if isinstance(v, dict):
+                d1[k] = cls._merge_dicts(d1.get(k, {}), v)
+            else:
+                d1[k] = d1.get(k, 0) + v
+        return d1
+
+    @classmethod
+    def _run_parallel_processor(cls, stats_root: str, num_workers: int, debug: bool, **process_single_kwargs: Any):
+        with TemporaryDirectory() as tempdir:
+            h = hashlib.md5()
+            for path in (cls.documents if isinstance(cls.documents, list) else [cls.documents]):
+                h.update(path.encode())
+
+            metadata = os.path.join(tempdir, h.hexdigest())
+            processor = cls(
+                source_prefix=cls.documents,
+                destination_prefix=stats_root,
+                metadata_prefix=metadata,
+                num_processes=num_workers,
+                debug=debug,
+            )
+            processor(**process_single_kwargs)
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+        stats_root = cls.stats.split("*", 1)[0].rstrip("/")
+
+        cls._run_parallel_processor(
+            stats_root=stats_root,
+            num_workers=num_workers,
+            debug=debug,
+            **process_single_kwargs,
+        )
+
+        paths = list(glob_path(cls.stats))
+        counts: dict = {}
+
+        with multiprocessing.Pool(num_workers) as pool:
+            data = (cls._read_json(path) for path in paths) if debug else pool.imap(cls._read_json, paths)
+
+            for content in tqdm.tqdm(data, desc=f"Merging {cls.__name__} stats", unit=" files", total=len(paths)):
+                counts = cls._merge_dicts(counts, content)
+
+        summary_dest = f"{stats_root}/summary.json"
+        with smart_open.open(summary_dest, "wt") as destination_file:
+            destination_file.write(json.dumps(counts, indent=2, sort_keys=True))
+
+
+@Registry.add
+class books(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1/documents/books/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1/books/gutenberg/*.gz"
+
+    @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -303,60 +307,21 @@ class books(BaseStatsProcessor):
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps({"documents": documents, "words": words}, indent=2))
 
-    @classmethod
-    def _merge_dicts(cls, d1, d2):
-        d1 = copy.deepcopy(d1)
-        for k, v in d2.items():
-            if isinstance(v, dict):
-                d1[k] = cls._merge_dicts(d1.get(k, {}), v)
-            else:
-                d1[k] = d1.get(k, 0) + v
-        return d1
-
-    @classmethod
-    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
-        stats_root = cls.stats.split("*", 1)[0].rstrip("/")
-
-        with TemporaryDirectory() as tempdir:
-            metadata = os.path.join(tempdir, hashlib.md5(cls.documents.encode()).hexdigest())
-
-            processor = cls(
-                source_prefix=cls.documents,
-                destination_prefix=stats_root,
-                metadata_prefix=metadata,
-                num_processes=num_workers,
-                debug=debug,
-            )
-            processor(**process_single_kwargs)
-
-        paths = list(glob_path(cls.stats))
-        counts: dict = {}
-
-        with multiprocessing.Pool(num_workers) as pool:
-            data = (cls._read_json(path) for path in paths) if debug else pool.imap(cls._read_json, paths)
-
-            for content in tqdm.tqdm(data, desc=f"Merging {cls.__name__} stats", unit=" files", total=len(paths)):
-                counts = cls._merge_dicts(counts, content)
-
-        summary_dest = f"{stats_root}/summary.json"
-        with smart_open.open(summary_dest, "wt") as destination_file:
-            destination_file.write(json.dumps(counts, indent=2, sort_keys=True))
-
 
 @Registry.add
 class wiki(books):
-    documents: str = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1/documents/wiki/*.gz"
-    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/wiki/en_simple/*.gz"
+    documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1/documents/wiki/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1/wiki/en_simple/*.gz"
 
 
 @Registry.add
-class cc_v1(books):
-    documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1/documents/cc_en_*/*.gz"
-    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1/**/*.gz"
+class cc_v1(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1/documents/cc_en_*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1/**/*.gz"
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attributes = [source_path.replace("/documents/", "/attributes/c4_rules/")]
 
@@ -405,13 +370,13 @@ class cc_v1(books):
 
 
 @Registry.add
-class just_cc_dedup(books):
-    documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
-    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/cc/just_cc_dedup/**/*.gz"
+class just_cc_dedup(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1/cc/just_cc_dedup/**/*.gz"
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         dedup = source_path.replace("/documents/", "/attributes/dedupe_paragraphs/")
 
@@ -451,9 +416,10 @@ class just_cc_dedup(books):
 
 
 @Registry.add
-class cc_v1_c4_cleaned(books):
-    documents: str = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
-    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1_c4_cleaned/**/*.gz"
+class cc_v1_c4_cleaned(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1_c4_cleaned/**/*.gz"
+    decontamination_key: str = 'decontamination'
 
     @classmethod
     def gopher_rules(cls, attrs: Dict[str, List[Tuple[int, int, float]]]) -> List[Tuple[int, int, float]]:
@@ -557,11 +523,11 @@ class cc_v1_c4_cleaned(books):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attributes = [
             source_path.replace("/documents/", "/attributes/gopher_rules/"),
-            source_path.replace("/documents/", "/attributes/decontamination/"),
+            source_path.replace("/documents/", f"/attributes/{cls.decontamination_key}/"),
             source_path.replace("/documents/", "/attributes/hatespeech_nsfw_cc_v3/"),
             source_path.replace("/documents/", "/attributes/pii_detection/"),
             source_path.replace("/documents/", "/attributes/dedupe_paragraphs/"),
@@ -667,6 +633,13 @@ class cc_v1_c4_cleaned(books):
             destination_file.write(json.dumps(stats, indent=2))
 
 
+@Registry.add
+class v15_cc_c4_cleaned(cc_v1_c4_cleaned):
+    documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v15/cc/v1_c4_cleaned/**/*.gz"
+    decontamination_key: str = 'perplexity_suite_v3_option2'
+
+
 class C4InputSpec(InputSpec):
     metadata: Dict[str, Any] = msgspec.field(default_factory=dict)
 
@@ -675,7 +648,7 @@ class C4InputSpec(InputSpec):
 class c4(BaseStatsProcessor):
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_path = source_path.replace("/documents/", "/attributes/decontamination/")
 
@@ -728,7 +701,7 @@ class c4(BaseStatsProcessor):
 class s2(BaseStatsProcessor):
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_path = source_path.replace("/documents/", "/attributes/decontamination/")
 
@@ -809,13 +782,13 @@ class StackInputSpec(InputSpec):
 
 
 @Registry.add
-class stack_v2(books):
-    documents: str = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v1-mixer/documents/*.gz"
-    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/stack/v1-mixer/*.gz"
+class stack_v2(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v1-mixer/documents/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1/stack/v1-mixer/*.gz"
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_basic = source_path.replace("/documents/", "/attributes/basic/")
         attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
@@ -895,12 +868,12 @@ class stack_v2(books):
 
 @Registry.add
 class stack_v3(stack_v2):
-    documents: str = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v2-mixer/documents/*.gz"
-    stats: str = "s3://ai2-llm/stats/olmo-mix/v1/stack/v2-mixer/*.gz"
+    documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v2-mixer/documents/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1/stack/v2-mixer/*.gz"
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_basic = source_path.replace("/documents/", "/attributes/basic/")
         # attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
@@ -945,8 +918,6 @@ class stack_v3(stack_v2):
                     # https://github.com/allenai/LLM/blob/642d0fad3fb2efd816af507250c4c65c8678cb44/pretrain_data/the_stack/v2-mixer/ablations/v2-mixer-held-out.json#L15
                     continue
 
-                breakpoint()
-
                 spans = []
                 if doc.attributes["rpj_heuristics__code_redpajama_taggers_v1__max_line_length_doc"][0][2] > 1000:
                     spans.append((0, len(doc.text), 1.0))
@@ -977,6 +948,101 @@ class stack_v3(stack_v2):
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(counts, indent=2))
+
+
+@Registry.add
+class stack_v4(stack_v2):
+    documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v4-train/documents/*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1_5/stack/v4-train/**/*.gz"
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        attrs_basic = source_path.replace("/documents/", "/attributes/perplexity_suite_v3_option2/")
+        # attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
+        # attrs_dedupe_documents = source_path.replace("/documents/", "/attributes/dedupe_documents/")
+        # attrs_pii = source_path.replace("/documents/", "/attributes/pii/")
+
+        documents_decoder = msgspec.json.Decoder(StackInputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+
+        interval = 10_000
+
+        counts: dict = {
+            "extension": defaultdict(int),
+            "license": defaultdict(int),
+            "length": 0,
+            "count": 0,
+            "decontamination_count": 0,
+            "decontamination_length": 0,
+            "decontamination_matches": 0,
+        }
+        cnt = 0
+
+        with ExitStack() as stack:
+            doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
+            attributes_files = [
+                stack.enter_context(smart_open.open(attrs_basic, "rb")),
+            ]
+
+            # with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, *attributes_line in zip(doc_file, *attributes_files):
+                cnt += 1
+
+                doc = documents_decoder.decode(source_line)
+                for ln in attributes_line:
+                    attributes = attributes_decoder.decode(ln)
+                    doc.attributes.update(attributes.attributes)
+
+                attrs = {}
+                for line in attributes_line:
+                    attrs.update(attributes_decoder.decode(line).attributes)
+
+                # Deduplication stats
+                decontamination_removal = attrs.get("bff_duplicate_paragraph_spans_decontamination", [])
+                counts["decontamination_count"] += len(decontamination_removal)
+                counts["decontamination_length"] += sum(s[1] - s[0] for s in decontamination_removal)
+                counts["decontamination_matches"] += 1 if decontamination_removal else 0
+
+                counts["count"] += 1
+                counts["length"] += len(doc.text)
+
+                counts["extension"][doc.metadata["ext"]] += 1
+                for license in doc.metadata["max_forks_repo_licenses"]:
+                    counts["license"][license] += 1
+
+                cnt += 1
+
+                if cnt % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=cnt % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counts, indent=2))
+
+
+@Registry.add
+class decon_ppl_v3(BaseStatsProcessor):
+    documents = [
+        "s3://ai2-llm/pretraining-data/sources/gutenberg/v0/documents/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_head/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_middle/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_tail/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2ag/split=train/*/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/s2/v3/documents/dataset=s2orc/split=train/*/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/stack-dedup/v4-train/documents/*/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/wikipedia/v0/documents/lang=en/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/wikipedia/v0/documents/lang=simple/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=en/*.gz",
+        "s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=simple/*.gz"
+    ]
+    stats = "s3://ai2-llm/stats/olmo-mix/v1_5/decontamination_ppl_v3_option2"
+
+
 
 
 # # # BELOW HERE: AGGREGATION # # #

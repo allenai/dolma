@@ -19,7 +19,7 @@ TaggerOutputDictType: TypeAlias = Dict[str, TaggerOutputType]
 class InputSpec(Struct):
     id: str
     text: str
-    source: str
+    source: str = ""
     version: Optional[str] = None
     # ignoring metadata for now; taggers run on text only
     # metadata: Optional[Dict[str, Any]] = None
