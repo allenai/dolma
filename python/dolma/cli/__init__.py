@@ -85,7 +85,7 @@ def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None
         # and that the union contains only one non-None type
         if get_origin(typ_) == Union:
             # get all non-None types
-            args = [a for a in get_args(typ_) if a is not type(None)]
+            args = [a for a in get_args(typ_) if not isinstance(a, type(None))]
 
             if len(args) == 1:
                 # simple Optional[T] type

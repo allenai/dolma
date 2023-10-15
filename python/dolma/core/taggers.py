@@ -6,7 +6,6 @@ Filters.
 
 """
 from abc import abstractmethod
-from functools import cached_property
 from typing import List
 
 from .data_types import DocResult, Document, InputSpec, TaggerOutputDictType
