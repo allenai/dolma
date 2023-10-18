@@ -12,18 +12,20 @@
       "attributes": [
         "pii"
       ],
-      "span_replacement": [
-        {
-          "span": "$.attributes.pii.email",
-          "min_score": 0.5,
-          "replacement": "[B-EMAIL]{}[E-EMAIL]"
-        },
-        {
-          "span": "$.attributes.pii.company_name",
-          "min_score": 0.5,
-          "replacement": ""
-        }
-      ]
+      "text_modification": {
+        "span_replacement": [
+          {
+            "span": "$.attributes.pii.email",
+            "min_score": 0.5,
+            "replacement": "[B-EMAIL]{}[E-EMAIL]"
+          },
+          {
+            "span": "$.attributes.pii.company_name",
+            "min_score": 0.5,
+            "replacement": ""
+          }
+        ]
+      }
     }
   ],
   "work_dir": {

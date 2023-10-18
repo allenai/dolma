@@ -32,6 +32,17 @@ class SpanReplacementConfig:
 
 
 @dataclass
+class TextModificationConfig:
+    span_replacement: List[SpanReplacementConfig] = field(default=[], help="Configuration for replacing spans.")
+    trim_whitespace: bool = field(
+        default=False, help="If true, trim leading and trailing whitespace from text (after span replacement)"
+    )
+    minimum_text_length: int = field(
+        default=0, help="Skip writing the document if the final text is shorter than this size (in bytes)"
+    )
+
+
+@dataclass
 class StreamConfig:
     name: str = field(help="Name of the stream. Required.")
     documents: List[str] = field(default=[], help="Paths to the documents to be mixed. Required.")
@@ -42,7 +53,9 @@ class StreamConfig:
     filter: Optional[FilterConfig] = field(  # pyright: ignore
         default=None, help="Configuration for filtering documents."
     )
-    span_replacement: List[SpanReplacementConfig] = field(default=[], help="Configuration for replacing spans.")
+    text_modification: Optional[TextModificationConfig] = field(
+        default=None, help="Configuration for modifying the document text"
+    )
 
 
 @dataclass
@@ -83,17 +96,23 @@ class MixerCli(BaseCli):
                         "exclude": [str(i) for i in stream_config.filter.exclude],
                     }
 
-                for span_replacement in stream_config.span_replacement:
-                    stream_config_dict.setdefault("span_replacement", []).append(
-                        {
-                            "span": str(span_replacement.span),
-                            "min_score": float(span_replacement.min_score),
-                            "replacement": str(span_replacement.replacement),
-                        }
-                    )
+                if stream_config.text_modification is not None:
+                    text_modification_dict = {
+                        "trim_whitespace": stream_config.text_modification.trim_whitespace,
+                        "minimum_text_length": stream_config.text_modification.minimum_text_length,
+                    }
+                    stream_config_dict["text_modification"] = text_modification_dict
+                    for span_replacement in stream_config.text_modification.span_replacement:
+                        text_modification_dict.setdefault("span_replacement", []).append(
+                            {
+                                "span": str(span_replacement.span),
+                                "min_score": float(span_replacement.min_score),
+                                "replacement": str(span_replacement.replacement),
+                            }
+                        )
 
-                if "span_replacement" not in stream_config_dict and "filter" not in stream_config_dict:
-                    raise DolmaConfigError("Either `filter` or `span_replacement` must be specified")
+                if "text_modification" not in stream_config_dict and "filter" not in stream_config_dict:
+                    raise DolmaConfigError("Either `filter` or `text_modification` must be specified")
 
                 # perform some path validation to make sure we don't call the mixer with invalid config
                 total_matching_documents = 0
