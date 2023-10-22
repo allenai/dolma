@@ -68,4 +68,4 @@ WITH (
 )
 ```
 
-## Step 2: Slice Validation Data
+## Step 2: Tokenization
