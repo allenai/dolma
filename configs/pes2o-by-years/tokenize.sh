@@ -4,8 +4,8 @@ BASE_S3="s3://ai2-llm/pretraining-data/sources/s2/v3-by-year/documents"
 for year in {2016..2023}; do
     for split in train valid; do
         # increase number of processes after 2015 and if we're on the train split
-        if [[ $year -gt 2015 ]] && [[ $split == "train" ]]; then
-            processes=2
+        if [[ $year -lt 2023 ]] && [[ $year -gt 2015 ]] && [[ $split == "train" ]]; then
+            processes=5
         else
             processes=1
         fi
