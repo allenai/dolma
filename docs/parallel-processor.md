@@ -30,7 +30,7 @@ class CustomParallelProcessor(BaseParallelProcessor):
         the super method with the same arguments.
         """
         super().increment_progressbar(
-            queue=queue,
+            queue,
             files=files,
             documents=documents,
             ...
@@ -57,7 +57,6 @@ class CustomParallelProcessor(BaseParallelProcessor):
 
 Let's dive a bit deeper into one might implement the `process_single` method in the case of removing empty documents.
 We assume `source_path` is a path to a either local or remote JSONL gzip'ed file, and use `smart_open` to deal with that.
-
 
 ```python
 from contextlib import ExitStack
@@ -88,7 +87,7 @@ class RemoveEmptyDocumentsProcessor(BaseParallelProcessor):
             (i.e., the number of documents that are not empty)
         """
         super().increment_progressbar(
-            queue=queue,
+            queue,
             files=files,
             read_docs=read_docs,
             written_docs=written_docs
@@ -138,14 +137,14 @@ class RemoveEmptyDocumentsProcessor(BaseParallelProcessor):
                 # update_every_n_lines
                 if read_docs % update_every_n_lines == 0:
                     cls.increment_progressbar(
-                        queue=queue,
+                        queue,
                         read_docs=read_docs,
                         written_docs=written_docs,
                     )
 
             # we update the progress bar one last time
             cls.increment_progressbar(
-                queue=queue,
+                queue,
                 files=1,
                 read_docs=read_docs,
                 written_docs=written_docs,
