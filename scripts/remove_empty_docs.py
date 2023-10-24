@@ -1,6 +1,7 @@
 import json
 from argparse import ArgumentParser
 from contextlib import ExitStack
+import multiprocessing
 from queue import Queue
 from tempfile import TemporaryDirectory
 from typing import Any, Tuple, Union
@@ -36,7 +37,7 @@ class RemoveEmptyDocumentsProcessor(BaseParallelProcessor):
         if the document is not empty.
         """
 
-        update_every_n_lines = 10_000
+        update_every_n_lines = 1
         read_docs = written_docs = 0
 
         with ExitStack() as stack:
@@ -60,12 +61,17 @@ class RemoveEmptyDocumentsProcessor(BaseParallelProcessor):
 
                 # we update the progress bar every
                 # update_every_n_lines
-                if read_docs % update_every_n_lines == 0:
+                if read_docs >= update_every_n_lines:
                     cls.increment_progressbar(
                         queue,
                         read_docs=read_docs,
                         written_docs=written_docs,
                     )
+                    read_docs = written_docs = 0
+
+                    if queue.qsize() >= multiprocessing.cpu_count():
+                        # double the update interval if the queue is full
+                        update_every_n_lines *= 2
 
             # we update the progress bar one last time
             cls.increment_progressbar(
