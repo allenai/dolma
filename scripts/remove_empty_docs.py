@@ -81,7 +81,7 @@ def parse_args():
     ag.add_argument("-s", "--source-prefix", type=str, required=True)
     ag.add_argument("-d", "--destination-prefix", type=str, required=True)
     ag.add_argument("-n", "--num-processes", type=int, default=1)
-    ag.add_argument("-d", "--debug", action="store_true")
+    ag.add_argument("-u", "--debug", action="store_true")
     ag.add_argument("-t", "--temp-dir", type=str, default=None)
     return ag.parse_args()
 
