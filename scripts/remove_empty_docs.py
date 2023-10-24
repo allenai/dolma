@@ -92,8 +92,8 @@ def main():
     with TemporaryDirectory(dir=args.temp_dir) as tmpdir:
         # create the processor
         processor = RemoveEmptyDocumentsProcessor(
-            source_prefix="path/to/source/files/*.gz",
-            destination_prefix="path/to/destination/files",
+            source_prefix=args.source_prefix,
+            destination_prefix=args.destination_prefix,
             metadata_prefix=tmpdir,
             num_processes=args.num_processes,
             debug=args.debug,
