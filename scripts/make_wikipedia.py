@@ -51,7 +51,7 @@ except ImportError:
     sys.exit(1)
 
 
-DUMP_URL = "https://dumps.wikimedia.org/simplewiki/{date}/{lang}wiki-{date}-pages-articles-multistream.xml.bz2"
+DUMP_URL = "https://dumps.wikimedia.org/{lang}wiki/{date}/{lang}wiki-{date}-pages-articles-multistream.xml.bz2"
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
 
