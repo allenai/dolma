@@ -286,4 +286,7 @@ def main():
 
 
 if __name__ == "__main__":
+    # setting multiprocessing start method to spawn
+    multiprocessing.set_start_method("spawn")
+
     main()
