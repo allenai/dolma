@@ -10,7 +10,7 @@ Dolma is two things:
 Dolma is an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
 It was created as a training corpus for [OLMo](https://allenai.org/olmo), a language model from the [Allen Institute for AI](https://allenai.org) (AI2).
 
-Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr).
+Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr). Once agreed you can follow the instructions [here](https://huggingface.co/datasets/allenai/dolma#download) to download it.
 
 You can also read more about Dolma in [our announcement](https://blog.allenai.org/dolma-3-trillion-tokens-open-llm-corpus-9a0ff4b8da64), as well as by consulting its [data sheet](docs/assets/dolma-datasheet-v0.1.pdf).
 
