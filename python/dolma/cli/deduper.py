@@ -11,17 +11,17 @@ from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig, get_path_to_temp_file, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
-from dolma.core.paths import glob_path
+from dolma.core.paths import glob_path, is_local
 
 
 @dataclass
 class ParagraphDedupeConfig:
-    attribute_name: str = field(help="Name of the output field in the tagger")
+    attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
 
 
 @dataclass
 class DocumentDedupeConfig:
-    attribute_name: str = field(help="Name of the output field in the tagger")
+    attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
     key: str = field(help="Name of the input field to use for deduplication, e.g. `$.metadata.url`")
 
 
@@ -92,16 +92,33 @@ class DeduperCli(BaseCli):
         with ExitStack() as stack:
             work_dirs = stack.enter_context(make_workdirs(parsed_config.work_dir))
 
-            dict_config["dedupe"] = {
-                "name": parsed_config.dedupe.name,
-                "skip_empty": parsed_config.dedupe.skip_empty,
-            }
-            if parsed_config.dedupe.documents is not None:
-                dict_config["dedupe"]["documents"] = om.to_container(parsed_config.dedupe.documents)
-            elif parsed_config.dedupe.paragraphs is not None:
-                dict_config["dedupe"]["paragraphs"] = om.to_container(parsed_config.dedupe.paragraphs)
+            # create a dedupe config to populate
+            dedupe_dict_config: Dict[str, Any] = {"skip_empty": parsed_config.dedupe.skip_empty}
+            try_name = parsed_config.dedupe.name if not om.is_missing(parsed_config.dedupe, "name") else None
+
+            # add either the document or paragraph dedupe config
+            if not (
+                om.is_missing(parsed_config.dedupe.documents, "attribute_name")
+                and om.is_missing(parsed_config.dedupe.documents, "key")
+            ):
+                cfg = om.to_container(parsed_config.dedupe.documents)
+                assert isinstance(cfg, dict), "Expected dedupe.documents to be a dict"
+                dedupe_dict_config["documents"] = cfg
+                try_name = try_name or cfg["attribute_name"]
+            elif not om.is_missing(parsed_config.dedupe.paragraphs, "attribute_name"):
+                cfg = om.to_container(parsed_config.dedupe.paragraphs)
+                assert isinstance(cfg, dict), "Expected dedupe.paragraphs to be a dict"
+                dedupe_dict_config["paragraphs"] = cfg
+                try_name = try_name or cfg["attribute_name"]
             else:
                 raise ValueError("Either dedupe.documents or dedupe.paragraphs must be specified")
+
+            if try_name is None:
+                raise ValueError("dedupe.name must be specified")
+            dedupe_dict_config["name"] = try_name
+
+            # add the dedupe config to the main config
+            dict_config["dedupe"] = dedupe_dict_config
 
             # perform some path validation to make sure we don't call the mixer with invalid config
             total_matching_documents = 0
@@ -124,8 +141,7 @@ class DeduperCli(BaseCli):
             # The rust deduper does not work with remote files, so we need to download the bloom filter
             # if it is not local. If the remote file does not exists, and the bloom filter is read-only,
             # we raise an error.
-            path_is_local = (local_bloom_file := Path(parsed_config.bloom_filter.file)).exists()
-            if not path_is_local:
+            if not (path_is_local := is_local(parsed_config.bloom_filter.file)):
                 local_bloom_file = stack.enter_context(get_path_to_temp_file())
                 try:
                     with smart_open.open(parsed_config.bloom_filter.file, "rb") as f:
@@ -134,6 +150,8 @@ class DeduperCli(BaseCli):
                 except (FileNotFoundError, OSError) as ex:
                     if parsed_config.bloom_filter.read_only:
                         raise ex
+            else:
+                local_bloom_file = Path(parsed_config.bloom_filter.file)
 
             dict_config["bloom_filter"] = {
                 "file": str(local_bloom_file),

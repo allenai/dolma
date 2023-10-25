@@ -16,7 +16,7 @@ class TokenizerConfig:
         help=(
             "One or more document paths to process; Can be either local or S3 paths. "
             "Globs are supported. Required"
-        )
+        ),
     )
     destination: Optional[str] = field(
         default=None,
@@ -25,9 +25,9 @@ class TokenizerConfig:
             "If not provided, destination will be derived from the document path. Required."
         ),
     )
-    tokenizer_id: Optional[str] = field(
+    tokenizer_name_or_path: Optional[str] = field(
         default=None,
-        help="Name of the tokenizer to use. Required.",
+        help="Name or path of the tokenizer to use. Must be a HuggingFace-compatible tokenizer. Required.",
     )
     processes: int = field(
         default=1,
@@ -97,7 +97,7 @@ class TokenizerCli(BaseCli):
             if parsed_config.destination is None:
                 raise DolmaConfigError("Destination must be provided.")
 
-            if parsed_config.tokenizer_id is None:
+            if parsed_config.tokenizer_name_or_path is None:
                 raise DolmaConfigError("Tokenizer ID must be provided.")
 
             tokenize_in_parallel(
@@ -107,7 +107,7 @@ class TokenizerCli(BaseCli):
                 num_readers=parsed_config.files_per_process,
                 local_shuffle=parsed_config.batch_size,
                 ring_size=parsed_config.ring_size,
-                tokenizer_id=parsed_config.tokenizer_id,
+                tokenizer_name_or_path=parsed_config.tokenizer_name_or_path,
                 seed=parsed_config.seed,
                 metadata_dir=work_dirs.output,
                 max_size=parsed_config.max_size,

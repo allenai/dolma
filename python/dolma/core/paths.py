@@ -94,12 +94,35 @@ def _unpathify(protocol: str, path: Path) -> str:
     return path_str
 
 
+def is_local(path: str) -> bool:
+    """
+    Check if a path is local.
+    """
+    prot, _ = _pathify(path)
+    return prot == "" or prot == "file"
+
+
 def delete_file(path: str, ignore_missing: bool = False) -> bool:
     """Delete a file."""
 
     fs = _get_fs(path)
     try:
         fs.rm(path)
+        deleted = True
+    except FileNotFoundError as ex:
+        if not ignore_missing:
+            raise ex
+        deleted = False
+
+    return deleted
+
+
+def delete_dir(path: str, ignore_missing: bool = False) -> bool:
+    """Delete a directory."""
+
+    fs = _get_fs(path)
+    try:
+        fs.rm(path, recursive=True)
         deleted = True
     except FileNotFoundError as ex:
         if not ignore_missing:

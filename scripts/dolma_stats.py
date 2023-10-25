@@ -203,21 +203,6 @@ class Registry:
         yield from cls.__registry__.items()
 
 
-# class BaseStatsProcessor(BaseParallelProcessor):
-#     @classmethod
-#     def increment_progressbar(  # type: ignore
-#         cls,
-#         queue: Queue[Union[Tuple[int, ...], None]],
-#         /,
-#         files: int = 0,
-#         documents: int = 0,
-#     ) -> Dict[str, int]:
-#         return super().increment_progressbar(queue, files=files, documents=documents)
-
-#     @classmethod
-#     def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
-#         raise NotImplementedError()
-
 class BaseStatsProcessor(BaseParallelProcessor):
     documents: Union[str, List[str]]
     stats: str
@@ -225,7 +210,7 @@ class BaseStatsProcessor(BaseParallelProcessor):
     @classmethod
     def increment_progressbar(
         cls,
-        queue: Queue[Union[Tuple[int, ...], None]],
+        queue: "Queue[Union[Tuple[int, ...], None]]",
         /,
         files: int = 0,
         documents: int = 0
@@ -297,7 +282,7 @@ class books(BaseStatsProcessor):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -336,7 +321,7 @@ class cc_v1(BaseStatsProcessor):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attributes = [source_path.replace("/documents/", "/attributes/c4_rules/")]
 
@@ -391,7 +376,7 @@ class just_cc_dedup(BaseStatsProcessor):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         dedup = source_path.replace("/documents/", "/attributes/dedupe_paragraphs/")
 
@@ -538,7 +523,7 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attributes = [
             source_path.replace("/documents/", "/attributes/gopher_rules/"),
@@ -663,7 +648,7 @@ class C4InputSpec(InputSpec):
 class c4(BaseStatsProcessor):
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_path = source_path.replace("/documents/", "/attributes/decontamination/")
 
@@ -716,7 +701,7 @@ class c4(BaseStatsProcessor):
 class s2(BaseStatsProcessor):
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_path = source_path.replace("/documents/", "/attributes/decontamination/")
 
@@ -803,7 +788,7 @@ class stack_v2(BaseStatsProcessor):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_basic = source_path.replace("/documents/", "/attributes/basic/")
         attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
@@ -888,7 +873,7 @@ class stack_v3(stack_v2):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_basic = source_path.replace("/documents/", "/attributes/basic/")
         # attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
@@ -972,7 +957,7 @@ class stack_v4(stack_v2):
 
     @classmethod
     def process_single(
-        cls, source_path: str, destination_path: str, queue: Queue[Union[Tuple[int, ...], None]], **kwargs: Any
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
     ):
         attrs_basic = source_path.replace("/documents/", "/attributes/perplexity_suite_v3_option2/")
         # attrs_code_secrets = source_path.replace("/documents/", "/attributes/rpj-heuristics/")
@@ -1036,8 +1021,6 @@ class stack_v4(stack_v2):
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(counts, indent=2))
-
-
 
 
 @Registry.add

@@ -31,7 +31,7 @@ publish:
 test: test-python test-rust
 
 test-python:
-	pytest -vs tests/python
+	pytest -vsx tests/python
 	rm -rf tests/work/*
 
 test-rust:
