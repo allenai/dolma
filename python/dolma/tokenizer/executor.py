@@ -188,8 +188,6 @@ def tokenize_in_parallel(
     dtype: str = "uint16",
     debug: bool = False,
 ):
-    multiprocessing.set_start_method("spawn")
-
     # variables for the nice debugging and tokenizers
     os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
