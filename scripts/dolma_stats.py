@@ -541,19 +541,24 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
             "gopher_count": 0,
             "gopher_length": 0,
             "gopher_matches": 0,
+            "gopher_spans": [],
             "decontamination_count": 0,
             "decontamination_length": 0,
             "decontamination_matches": 0,
+            "decontamination_spans": [],
             "dedupe_paragraphs_count": 0,
             "dedupe_paragraphs_length": 0,
             "dedupe_paragraphs_matches": 0,
+            "dedupe_paragraphs_spans": [],
             "hatespeech_nsfw_count": 0,
             "hatespeech_nsfw_length": 0,
             "hatespeech_nsfw_matches": 0,
+            "hatespeech_nsfw_spans": [],
             "pii_count": 0,
             "pii_length": 0,
             "pii_matches_le_5": 0,
             "pii_matches_gt_5": 0,
+            "pii_spans": [],
         }
         documents = 0
         interval = 10_000
@@ -580,12 +585,14 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
                 stats["gopher_count"] += len(gopher_removal)
                 stats["gopher_length"] += sum(s[1] - s[0] for s in gopher_removal)
                 stats["gopher_matches"] += 1 if gopher_removal else 0
+                stats["gopher_spans"] = gopher_removal
 
                 # Deduplication stats
                 decontamination_removal = attrs.get("bff_duplicate_paragraph_spans_decontamination", [])
                 stats["decontamination_count"] += len(decontamination_removal)
                 stats["decontamination_length"] += sum(s[1] - s[0] for s in decontamination_removal)
                 stats["decontamination_matches"] += 1 if decontamination_removal else 0
+                stats["decontamination_spans"] = decontamination_removal
 
                 # jigsaw stats
                 jigsaw_match: List[Tuple[int, int, float]] = []
@@ -604,6 +611,7 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
                 stats["hatespeech_nsfw_count"] += len(jigsaw_match)
                 stats["hatespeech_nsfw_length"] += sum(s[1] - s[0] for s in jigsaw_match)
                 stats["hatespeech_nsfw_matches"] += 1 if jigsaw_match else 0
+                stats["hatespeech_nsfw_spans"] = jigsaw_match
 
                 # PII stats
                 pii_removal = (
@@ -615,12 +623,14 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
                 stats["pii_length"] += sum(s[1] - s[0] for s in pii_removal)
                 stats["pii_matches_le_5"] += 1 if 0 < len(pii_removal) <= 5 else 0
                 stats["pii_matches_gt_5"] += 1 if len(pii_removal) > 5 else 0
+                stats["pii_spans"] = pii_removal
 
                 # Duplicates stats
                 dups = [p for p in attrs.get("bff_duplicate_paragraph_spans", []) if p[1] - p[0] > 0]
                 stats["dedupe_paragraphs_count"] += len(dups)
                 stats["dedupe_paragraphs_length"] += sum(s[1] - s[0] for s in dups)
                 stats["dedupe_paragraphs_matches"] += 1 if dups else 0
+                stats["dedupe_paragraphs_spans"] = dups
 
                 documents += 1
 
