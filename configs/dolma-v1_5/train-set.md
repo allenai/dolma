@@ -31,8 +31,8 @@ python -m dolma.tokenizer --sources 's3://ai2-llm/pretraining-data/sources/olmo-
 ```
 
 ```bash
-python -m dolma.tokenizer \
-    --sources 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/books/*' \
+dolma tokens \
+    --documents 's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/books/*' \
         's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/c4/*' \
         's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-sample/documents/cc_en_head/*' \
         's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-sample/documents/cc_en_middle/*' \
@@ -41,7 +41,10 @@ python -m dolma.tokenizer \
         's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/reddit/*' \
         's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/stack/*' \
         's3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/wiki/*' \
+    --tokenizer_name_or_path 'allenai/gpt-neox-20b-pii-special' \
     --destination $HOME/preprocessed/olmo-mix/v1_5-sample/gpt-neox-20b-pii-special \
-    --num-writers 188 \
-    --max-size 5368709120
+    --processes 188 \
+    --ring_size 8 \
+    --batch_size 10000 \
+    --max_size 5368709120
 ```
