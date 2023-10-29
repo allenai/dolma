@@ -121,8 +121,16 @@ class BaseParallelProcessor:
                 "Check that you have subclassed BaseParallelProcessor correctly!"
             )
 
-        if len(self.src_prefixes) != len(self.dst_prefixes) or len(self.src_prefixes) != len(self.meta_prefixes):
-            raise ValueError("The number of source, destination and metadata prefixes must be the same.")
+        if len(self.src_prefixes) != len(self.dst_prefixes):
+            raise ValueError(
+                "The number of source and destination prefixes must be the same "
+                f"(got {len(self.src_prefixes)} and {len(self.dst_prefixes)})"
+            )
+        elif len(self.src_prefixes) != len(self.meta_prefixes):
+            raise ValueError(
+                "The number of source and metadata prefixes must be the same."
+                f"(got {len(self.src_prefixes)} and {len(self.meta_prefixes)})"
+            )
 
         if len(self.src_prefixes) == 0:
             raise ValueError("At least one source prefix must be provided.")
