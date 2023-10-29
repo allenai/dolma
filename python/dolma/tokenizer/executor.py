@@ -12,7 +12,7 @@ import numpy as np
 from typing_extensions import TypeAlias
 
 from ..core.parallel import BaseParallelProcessor, QueueType
-from ..core.paths import glob_path, join_path, make_relative, mkdir_p
+from ..core.paths import glob_path, join_path, mkdir_p
 from .data_types import TokenizerOutput
 from .memmap_writer import MemmapWriter
 from .tokenizer import Tokenizer, tokenize_file
