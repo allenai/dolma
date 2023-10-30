@@ -144,8 +144,8 @@ class MemMapParallelWriter(BaseParallelProcessor):
         # so that they can load the correct source paths
         source_indices = [str(i) for i in range(len(grouped_source_prefixes))]
 
-        # check that only one destination and metadata is provided
-        if len(self.dst_prefixes) != 1 or len(self.meta_prefixes) != 1:
+        # check that only one value of destination and metadata is provided
+        if len(set(self.dst_prefixes)) != 1 or len(set(self.meta_prefixes)) != 1:
             raise ValueError("Only one destination and metadata should be provided.")
 
         # make necessary destination directories
@@ -188,8 +188,6 @@ def tokenize_in_parallel(
     dtype: str = "uint16",
     debug: bool = False,
 ):
-    multiprocessing.set_start_method("spawn")
-
     # variables for the nice debugging and tokenizers
     os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -203,8 +201,13 @@ def tokenize_in_parallel(
 
     parallel_writer = MemMapParallelWriter(
         source_prefix=sources,
-        destination_prefix=destination,
-        metadata_prefix=metadata_dir,
+        # the call action will actually get the first destination and
+        # make relative paths from there. Unfortunately, BaseParallelProcessor
+        # expects as many destinations as there are sources, so we employ
+        # this "hack" (that is, repeating destination len(sources) times)
+        # to get around that. Same thing applies to metadata_dir.
+        destination_prefix=[destination for _ in sources],
+        metadata_prefix=[metadata_dir for _ in sources],
         num_processes=num_writers,
         seed=seed,
         debug=debug,
