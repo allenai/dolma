@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from importlib import import_module
 from pstats import SortKey
 from typing import List, Optional
 
@@ -53,6 +54,10 @@ class TaggerConfig:
             "If not provided, destination will be derived from the document path."
         ),
     )
+    tagger_modules: List[str] = field(
+        default=[],
+        help="List of Python modules in $PTHONPATH to import custom taggers from.",
+    )
     taggers: List[str] = field(
         default=[],
         help="List of taggers to run.",
@@ -83,6 +88,13 @@ class TaggerConfig:
         help="If true, only print the configuration and exit without running the taggers.",
     )
 
+def _import_modules(modules: List[str]):
+    for module in modules:
+        try:
+            import_module(module)
+        except ModuleNotFoundError:
+            raise DolmaConfigError("Did not find module named {module}")
+
 
 class TaggerCli(BaseCli):
     CONFIG = TaggerConfig
@@ -112,6 +124,9 @@ class TaggerCli(BaseCli):
                 # but raise an error if no documents are found for all paths
                 raise DolmaConfigError(f"No documents found for paths {documents}.")
 
+            # import tagger modules
+            _import_modules(parsed_config.tagger_modules)
+
             print_config(parsed_config)
             if parsed_config.dryrun:
                 logger.info("Exiting due to dryrun.")
@@ -135,7 +150,10 @@ class TaggerCli(BaseCli):
 
 @dataclass
 class ListTaggerConfig:
-    ...
+    tagger_modules: List[str] = field(
+        default=[],
+        help="List of Python modules $PYTHONPATH to import custom taggers from.",
+    )
 
 
 class ListTaggerCli(BaseCli):
@@ -144,6 +162,9 @@ class ListTaggerCli(BaseCli):
 
     @classmethod
     def run(cls, parsed_config: ListTaggerConfig):
+        # import tagger modules
+        _import_modules(parsed_config.tagger_modules)
+
         table = Table(title="dolma taggers", style="bold")
         table.add_column("name", justify="left", style="cyan")
         table.add_column("class", justify="left", style="magenta")
