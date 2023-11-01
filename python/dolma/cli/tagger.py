@@ -56,7 +56,7 @@ class TaggerConfig:
     )
     tagger_modules: List[str] = field(
         default=[],
-        help="List of Python modules in $PTHONPATH to import custom taggers from.",
+        help="List of Python modules in $PYTHONPATH to import custom taggers from.",
     )
     taggers: List[str] = field(
         default=[],
