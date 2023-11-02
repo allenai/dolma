@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from importlib import import_module
 from pstats import SortKey
 from typing import List, Optional
 
@@ -88,14 +87,6 @@ class TaggerConfig:
         help="If true, only print the configuration and exit without running the taggers.",
     )
 
-def _import_modules(modules: List[str]):
-    for module in modules:
-        try:
-            import_module(module)
-        except ModuleNotFoundError:
-            raise DolmaConfigError("Did not find module named {module}")
-
-
 class TaggerCli(BaseCli):
     CONFIG = TaggerConfig
     DESCRIPTION = (
@@ -124,9 +115,6 @@ class TaggerCli(BaseCli):
                 # but raise an error if no documents are found for all paths
                 raise DolmaConfigError(f"No documents found for paths {documents}.")
 
-            # import tagger modules
-            _import_modules(parsed_config.tagger_modules)
-
             print_config(parsed_config)
             if parsed_config.dryrun:
                 logger.info("Exiting due to dryrun.")
@@ -137,6 +125,7 @@ class TaggerCli(BaseCli):
                 destination=parsed_config.destination,
                 metadata=work_dirs.output,
                 taggers=taggers,
+                taggers_modules=parsed_config.tagger_modules,
                 ignore_existing=parsed_config.ignore_existing,
                 num_processes=parsed_config.processes,
                 experiment=parsed_config.experiment,

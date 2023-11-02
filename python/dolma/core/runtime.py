@@ -23,7 +23,7 @@ from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
 from .paths import delete_dir, join_path, make_relative, mkdir_p, split_glob, split_path
 from .registry import TaggerRegistry
-from .utils import make_variable_name
+from .utils import make_variable_name, import_modules
 
 # this placeholder gets used when a user has provided no experiment name, and we want to use taggers'
 # names as experiment names.
@@ -220,6 +220,10 @@ class TaggerProcessor(BaseParallelProcessor):
         **kwargs,
     ):
         """Lets count run the taggers! We will use the destination path to save each tagger output."""
+        # import tagger modules
+        taggers_modules = kwargs.get("taggers_modules", None)
+        if taggers_modules is not None:
+            import_modules(taggers_modules)
 
         # get names of taggers
         taggers_names = kwargs.get("taggers_names", None)
@@ -329,6 +333,7 @@ def profiler(
 def create_and_run_tagger(
     documents: List[str],
     taggers: List[str],
+    taggers_modules: Optional[List[str]] = None,
     experiment: Optional[str] = None,
     destination: Union[None, str, List[str]] = None,
     metadata: Union[None, str, List[str]] = None,
@@ -421,6 +426,7 @@ def create_and_run_tagger(
             tagger(
                 experiment_name=experiment,
                 taggers_names=taggers,
+                taggers_modules=taggers_modules,
                 skip_on_failure=skip_on_failure,
                 steps=profile_steps,
             )
