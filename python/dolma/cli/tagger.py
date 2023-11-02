@@ -12,6 +12,7 @@ from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
 from dolma.core.registry import TaggerRegistry
 from dolma.core.runtime import create_and_run_tagger
+from dolma.core.utils import import_modules
 
 
 @dataclass
@@ -152,7 +153,7 @@ class ListTaggerCli(BaseCli):
     @classmethod
     def run(cls, parsed_config: ListTaggerConfig):
         # import tagger modules
-        _import_modules(parsed_config.tagger_modules)
+        import_modules(parsed_config.tagger_modules)
 
         table = Table(title="dolma taggers", style="bold")
         table.add_column("name", justify="left", style="cyan")
