@@ -1,7 +1,7 @@
 import re
 import string
-from typing import List
 from importlib import import_module
+from typing import List
 
 try:
     import blingfire
@@ -67,6 +67,7 @@ def split_sentences(text: str, remove_empty: bool = True) -> List[TextSlice]:
         return [TextSlice(doc=text, start=start, end=end) for (start, end) in offsets]
     else:
         raise NotImplementedError("remove_empty=False is not implemented yet")
+
 
 def import_modules(modules: List[str]):
     for module in modules:

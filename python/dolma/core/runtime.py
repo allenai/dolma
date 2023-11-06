@@ -23,7 +23,7 @@ from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
 from .paths import delete_dir, join_path, make_relative, mkdir_p, split_glob, split_path
 from .registry import TaggerRegistry
-from .utils import make_variable_name, import_modules
+from .utils import import_modules, make_variable_name
 
 # this placeholder gets used when a user has provided no experiment name, and we want to use taggers'
 # names as experiment names.

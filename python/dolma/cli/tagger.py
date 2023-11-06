@@ -88,6 +88,7 @@ class TaggerConfig:
         help="If true, only print the configuration and exit without running the taggers.",
     )
 
+
 class TaggerCli(BaseCli):
     CONFIG = TaggerConfig
     DESCRIPTION = (
