@@ -37,6 +37,19 @@ class TaggerRegistry:
         return _add
 
     @classmethod
+    def remove(cls, name: str) -> bool:
+        """Remove a tagger from the registry."""
+        if name in cls.__taggers:
+            cls.__taggers.pop(name)
+            return True
+        return False
+
+    @classmethod
+    def has(cls, name: str) -> bool:
+        """Check if a tagger exists in the registry."""
+        return name in cls.__taggers
+
+    @classmethod
     def get(cls, name: str) -> Type[BaseTagger]:
         """Get a tagger from the registry; raise ValueError if it doesn't exist."""
         if name not in cls.__taggers:

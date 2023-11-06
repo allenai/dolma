@@ -56,7 +56,11 @@ class TaggerConfig:
     )
     tagger_modules: List[str] = field(
         default=[],
-        help="List of Python modules in $PYTHONPATH to import custom taggers from.",
+        help=(
+            "Additional modules to import taggers from; this is useful for taggers that are not part of Dolma. "
+            "Modules must be available in $PYTHONPATH or a path to module. Taggers should be registered using the "
+            "@dolma.add_tagger(...) decorator."
+        ),
     )
     taggers: List[str] = field(
         default=[],
