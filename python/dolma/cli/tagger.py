@@ -12,6 +12,7 @@ from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
 from dolma.core.registry import TaggerRegistry
 from dolma.core.runtime import create_and_run_tagger
+from dolma.core.utils import import_modules
 
 
 @dataclass
@@ -51,6 +52,14 @@ class TaggerConfig:
         help=(
             "Destination paths to save the outputs; should match the number of document paths. "
             "If not provided, destination will be derived from the document path."
+        ),
+    )
+    tagger_modules: List[str] = field(
+        default=[],
+        help=(
+            "Additional modules to import taggers from; this is useful for taggers that are not part of Dolma. "
+            "Modules must be available in $PYTHONPATH or a path to module. Taggers should be registered using the "
+            "@dolma.add_tagger(...) decorator."
         ),
     )
     taggers: List[str] = field(
@@ -122,6 +131,7 @@ class TaggerCli(BaseCli):
                 destination=parsed_config.destination,
                 metadata=work_dirs.output,
                 taggers=taggers,
+                taggers_modules=parsed_config.tagger_modules,
                 ignore_existing=parsed_config.ignore_existing,
                 num_processes=parsed_config.processes,
                 experiment=parsed_config.experiment,
@@ -135,7 +145,10 @@ class TaggerCli(BaseCli):
 
 @dataclass
 class ListTaggerConfig:
-    ...
+    tagger_modules: List[str] = field(
+        default=[],
+        help="List of Python modules $PYTHONPATH to import custom taggers from.",
+    )
 
 
 class ListTaggerCli(BaseCli):
@@ -144,6 +157,9 @@ class ListTaggerCli(BaseCli):
 
     @classmethod
     def run(cls, parsed_config: ListTaggerConfig):
+        # import tagger modules
+        import_modules(parsed_config.tagger_modules)
+
         table = Table(title="dolma taggers", style="bold")
         table.add_column("name", justify="left", style="cyan")
         table.add_column("class", justify="left", style="magenta")
