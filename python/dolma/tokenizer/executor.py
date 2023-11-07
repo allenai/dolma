@@ -222,5 +222,5 @@ def tokenize_in_parallel(
         ring_size=ring_size,
         max_size=max_size,
         dtype=dtype,
-        tokenizer_name_or_path=tokenizer_name_or_path
+        tokenizer_name_or_path=tokenizer_name_or_path,
     )
