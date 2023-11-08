@@ -1,0 +1,9 @@
+destination: /mnt/tank/dolma_tmp/preprocessed/pile/v0_decon_ppl_suite_v3/gpt-neox-20b-pii-special
+documents:
+- /mnt/tank/dolma_tmp/results/pile/v0_decon_ppl_suite_v3/*.json.gz
+processes: 224
+seed: 3920
+tokenizer_name_or_path: allenai/eleuther-ai-gpt-neox-20b-pii-special
+work_dir:
+  input: null
+  output: null
