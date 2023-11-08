@@ -72,6 +72,9 @@ class HashSampler(BaseParallelProcessor):
             raise ValueError("Probability must be specified")
         probability = float(probability)
 
+        complement = kwargs.get("complement", False)
+
+
         suffixes = calculate_md5_suffix(probability)
         re_suffixes = re.compile(rf'({"|".join(suffixes)})$')
         extracted_count = documents_count = words_count = 0
@@ -85,7 +88,11 @@ class HashSampler(BaseParallelProcessor):
                 data = decoder.decode(line)
                 md5 = hashlib.md5(data.text.encode()).hexdigest()
 
-                if re_suffixes.search(md5):
+                if complement and not re_suffixes.search(md5):
+                    extracted_count += 1
+                    words_count += sum(1 for w in uniseg.wordbreak.words(data.text.strip()) if w.strip())
+                    destination.write(line)
+                elif not complement and re_suffixes.search(md5):
                     extracted_count += 1
                     words_count += sum(1 for w in uniseg.wordbreak.words(data.text.strip()) if w.strip())
                     destination.write(line)
@@ -120,6 +127,7 @@ def main(
     source: Union[List[str], str],
     destination: str,
     probability: float,
+    complement: bool = False,
     num_workers: int = 1,
     debug: bool = False,
     dryrun: bool = False
@@ -129,7 +137,10 @@ def main(
     source = [source] if isinstance(source, str) else source
 
     pattern = calculate_md5_suffix(probability)
-    print(f"Sampling with probability {probability} using MD5 suffixes {pattern}")
+    if complement:
+        print(f"Sampling complement of probability {probability} split by excluding MD5 suffixes {pattern}")
+    else:
+        print(f"Sampling with probability {probability} using MD5 suffixes {pattern}")
 
     if dryrun:
         return
@@ -149,7 +160,7 @@ def main(
             num_processes=num_workers,
             debug=debug,
         )
-        processor(probability=probability)
+        processor(probability=probability, complement=complement)
 
 
 def parse_args():
@@ -160,6 +171,7 @@ def parse_args():
     ap.add_argument("-n", '--num-workers', type=int, default=1, help="number of workers")
     ap.add_argument("--debug", action="store_true", help="debug mode")
     ap.add_argument("--dryrun", action="store_true", help="dry run")
+    ap.add_argument("--complement", action="store_true", help="get the complement of the sample")
     opts = ap.parse_args()
 
     print(json.dumps(vars(opts), indent=2, sort_keys=True))
