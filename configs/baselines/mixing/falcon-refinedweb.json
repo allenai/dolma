@@ -3,10 +3,10 @@
       {
         "name": "falcon-refinedweb",
         "documents": [
-          "s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0/documents/*.gz"
+          "s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/*.gz"
         ],
         "output": {
-          "path": "s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0_decon_ppl_suite_v3",
+          "path": "s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement_decon_ppl_suite_v3",
           "max_size_in_bytes": 1000000000
         },
         "attributes": [
