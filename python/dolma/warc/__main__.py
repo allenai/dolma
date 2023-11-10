@@ -1,7 +1,6 @@
 import argparse
 import multiprocessing
 import os
-import re
 import tempfile
 
 from ..core.paths import glob_path
