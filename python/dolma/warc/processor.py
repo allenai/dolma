@@ -9,7 +9,7 @@ import smart_open
 from charset_normalizer import detect
 from necessary import necessary
 
-from ..parallel import BaseParallelProcessor, QueueType
+from ..core.parallel import BaseParallelProcessor, QueueType
 from .html import HTML_EXTRACTORS, BaseHtmlExtractor
 from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
 from .types import WarcDocument, WarcDocumentMetadata

@@ -33,12 +33,13 @@ class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
 
     def __init__(
         self,
-        include_comments: bool = False,
+        include_comments: bool = True,
         include_links: bool = False,
-        include_tables: bool = False,
+        include_tables: bool = True,
         no_fallback: bool = False,
         favor_precision: bool = False,
         favor_recall: bool = False,
+        output_format: str = 'txt',
         include_formatting: bool = False,
         flush_after: int = 10_000,
     ) -> None:
@@ -55,6 +56,7 @@ class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
         self.favor_precision = favor_precision
         self.favor_recall = favor_recall
         self.include_formatting = include_formatting
+        self.output_format = output_format
 
         # we reset caches every now and then to prevent memory leaks
         # see https://trafilatura.readthedocs.io/en/latest/usage-python.html#memory-use
