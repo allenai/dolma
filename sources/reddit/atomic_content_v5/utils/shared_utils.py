@@ -33,19 +33,13 @@ def build_base_parser():
         help="Input google storage directory to read the data files from."
     )
     parser.add_argument(
-        "--input_type",
-        required=True,
-        default="gcs",
-        help="The type of input to read from.",
-    )
-    parser.add_argument(
         "--output_dir",
         required=False,
         help="Google cloud storage output directory to write the dataset.",
     )
     parser.add_argument(
         "--num_shards",
-        default=750,  # 1000
+        default=750,
         type=positive_int,
         help="The number of shards in the dataset.",
     )
@@ -129,9 +123,6 @@ def read_content_from_source(content, p, args):
         content = content | (
             "Parse JSON" >> beam.Map(safe_load_json)
         )
-        # content = content | (
-        #     "Filter none content" >> beam.Filter(
-        #         lambda c: c is not None))
     return content
 
 

@@ -135,7 +135,7 @@ def run(argv=None, comments=None):
     examples = comments | (
         "Create examples" >> beam.FlatMap(
             partial(create_examples,
-                    args.min_length,
+                    min_length=args.min_length,
                     )))
 
     examples = examples | (

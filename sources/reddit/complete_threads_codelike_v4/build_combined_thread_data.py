@@ -231,9 +231,9 @@ def run(argv=None, comments=None, posts=None):
             (comment_id_to_comments, post_id_to_posts)
             | 'Join comments and submissions' >> beam.CoGroupByKey()
             | beam.FlatMap(partial(create_examples,
-              args.parent_depth,
-                    args.min_length,
-                    args.min_conversation_length
+                    parent_depth=args.parent_depth,
+                    min_length=args.min_length,
+                    min_conversation_length=args.min_conversation_length
                     ))
     )
 
