@@ -235,14 +235,17 @@ class InferBucketsValTracker(BaseBucketApi):
 
 class FixedBucketsValTracker(BaseBucketApi):
     def __init__(self, n: int = 2):
+        # we use n to determine the precision of the bins; for convenience we store it as a power of 10.
+        # 10**n will be the maximum number of bins for each power of 2.
+        # Too large numbers will cause numeric problems and can cause a lot of memory use.
         assert n >= 0
-        # we use n to determine the precision of the bins; for convenience we store it as a power of 10
+        assert n <= 100
         self.n = 10**n
         self._bins: Dict[Tuple[int, int], int] = {}
 
     def add(self, value: Union[int, float], count: int = 1):
         m, e = math.frexp(value)
-        k = int(m * self.n), e
+        k = math.floor(m * self.n), e
 
         if k not in self._bins:
             self._bins[k] = 0
@@ -255,12 +258,20 @@ class FixedBucketsValTracker(BaseBucketApi):
     def full(self) -> bool:
         return False
 
+    def get_bin_upper_bound(self, val: float) -> float:
+        """Return the upper bound of the bin containing val"""
+        m, e = math.frexp(val)
+        k = math.floor(m*self.n)+1 # Add one to obtain the next bin
+        return k/self.n * 2**e
+
     def summarize(self, n: int, density: bool = False) -> SummaryTuple:
         bins, counts = zip(*sorted((m / self.n * 2**e, c) for (m, e), c in self._bins.items()))
 
         if len(self) <= n:
             # if there are fewer than n buckets, return the buckets as is
-            return SummaryTuple(counts=[int(c) for c in counts], bins=[float(b) for b in bins])
+            # To be consistent we also add the limit of the last bin, so the bins denote bin edges
+            upper_bin = self.get_bin_upper_bound(max(float(b) for b in bins))
+            return SummaryTuple(counts=[int(c) for c in counts], bins=[float(b) for b in bins]+[upper_bin])
 
         # computing the weighted histograms
         new_counts, new_values = np.histogram(a=bins, bins=n, weights=counts, density=density)
