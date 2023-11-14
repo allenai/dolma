@@ -48,13 +48,17 @@ class MemMapParallelWriter(BaseParallelProcessor):
             raise RuntimeError("grouped_source_prefixes should be a list of paths")
         source_paths = global_source_paths[int(source_path)]
 
+        tokenizer_name_or_path = kwargs.pop("tokenizer_name_or_path", None)
+        if tokenizer_name_or_path is None:
+            raise RuntimeError("tokenizer_name_or_path not provided")
+
         cpu_count = multiprocessing.cpu_count()
 
         documents_cnt = tokens_cnt = 0
         update_interval = 1
         mm_cnt = 0
 
-        tokenizer = Tokenizer.from_pretrained("allenai/eleuther-ai-gpt-neox-20b-pii-special")
+        tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path)
         tokenizer_ring = []
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
@@ -218,4 +222,5 @@ def tokenize_in_parallel(
         ring_size=ring_size,
         max_size=max_size,
         dtype=dtype,
+        tokenizer_name_or_path=tokenizer_name_or_path,
     )
