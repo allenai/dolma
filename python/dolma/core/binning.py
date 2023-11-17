@@ -261,8 +261,8 @@ class FixedBucketsValTracker(BaseBucketApi):
     def get_bin_upper_bound(self, val: float) -> float:
         """Return the upper bound of the bin containing val"""
         m, e = math.frexp(val)
-        k = math.floor(m*self.n)+1 # Add one to obtain the next bin
-        return k/self.n * 2**e
+        k = math.floor(m * self.n) + 1  # Add one to obtain the next bin
+        return k / self.n * 2**e
 
     def summarize(self, n: int, density: bool = False) -> SummaryTuple:
         bins, counts = zip(*sorted((m / self.n * 2**e, c) for (m, e), c in self._bins.items()))
@@ -271,7 +271,7 @@ class FixedBucketsValTracker(BaseBucketApi):
             # if there are fewer than n buckets, return the buckets as is
             # To be consistent we also add the limit of the last bin, so the bins denote bin edges
             upper_bin = self.get_bin_upper_bound(max(float(b) for b in bins))
-            return SummaryTuple(counts=[int(c) for c in counts], bins=[float(b) for b in bins]+[upper_bin])
+            return SummaryTuple(counts=[int(c) for c in counts], bins=[float(b) for b in bins] + [upper_bin])
 
         # computing the weighted histograms
         new_counts, new_values = np.histogram(a=bins, bins=n, weights=counts, density=density)
