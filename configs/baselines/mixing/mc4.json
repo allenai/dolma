@@ -1,0 +1,27 @@
+{
+    "streams": [
+      {
+        "name": "mc4",
+        "documents": [
+          "s3://ai2-llm/pretraining-data/sources/mc4/en_wimbd_splits/documents/train/*.gz"
+        ],
+        "output": {
+          "path": "s3://ai2-llm/pretraining-data/sources/mc4/en_wimbd_splits_decon_ppl_suite_v3/",
+          "max_size_in_bytes": 1000000000
+        },
+        "attributes": [
+          "perplexity_suite_v3_option2"
+        ],
+        "filter": {
+          "exclude": [
+            "$@.attributes[?(@.bff_duplicate_paragraph_spans_decontamination && @.bff_duplicate_paragraph_spans_decontamination[0] && @.bff_duplicate_paragraph_spans_decontamination[0][2] >= 1.0)]"
+          ]
+        }
+      }
+    ],
+    "work_dir": {
+        "input" : "/mnt/tank/dolma_tmp/mc4_input_mix",
+        "output" : "/mnt/tank/dolma_tmp/mc4_output_mix"
+    },
+    "processes": 1
+  }
