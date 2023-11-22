@@ -103,7 +103,8 @@ jobs:
       - name: Install dolma wheels
         run: |
           source .venv/bin/activate
-          maturin develop --extras=all
+          maturin build --release --find-interpreter --out dist
+          pip install --with-extras=all dist/*.whl
 
       - name: ${{ matrix.task.name }}
         run: |
