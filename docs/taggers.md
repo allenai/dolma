@@ -24,6 +24,7 @@ The following parameters are supported either via CLI (e.g. `dolma tag --paramet
 |`destination`|No| One or more paths for output attribute files. Each accepts a single wildcard `*` character. Can be local, or an S3-compatible cloud path. If not provided, the destination will be derived from the document path. |
 |`experiment`|No| Used to name output attribute files. One output file will be created for each input document file, where the key is obtained by substituting `documents` with `attributes/<experiment>`. If not provided, we will use `attributes/<tagger_name>`. |
 |`taggers`|Yes| One or more taggers to run. |
+|`tagger_modules`|No| List of one or more Python modules to load taggers from. See section [*"Using Custom Taggers"*](#using-custom-taggers) for more details. |
 |`processes`|No| Number of processes to use for tagging. One process is used by default. |
 |`ignore_existing`|No| If true, ignore existing outputs and re-run the taggers. |
 |`dryrun`|No| If true, only print the configuration and exit without running the taggers. |
@@ -80,10 +81,9 @@ All taggers inherit from the `BaseTagger` class defined in [`core/taggers.py`](h
 import random
 
 from dolma.core.data_types import DocResult, Document, Span
-from dolma.core.registry import TaggerRegistry
-from dolma.core.taggers import BaseTagger
+from dolma import add_tagger, BaseTagger
 
-@TaggerRegistry.add("random_number_v1")
+@add_tagger("new_random_number")
 class RandomNumberTagger(BaseTagger):
     def predict(self, doc: Document) -> DocResult:
         # first, we generate a random number
@@ -102,4 +102,13 @@ class RandomNumberTagger(BaseTagger):
         return DocResult(doc=doc, spans=[span])
 ```
 
-Name for each tagger is specified using the `@TaggerRegistry.add` decorator. The name must be unique.
+Name for each tagger is specified using the `add_tagger` decorator. The name must be unique.
+
+## Using Custom Taggers
+
+Taggers can be added either as part of the Dolma package, or they can be imported at runtime by providing the `tagger_modules` parameter.
+
+For example, let's assume `new_random_number` is saved in a file called `my_taggers.py` in python module `my_module`. Then, we can run the tagger using one of the following commands:
+
+- `dolma tag --taggers new_random_number --tagger_modules path/to/my_module/my_taggers.py ...`
+- `PYTHONPATH="path/to/my_module" dolma tag --taggers new_random_number --tagger_modules my_taggers`
