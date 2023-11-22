@@ -21,8 +21,10 @@ class InputSpec(Struct):
     text: str
     source: str = ""
     version: Optional[str] = None
-    # ignoring metadata for now; taggers run on text only
-    # metadata: Optional[Dict[str, Any]] = None
+
+
+class InputSpecWithMetadata(InputSpec):
+    metadata: Optional[Dict[str, Any]] = None
 
 
 class OutputSpec(Struct):
@@ -57,6 +59,56 @@ class Document:
     def __str__(self) -> str:
         attributes_string = ",".join([f"{k}:{repr(v)}" for k, v in self.to_json()])
         return f"{self.__class__.__name__}({attributes_string})"
+
+
+class DocumentWithMetadata(Document):
+    __slots__ = ("metadata",)
+
+    def __init__(self, *args, metadata: Optional[Dict[str, Any]] = None, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.metadata = metadata or {}
+
+    @classmethod
+    def from_spec(cls, spec: InputSpecWithMetadata) -> "DocumentWithMetadata":
+        return DocumentWithMetadata(
+            source=spec.source,
+            version=spec.version,
+            id=spec.id,
+            text=spec.text,
+            metadata=spec.metadata,
+        )
+
+    def to_spec(self) -> InputSpecWithMetadata:
+        return InputSpecWithMetadata(
+            source=self.source,
+            version=self.version,
+            id=self.id,
+            text=self.text,
+            metadata=self.metadata,
+        )
+
+    @classmethod
+    def from_json(cls, d: Dict) -> "DocumentWithMetadata":
+        return DocumentWithMetadata(
+            source=d["source"],
+            version=d["version"],
+            id=d["id"],
+            text=d["text"],
+            metadata=d["metadata"],
+        )
+
+    def to_json(self) -> Dict:
+        return {
+            "source": self.source,
+            "version": self.version,
+            "id": self.id,
+            "text": self.text,
+            "metadata": self.metadata,
+        }
+
+    def __str__(self) -> str:
+        repr_ = super().__str__()
+        return repr_.rstrip(")") + f",metadata={'...' if self.metadata else 'none'})"
 
 
 class Span:

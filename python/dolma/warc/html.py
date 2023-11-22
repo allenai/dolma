@@ -39,7 +39,7 @@ class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
         no_fallback: bool = False,
         favor_precision: bool = False,
         favor_recall: bool = False,
-        output_format: str = 'txt',
+        output_format: str = "txt",
         include_formatting: bool = False,
         flush_after: int = 10_000,
     ) -> None:

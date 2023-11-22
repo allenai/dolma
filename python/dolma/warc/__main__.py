@@ -7,12 +7,14 @@ from ..core.paths import glob_path
 from ..core.runtime import _make_paths_from_prefix
 from . import WarcProcessor
 
-
 # CommonCrawl format
 # s3://commoncrawl/crawl-data/CC-MAIN-2023-40/segments/*/warc/*.warc.gz
 
 # Example
-# AWS_PROFILE=llm python -m dolma.warc --src 's3://ai2-russella/crawl-data/CC-MAIN-2019-18/segments/*/warc/*.warc.gz' --dst s3://ai2-llm/pretraining-data/sources/licensed-cc/v0/documents/CC-MAIN-2019-18
+# AWS_PROFILE=llm python -m dolma.warc --src
+# 's3://ai2-russella/crawl-data/CC-MAIN-2019-18/segments/*/warc/*.warc.gz'
+# --dst
+# s3://ai2-llm/pretraining-data/sources/licensed-cc/v0/documents/CC-MAIN-2019-18
 
 
 def get_args():

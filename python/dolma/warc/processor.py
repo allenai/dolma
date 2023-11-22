@@ -9,8 +9,8 @@ import smart_open
 from charset_normalizer import detect
 from necessary import necessary
 
-from ..core.parallel import BaseParallelProcessor, QueueType
 from ..core.loggers import get_logger
+from ..core.parallel import BaseParallelProcessor, QueueType
 from .html import HTML_EXTRACTORS, BaseHtmlExtractor
 from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
 from .types import WarcDocument, WarcDocumentMetadata
@@ -171,11 +171,7 @@ class WarcProcessor(BaseParallelProcessor):
                         text = html_extractor(content=str_content)
                     except Exception as exc:
                         logger.warning(
-                            "Failed to extract text from %s: %s",
-                            target_uri,
-                            exc,
-                            exc_info=True,
-                            stack_info=True
+                            "Failed to extract text from %s: %s", target_uri, exc, exc_info=True, stack_info=True
                         )
                         text = None
 

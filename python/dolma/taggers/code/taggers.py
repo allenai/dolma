@@ -7,76 +7,39 @@ Code-related taggers.
 """
 import logging
 import re
-from functools import lru_cache
-from typing import Generator, List
+from typing import List
 
 import numpy as np
 from necessary import necessary
 
-from ..core.data_types import DocResult, Document, Span
-from ..core.registry import TaggerRegistry
-from ..core.taggers import BaseTagger
+from ...core.data_types import DocResult, Document, DocumentWithMetadata, Span
+from ...core.registry import TaggerRegistry
+from ...core.taggers import BaseTagger, BaseTaggerWithMetadata
 
-with necessary(["detect-secrets", "beautifulsoup4", "regex"]) as CODE_DEPENDENCIES_AVAILABLE:
+with necessary(
+    ["detect_secrets", "beautifulsoup4", "regex", "pygments"], soft=True
+) as CODE_DEPENDENCIES_AVAILABLE:
     if CODE_DEPENDENCIES_AVAILABLE:
-        import regex
-        from bs4 import BeautifulSoup
-        from detect_secrets.core.plugins import (
-            get_plugins,  # pyright: ignore # pylint: disable=no-name-in-module
-        )
-        from detect_secrets.core.potential_secret import PotentialSecret
-        from detect_secrets.core.scan import _process_line_based_plugins
-        from detect_secrets.core.secrets_collection import SecretsCollection
-        from detect_secrets.settings import default_settings
+        from .utils import get_secrets, filter_html, get_whitespace_regex
+        from .starcoder import get_nl_ratio
 
+from .utils import get_ext_to_lang_mapping
 
 logger = logging.getLogger(__name__)
 
 
-@lru_cache(maxsize=1)
-def check_code_dependencies():
+def check_code_dependencies() -> None:
     """Check if code dependencies are available."""
-
     if not CODE_DEPENDENCIES_AVAILABLE:
-        raise ModuleNotFoundError("Code dependencies not available; please run `pip install dolma[code]`")
-
-
-def scan_code(code: str) -> Generator["PotentialSecret", None, None]:
-    check_code_dependencies()
-
-    if not get_plugins():
-        logger.error("No plugins to scan with!")
-        return
-
-    has_secret = False
-    for lines in [code.splitlines()]:
-        for secret in _process_line_based_plugins(
-            lines=list(enumerate(lines, start=1)),
-            filename="code_str.yml",
-        ):
-            has_secret = True
-            yield secret
-
-        if has_secret:
-            break
-
-
-class SecretsCollectionForStringInput(SecretsCollection):
-    def scan_str(self, code_str: str):
-        for secret in scan_code(code_str):
-            self["code_str.yml"].add(secret)
-
-
-def get_secrets(code: str):
-    secrets = SecretsCollectionForStringInput()
-    with default_settings():
-        secrets.scan_str(code)
-
-    return secrets
+        raise RuntimeError("Code dependencies are not available; please run `pip install dolma[code]`")
 
 
 @TaggerRegistry.add("code_secrets_v1")
 class CodeSecretsTagger(BaseTagger):
+    def __init__(self) -> None:
+        check_code_dependencies()
+        super().__init__()
+
     @classmethod
     def _extract_code_secrets(cls, text: str) -> List[Span]:
         secrets_spans: List[Span] = []
@@ -88,8 +51,8 @@ class CodeSecretsTagger(BaseTagger):
             span = secret.secret_value
             span_line = text_lines[line_number]
             line_start = text.find(span_line)
-            start = line_start + span_line.find(span)
-            end = start + len(span)
+            start = line_start + span_line.find(span or "")
+            end = start + len(span or "")
             assert text[start:end] == span
             secret_type = secret.type.replace(" ", "_")
             secrets_spans.append(Span(start=start, end=end, type=f"SECRET_{secret_type}"))  # , span])
@@ -120,6 +83,7 @@ class CodeCopyrightTagger(BaseTagger):
     """
 
     def __init__(self):
+        check_code_dependencies()
         self.cpat = re.compile("copyright", re.IGNORECASE)
         self.pat = re.compile("/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*/")
 
@@ -141,13 +105,13 @@ class CodeCopyrightTagger(BaseTagger):
         # Greedy replace any file that begins with comment block, most
         # are copyright headers
         end = 0
-        for k in range(len(lines)):
-            if lines[k].startswith("//") or lines[k].startswith("#") or lines[k].startswith("--") or not lines[k]:
+        for line in lines:
+            if line.startswith("//") or line.startswith("#") or line.startswith("--") or not line:
                 skip = skip + 1
-                if not lines[k]:
+                if not line:
                     end += 1
                 else:
-                    end += len(lines[k])
+                    end += len(line)
             else:
                 break
 
@@ -183,10 +147,13 @@ class CodeRedPajamaTaggers(BaseTagger):
     Based on RedPajama code filtering.
     """
 
-    WHITESPACE_REGEX = regex.compile(r"\w+|[^\w\s]+")
+    def __init__(self):
+        check_code_dependencies()
+        self.whitespace_regex = get_whitespace_regex()
+        super().__init__()
 
-    def _get_num_tokens(self, text: str):
-        return len(self.WHITESPACE_REGEX.split(text))
+    def _get_num_tokens(self, text: str) -> int:
+        return len(self.whitespace_regex.split(text))
 
     def predict(self, doc: Document) -> DocResult:
         """Main runner."""
@@ -198,14 +165,14 @@ class CodeRedPajamaTaggers(BaseTagger):
         line_lengths = list(map(len, doc.text.splitlines()))
 
         max_line_length = max(line_lengths, default=0.0)
-        avg_line_length = np.mean(line_lengths) if len(line_lengths) > 0 else 0.0
+        avg_line_length = float(np.mean(line_lengths) if len(line_lengths) > 0 else 0.0)
 
         alnum_count = sum(map(lambda char: 1 if char.isalnum() else 0, doc.text))
         alnum_prop = (alnum_count / doc_length) if doc_length > 0 else 0.0
 
         num_tokens = self._get_num_tokens(doc.text)
         num_alpha = len([c for c in doc.text if c.isalpha()])
-        alpha_token_prop = (num_alpha / num_tokens) if num_tokens > 0 else 0.0
+        alpha_token_prop = float((num_alpha / num_tokens) if num_tokens > 0 else 0.0)
 
         # document-level scores
         spans.append(Span(start=0, end=doc_length, type="max_line_length_doc", score=max_line_length))
@@ -216,39 +183,26 @@ class CodeRedPajamaTaggers(BaseTagger):
         return DocResult(doc=doc, spans=spans)
 
 
-def filter_html(html):
-    """Filter HTML files based on displayed text VS code ratio"""
-    try:
-        soup = BeautifulSoup(html, features="html.parser")
-    except (TypeError, UnboundLocalError):
-        return False
-
-    # kill all script and style elements
-    for script in soup(["script", "style"]):
-        script.extract()  # rip it out
-
-    # get text
-    text = soup.get_text()
-    ratio = len(text) / len(html)
-
-    return (ratio) * (len(text) > 100)
-
-
 @TaggerRegistry.add("code_starcoder_taggers_v1")
-class CodeStarCoderTaggers(BaseTagger):
+class CodeStarCoderTaggers(BaseTaggerWithMetadata):
     """
     Based on StarCoder filtering.
     """
 
-    def predict(self, doc: Document) -> DocResult:
+    def __init__(self) -> None:
+        check_code_dependencies()
+        self.ext_to_lang_mapping = get_ext_to_lang_mapping()
+        super().__init__()
+
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
         spans: List[Span] = []
         doc_length = len(doc.text)
 
         has_xml_template = 1.0 if "<?xml version=" in doc.text[:100] else 0.0
-        num_github_stars = doc.metadata["max_stars_count"] or 0.0
+        num_github_stars = doc.metadata.get("max_stars_count", 0) or 0
 
         try:
-            lang = ext_to_lang_mapping[doc.metadata["ext"]]
+            lang = self.ext_to_lang_mapping[doc.metadata.get("ext", "-no-lang")]
             nl_ratio = get_nl_ratio(doc.text, lang)
 
             if lang == "html":
@@ -256,13 +210,13 @@ class CodeStarCoderTaggers(BaseTagger):
             else:
                 # Not relevant for non-html code
                 code_to_text_ratio = 1.0
-        except BaseException:
+        except:  # pylint: disable=bare-except   # noqa: E722
             nl_ratio = -1.0
             code_to_text_ratio = -1.0
 
         # document-level scores
         spans.append(Span(start=0, end=doc_length, type="has_xml_template_doc", score=has_xml_template))
-        spans.append(Span(start=0, end=doc_length, type="num_github_stars_doc", score=num_github_stars))
+        spans.append(Span(start=0, end=doc_length, type="num_github_stars_doc", score=float(num_github_stars)))
         spans.append(Span(start=0, end=doc_length, type="nl_ratio_doc", score=nl_ratio))
         spans.append(Span(start=0, end=doc_length, type="code_to_text_ratio_html_doc", score=code_to_text_ratio))
 
@@ -270,20 +224,25 @@ class CodeStarCoderTaggers(BaseTagger):
 
 
 @TaggerRegistry.add("code_starcoder_taggers_v2")
-class CodeStarCoderTaggers2(BaseTagger):
+class CodeStarCoderTaggers2(BaseTaggerWithMetadata):
     """
     Based on StarCoder filtering.
     """
 
-    def predict(self, doc: Document) -> DocResult:
+    def __init__(self) -> None:
+        check_code_dependencies()
+        self.ext_to_lang_mapping = get_ext_to_lang_mapping()
+        super().__init__()
+
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
         spans: List[Span] = []
         doc_length = len(doc.text)
 
         has_xml_template = 1.0 if "<?xml version=" in doc.text[:100] else 0.0
-        num_github_stars = doc.metadata["max_stars_count"] or 0.0
+        num_github_stars = doc.metadata.get("max_stars_count", 0) or 0
 
         try:
-            lang = ext_to_lang_mapping[doc.metadata["ext"]]
+            lang = self.ext_to_lang_mapping[doc.metadata.get("ext", "-no-lang")]
         except KeyError:
             lang = "-no-lang"
 
@@ -295,14 +254,14 @@ class CodeStarCoderTaggers2(BaseTagger):
         if lang == "html":
             try:
                 code_to_text_ratio = filter_html(doc.text)
-            except BaseException:
+            except:  # pylint: disable=bare-except   # noqa: E722
                 code_to_text_ratio = -1.0
         else:
             code_to_text_ratio = 1.0
 
         # document-level scores
         spans.append(Span(start=0, end=doc_length, type="has_xml_template_doc", score=has_xml_template))
-        spans.append(Span(start=0, end=doc_length, type="num_github_stars_doc", score=num_github_stars))
+        spans.append(Span(start=0, end=doc_length, type="num_github_stars_doc", score=float(num_github_stars)))
         spans.append(Span(start=0, end=doc_length, type="code_to_comment_ratio_doc", score=code_to_comment_ratio))
         spans.append(Span(start=0, end=doc_length, type="code_to_text_ratio_html_doc", score=code_to_text_ratio))
 
