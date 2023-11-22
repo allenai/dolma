@@ -64,3 +64,6 @@ target/
 # ignoring test output
 /tests/work/
 /python/dolma/core/warc
+
+# ignore vscode directory
+.vscode
