@@ -18,7 +18,14 @@ from typing import (
 import msgspec
 import smart_open
 
-from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
+from dolma.core.taggers import BaseTaggerWithMetadata
+
+from .data_types import (
+    InputSpec,
+    InputSpecWithMetadata,
+    OutputSpec,
+    TaggerOutputDictType,
+)
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
 from .paths import delete_dir, join_path, make_relative, mkdir_p, split_glob, split_path
@@ -257,7 +264,12 @@ class TaggerProcessor(BaseParallelProcessor):
         docs_cnt = 0
 
         # creating dedicated decoder speeds up the process
-        decoder = msgspec.json.Decoder(InputSpec)
+        # if any of the taggers require metadata, we use a decoder that can handle it
+        # otherwise, we use a decoder that does not parse metadata, which is faster
+        if any(isinstance(tagger, BaseTaggerWithMetadata) for tagger in taggers.values()):
+            decoder = msgspec.json.Decoder(InputSpecWithMetadata)
+        else:
+            decoder = msgspec.json.Decoder(InputSpec)
 
         with ExitStack() as stack:
             in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))

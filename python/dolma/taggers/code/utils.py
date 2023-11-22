@@ -12,12 +12,11 @@ from typing import Dict, Generator
 
 import regex
 import smart_open
-from bs4 import BeautifulSoup   # pylint: disable=import-error
-from detect_secrets.settings import get_plugins
+from bs4 import BeautifulSoup  # pylint: disable=import-error
 from detect_secrets.core.potential_secret import PotentialSecret
 from detect_secrets.core.scan import _process_line_based_plugins
 from detect_secrets.core.secrets_collection import SecretsCollection
-from detect_secrets.settings import default_settings
+from detect_secrets.settings import default_settings, get_plugins
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +76,6 @@ def get_whitespace_regex() -> regex.Pattern:
 
 
 def get_ext_to_lang_mapping() -> Dict[str, str]:
-    path = Path(__file__).parent / "../../dolma/data/ext_to_lang_mapping.json"
+    path = Path(__file__).parent / "../../data/ext_to_lang_mapping.json"
     with smart_open.open(path, "r") as f:
         return json.load(f)

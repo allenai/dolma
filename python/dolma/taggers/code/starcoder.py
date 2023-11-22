@@ -13,7 +13,6 @@ import warnings
 from itertools import groupby
 from os.path import basename, splitext
 
-
 import pygments
 from pygments.lexers import get_lexer_by_name
 from pygments.token import Comment

@@ -16,9 +16,7 @@ from ...core.data_types import DocResult, Document, DocumentWithMetadata, Span
 from ...core.registry import TaggerRegistry
 from ...core.taggers import BaseTagger, BaseTaggerWithMetadata
 
-with necessary(
-    ["detect_secrets", "beautifulsoup4", "regex", "pygments"], soft=True
-) as CODE_DEPENDENCIES_AVAILABLE:
+with necessary(["detect_secrets", "bs4", "regex", "pygments"], soft=True) as CODE_DEPENDENCIES_AVAILABLE:
     if CODE_DEPENDENCIES_AVAILABLE:
         from .utils import get_secrets, filter_html, get_whitespace_regex
         from .starcoder import get_nl_ratio
