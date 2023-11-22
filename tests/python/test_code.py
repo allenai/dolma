@@ -8,6 +8,7 @@ Unit tests for code taggers.
 
 import re
 import unittest
+
 from bs4 import BeautifulSoup
 
 from dolma.core.data_types import Document, DocumentWithMetadata
@@ -17,7 +18,6 @@ from dolma.taggers.code import (
     CodeSecretsTagger,
     CodeStarCoderTaggers2,
 )
-
 
 DOC_WITH_SECRETS_AND_COPYRIGHT = """
 /* copyright: Test 2023 **/
@@ -186,7 +186,8 @@ class TestStarCoderTaggers(unittest.TestCase):
         result = self.tagger.predict(self.python_doc)
 
         comment_lines = [
-            lns.split('#')[1].strip() for ln in self.python_doc.text.split('\n')
+            lns.split("#")[1].strip()
+            for ln in self.python_doc.text.split("\n")
             if (lns := ln.strip()).startswith("#")
         ]
 
