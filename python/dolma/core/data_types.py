@@ -50,14 +50,14 @@ class Document:
         return InputSpec(source=self.source, version=self.version, id=self.id, text=self.text)
 
     @classmethod
-    def from_json(cls, d: Dict) -> "Document":
+    def from_json(cls, d: Dict[str, Any]) -> "Document":
         return Document(source=d["source"], version=d["version"], id=d["id"], text=d["text"])
 
-    def to_json(self) -> Dict:
+    def to_json(self) -> Dict[str, Any]:
         return {"source": self.source, "version": self.version, "id": self.id, "text": self.text}
 
     def __str__(self) -> str:
-        attributes_string = ",".join([f"{k}:{repr(v)}" for k, v in self.to_json()])
+        attributes_string = ",".join([f"{k}:{repr(v)}" for k, v in self.to_json().items()])
         return f"{self.__class__.__name__}({attributes_string})"
 
 

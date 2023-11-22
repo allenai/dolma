@@ -39,7 +39,7 @@ test-rust:
 	rm -rf tests/work/*
 
 develop:
-	maturin develop --extras=dev
+	maturin develop --extras=all
 
 style:
 	rustfmt --edition 2021 src/*.rs
