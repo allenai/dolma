@@ -18,10 +18,9 @@ from ...core.taggers import BaseTagger, BaseTaggerWithMetadata
 
 with necessary(["detect_secrets", "bs4", "regex", "pygments"], soft=True) as CODE_DEPENDENCIES_AVAILABLE:
     if CODE_DEPENDENCIES_AVAILABLE:
-        from .utils import get_secrets, filter_html, get_whitespace_regex
+        from .utils import get_secrets, filter_html, get_whitespace_regex, get_ext_to_lang_mapping
         from .starcoder import get_nl_ratio
 
-from .utils import get_ext_to_lang_mapping
 
 logger = logging.getLogger(__name__)
 
