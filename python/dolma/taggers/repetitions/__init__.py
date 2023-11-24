@@ -1,4 +1,4 @@
-from .taggers import RepetitionsTagger, ParagraphRepetitionsTagger
+from .taggers import ParagraphRepetitionsTagger, RepetitionsTagger
 
 __all__ = [
     "RepetitionsTagger",
