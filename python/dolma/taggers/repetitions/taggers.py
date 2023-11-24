@@ -9,10 +9,10 @@ from typing import Generator
 
 import numpy as np
 
-from ..core.data_types import DocResult, Document, Span
-from ..core.registry import TaggerRegistry
-from ..core.taggers import BaseTagger
-from ..core.utils import split_paragraphs
+from ...core.data_types import DocResult, Document, Span
+from ...core.registry import TaggerRegistry
+from ...core.taggers import BaseTagger
+from ...core.utils import split_paragraphs
 
 
 @TaggerRegistry.add("repetitions_v1")
