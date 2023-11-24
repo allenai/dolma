@@ -1,6 +1,7 @@
-from .taggers import ParagraphRepetitionsTagger, RepetitionsTagger
+from .repetitions_taggers import (
+    ParagraphRepetitionsTagger,
+    RepetitionsTagger,
+    TokenizerRepetitionsTagger,
+)
 
-__all__ = [
-    "RepetitionsTagger",
-    "ParagraphRepetitionsTagger",
-]
+__all__ = ["RepetitionsTagger", "ParagraphRepetitionsTagger", "TokenizerRepetitionsTagger"]

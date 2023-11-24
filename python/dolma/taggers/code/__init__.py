@@ -1,4 +1,4 @@
-from .taggers import (
+from .code_taggers import (
     CodeCopyrightTagger,
     CodeRedPajamaTaggers,
     CodeSecretsTagger,

@@ -259,9 +259,11 @@ class TaggerProcessor(BaseParallelProcessor):
         # too full
         update_interval = 1
 
-        # running document count; gets reset every time we update the progress
-        # bar
+        # running document count; gets reset every time we update the progress bar
         docs_cnt = 0
+
+        # total number of documents processed
+        total_docs_cnt = 0
 
         # creating dedicated decoder speeds up the process
         # if any of the taggers require metadata, we use a decoder that can handle it
@@ -291,8 +293,9 @@ class TaggerProcessor(BaseParallelProcessor):
 
                     # increment the number of documents processed so far
                     docs_cnt += 1
+                    total_docs_cnt += 1
 
-                    if steps is not None and docs_cnt >= steps:
+                    if steps is not None and total_docs_cnt >= steps:
                         # if we have reached the maximum number of steps, we break
                         break
 

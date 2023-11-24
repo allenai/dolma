@@ -1,4 +1,4 @@
-from typing import Generator, List, NamedTuple, Tuple
+from typing import Generator, List, NamedTuple
 
 import numpy as np
 
@@ -29,6 +29,8 @@ def group_consecutive_values(arr: np.ndarray, stepsize: int = 1) -> List[np.ndar
 
 
 class RepetitionTuple(NamedTuple):
+    """Tuple to store information about a periodic sequence."""
+
     start: int
     end: int
     period: int
@@ -36,7 +38,7 @@ class RepetitionTuple(NamedTuple):
 
 
 def find_periodic_sequences(
-    arr: np.ndarray, max_period: int, min_period: int = 1
+    arr: np.ndarray, max_period: int, min_period: int = 1, mask_value: int = -1
 ) -> Generator[RepetitionTuple, None, None]:
     """Function to find periodic sequences in an array.
 
@@ -52,7 +54,16 @@ def find_periodic_sequences(
     end at the end of each row), we check the end of the previous row and the
     start of the next row to determine the actual start and end positions of the
     sequence.
+
+    Args:
+        arr (np.ndarray): The array to search for periodic sequences.
+        max_period (int): The maximum period to check for.
+        min_period (int, optional): The minimum period to check for. Defaults to 1.
+        mask_value (int, optional): The value to use to pad the array. Defaults to -1.
     """
+    # make sure the mask_value is not in the array
+    if (arr == mask_value).sum() > 0:
+        raise ValueError("`mask_value` is in the array")
 
     # no since we can only detect sequences that repeat at least 3 times,
     # there is no point in checking for periods greater than 1/3 of the length
@@ -60,7 +71,7 @@ def find_periodic_sequences(
 
     for period in range(min_period, max_period + 1):
         # pad the array so that it can be reshaped into a matrix matching the period
-        padded_arr = np.pad(arr, (0, period - (len(arr) % period)), constant_values=-1)
+        padded_arr = np.pad(arr, (0, period - (len(arr) % period)), constant_values=mask_value)
         shaped_arr = padded_arr.reshape(-1, period)
 
         # find rows that are equal to the previous  row; these are the possibly-periodic sequences
