@@ -179,6 +179,19 @@ class Span:
         cls_name = self.__class__.__name__
         return f"{cls_name}(start={self.start},end={self.end},type={repr(self.type)},score={self.score:.5f})"
 
+    def __repr__(self) -> str:
+        return str(self)
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, self.__class__):
+            return False
+        return (
+            self.start == other.start
+            and self.end == other.end
+            and self.type == other.type
+            and self.score == other.score
+        )
+
 
 class DocResult:
     __slots__ = "doc", "spans"
