@@ -29,7 +29,7 @@ eval/downstream/rte_len_norm: RTE
 eval/v3-small-ice-validation/Perplexity: ICE
 eval/v3-small-c4_en-validation/Perplexity: C4
 eval/v3-small-dolma_wiki-validation/Perplexity: Dolma (Wiki)
-eval/v3-small-m2d2_s2orc-validation/Perplexity: m2d2_s2orc
+eval/v3-small-m2d2_s2orc-validation/Perplexity: M2D2 (S2ORC)
 eval/v3-small-dolma_books-validation/Perplexity: Dolma (Books)
 eval/v3-small-dolma_pes2o-validation/Perplexity: Dolma (peS2o v2)
 eval/v3-small-dolma_stack-validation/Perplexity: Dolma (Stack)

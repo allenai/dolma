@@ -48,6 +48,29 @@ og_perplexity_suite=(
 )
 OG_PERPLEXITY_SUITE="$(printf "%s " "${og_perplexity_suite[@]}" | sed 's/ $//')"
 
+v2_v3_perplexity_suite=(
+    'eval/v3-small-ice-validation/Perplexity'
+    'eval/v3-small-dolma_wiki-validation/Perplexity'
+    'eval/v3-small-dolma_books-validation/Perplexity'
+    'eval/v3-small-dolma_pes2o-validation/Perplexity'
+    'eval/v3-small-dolma_stack-validation/Perplexity'
+    'eval/v3-small-dolma_reddit-validation/Perplexity'
+    'eval/v3-small-dolma_common-crawl-validation/Perplexity'
+    'eval/v2-small-gab-validation/Perplexity'
+    'eval/v2-small-ptb-validation/Perplexity'
+    'eval/v2-small-pile-validation/Perplexity'
+    'eval/v2-small-4chan-validation/Perplexity'
+    'eval/v2-small-c4_en-validation/Perplexity'
+    'eval/v2-small-mc4_en-validation/Perplexity'
+    'eval/v2-small-m2d2_wiki-validation/Perplexity'
+    'eval/v2-small-m2d2_s2orc-validation/Perplexity'
+    'eval/v2-small-manosphere-validation/Perplexity'
+    'eval/v2-small-twitterAEE-validation/Perplexity'
+    'eval/v2-small-wikitext_103-validation/Perplexity'
+    'eval/v2-small-c4_100_domains-validation/Perplexity'
+)
+V2_V3_PERPLEXITY_SUITE="$(printf "%s " "${v2_v3_perplexity_suite[@]}" | sed 's/ $//')"
+
 runs_up_to_150b=(
     'olmo-small-rpj-*'
     'olmo-small-pile-fixed-*'
@@ -56,53 +79,122 @@ runs_up_to_150b=(
 )
 RUNS_UP_TO_150B="$(printf "%s " "${runs_up_to_150b[@]}" | sed 's/ $//')"
 
+# base directory for all plots and points to sample
 SAMPLES=1000
+BASE_DIR="${1}"
 
-set -ex
+# Figure 1: comparison of training curves between diff datasets.
+FIGURE_1_DIR="${BASE_DIR}/150b_runs"
 
-python ${SCRIPT_DIR}/wandb_to_plot.py \
-    -t ai2-llm \
-    -p olmo-small \
-    -n $RUNS_UP_TO_150B \
-    -y $TRAIN_METRICS \
-    -s $SAMPLES \
-    -d "${1}/150B_runs/train" \
-    --max-x-axis '150e9' \
-    --max-y-axis 100 \
-    --y-log-scale \
-    -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+if [ ! -d "${FIGURE_1_DIR}/train" ]; then
+    # only plot if the directory doesn't exist
+    set -ex
+
+    python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -t ai2-llm \
+        -p olmo-small \
+        -n $RUNS_UP_TO_150B \
+        -y $TRAIN_METRICS \
+        -s $SAMPLES \
+        -d ${FIGURE_1_DIR}/train \
+        --max-x-axis '150e9' \
+        --max-y-axis 100 \
+        --y-log-scale \
+        -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+
+    set +ex
+fi
+
+if [ ! -d "${FIGURE_1_DIR}/downstream" ]; then
+    # only plot if the directory doesn't exist
+    set -ex
+
+    python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -t ai2-llm \
+        -p olmo-small \
+        -n $RUNS_UP_TO_150B \
+        -y $EVAL_METRICS \
+        -s $SAMPLES \
+        -d "${FIGURE_1_DIR}/downstream" \
+        --max-x-axis '150e9' \
+        -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+
+    set +ex
+
+fi
+
+if [ ! -d "${FIGURE_1_DIR}/ppl" ]; then
+    # only plot if the directory doesn't exist
+    set -ex
+
+    python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -t ai2-llm \
+        -p olmo-small \
+        -n $RUNS_UP_TO_150B \
+        -y $OG_PERPLEXITY_SUITE \
+        -s $SAMPLES \
+        -d "${FIGURE_1_DIR}/ppl" \
+        --max-x-axis '150e9' \
+        --max-y-axis 100 \
+        --y-log-scale \
+        -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+
+    set +ex
+fi
 
 
-python ${SCRIPT_DIR}/wandb_to_plot.py \
-    -t ai2-llm \
-    -p olmo-small \
-    -n $RUNS_UP_TO_150B \
-    -y $EVAL_METRICS \
-    -s $SAMPLES \
-    -d "${1}/150B_runs/downstream" \
-    --max-x-axis '150e9' \
-    -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+# Figure 2: long 1b run (up to 3T tokens if possible)
+FIGURE_2_DIR="${BASE_DIR}/long_1b_run"
 
+if [ ! -d "${FIGURE_2_DIR}/train" ]; then
+    # only plot if the directory doesn't exist
+    set -ex
 
-python ${SCRIPT_DIR}/wandb_to_plot.py \
-    -t ai2-llm \
-    -p olmo-small \
-    -n $RUNS_UP_TO_150B \
-    -y $OG_PERPLEXITY_SUITE \
-    -s $SAMPLES \
-    -d "${1}/150B_runs/ppl" \
-    --max-x-axis '150e9' \
-    --max-y-axis 100 \
-    --y-log-scale \
-    -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+    python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -t ai2-llm \
+        -p olmo-small \
+        -n 'olmo-small-3T-lower-lr-tie_*' \
+        -y $TRAIN_METRICS \
+        -s $SAMPLES \
+        -d ${FIGURE_2_DIR}/train \
+        --max-y-axis 100 \
+        --y-log-scale \
+        -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
 
+    set +ex
+fi
 
-# python ${SCRIPT_DIR}/wandb_to_plot.py \
-#     -t ai2-llm \
-#     -p olmo-small \
-#     -n 'olmo-small-3T-lower-lr-tie-*' \
-#     -y ${METRICS} ${OG_PERPLEXITY_SUITE} \
-#     -s ${SAMPLES} \
-#     -d "${1}/150B_runs" \
-#     --max-x-axis '150e9' \
-#     -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+if [ ! -d "${FIGURE_2_DIR}/downstream" ]; then
+    # only plot if the directory doesn't exist
+    set -ex
+
+    python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -t ai2-llm \
+        -p olmo-small \
+        -n 'olmo-small-3T-lower-lr-tie_*' \
+        -y $EVAL_METRICS \
+        -s $SAMPLES \
+        -d "${FIGURE_2_DIR}/downstream" \
+        -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+
+    set +ex
+
+fi
+
+if [ ! -d "${FIGURE_2_DIR}/ppl" ]; then
+    # only plot if the directory doesn't exist
+    set -ex
+
+    python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -t ai2-llm \
+        -p olmo-small \
+        -n 'olmo-small-3T-lower-lr-tie_*' \
+        -y $V2_V3_PERPLEXITY_SUITE \
+        -s $SAMPLES \
+        -d "${FIGURE_2_DIR}/ppl" \
+        --max-y-axis 100 \
+        --y-log-scale \
+        -v ${SCRIPT_DIR}/wandb_run_vocab.yaml
+
+    set +ex
+fi

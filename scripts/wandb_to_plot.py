@@ -5,7 +5,7 @@ from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from statistics import stdev
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from necessary import necessary
 
@@ -15,8 +15,9 @@ with necessary(
 ):
     import plotly.graph_objs as go
     import plotly.io as pio
-    import wandb
     import yaml
+
+    import wandb
 
     pio.kaleido.scope.mathjax = None
 
@@ -48,8 +49,8 @@ def match_run_name(name: str, run_names: List[str]) -> Optional[str]:
 
 
 def remove_outliers(
-    x: Iterable[float], y: Iterable[float], z: float = 10.0
-) -> Tuple[Iterable[float], Iterable[float]]:
+    x: Sequence[float], y: Sequence[float], z: float = 10.0
+) -> Tuple[Sequence[float], Sequence[float]]:
     if min(y) >= 0 and max(y) <= 1:
         # do not crop values that are in [0, 1]
         return x, y
@@ -126,9 +127,14 @@ def main():
                 x, y = zip(*[(x, y) for x, y in zip(x, y) if y <= opts.max_y_axis])
 
             if y[-1] < y[0]:
+                # decreasing y values, so we want the legend on the top right
                 top_right_legend = True
 
-            use_y_log = use_y_log or (max(y) / min(y) > 100)
+            # only use log scale if we have values that are not in [0, 1]
+            if max(y) > 1 or min(y) < 0:
+                min_y = min([y for y in y if y > 0] or [1e-3])  # avoid diving by zero
+                use_y_log = use_y_log or (max(y) / min_y > 100)
+
             figure_run_name = vocabulary.get(run_name, run_name)
             fig.add_trace(go.Scatter(name=figure_run_name, x=x, y=y))
 
