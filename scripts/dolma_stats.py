@@ -209,11 +209,7 @@ class BaseStatsProcessor(BaseParallelProcessor):
 
     @classmethod
     def increment_progressbar(
-        cls,
-        queue: "Queue[Union[Tuple[int, ...], None]]",
-        /,
-        files: int = 0,
-        documents: int = 0
+        cls, queue: "Queue[Union[Tuple[int, ...], None]]", /, files: int = 0, documents: int = 0
     ) -> Dict[str, int]:
         return super().increment_progressbar(queue, files=files, documents=documents)
 
@@ -237,7 +233,7 @@ class BaseStatsProcessor(BaseParallelProcessor):
     def _run_parallel_processor(cls, stats_root: str, num_workers: int, debug: bool, **process_single_kwargs: Any):
         with TemporaryDirectory() as tempdir:
             h = hashlib.md5()
-            for path in (cls.documents if isinstance(cls.documents, list) else [cls.documents]):
+            for path in cls.documents if isinstance(cls.documents, list) else [cls.documents]:
                 h.update(path.encode())
 
             metadata = os.path.join(tempdir, h.hexdigest())
@@ -419,7 +415,7 @@ class just_cc_dedup(BaseStatsProcessor):
 class cc_v1_c4_cleaned(BaseStatsProcessor):
     documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
     stats = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1_c4_cleaned/**/*.gz"
-    decontamination_key: str = 'decontamination'
+    decontamination_key: str = "decontamination"
 
     @classmethod
     def gopher_rules(cls, attrs: Dict[str, List[Tuple[int, int, float]]]) -> List[Tuple[int, int, float]]:
@@ -637,7 +633,7 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
 class v15_cc_c4_cleaned(cc_v1_c4_cleaned):
     documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
     stats = "s3://ai2-llm/stats/olmo-mix/v15/cc/v1_c4_cleaned/**/*.gz"
-    decontamination_key: str = 'perplexity_suite_v3_option2'
+    decontamination_key: str = "perplexity_suite_v3_option2"
 
 
 class C4InputSpec(InputSpec):
@@ -1038,11 +1034,9 @@ class decon_ppl_v3(BaseStatsProcessor):
         "s3://ai2-llm/pretraining-data/sources/wikipedia/v0/documents/lang=en/*.gz",
         "s3://ai2-llm/pretraining-data/sources/wikipedia/v0/documents/lang=simple/*.gz",
         "s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=en/*.gz",
-        "s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=simple/*.gz"
+        "s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=simple/*.gz",
     ]
     stats = "s3://ai2-llm/stats/olmo-mix/v1_5/decontamination_ppl_v3_option2"
-
-
 
 
 # # # BELOW HERE: AGGREGATION # # #

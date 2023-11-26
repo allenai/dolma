@@ -7,10 +7,10 @@ Find source document given `dolma tokens` metadata and offset.
 
 import argparse
 import json
-from typing import Any, Dict, List
-import pandas as pd
 from bisect import bisect
+from typing import Any, Dict, List
 
+import pandas as pd
 import smart_open
 import tqdm
 
@@ -18,7 +18,7 @@ import tqdm
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("-f", "--file", type=str, required=True)
-    ap.add_argument("-o", "--offsets", type=int, nargs='+', required=True)
+    ap.add_argument("-o", "--offsets", type=int, nargs="+", required=True)
     ap.add_argument("-d", "--destination", type=str, required=True)
     return ap.parse_args()
 
