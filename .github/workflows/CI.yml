@@ -42,16 +42,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v1
+        uses: actions/checkout@v3
 
-      - uses: actions/cache@v2
-        id: cache-venv  # name for referring later
+      - name: Cache Virtual Env
+        uses: actions/cache@v3
+        # name for referring later
+        id: cache-venv
         with:
-          path: ./.venv/  # what we cache: the virtualenv
+          # what we cache: the virtualenv
+          path: ./.venv/
           # The cache key depends on pyproject.toml and Cargo.toml
           key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-venv-
+          restore-keys: ${{ runner.os }}-venv-
 
       - name: Setup system libraries
         if: steps.cache-venv.outputs.cache-hit != 'true'
@@ -72,7 +74,7 @@ jobs:
         with:
           python-version: 3.8
           architecture: "x64"
-          sccache: true
+          cache: true
 
       - name: Create a new Python environment & install maturin
         if: steps.cache-venv.outputs.cache-hit != 'true'
@@ -123,6 +125,18 @@ jobs:
               pytest -vs --color=yes tests/python/
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Cache Virtual Env
+        uses: actions/cache@v3
+        # name for referring later
+        id: cache-venv
+        with:
+          # what we cache: the virtualenv
+          path: ./.venv/
+          # The cache key depends on pyproject.toml and Cargo.toml
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-venv-
       - name: ${{ matrix.task.name }}
         run: |
           source .venv/bin/activate
