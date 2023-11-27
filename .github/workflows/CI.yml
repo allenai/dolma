@@ -60,12 +60,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
 
-      - name: Install Rust
-        if: steps.cache-venv.outputs.cache-hit != 'true'
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt
+      - name: Install Rust toolchain
+        run: |
+          rustup update --no-self-update ${{ env.RUST_CHANNEL }}
+          rustup component add --toolchain ${{ env.RUST_CHANNEL }} rustfmt rust-src
+          rustup default ${{ env.RUST_CHANNEL }}
 
       - name: Install Python
         if: steps.cache-venv.outputs.cache-hit != 'true'
