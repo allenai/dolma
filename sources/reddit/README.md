@@ -35,7 +35,7 @@ A first experiment with atomic comments.
 
 Only one variation of this version was tried. 
 
-## atomic_content_v5                       
+## atomic_content_v5   (*included in Dolma v 1.5*)
 
 A refined version of atomic_content_v3, v5 uses different length and selection criteria for comments and submissions.
 
