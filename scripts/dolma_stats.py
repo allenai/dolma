@@ -818,27 +818,32 @@ class dolma_v15_lines(BaseStatsProcessor):
     ):
         attrs_path = source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v1/")
 
+        subset = source_path.split("/documents/")[1].split("/")[0].split('_')[0]
+
         attributes_decoder = msgspec.json.Decoder(OutputSpec)
-        max_reps_per_doc: Dict[int, int] = defaultdict(int)
+        max_reps_per_doc: Dict[str, Dict[int, int]] = {subset: defaultdict(int)}
         interval = 10_000
         doc_count = 0
 
-        with smart_open.open(attrs_path, "rb") as attrs_file:
-            for attributes_line in attrs_file:
-                attributes = attributes_decoder.decode(attributes_line)
+        try:
+            with smart_open.open(attrs_path, "rb") as attrs_file:
+                for attributes_line in attrs_file:
+                    attributes = attributes_decoder.decode(attributes_line)
 
-                cnt = attributes.attributes.get(
-                    "tokenizer_repetitions_v1__tokenizer_repetitions_v1__doc_max_repetition", [0, 0, 0.0]
-                )[-1]
+                    cnt = attributes.attributes.get(
+                        "tokenizer_repetitions_v1__tokenizer_repetitions_v1__doc_max_repetition", [[0, 0, 0.0]]
+                    )[0][-1]
 
-                max_reps_per_doc[int(cnt)] += 1  # type: ignore
+                    max_reps_per_doc[subset][int(cnt)] += 1
 
-                doc_count += 1
-                if doc_count >= interval:
-                    cls.increment_progressbar(queue, documents=interval)
-                    doc_count = 0
-
-        cls.increment_progressbar(queue, files=1, documents=doc_count)
+                    doc_count += 1
+                    if doc_count >= interval:
+                        cls.increment_progressbar(queue, documents=interval)
+                        doc_count = 0
+        except Exception as e:
+            print(f"Error processing {attrs_path}: {e}")
+        finally:
+            cls.increment_progressbar(queue, files=1, documents=doc_count)
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(max_reps_per_doc, indent=2, sort_keys=True))
@@ -846,7 +851,7 @@ class dolma_v15_lines(BaseStatsProcessor):
     @classmethod
     def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
         with TemporaryDirectory() as tempdir:
-            documents = "/ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/*/*.gz"
+            documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/*/*.gz"
             stats = "s3://ai2-llm/stats/olmo-mix/v1_5/repetitions"
             metadata = os.path.join(tempdir, "olmo-mix-v1_5-repetitions")
 
