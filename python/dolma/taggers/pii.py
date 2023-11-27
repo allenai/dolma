@@ -6,18 +6,16 @@ Filters.
 
 """
 
-try:
-    import re2 as re
-except ImportError:
-    import re
-else:
-    re.set_fallback_notification(re.FALLBACK_WARNING)
 
-
+import re
 from typing import List
 from warnings import warn
 
-from presidio_analyzer import AnalyzerEngine
+from necessary import necessary
+
+with necessary("presidio-analyzer", soft=True) as PRESIDIO_AVAILABLE:
+    if PRESIDIO_AVAILABLE:
+        from presidio_analyzer import AnalyzerEngine  # pylint: disable=import-error # pyright: ignore
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.registry import TaggerRegistry
@@ -70,6 +68,8 @@ class BasePiiFilter(BaseTagger):
 
         # presidio
         if self.method == self.PRESIDIO:
+            if not PRESIDIO_AVAILABLE:
+                raise RuntimeError("Presidio is not available; please run `pip install dolma[pii]`")
             self.analyzer = AnalyzerEngine()
 
     def predict(self, doc: Document) -> DocResult:

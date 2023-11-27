@@ -18,7 +18,14 @@ from typing import (
 import msgspec
 import smart_open
 
-from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
+from dolma.core.taggers import BaseTaggerWithMetadata
+
+from .data_types import (
+    InputSpec,
+    InputSpecWithMetadata,
+    OutputSpec,
+    TaggerOutputDictType,
+)
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
 from .paths import delete_dir, join_path, make_relative, mkdir_p, split_glob, split_path
@@ -252,12 +259,19 @@ class TaggerProcessor(BaseParallelProcessor):
         # too full
         update_interval = 1
 
-        # running document count; gets reset every time we update the progress
-        # bar
+        # running document count; gets reset every time we update the progress bar
         docs_cnt = 0
 
+        # total number of documents processed
+        total_docs_cnt = 0
+
         # creating dedicated decoder speeds up the process
-        decoder = msgspec.json.Decoder(InputSpec)
+        # if any of the taggers require metadata, we use a decoder that can handle it
+        # otherwise, we use a decoder that does not parse metadata, which is faster
+        if any(isinstance(tagger, BaseTaggerWithMetadata) for tagger in taggers.values()):
+            decoder = msgspec.json.Decoder(InputSpecWithMetadata)
+        else:
+            decoder = msgspec.json.Decoder(InputSpec)
 
         with ExitStack() as stack:
             in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))
@@ -279,8 +293,9 @@ class TaggerProcessor(BaseParallelProcessor):
 
                     # increment the number of documents processed so far
                     docs_cnt += 1
+                    total_docs_cnt += 1
 
-                    if steps is not None and docs_cnt >= steps:
+                    if steps is not None and total_docs_cnt >= steps:
                         # if we have reached the maximum number of steps, we break
                         break
 
