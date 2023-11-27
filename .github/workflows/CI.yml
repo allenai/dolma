@@ -63,7 +63,7 @@ jobs:
 
       - name: Install Rust toolchain
         run: |
-          rustup update --no-self-update ${{ env.RUST_CHANNEL }}
+          rustup update ${{ env.RUST_CHANNEL }}
           rustup component add --toolchain ${{ env.RUST_CHANNEL }} rustfmt rust-src
           rustup default ${{ env.RUST_CHANNEL }}
 
