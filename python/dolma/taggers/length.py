@@ -25,6 +25,13 @@ class CharLengthV1(BaseTagger):
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
 
 
+@TaggerRegistry.add("char_length_strip_ws_v1")
+class CharLengthStripWsV1(BaseTagger):
+    def predict(self, doc: Document) -> DocResult:
+        score = len(doc.text.strip())
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length_no_ws", score=score)])
+
+
 @TaggerRegistry.add("char_length_with_paragraphs_v1")
 class CharLengthWithParagraphsV1(BaseTagger):
     def predict(self, doc: Document) -> DocResult:

@@ -39,7 +39,8 @@ pub async fn download_to_file(
     let result = s3_client
         .get_object()
         .bucket(bucket)
-        .key(key.clone())
+        // the type `str` does not implement `Clone`, so calling `clone` on `&str` copies the reference, which does not do anything and can be removed
+        .key(key)
         .send()
         .await
         .map_err(|e| {
@@ -70,7 +71,8 @@ pub async fn upload_file(
     s3_client
         .put_object()
         .bucket(bucket)
-        .key(key.clone())
+        // note: the type `str` does not implement `Clone`, so calling `clone` on `&str` copies the reference, which does not do anything and can be removed
+        .key(key)
         .body(ByteStream::from_path(path).await?)
         .send()
         .await

@@ -67,3 +67,7 @@ target/
 
 # ignore vscode directory
 .vscode
+
+# ignore temporary directories
+/tmp/
+/temp/

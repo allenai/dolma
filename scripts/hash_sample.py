@@ -2,22 +2,21 @@ import argparse
 import hashlib
 import json
 import multiprocessing
+import re
 from contextlib import ExitStack
 from itertools import product
 from queue import Queue
-import re
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, Tuple, Union, List
-from dolma.core.paths import join_path
-from dolma.core.runtime import _make_paths_from_prefix
+from typing import Any, Dict, List, Tuple, Union
 
 import msgspec
-import uniseg.wordbreak
 import smart_open
+import uniseg.wordbreak
 
 from dolma.core.data_types import InputSpec
 from dolma.core.parallel import BaseParallelProcessor
-
+from dolma.core.paths import join_path
+from dolma.core.runtime import _make_paths_from_prefix
 
 # we like higher digits first for consistency with previous sampling strategies
 HEX_DIGITS = list("0123456789abcdef")[::-1]
@@ -30,12 +29,12 @@ def calculate_md5_suffix(prob: float) -> List[str]:
     n = 16 * prob
 
     if n > 1:
-        suffix = HEX_DIGITS[:int(round(n))]
+        suffix = HEX_DIGITS[: int(round(n))]
     else:
         # not enough hex positions to represent the probability
         # so we use more digits
         more_suffix = calculate_md5_suffix(prob * 16)
-        suffix = [''.join(e) for e in product(HEX_DIGITS[:1], more_suffix)]
+        suffix = ["".join(e) for e in product(HEX_DIGITS[:1], more_suffix)]
 
     assert all(len(s) < 32 for s in suffix), "Suffixes must be less than 32 characters"
 
@@ -54,11 +53,7 @@ class HashSampler(BaseParallelProcessor):
         extracted: int = 0,
     ) -> Dict[str, int]:
         return super().increment_progressbar(
-            queue,
-            files=files,
-            documents=documents,
-            extracted=extracted,
-            uniseg_words=words
+            queue, files=files, documents=documents, extracted=extracted, uniseg_words=words
         )
 
     @classmethod
@@ -73,7 +68,6 @@ class HashSampler(BaseParallelProcessor):
         probability = float(probability)
 
         complement = kwargs.get("complement", False)
-
 
         suffixes = calculate_md5_suffix(probability)
         re_suffixes = re.compile(rf'({"|".join(suffixes)})$')
@@ -103,10 +97,7 @@ class HashSampler(BaseParallelProcessor):
                     # update the progress bar every 1000 documents to prevent
                     # buffering
                     cls.increment_progressbar(
-                        queue,
-                        documents=documents_count,
-                        extracted=extracted_count,
-                        words=words_count
+                        queue, documents=documents_count, extracted=extracted_count, words=words_count
                     )
                     extracted_count = documents_count = words_count = 0
 
@@ -115,11 +106,7 @@ class HashSampler(BaseParallelProcessor):
                         update_interval *= 2
 
         cls.increment_progressbar(
-            queue,
-            files=1,
-            documents=documents_count,
-            extracted=extracted_count,
-            words=words_count
+            queue, files=1, documents=documents_count, extracted=extracted_count, words=words_count
         )
 
 
@@ -130,9 +117,8 @@ def main(
     complement: bool = False,
     num_workers: int = 1,
     debug: bool = False,
-    dryrun: bool = False
+    dryrun: bool = False,
 ) -> None:
-
     # make source always a list
     source = [source] if isinstance(source, str) else source
 
@@ -165,10 +151,10 @@ def main(
 
 def parse_args():
     ap = argparse.ArgumentParser()
-    ap.add_argument("-s", '--source', type=str, required=True, help="glob pattern for source files", nargs="+")
-    ap.add_argument("-d", '--destination', type=str, required=True, help="destination prefix")
-    ap.add_argument("-p", '--probability', type=float, required=True, help="sampling probability")
-    ap.add_argument("-n", '--num-workers', type=int, default=1, help="number of workers")
+    ap.add_argument("-s", "--source", type=str, required=True, help="glob pattern for source files", nargs="+")
+    ap.add_argument("-d", "--destination", type=str, required=True, help="destination prefix")
+    ap.add_argument("-p", "--probability", type=float, required=True, help="sampling probability")
+    ap.add_argument("-n", "--num-workers", type=int, default=1, help="number of workers")
     ap.add_argument("--debug", action="store_true", help="debug mode")
     ap.add_argument("--dryrun", action="store_true", help="dry run")
     ap.add_argument("--complement", action="store_true", help="get the complement of the sample")

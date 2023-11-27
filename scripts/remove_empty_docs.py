@@ -1,7 +1,7 @@
 import json
+import multiprocessing
 from argparse import ArgumentParser
 from contextlib import ExitStack
-import multiprocessing
 from queue import Queue
 from tempfile import TemporaryDirectory
 from typing import Any, Tuple, Union

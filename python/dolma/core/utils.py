@@ -13,6 +13,7 @@ except Exception:
     BLINGFIRE_AVAILABLE = False
 
 import nltk
+import uniseg.wordbreak
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 
 try:
@@ -40,6 +41,20 @@ def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> 
         raise ValueError(f"Invalid variable name {name}")
 
     return name
+
+
+def split_words(text: str, remove_empty: bool = True) -> List[TextSlice]:
+    """
+    Split a string into words, as defined by the unicode standard.
+    For more info, see https://www.unicode.org/reports/tr29/
+    """
+    text_slices: List[TextSlice] = []
+    offset = 0
+    for word in uniseg.wordbreak.words(text):
+        if word.strip() or not remove_empty:
+            text_slices.append(TextSlice(doc=text, start=offset, end=offset + len(word)))
+        offset += len(word)
+    return text_slices
 
 
 def split_paragraphs(text: str, remove_empty: bool = True) -> List[TextSlice]:
