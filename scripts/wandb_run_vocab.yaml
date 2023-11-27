@@ -1,0 +1,123 @@
+# Run Names
+olmo-small-pile-fixed-*: The Pile
+olmo-small-rpj-*: Red Pajama
+olmo-small-dolma-*: Dolma
+olmo-small-falcon-*: RefinedWeb
+olmo-small-3T-lower-lr-tie_*: 1B Dolma Model
+
+# Ablation for PII masking
+v1-small-pi-less-than-5-anonymize_*: PII Remove (>=5) + Mask (<5)
+v1-small-all-pi-removed_*: PII Remove All
+abl-cc-v1-small-dedup_*: Baseline
+
+# Ablation for Reddit Toxicity Filtering
+reddit-v1-ablation-base_*: No Filtering
+reddit-v1-ablation-pii-nsfw-toxic_filtered_*: PII + NSFW + Hate Filter
+reddit-v1-ablation-toxic-filtered_*: NSFW + Hate Filter
+
+# Data mixture
+olmo-mix-v1-sample_*: Equal Data Mix
+olmo-mix-v1-sample-mix2_*: "200% Wiki, 200% peS2o"
+olmo-mix-v1-sample-all-cc*: "Only Common Crawl (CC)"
+olmo-mix-v1-gopher-like_*: "20% Code, 60% CC, 200% peS2o"
+
+# Dedupe
+abl-cc-v2-small-dedup*: Paragraph Deduplication
+
+# Path to final cleanup
+v1-small-c4-cleaned_\d+: C4 Rules (EoS)
+v1-small-c4-filtered_\d+: C4 Rules (All)
+v1-small-gopher-filtered_\d+: Gopher Rules (All)
+v1-small-c4-cleaned-gopher-filtered_\d+: C4 (EoS), Gopher (All)
+v1-small-c4-cleaned-gopher-filtered-deduped_\d+: C4 (EoS), Gopher (All), Dedup
+
+cc_quality:
+  olmo-mix-v1-sample-all-cc*: C4 (EoS), Gopher (All), Dedup, PII, Toxic
+
+# Code Experiments
+stack-v2*: Dolma (Stack v2)
+stack-v4*: Dolma (Stack v5)
+stack-v5*: Dolma (Stack v5)
+c4_p85-starcoder_p15*: 85% Dolma (C4), 15% StarCoder
+c4_p85-stack_v4_p15*: 85% Dolma (C4), 15% Dolma (Stack v5)
+c4-stack-15p*: 85% Dolma (C4), 15% Dolma (Stack v2)
+
+# Hate Speech / NSFW Experiments
+v1-small-hatespeech-filtered-low*: Hate Filter (Low Threshold)
+# uses FastText classifier with a threshold of 0.0004 (drops 34.9% of tokens)
+v1-small-nsfw-filtered-low*: NSFW Filter (Low Threshold)
+# uses FastText classifier with a threshold of 0.00017 (drops 29.1% of tokens)
+v1-small-hatespeech-filtered-high*: Hate Filter (High Threshold)
+# uses FastText classifier with a threshold of 0.4 (drops 7.3% of tokens)
+v1-small-nsfw-filtered-high*: NSFW Filter (High Threshold)
+# uses FastText classifier with a threshold of 0.4 (drops 5.5% of tokens)
+
+
+# Training Metrics
+throughput/total_tokens: Total Tokens
+train/Perplexity: Perplexity (Train)
+train/CrossEntropyLoss: CE Loss (Train)
+
+
+# Downstream Metrics
+eval/downstream/hellaswag_len_norm: HellaSwag
+eval/downstream/piqa_len_norm: PIQA
+eval/downstream/arc_easy_acc: ARC-Easy
+eval/downstream/sciq_acc: SciQ
+eval/downstream/mrpc_f1: MRPC
+eval/downstream/commitment_bank_acc: CommitmentBank
+eval/downstream/copa_acc: COPA
+eval/downstream/openbook_qa_len_norm: OpenBookQA
+eval/downstream/winogrande_acc: Winogrande
+eval/downstream/rte_len_norm: RTE
+
+
+# Perplexity Eval (V3)
+eval/v3-small-ice-validation/Perplexity: ICE
+eval/v3-small-c4_en-validation/Perplexity: C4
+eval/v3-small-dolma_wiki-validation/Perplexity: Dolma (Wiki)
+eval/v3-small-m2d2_s2orc-validation/Perplexity: M2D2 (S2ORC)
+eval/v3-small-dolma_books-validation/Perplexity: Dolma (Books)
+eval/v3-small-dolma_pes2o-validation/Perplexity: Dolma (peS2o v2)
+eval/v3-small-dolma_stack-validation/Perplexity: Dolma (Stack v5)
+eval/v3-small-dolma_reddit-validation/Perplexity: Dolma (Reddit)
+eval/v3-small-wikitext_103-validation/Perplexity: WikiText-103
+eval/v3-small-dolma_common-crawl-validation/Perplexity: Dolma (Common Crawl)
+
+
+# Perplexity Eval (V2)
+eval/v2-small-gab-validation/Perplexity: GAB
+eval/v2-small-ice-validation/Perplexity: ICE
+eval/v2-small-ptb-validation/Perplexity: Penn Treebank
+eval/v2-small-pile-validation/Perplexity: The Pile
+eval/v2-small-4chan-validation/Perplexity: 4chan
+eval/v2-small-c4_en-validation/Perplexity: C4
+eval/v2-small-mc4_en-validation/Perplexity: mC4 (English)
+eval/v2-small-m2d2_wiki-validation/Perplexity: M2D2 (Wiki)
+eval/v2-small-m2d2_s2orc-validation/Perplexity: M2D2 (S2ORC)
+eval/v2-small-manosphere-validation/Perplexity: Manosphere
+eval/v2-small-twitterAEE-validation/Perplexity: TwitterAEE
+eval/v2-small-wikitext_103-validation/Perplexity: WikiText-103
+eval/v2-small-c4_100_domains-validation/Perplexity: C4 (100 Domains)
+
+
+# Perplexity Eval (Unnamed, equivalent to V2)
+eval/gab-validation/Perplexity: GAB
+eval/ice-validation/Perplexity: ICE
+eval/ptb-validation/Perplexity: Penn Treebank
+eval/pile-validation/Perplexity: The Pile
+eval/4chan-validation/Perplexity: 4chan
+eval/c4_en-validation/Perplexity: C4
+eval/mc4_en-validation/Perplexity: mC4 (English)
+eval/m2d2_wiki-validation/Perplexity: M2D2 (Wiki)
+eval/m2d2_s2orc-validation/Perplexity: M2D2 (S2ORC)
+eval/manosphere-validation/Perplexity: Manosphere
+eval/twitterAEE-validation/Perplexity: TwitterAEE
+eval/wikitext_103-validation/Perplexity: WikiText-103
+eval/c4_100_domains-validation/Perplexity: C4 (100 Domains)
+
+
+# Perplexity Eval; Code
+eval/mbpp_valid/Perplexity: MBPP
+eval/openai_humaneval_test/Perplexity: HumanEval
+eval/stack_v2_held_out/Perplexity: Dolma (Stack v2)

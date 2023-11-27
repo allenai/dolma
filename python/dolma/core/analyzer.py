@@ -1,3 +1,4 @@
+import math
 import multiprocessing
 import re
 import shutil
@@ -27,7 +28,7 @@ def _make_tracker(type_: str = "fixed", **kwargs: int) -> BaseBucketApi:
     if type_ == "infer":
         return InferBucketsValTracker(**{"n": NUM_BINS, "b": BUFF_SIZE, **kwargs})
     elif type_ == "fixed":
-        return FixedBucketsValTracker(**{"n": NUM_BINS, **kwargs})
+        return FixedBucketsValTracker(**{"n": int(math.log10(NUM_BINS)), **kwargs})
     else:
         raise ValueError(f"Unknown tracker type {type_}")
 

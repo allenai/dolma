@@ -18,12 +18,19 @@ from typing import (
 import msgspec
 import smart_open
 
-from .data_types import InputSpec, OutputSpec, TaggerOutputDictType
+from dolma.core.taggers import BaseTaggerWithMetadata
+
+from .data_types import (
+    InputSpec,
+    InputSpecWithMetadata,
+    OutputSpec,
+    TaggerOutputDictType,
+)
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
 from .paths import delete_dir, join_path, make_relative, mkdir_p, split_glob, split_path
 from .registry import TaggerRegistry
-from .utils import make_variable_name
+from .utils import import_modules, make_variable_name
 
 # this placeholder gets used when a user has provided no experiment name, and we want to use taggers'
 # names as experiment names.
@@ -220,6 +227,10 @@ class TaggerProcessor(BaseParallelProcessor):
         **kwargs,
     ):
         """Lets count run the taggers! We will use the destination path to save each tagger output."""
+        # import tagger modules
+        taggers_modules = kwargs.get("taggers_modules", None)
+        if taggers_modules is not None:
+            import_modules(taggers_modules)
 
         # get names of taggers
         taggers_names = kwargs.get("taggers_names", None)
@@ -248,12 +259,19 @@ class TaggerProcessor(BaseParallelProcessor):
         # too full
         update_interval = 1
 
-        # running document count; gets reset every time we update the progress
-        # bar
+        # running document count; gets reset every time we update the progress bar
         docs_cnt = 0
 
+        # total number of documents processed
+        total_docs_cnt = 0
+
         # creating dedicated decoder speeds up the process
-        decoder = msgspec.json.Decoder(InputSpec)
+        # if any of the taggers require metadata, we use a decoder that can handle it
+        # otherwise, we use a decoder that does not parse metadata, which is faster
+        if any(isinstance(tagger, BaseTaggerWithMetadata) for tagger in taggers.values()):
+            decoder = msgspec.json.Decoder(InputSpecWithMetadata)
+        else:
+            decoder = msgspec.json.Decoder(InputSpec)
 
         with ExitStack() as stack:
             in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))
@@ -275,8 +293,9 @@ class TaggerProcessor(BaseParallelProcessor):
 
                     # increment the number of documents processed so far
                     docs_cnt += 1
+                    total_docs_cnt += 1
 
-                    if steps is not None and docs_cnt >= steps:
+                    if steps is not None and total_docs_cnt >= steps:
                         # if we have reached the maximum number of steps, we break
                         break
 
@@ -329,6 +348,7 @@ def profiler(
 def create_and_run_tagger(
     documents: List[str],
     taggers: List[str],
+    taggers_modules: Optional[List[str]] = None,
     experiment: Optional[str] = None,
     destination: Union[None, str, List[str]] = None,
     metadata: Union[None, str, List[str]] = None,
@@ -421,6 +441,7 @@ def create_and_run_tagger(
             tagger(
                 experiment_name=experiment,
                 taggers_names=taggers,
+                taggers_modules=taggers_modules,
                 skip_on_failure=skip_on_failure,
                 steps=profile_steps,
             )

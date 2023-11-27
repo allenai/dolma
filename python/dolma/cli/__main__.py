@@ -1,3 +1,4 @@
+import multiprocessing
 from argparse import ArgumentParser
 from pathlib import Path
 from typing import List, Optional
@@ -27,6 +28,14 @@ AVAILABLE_COMMANDS = {
 
 
 def main(argv: Optional[List[str]] = None):
+    try:
+        # attempting to set start method to spawn in case it is not set
+        multiprocessing.set_start_method("spawn")
+    except RuntimeError:
+        # method already set, check if it is set to spawn
+        if multiprocessing.get_start_method() != "spawn":
+            raise RuntimeError("Multiprocessing start method must be set to spawn")
+
     parser = ArgumentParser(
         prog="dolma",
         usage="dolma [command] [options]",
