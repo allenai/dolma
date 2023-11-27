@@ -1,6 +1,7 @@
 import argparse
 import bisect
 import fnmatch
+import re
 from collections import defaultdict
 from functools import partial
 from pathlib import Path
@@ -38,6 +39,10 @@ def parse_args():
     ap.add_argument("--legend-text", type=str, default="Runs", help="Legend text")
     ap.add_argument("--y-log-scale", action="store_true", help="Use log scale for y axis")
     ap.add_argument("-v", "--vocabulary", type=Path, default=None, help="Path json file with pretty names")
+    ap.add_argument("--plotly-theme", type=str, default="none", help="Plotly theme to use")
+    ap.add_argument("--plotly-font-size", type=int, default=10, help="Plotly font size")
+    ap.add_argument("--plotly-figure-width", type=int, default=800, help="Plotly figure width")
+    ap.add_argument("--plotly-figure-height", type=int, default=500, help="Plotly figure height")
     return ap.parse_args()
 
 
@@ -68,10 +73,10 @@ def main():
 
     # get all the runs matching name filters
     api = wandb.Api()
-    runs = api.runs(
-        path=f"{opts.wandb_team}/{opts.wandb_project}",
-        filters={"$or": [{"config.run_name": {"$regex": n}} for n in opts.wandb_names]},
-    )
+    wb_path = f"{opts.wandb_team}/{opts.wandb_project}"
+    # wb_filters = {"$or": [{"config.run_name": {"$regex": n}} for n in opts.wandb_names]}
+    wb_filters = {"$or": [{"display_name": {"$regex": n}} for n in opts.wandb_names]}
+    wb_runs = api.runs(path=wb_path, filters=wb_filters)
 
     vocabulary: Dict[str, str] = {}
     if opts.vocabulary is not None and opts.vocabulary.exists():
@@ -81,14 +86,22 @@ def main():
     metrics = defaultdict(lambda: {n: {"x": [], "y": []} for n in opts.wandb_names})
     run_name_matcher = partial(match_run_name, run_names=opts.wandb_names)
 
-    for wb_run in runs:
-        plot_group_name = run_name_matcher(wb_run.config["run_name"])
-        print(f"Processing run {wb_run.config['run_name']} into group {plot_group_name}")
+    print(f"Found {len(wb_runs)} matching runs in {wb_path}")
+
+    for wb_run in wb_runs:
+        plot_group_name = run_name_matcher(wb_run.name)
+        print(f"Processing run {wb_run.name} into group {plot_group_name}")
 
         if opts.samples > 0:
             x_axis_history = wb_run.history(samples=opts.samples, keys=[opts.x_axis], pandas=False)
         else:
             x_axis_history = list(wb_run.scan_history(keys=[opts.x_axis]))
+
+        if len(x_axis_history) == 0:
+            # this run has crashed and has no history
+            print(f"WARNING: skipping {wb_run.name} because it has no history. Crashed early?")
+            continue
+
         steps, x_axis = zip(*sorted([(wb_step["_step"], wb_step[opts.x_axis]) for wb_step in x_axis_history]))
 
         if opts.samples > 0:
@@ -103,7 +116,6 @@ def main():
                 metrics[yaxis_pretty_name][plot_group_name]["x"].append(x_axis[loc])
                 metrics[yaxis_pretty_name][plot_group_name]["y"].append(wb_step[y_axis])
 
-    opts.destination.mkdir(parents=True, exist_ok=True)
     xaxis_pretty_name = vocabulary.get(opts.x_axis, opts.x_axis)
 
     for y_axis, plot_groups in metrics.items():
@@ -114,6 +126,10 @@ def main():
         top_right_legend = False
 
         for run_name, run_data in plot_groups.items():
+            if len(run_data["y"]) == 0:
+                print(f"WARNING: skipping {run_name} because it has no data for {y_axis}")
+                continue
+
             # start by sorting the data by x axis
             x, y = zip(*sorted(zip(run_data["x"], run_data["y"])))
 
@@ -138,19 +154,42 @@ def main():
             figure_run_name = vocabulary.get(run_name, run_name)
             fig.add_trace(go.Scatter(name=figure_run_name, x=x, y=y))
 
-        if top_right_legend:
-            fig.update_layout(legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99))
-        else:
-            fig.update_layout(legend=dict(yanchor="bottom", y=0.01, xanchor="right", x=0.99))
+        legend_config = {
+            "yanchor": "top" if top_right_legend else "bottom",
+            "y": 0.99 if top_right_legend else 0.01,
+            "xanchor": "right",
+            "x": 0.99,
+            "font": {"size": opts.plotly_font_size},
+            "borderwidth": 1,
+            "bordercolor": "Gray",
+        }
+        fig.update_layout(legend=legend_config)
 
-        fig.update_layout(xaxis_title=xaxis_pretty_name, yaxis_title=y_axis, legend_title_text=opts.legend_text)
+        fig.update_layout(
+            template=opts.plotly_theme,
+            xaxis_title=xaxis_pretty_name,
+            yaxis_title=y_axis,
+            legend_title_text=opts.legend_text,
+            font=dict(size=10),
+            width=opts.plotly_figure_width,
+            height=opts.plotly_figure_height,
+            margin=dict(
+                l=4 * opts.plotly_font_size,
+                r=opts.plotly_font_size,
+                b=4 * opts.plotly_font_size,
+                t=opts.plotly_font_size,
+            ),
+        )
         fig.update_yaxes(type="log" if use_y_log else "linear")
         fig.update_xaxes(range=([0, opts.max_x_axis] if opts.max_x_axis is not None else None))
 
-        dest = opts.destination / f"{y_axis.replace('/', '_')}.{opts.plot_extension}"
+        dest = opts.destination / f"{re.sub(r'\W+', '_', y_axis)}.{opts.plot_extension}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
         fig.write_image(str(dest))
         print(f"Saved {y_axis} plot to {dest}")
 
+
+NORMALIZE_PLOTLY_NAME = re.compile(r"([a-z])([A-Z])")
 
 if __name__ == "__main__":
     main()

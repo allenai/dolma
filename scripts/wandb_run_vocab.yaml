@@ -3,7 +3,23 @@ olmo-small-pile-fixed-*: The Pile
 olmo-small-rpj-*: Red Pajama
 olmo-small-dolma-*: Dolma
 olmo-small-falcon-*: RefinedWeb
-olmo-small-3T-lower-lr-tie-*: 1B Dolma Model
+olmo-small-3T-lower-lr-tie_*: 1B Dolma Model
+
+# Ablation for PII masking
+v1-small-pi-less-than-5-anonymize_*: PII Remove (>=5) + Mask (<5)
+v1-small-all-pi-removed_*: PII Remove (>=5)
+abl-cc-v1-small-dedup_*: No PII Filtering
+
+# Ablation for Reddit Toxicity Filtering
+reddit-v1-ablation-base_*: No Filtering
+reddit-v1-ablation-pii-nsfw-toxic_filtered_*: PII + NSFW + Toxic Filter
+reddit-v1-ablation-toxic-filtered_*: Toxic Filter
+
+# Data mixture
+olmo-mix-v1-sample_*: Equal Data Mix
+olmo-mix-v1-sample-mix2_*: "200% Wiki, 200% peS2o"
+olmo-mix-v1-sample-all-cc*: "Only Common Crawl (CC)"
+olmo-mix-v1-gopher-like_*: "20% Code, 60% CC, 200% peS2o"
 
 
 # Training Metrics
@@ -32,7 +48,7 @@ eval/v3-small-dolma_wiki-validation/Perplexity: Dolma (Wiki)
 eval/v3-small-m2d2_s2orc-validation/Perplexity: M2D2 (S2ORC)
 eval/v3-small-dolma_books-validation/Perplexity: Dolma (Books)
 eval/v3-small-dolma_pes2o-validation/Perplexity: Dolma (peS2o v2)
-eval/v3-small-dolma_stack-validation/Perplexity: Dolma (Stack)
+eval/v3-small-dolma_stack-validation/Perplexity: Dolma (Stack v5)
 eval/v3-small-dolma_reddit-validation/Perplexity: Dolma (Reddit)
 eval/v3-small-wikitext_103-validation/Perplexity: WikiText-103
 eval/v3-small-dolma_common-crawl-validation/Perplexity: Dolma (Common Crawl)
@@ -68,3 +84,9 @@ eval/manosphere-validation/Perplexity: Manosphere
 eval/twitterAEE-validation/Perplexity: TwitterAEE
 eval/wikitext_103-validation/Perplexity: WikiText-103
 eval/c4_100_domains-validation/Perplexity: C4 (100 Domains)
+
+
+# Perplexity Eval; Code
+eval/mbpp_valid/Perplexity: MBPP
+eval/openai_humaneval_test/Perplexity: HumanEval
+eval/stack_v2_held_out/Perplexity: Dolma (Stack v2)

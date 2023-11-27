@@ -31,6 +31,28 @@ eval_metrics=(
 )
 EVAL_METRICS="$(printf "%s " "${eval_metrics[@]}" | sed 's/ $//')"
 
+code_perplexity_suite=(
+    'eval/openai_humaneval_test/Perplexity'
+    'eval/mbpp_valid/Perplexity'
+    'eval/stack_v2_held_out/Perplexity'
+)
+CODE_PERPLEXITY_SUITE="$(printf "%s " "${code_perplexity_suite[@]}" | sed 's/ $//')"
+
+v1_perplexity_suite=(
+    'eval/4chan-validation/Perplexity'
+    'eval/c4_100_domains-validation/Perplexity'
+    'eval/c4_en-validation/Perplexity'
+    'eval/gab-validation/Perplexity'
+    'eval/ice-validation/Perplexity'
+    'eval/m2d2_s2orc-validation/Perplexity'
+    'eval/m2d2_wiki-validation/Perplexity'
+    'eval/manosphere-validation/Perplexity'
+    'eval/mc4_en-validation/Perplexity'
+    'eval/pile-validation/Perplexity'
+    'eval/twitterAEE-validation/Perplexity'
+)
+V1_PERPLEXITY_SUITE="$(printf "%s " "${v1_perplexity_suite[@]}" | sed 's/ $//')"
+
 og_perplexity_suite=(
     'eval/gab-validation/Perplexity'
     'eval/ice-validation/Perplexity'
@@ -82,6 +104,8 @@ RUNS_UP_TO_150B="$(printf "%s " "${runs_up_to_150b[@]}" | sed 's/ $//')"
 # base directory for all plots and points to sample
 SAMPLES=1000
 BASE_DIR="${1}"
+
+###############################################################################
 
 # Figure 1: comparison of training curves between diff datasets.
 FIGURE_1_DIR="${BASE_DIR}/150b_runs"
@@ -142,6 +166,7 @@ if [ ! -d "${FIGURE_1_DIR}/ppl" ]; then
     set +ex
 fi
 
+###############################################################################
 
 # Figure 2: long 1b run (up to 3T tokens if possible)
 FIGURE_2_DIR="${BASE_DIR}/long_1b_run"
@@ -198,3 +223,114 @@ if [ ! -d "${FIGURE_2_DIR}/ppl" ]; then
 
     set +ex
 fi
+
+
+###############################################################################
+
+
+
+
+ablations_runs=(
+    'v1-small-pi-less-than-5-anonymize_* v1-small-all-pi-removed_* abl-cc-v1-small-dedup_*'
+    'reddit-v1-ablation-base_* reddit-v1-ablation-pii-nsfw-toxic_filtered_* reddit-v1-ablation-toxic-filtered_*'
+    'olmo-mix-v1-sample_* olmo-mix-v1-sample-all-cc* olmo-mix-v1-sample-mix2_* olmo-mix-v1-gopher-like_*'
+)
+ablations_names=(
+    'pii_filtering'
+    'reddit_toxic_filtering'
+    'dolma_mix'
+)
+
+# Loop through the indices of the array.
+for index in "${!ablations_names[@]}"; do
+    # Access the element by its index.
+    ABLATION_DIR="${BASE_DIR}/${ablations_names[$index]}"
+    RUNS_ABLATION="${ablations_runs[$index]}"
+
+    if [ ! -d "${ABLATION_DIR}/train" ]; then
+        # only plot if the directory doesn't exist
+        set -ex
+
+        python ${SCRIPT_DIR}/wandb_to_plot.py \
+            -t ai2-llm \
+            -p c4-small \
+            -n $RUNS_ABLATION \
+            -y $TRAIN_METRICS \
+            -s $SAMPLES \
+            -d ${ABLATION_DIR}/train \
+            --max-x-axis '150e9' \
+            --max-y-axis 100 \
+            --y-log-scale \
+            -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
+            --plotly-font-size 10 \
+            --plotly-figure-width 400 \
+            --plotly-figure-height 400
+
+        set +ex
+    fi
+
+    if [ ! -d "${ABLATION_DIR}/downstream" ]; then
+        # only plot if the directory doesn't exist
+        set -ex
+
+        python ${SCRIPT_DIR}/wandb_to_plot.py \
+            -t ai2-llm \
+            -p c4-small \
+            -n $RUNS_ABLATION \
+            -y $EVAL_METRICS \
+            -s $SAMPLES \
+            -d "${ABLATION_DIR}/downstream" \
+            --max-x-axis '150e9' \
+            -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
+            --plotly-font-size 10 \
+            --plotly-figure-width 400 \
+            --plotly-figure-height 400
+
+        set +ex
+
+    fi
+
+    if [ ! -d "${ABLATION_DIR}/ppl" ]; then
+        # only plot if the directory doesn't exist
+        set -ex
+
+        python ${SCRIPT_DIR}/wandb_to_plot.py \
+            -t ai2-llm \
+            -p c4-small \
+            -n $RUNS_ABLATION \
+            -y $V1_PERPLEXITY_SUITE \
+            -s $SAMPLES \
+            -d "${ABLATION_DIR}/ppl" \
+            --max-x-axis '150e9' \
+            --max-y-axis 100 \
+            --y-log-scale \
+            -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
+            --plotly-font-size 10 \
+            --plotly-figure-width 400 \
+            --plotly-figure-height 400
+
+        set +ex
+    fi
+
+    if [ ! -d "${ABLATION_DIR}/code" ]; then
+        # only plot if the directory doesn't exist
+        set -ex
+
+        python ${SCRIPT_DIR}/wandb_to_plot.py \
+            -t ai2-llm \
+            -p c4-small \
+            -n $RUNS_ABLATION \
+            -y $CODE_PERPLEXITY_SUITE \
+            -s $SAMPLES \
+            -d "${ABLATION_DIR}/code" \
+            --max-x-axis '150e9' \
+            --max-y-axis 100 \
+            --y-log-scale \
+            -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
+            --plotly-font-size 10 \
+            --plotly-figure-width 400 \
+            --plotly-figure-height 400
+
+        set +ex
+    fi
+done
