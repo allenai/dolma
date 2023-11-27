@@ -1,30 +1,31 @@
-'''
+"""
 Minimal example to download a Wikipedia dump, process via WikiExtractor, and transform to Dolma format.
 
 Author: Luca Soldaini (@soldni)
-'''
+"""
 
 
 import argparse
-from contextlib import ExitStack
 import datetime
-from io import TextIOWrapper
+import json
 import logging
 import multiprocessing
-from pathlib import Path
 import re
-from tempfile import TemporaryDirectory
-from typing import Any, Dict, Union, List
-import smart_open
-import requests
 import string
 import sys
-import json
-from dolma.core.parallel import BaseParallelProcessor, QueueType
+from contextlib import ExitStack
+from io import TextIOWrapper
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any, Dict, List, Union
+
+import requests
+import smart_open
 from uniseg.wordbreak import words as uniseg_get_words
 
+from dolma.core.parallel import BaseParallelProcessor, QueueType
 
-CMD_INSTALL = 'pip install git+https://github.com/santhoshtr/wikiextractor.git requests smart_open tqdm'
+CMD_INSTALL = "pip install git+https://github.com/santhoshtr/wikiextractor.git requests smart_open tqdm"
 
 try:
     from wikiextractor import WikiExtractor
@@ -33,25 +34,25 @@ except ImportError:
     sys.exit(1)
 
 try:
-    import requests     # noqa
+    import requests  # noqa
 except ImportError:
     print(f"Please install requests with `{CMD_INSTALL}`")
     sys.exit(1)
 
 try:
-    import smart_open   # noqa
+    import smart_open  # noqa
 except ImportError:
     print(f"Please install smart_open with `{CMD_INSTALL}`")
     sys.exit(1)
 
 try:
-    import tqdm     # noqa
+    import tqdm  # noqa
 except ImportError:
     print(f"Please install tqdm with `{CMD_INSTALL}`")
     sys.exit(1)
 
 
-DUMP_URL = "https://dumps.wikimedia.org/simplewiki/{date}/{lang}wiki-{date}-pages-articles-multistream.xml.bz2"
+DUMP_URL = "https://dumps.wikimedia.org/{lang}wiki/{date}/{lang}wiki-{date}-pages-articles-multistream.xml.bz2"
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
 
@@ -70,13 +71,13 @@ def download_file(url, filename):
     if response.status_code != 200:
         raise ValueError(f"File {url} not found; try a more recent date")
 
-    file_size = int(response.headers['Content-Length'])
+    file_size = int(response.headers["Content-Length"])
 
-    with open(filename, 'wb') as f, tqdm.tqdm(
-        desc="Downloading", total=file_size, unit='B', unit_scale=True, unit_divisor=1024
+    with open(filename, "wb") as f, tqdm.tqdm(
+        desc="Downloading", total=file_size, unit="B", unit_scale=True, unit_divisor=1024
     ) as pbar:
         for chunk in response.iter_content(chunk_size=1024 * 1024):
-            if chunk:   # filter out keep-alive new chunks
+            if chunk:  # filter out keep-alive new chunks
                 f.write(chunk)
                 pbar.update(len(chunk))
 
@@ -128,7 +129,7 @@ class NewOutputSplitter:
         self.compress = compress
         self.max_file_size = max_file_size
         self.stack = ExitStack()
-        self.ext = '.gz' if compress else ''
+        self.ext = ".gz" if compress else ""
         self.written = 0
         self.open()
 
@@ -149,22 +150,17 @@ class NewOutputSplitter:
         self.stack.pop_all().close()
 
     def open(self):
-        self.file = self.stack.enter_context(smart_open.open(self.nextFile.next() + self.ext, 'wt'))
+        self.file = self.stack.enter_context(smart_open.open(self.nextFile.next() + self.ext, "wt"))
 
 
-def wiki_extract(
-    output_gzip: Path,
-    output_json: Path,
-    processes: int = 1,
-    overwrite: bool = False
-):
+def wiki_extract(output_gzip: Path, output_json: Path, processes: int = 1, overwrite: bool = False):
     if output_json.exists() and not overwrite:
         LOGGER.warning(f"Output file {output_json} exists. Use --overwrite to overwrite it.")
         return
 
     WikiExtractor.Extractor.keepLinks = False
     WikiExtractor.Extractor.HtmlFormatting = False
-    WikiExtractor.ignoreTag('a')
+    WikiExtractor.ignoreTag("a")
     WikiExtractor.Extractor.to_json = True  # type: ignore
     WikiExtractor.acceptedNamespaces = ["Article"]
     # input_file = output_gzip
@@ -187,7 +183,7 @@ def wiki_extract(
         file_size=file_size,
         file_compress=True,
         process_count=processes,
-        html_safe=False
+        html_safe=False,
     )
 
 
@@ -216,7 +212,7 @@ class WikiExtractorParallel(BaseParallelProcessor):
         documents_count = 0
         update_interval = 1
 
-        with smart_open.open(source_path) as f, smart_open.open(destination_path, 'w') as g:
+        with smart_open.open(source_path) as f, smart_open.open(destination_path, "w") as g:
             try:
                 for i, line in enumerate(f):
                     try:
@@ -268,9 +264,9 @@ class WikiExtractorParallel(BaseParallelProcessor):
 
 def main():
     args = get_arguments()
-    output_gzip = Path(args.output) / f'wiki_{args.date}_{args.lang}.xml.bz2'
-    output_json = Path(args.output) / f'wiki_{args.date}_{args.lang}'
-    output_final = Path(args.output) / 'v0/documents'
+    output_gzip = Path(args.output) / f"wiki_{args.date}_{args.lang}.xml.bz2"
+    output_json = Path(args.output) / f"wiki_{args.date}_{args.lang}"
+    output_final = Path(args.output) / "v0/documents"
 
     download_wiki(date=args.date, lang=args.lang, output_path=output_gzip, overwrite=args.overwrite)
     wiki_extract(output_gzip=output_gzip, output_json=output_json, processes=args.processes)
@@ -280,10 +276,13 @@ def main():
             source_prefix=f"{output_json}/*/*.gz",
             destination_prefix=str(output_final),
             metadata_prefix=tempdir,
-            num_processes=args.processes
+            num_processes=args.processes,
         )
         processor(date=args.date, lang=args.lang)
 
 
 if __name__ == "__main__":
+    # setting multiprocessing start method to spawn
+    multiprocessing.set_start_method("spawn")
+
     main()

@@ -48,13 +48,17 @@ class MemMapParallelWriter(BaseParallelProcessor):
             raise RuntimeError("grouped_source_prefixes should be a list of paths")
         source_paths = global_source_paths[int(source_path)]
 
+        tokenizer_name_or_path = kwargs.pop("tokenizer_name_or_path", None)
+        if tokenizer_name_or_path is None:
+            raise RuntimeError("tokenizer_name_or_path not provided")
+
         cpu_count = multiprocessing.cpu_count()
 
         documents_cnt = tokens_cnt = 0
         update_interval = 1
         mm_cnt = 0
 
-        tokenizer = Tokenizer.from_pretrained("allenai/eleuther-ai-gpt-neox-20b-pii-special")
+        tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path)
         tokenizer_ring = []
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
@@ -144,8 +148,8 @@ class MemMapParallelWriter(BaseParallelProcessor):
         # so that they can load the correct source paths
         source_indices = [str(i) for i in range(len(grouped_source_prefixes))]
 
-        # check that only one destination and metadata is provided
-        if len(self.dst_prefixes) != 1 or len(self.meta_prefixes) != 1:
+        # check that only one value of destination and metadata is provided
+        if len(set(self.dst_prefixes)) != 1 or len(set(self.meta_prefixes)) != 1:
             raise ValueError("Only one destination and metadata should be provided.")
 
         # make necessary destination directories
@@ -188,8 +192,6 @@ def tokenize_in_parallel(
     dtype: str = "uint16",
     debug: bool = False,
 ):
-    multiprocessing.set_start_method("spawn")
-
     # variables for the nice debugging and tokenizers
     os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -203,8 +205,13 @@ def tokenize_in_parallel(
 
     parallel_writer = MemMapParallelWriter(
         source_prefix=sources,
-        destination_prefix=destination,
-        metadata_prefix=metadata_dir,
+        # the call action will actually get the first destination and
+        # make relative paths from there. Unfortunately, BaseParallelProcessor
+        # expects as many destinations as there are sources, so we employ
+        # this "hack" (that is, repeating destination len(sources) times)
+        # to get around that. Same thing applies to metadata_dir.
+        destination_prefix=[destination for _ in sources],
+        metadata_prefix=[metadata_dir for _ in sources],
         num_processes=num_writers,
         seed=seed,
         debug=debug,
@@ -215,4 +222,5 @@ def tokenize_in_parallel(
         ring_size=ring_size,
         max_size=max_size,
         dtype=dtype,
+        tokenizer_name_or_path=tokenizer_name_or_path,
     )
