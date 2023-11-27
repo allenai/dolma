@@ -5,7 +5,7 @@ import hashlib
 import json
 import multiprocessing
 import os
-from collections import defaultdict
+from collections import Counter, defaultdict
 from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -635,6 +635,7 @@ class v15_cc_c4_cleaned(cc_v1_c4_cleaned):
     stats = "s3://ai2-llm/stats/olmo-mix/v15/cc/v1_c4_cleaned/**/*.gz"
     decontamination_key: str = "perplexity_suite_v3_option2"
 
+
 @Registry.add
 class LineStatsCC(cc_v1_c4_cleaned):
     # Selection of documents:
@@ -663,7 +664,7 @@ class LineStatsCC(cc_v1_c4_cleaned):
         "./cc_en_head-0786-stats.json.gz",
         "./cc_en_head-0857-stats.json.gz",
     ]
-    decontamination_key: str = 'decontamination'
+    decontamination_key: str = "decontamination"
 
     @classmethod
     def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
@@ -673,7 +674,7 @@ class LineStatsCC(cc_v1_c4_cleaned):
             debug=debug,
             **process_single_kwargs,
         )
-            
+
     @classmethod
     def process_single(
         cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
@@ -751,6 +752,7 @@ class LineStatsCC(cc_v1_c4_cleaned):
 
         cls.increment_progressbar(queue, files=1, documents=documents % interval)
 
+
 class C4InputSpec(InputSpec):
     metadata: Dict[str, Any] = msgspec.field(default_factory=dict)
 
@@ -797,6 +799,56 @@ class c4(BaseStatsProcessor):
             documents = "s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/*.gz"
             stats = "s3://ai2-llm/stats/olmo-mix/v1/web/c4"
             metadata = os.path.join(tempdir, "c4")
+
+            processor = cls(
+                source_prefix=documents,
+                destination_prefix=stats,
+                metadata_prefix=metadata,
+                num_processes=num_workers,
+                debug=debug,
+            )
+            processor(**process_single_kwargs)
+
+
+@Registry.add
+class dolma_v15_lines(BaseStatsProcessor):
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        attrs_path = source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v1/")
+
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+        max_reps_per_doc: Dict[int, int] = defaultdict(int)
+        interval = 10_000
+        doc_count = 0
+
+        with smart_open.open(attrs_path, "rb") as attrs_file:
+            for attributes_line in attrs_file:
+                attributes = attributes_decoder.decode(attributes_line)
+
+                cnt = attributes.attributes.get(
+                    "tokenizer_repetitions_v1__tokenizer_repetitions_v1__doc_max_repetition", [0, 0, 0.0]
+                )[-1]
+
+                max_reps_per_doc[int(cnt)] += 1  # type: ignore
+
+                doc_count += 1
+                if doc_count >= interval:
+                    cls.increment_progressbar(queue, documents=interval)
+                    doc_count = 0
+
+        cls.increment_progressbar(queue, files=1, documents=doc_count)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(max_reps_per_doc, indent=2, sort_keys=True))
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+        with TemporaryDirectory() as tempdir:
+            documents = "/ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/*/*.gz"
+            stats = "s3://ai2-llm/stats/olmo-mix/v1_5/repetitions"
+            metadata = os.path.join(tempdir, "olmo-mix-v1_5-repetitions")
 
             processor = cls(
                 source_prefix=documents,
