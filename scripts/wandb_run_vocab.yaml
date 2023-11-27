@@ -1,8 +1,10 @@
 # Run Names
 olmo-small-pile-fixed-*: The Pile
-olmo-small-rpj-*: Red Pajama
-olmo-small-dolma-*: Dolma
+olmo-small-rpj-*: Red Pajama v1
+olmo-small-dolma-*: Dolma v1.5
 olmo-small-falcon-*: RefinedWeb
+olmo-small-c4-*: C4
+olmo-small-mc4-*: mC4 (English)
 olmo-small-3T-lower-lr-tie_*: 1B Dolma Model
 
 # Ablation for PII masking

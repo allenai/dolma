@@ -96,8 +96,10 @@ V2_V3_PERPLEXITY_SUITE="$(printf "%s " "${v2_v3_perplexity_suite[@]}" | sed 's/ 
 runs_up_to_150b=(
     'olmo-small-rpj-*'
     'olmo-small-pile-fixed-*'
-    'olmo-small-dolma-*'
+    'olmo-small-c4-*'
+    'olmo-small-mc4-*'
     'olmo-small-falcon-*'
+    'olmo-small-dolma-*'
 )
 RUNS_UP_TO_150B="$(printf "%s " "${runs_up_to_150b[@]}" | sed 's/ $//')"
 
