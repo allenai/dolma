@@ -234,18 +234,41 @@ ablations_runs=(
     'v1-small-pi-less-than-5-anonymize_* v1-small-all-pi-removed_* abl-cc-v1-small-dedup_*'
     'reddit-v1-ablation-base_* reddit-v1-ablation-pii-nsfw-toxic_filtered_* reddit-v1-ablation-toxic-filtered_*'
     'olmo-mix-v1-sample_* olmo-mix-v1-sample-all-cc* olmo-mix-v1-sample-mix2_* olmo-mix-v1-gopher-like_*'
+    'stack-v2* stack-v4*'
+    'c4-stack-15p* c4_p85-stack_v4_p15* c4_p85-starcoder_p15*'
+    'v1-small-hatespeech-filtered-low* v1-small-nsfw-filtered-low* v1-small-hatespeech-filtered-high* v1-small-nsfw-filtered-high* abl-cc-v1-small-dedup_*'
+    'abl-cc-v1-small-dedup_* abl-cc-v2-small-dedup*'
+    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_\d+ v1-small-c4-filtered_\d+ v1-small-gopher-filtered_\d+ v1-small-c4-cleaned-gopher-filtered_\d+ v1-small-c4-cleaned-gopher-filtered-deduped_\d+ olmo-mix-v1-sample-all-cc*'
 )
 ablations_names=(
-    'pii_filtering'
+    'cc_pii_filtering'
     'reddit_toxic_filtering'
     'dolma_mix'
+    'code_stack_v2_vs_v4'
+    'code_15p_stack_v2_v4_starcoder'
+    'cc_toxic_filtering'
+    'cc_dedupe'
+    'cc_quality'
+)
+
+limits=(
+    '150e9'
+    '150e9'
+    '150e9'
+    '50e9'
+    '50e9'
+    '150e9'
+    '150e9'
+    '150e9'
 )
 
 # Loop through the indices of the array.
 for index in "${!ablations_names[@]}"; do
     # Access the element by its index.
-    ABLATION_DIR="${BASE_DIR}/${ablations_names[$index]}"
+    ABLATION_NAME="${ablations_names[$index]}"
+    ABLATION_DIR="${BASE_DIR}/ablations_${ABLATION_NAME}"
     RUNS_ABLATION="${ablations_runs[$index]}"
+    X_AXIS_LIMIT="${limits[$index]}"
 
     if [ ! -d "${ABLATION_DIR}/train" ]; then
         # only plot if the directory doesn't exist
@@ -255,14 +278,15 @@ for index in "${!ablations_names[@]}"; do
             -t ai2-llm \
             -p c4-small \
             -n $RUNS_ABLATION \
+            -N $ABLATION_NAME \
             -y $TRAIN_METRICS \
             -s $SAMPLES \
             -d ${ABLATION_DIR}/train \
-            --max-x-axis '150e9' \
+            --max-x-axis $X_AXIS_LIMIT \
             --max-y-axis 100 \
             --y-log-scale \
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
-            --plotly-font-size 10 \
+            --plotly-font-size 9 \
             --plotly-figure-width 400 \
             --plotly-figure-height 400
 
@@ -277,12 +301,13 @@ for index in "${!ablations_names[@]}"; do
             -t ai2-llm \
             -p c4-small \
             -n $RUNS_ABLATION \
+            -N $ABLATION_NAME \
             -y $EVAL_METRICS \
             -s $SAMPLES \
             -d "${ABLATION_DIR}/downstream" \
-            --max-x-axis '150e9' \
+            --max-x-axis $X_AXIS_LIMIT \
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
-            --plotly-font-size 10 \
+            --plotly-font-size 9 \
             --plotly-figure-width 400 \
             --plotly-figure-height 400
 
@@ -298,21 +323,22 @@ for index in "${!ablations_names[@]}"; do
             -t ai2-llm \
             -p c4-small \
             -n $RUNS_ABLATION \
+            -N $ABLATION_NAME \
             -y $V1_PERPLEXITY_SUITE \
             -s $SAMPLES \
             -d "${ABLATION_DIR}/ppl" \
-            --max-x-axis '150e9' \
+            --max-x-axis $X_AXIS_LIMIT \
             --max-y-axis 100 \
             --y-log-scale \
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
-            --plotly-font-size 10 \
+            --plotly-font-size 9 \
             --plotly-figure-width 400 \
             --plotly-figure-height 400
 
         set +ex
     fi
 
-    if [ ! -d "${ABLATION_DIR}/code" ]; then
+    if ([[ $ABLATION_NAME == *"code"* ]] || [[ $ABLATION_NAME == *"dolma"* ]]) && [[ ! -d "$ABLATION_DIR/code" ]]; then
         # only plot if the directory doesn't exist
         set -ex
 
@@ -320,14 +346,15 @@ for index in "${!ablations_names[@]}"; do
             -t ai2-llm \
             -p c4-small \
             -n $RUNS_ABLATION \
+            -N $ABLATION_NAME \
             -y $CODE_PERPLEXITY_SUITE \
             -s $SAMPLES \
             -d "${ABLATION_DIR}/code" \
-            --max-x-axis '150e9' \
+            --max-x-axis $X_AXIS_LIMIT \
             --max-y-axis 100 \
             --y-log-scale \
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
-            --plotly-font-size 10 \
+            --plotly-font-size 9 \
             --plotly-figure-width 400 \
             --plotly-figure-height 400
 

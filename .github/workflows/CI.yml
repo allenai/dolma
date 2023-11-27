@@ -38,9 +38,61 @@ jobs:
           echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
           echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
 
+  prepare-venv:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v1
+
+      - uses: actions/cache@v2
+        id: cache-venv  # name for referring later
+        with:
+          path: ./.venv/  # what we cache: the virtualenv
+          # The cache key depends on pyproject.toml and Cargo.toml
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-venv-
+
+      - name: Setup system libraries
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run:  |
+          sudo apt-get update
+          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
+
+      - name: Install Rust
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Install Python
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+          architecture: "x64"
+          sccache: true
+
+      - name: Create a new Python environment & install maturin
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -U pip
+          pip install maturin
+
+      - name: Install dolma wheels
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          source .venv/bin/activate
+          maturin build --release  -i $(which python) --out dist
+          wheel_path=$(ls dist/*.whl)
+          pip install "${wheel_path}[all]"
 
   tests:
     runs-on: ubuntu-latest
+    needs: prepare-venv
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -48,7 +100,6 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python: [3.8]
         task:
           - name: Check Python style
             run: |
@@ -72,51 +123,10 @@ jobs:
               pytest -vs --color=yes tests/python/
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v1
-
-      - name: Setup system libraries
-        run:  |
-          sudo apt-get update
-          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
-
-      - name: Install Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: rustfmt
-
-      - name: Install Python
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python }}
-          architecture: "x64"
-          sccache: true
-
-      - name: Create a new Python environment & install maturin
-        run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install -U pip
-          pip install maturin
-
-      - name: Install dolma wheels
-        run: |
-          source .venv/bin/activate
-          maturin build --release --find-interpreter --out dist
-          pip install --with-extras=all dist/*.whl
-
       - name: ${{ matrix.task.name }}
         run: |
           source .venv/bin/activate
           ${{ matrix.task.run }}
-
-      - name: Clean up
-        if: always()
-        run: |
-          source .venv/bin/activate
-          pip uninstall -y dolma
-
 
 
   build-linux:

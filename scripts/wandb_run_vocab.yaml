@@ -7,19 +7,50 @@ olmo-small-3T-lower-lr-tie_*: 1B Dolma Model
 
 # Ablation for PII masking
 v1-small-pi-less-than-5-anonymize_*: PII Remove (>=5) + Mask (<5)
-v1-small-all-pi-removed_*: PII Remove (>=5)
-abl-cc-v1-small-dedup_*: No PII Filtering
+v1-small-all-pi-removed_*: PII Remove All
+abl-cc-v1-small-dedup_*: Baseline
 
 # Ablation for Reddit Toxicity Filtering
 reddit-v1-ablation-base_*: No Filtering
-reddit-v1-ablation-pii-nsfw-toxic_filtered_*: PII + NSFW + Toxic Filter
-reddit-v1-ablation-toxic-filtered_*: Toxic Filter
+reddit-v1-ablation-pii-nsfw-toxic_filtered_*: PII + NSFW + Hate Filter
+reddit-v1-ablation-toxic-filtered_*: NSFW + Hate Filter
 
 # Data mixture
 olmo-mix-v1-sample_*: Equal Data Mix
 olmo-mix-v1-sample-mix2_*: "200% Wiki, 200% peS2o"
 olmo-mix-v1-sample-all-cc*: "Only Common Crawl (CC)"
 olmo-mix-v1-gopher-like_*: "20% Code, 60% CC, 200% peS2o"
+
+# Dedupe
+abl-cc-v2-small-dedup*: Paragraph Deduplication
+
+# Path to final cleanup
+v1-small-c4-cleaned_\d+: C4 Rules (EoS)
+v1-small-c4-filtered_\d+: C4 Rules (All)
+v1-small-gopher-filtered_\d+: Gopher Rules (All)
+v1-small-c4-cleaned-gopher-filtered_\d+: C4 (EoS), Gopher (All)
+v1-small-c4-cleaned-gopher-filtered-deduped_\d+: C4 (EoS), Gopher (All), Dedup
+
+cc_quality:
+  olmo-mix-v1-sample-all-cc*: C4 (EoS), Gopher (All), Dedup, PII, Toxic
+
+# Code Experiments
+stack-v2*: Dolma (Stack v2)
+stack-v4*: Dolma (Stack v5)
+stack-v5*: Dolma (Stack v5)
+c4_p85-starcoder_p15*: 85% Dolma (C4), 15% StarCoder
+c4_p85-stack_v4_p15*: 85% Dolma (C4), 15% Dolma (Stack v5)
+c4-stack-15p*: 85% Dolma (C4), 15% Dolma (Stack v2)
+
+# Hate Speech / NSFW Experiments
+v1-small-hatespeech-filtered-low*: Hate Filter (Low Threshold)
+# uses FastText classifier with a threshold of 0.0004 (drops 34.9% of tokens)
+v1-small-nsfw-filtered-low*: NSFW Filter (Low Threshold)
+# uses FastText classifier with a threshold of 0.00017 (drops 29.1% of tokens)
+v1-small-hatespeech-filtered-high*: Hate Filter (High Threshold)
+# uses FastText classifier with a threshold of 0.4 (drops 7.3% of tokens)
+v1-small-nsfw-filtered-high*: NSFW Filter (High Threshold)
+# uses FastText classifier with a threshold of 0.4 (drops 5.5% of tokens)
 
 
 # Training Metrics

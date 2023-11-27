@@ -6,7 +6,7 @@ from collections import defaultdict
 from functools import partial
 from pathlib import Path
 from statistics import stdev
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from necessary import necessary
 
@@ -36,11 +36,13 @@ def parse_args():
     ap.add_argument("--max-x-axis", type=float, default=None, help="Maximum x value")
     ap.add_argument("--max-y-axis", type=float, default=None, help="Maximum y value")
     ap.add_argument("--remove-outliers", action="store_true", help="Remove outliers")
-    ap.add_argument("--legend-text", type=str, default="Runs", help="Legend text")
+    ap.add_argument("--legend-title", type=str, default=None, help="Legend title")
     ap.add_argument("--y-log-scale", action="store_true", help="Use log scale for y axis")
     ap.add_argument("-v", "--vocabulary", type=Path, default=None, help="Path json file with pretty names")
+    ap.add_argument("-N", "--experiment-nickname", type=str, default=None, help="Experiment nickname")
     ap.add_argument("--plotly-theme", type=str, default="none", help="Plotly theme to use")
     ap.add_argument("--plotly-font-size", type=int, default=10, help="Plotly font size")
+    ap.add_argument("--plotly-show-title", action="store_true", help="Show plot title")
     ap.add_argument("--plotly-figure-width", type=int, default=800, help="Plotly figure width")
     ap.add_argument("--plotly-figure-height", type=int, default=500, help="Plotly figure height")
     return ap.parse_args()
@@ -48,7 +50,7 @@ def parse_args():
 
 def match_run_name(name: str, run_names: List[str]) -> Optional[str]:
     for run_name in run_names:
-        if fnmatch.filter([name], run_name):
+        if fnmatch.filter([name], run_name) or re.search(run_name, name):
             return run_name
     return None
 
@@ -78,10 +80,18 @@ def main():
     wb_filters = {"$or": [{"display_name": {"$regex": n}} for n in opts.wandb_names]}
     wb_runs = api.runs(path=wb_path, filters=wb_filters)
 
-    vocabulary: Dict[str, str] = {}
+    vocabulary = {}
     if opts.vocabulary is not None and opts.vocabulary.exists():
         with opts.vocabulary.open("r") as f:
             vocabulary = yaml.safe_load(f.read())
+
+    # prepare the vocabulary by (a) overriding with experiment specific
+    # names that are not in the vocabulary file and (b) experiment config
+    # (nested vocabulary)
+    vocabulary = {
+        **{k: v for k, v in vocabulary.items() if isinstance(v, str)},
+        **{k: v for k, v in vocabulary.get(opts.experiment_nickname, {}).items() if isinstance(v, str)},
+    }
 
     metrics = defaultdict(lambda: {n: {"x": [], "y": []} for n in opts.wandb_names})
     run_name_matcher = partial(match_run_name, run_names=opts.wandb_names)
@@ -90,6 +100,9 @@ def main():
 
     for wb_run in wb_runs:
         plot_group_name = run_name_matcher(wb_run.name)
+        if plot_group_name is None:
+            raise ValueError(f"Could not find a name match for {wb_run.name}")
+
         print(f"Processing run {wb_run.name} into group {plot_group_name}")
 
         if opts.samples > 0:
@@ -136,10 +149,10 @@ def main():
             if opts.remove_outliers:
                 x, y = remove_outliers(x=x, y=y)
 
-            if opts.max_x_axis:
+            if opts.max_x_axis and min(x) < opts.max_x_axis:
                 x, y = zip(*[(x, y) for x, y in zip(x, y) if x <= opts.max_x_axis])
 
-            if opts.max_y_axis:
+            if opts.max_y_axis and min(y) < opts.max_y_axis:
                 x, y = zip(*[(x, y) for x, y in zip(x, y) if y <= opts.max_y_axis])
 
             if y[-1] < y[0]:
@@ -152,7 +165,7 @@ def main():
                 use_y_log = use_y_log or (max(y) / min_y > 100)
 
             figure_run_name = vocabulary.get(run_name, run_name)
-            fig.add_trace(go.Scatter(name=figure_run_name, x=x, y=y))
+            fig.add_trace(go.Scatter(name=figure_run_name, x=x, y=y, mode="lines"))
 
         legend_config = {
             "yanchor": "top" if top_right_legend else "bottom",
@@ -165,12 +178,14 @@ def main():
         }
         fig.update_layout(legend=legend_config)
 
+        title_text = vocabulary.get(opts.experiment_nickname, opts.experiment_nickname)
         fig.update_layout(
             template=opts.plotly_theme,
             xaxis_title=xaxis_pretty_name,
             yaxis_title=y_axis,
-            legend_title_text=opts.legend_text,
-            font=dict(size=10),
+            legend_title=opts.legend_title,
+            title_text=title_text if opts.plotly_show_title else None,
+            font=dict(size=opts.plotly_font_size),
             width=opts.plotly_figure_width,
             height=opts.plotly_figure_height,
             margin=dict(
@@ -183,10 +198,11 @@ def main():
         fig.update_yaxes(type="log" if use_y_log else "linear")
         fig.update_xaxes(range=([0, opts.max_x_axis] if opts.max_x_axis is not None else None))
 
-        dest = opts.destination / f"{re.sub(r'\W+', '_', y_axis)}.{opts.plot_extension}"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        fig.write_image(str(dest))
-        print(f"Saved {y_axis} plot to {dest}")
+        file_name = re.sub(r"\W+", "_", y_axis).lower().strip("_")
+        file_path = opts.destination / f"{file_name}.{opts.plot_extension}"
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.write_image(str(file_path))
+        print(f"Saved {y_axis} plot to {file_path}")
 
 
 NORMALIZE_PLOTLY_NAME = re.compile(r"([a-z])([A-Z])")
