@@ -126,6 +126,7 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+
       - name: Cache Virtual Env
         uses: actions/cache@v3
         # name for referring later
@@ -134,7 +135,8 @@ jobs:
           # what we cache: the virtualenv
           path: ./.venv/
           # The cache key depends on pyproject.toml and Cargo.toml
-          key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/Cargo.toml') }}
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml, **/Cargo.lock') }}--${{ hashFiles('python/**', 'src/**') }}
+
       - name: ${{ matrix.task.name }}
         run: |
           source .venv/bin/activate

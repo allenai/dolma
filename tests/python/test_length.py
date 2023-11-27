@@ -1,7 +1,7 @@
 import unittest
 
-from dolma.taggers.length import CharLengthV1, CharLengthStripWsV1
 from dolma.core.data_types import Document
+from dolma.taggers.length import CharLengthStripWsV1, CharLengthV1
 
 
 class TestLengthTaggers(unittest.TestCase):
