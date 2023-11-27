@@ -74,7 +74,6 @@ jobs:
         with:
           python-version: '3.8'
           architecture: "x64"
-          cache: 'pip'
 
       - name: Create a new Python environment & install maturin
         if: steps.cache-venv.outputs.cache-hit != 'true'
@@ -145,20 +144,20 @@ jobs:
 
 
   build-linux:
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    # if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     env:
       CC:   gcc-11
       CXX:  g++-11
     strategy:
       matrix:
-        target: [x86_64, x86, aarch64, armv7]
+        # target: [x86_64, x86, aarch64, armv7]
+        target: [x86_64]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pip'
       - name: Setup environment
         run:  |
           sudo apt-get update
@@ -192,7 +191,6 @@ jobs:
         with:
           python-version: '3.10'
           architecture: ${{ matrix.target }}
-          cache: 'pip'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -216,7 +214,6 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-          cache: 'pip'
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
