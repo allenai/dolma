@@ -3,7 +3,7 @@ import bisect
 import fnmatch
 import re
 from collections import defaultdict
-from functools import partial
+from functools import lru_cache, partial
 from pathlib import Path
 from statistics import stdev
 from typing import List, Optional, Sequence, Tuple
@@ -48,9 +48,14 @@ def parse_args():
     return ap.parse_args()
 
 
+@lru_cache(maxsize=1)
+def translate_to_regex(s: str) -> re.Pattern:
+    return re.compile(fnmatch.translate(s))
+
+
 def match_run_name(name: str, run_names: List[str]) -> Optional[str]:
     for run_name in run_names:
-        if fnmatch.filter([name], run_name) or re.search(run_name, name):
+        if translate_to_regex(run_name).search(name):
             return run_name
     return None
 
@@ -100,9 +105,10 @@ def main():
 
     for wb_run in wb_runs:
         plot_group_name = run_name_matcher(wb_run.name)
-        if plot_group_name is None:
-            raise ValueError(f"Could not find a name match for {wb_run.name}")
 
+        if plot_group_name is None:
+            print(f"WARNING: could not find a name match for {wb_run.name}")
+            continue
         print(f"Processing run {wb_run.name} into group {plot_group_name}")
 
         if opts.samples > 0:

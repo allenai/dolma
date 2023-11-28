@@ -19,22 +19,30 @@ reddit-v1-ablation-toxic-filtered_*: NSFW + Hate Filter
 
 # Data mixture
 olmo-mix-v1-sample_*: Equal Data Mix
-olmo-mix-v1-sample-mix2_*: "200% Wiki, 200% peS2o"
+olmo-mix-v1-sample-mix2_*: "↗ Reference (200% Wiki, 200% peS2o)"
 olmo-mix-v1-sample-all-cc*: "Only Common Crawl (CC)"
-olmo-mix-v1-gopher-like_*: "20% Code, 60% CC, 200% peS2o"
+olmo-mix-v1-gopher-like_*: "Gopher-like (20% Code, 60% CC, 200% peS2o)"
 
 # Dedupe
 abl-cc-v2-small-dedup*: Paragraph Deduplication
 
 # Path to final cleanup
-v1-small-c4-cleaned_\d+: C4 Rules (EoS)
-v1-small-c4-filtered_\d+: C4 Rules (All)
-v1-small-gopher-filtered_\d+: Gopher Rules (All)
-v1-small-c4-cleaned-gopher-filtered_\d+: C4 (EoS), Gopher (All)
-v1-small-c4-cleaned-gopher-filtered-deduped_\d+: C4 (EoS), Gopher (All), Dedup
-
+v1-small-c4-cleaned_*: C4 Rules (EoS)
+v1-small-c4-filtered_*: C4 Rules (All)
+v1-small-gopher-filtered_*: Gopher Rules (All)
+v1-small-c4-cleaned-gopher-filtered_*: C4 (EoS), Gopher (All)
+v1-small-c4-cleaned-gopher-filtered-deduped_*: C4 (EoS), Gopher (All), Dedup
 cc_quality:
   olmo-mix-v1-sample-all-cc*: C4 (EoS), Gopher (All), Dedup, PII, Toxic
+
+# Reddit ablations
+reddit_selection:
+    reddit-v5-ablation-filtered-*: Reddit v5 (Filtered)
+    reddit-v5-ablation-base-*: Reddit v5
+    reddit-v4-ablation-base-*: Reddit v4
+    reddit-v3-ablation-base-*: Reddit v3
+    reddit-v2-ablation-base-*: Reddit v2
+    reddit-v1-ablation-base_*: Reddit v1
 
 # Code Experiments
 stack-v2*: Dolma (Stack v2)

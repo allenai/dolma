@@ -240,7 +240,8 @@ ablations_runs=(
     'c4-stack-15p* c4_p85-stack_v4_p15* c4_p85-starcoder_p15*'
     'v1-small-hatespeech-filtered-low* v1-small-nsfw-filtered-low* v1-small-hatespeech-filtered-high* v1-small-nsfw-filtered-high* abl-cc-v1-small-dedup_*'
     'abl-cc-v1-small-dedup_* abl-cc-v2-small-dedup*'
-    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_\d+ v1-small-c4-filtered_\d+ v1-small-gopher-filtered_\d+ v1-small-c4-cleaned-gopher-filtered_\d+ v1-small-c4-cleaned-gopher-filtered-deduped_\d+ olmo-mix-v1-sample-all-cc*'
+    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_* v1-small-c4-filtered_* v1-small-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
+    'reddit-v5-ablation-filtered-* reddit-v5-ablation-base-* reddit-v4-ablation-base-* reddit-v3-ablation-base-* reddit-v2-ablation-base-* reddit-v1-ablation-base_*'
 )
 ablations_names=(
     'cc_pii_filtering'
@@ -251,6 +252,7 @@ ablations_names=(
     'cc_toxic_filtering'
     'cc_dedupe'
     'cc_quality'
+    'reddit_selection'
 )
 
 limits=(
@@ -262,6 +264,7 @@ limits=(
     '150e9'
     '150e9'
     '150e9'
+    '70e9'
 )
 
 # Loop through the indices of the array.
