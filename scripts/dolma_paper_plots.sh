@@ -293,7 +293,7 @@ for index in "${!ablations_names[@]}"; do
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
             --plotly-font-size 9 \
             --plotly-figure-width 400 \
-            --plotly-figure-height 400
+            --plotly-figure-height 250
 
         set +ex
     fi
@@ -314,7 +314,7 @@ for index in "${!ablations_names[@]}"; do
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
             --plotly-font-size 9 \
             --plotly-figure-width 400 \
-            --plotly-figure-height 400
+            --plotly-figure-height 250
 
         set +ex
 
@@ -338,7 +338,7 @@ for index in "${!ablations_names[@]}"; do
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
             --plotly-font-size 9 \
             --plotly-figure-width 400 \
-            --plotly-figure-height 400
+            --plotly-figure-height 250
 
         set +ex
     fi
@@ -361,7 +361,7 @@ for index in "${!ablations_names[@]}"; do
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
             --plotly-font-size 9 \
             --plotly-figure-width 400 \
-            --plotly-figure-height 400
+            --plotly-figure-height 250
 
         set +ex
     fi
