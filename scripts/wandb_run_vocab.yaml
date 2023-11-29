@@ -7,6 +7,8 @@ olmo-small-c4-*: C4
 olmo-small-mc4-*: mC4 (English)
 olmo-small-3T-lower-lr-tie_*: 1B Dolma Model
 
+GPT-Neox-20B*: C4 Baseline
+
 # Ablation for PII masking
 v1-small-pi-less-than-5-anonymize_*: PII Remove (>=5) + Mask (<5)
 v1-small-all-pi-removed_*: PII Remove All

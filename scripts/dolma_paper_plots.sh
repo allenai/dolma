@@ -237,7 +237,7 @@ ablations_runs=(
     'reddit-v1-ablation-base_* reddit-v1-ablation-pii-nsfw-toxic_filtered_* reddit-v1-ablation-toxic-filtered_*'
     'olmo-mix-v1-sample_* olmo-mix-v1-sample-all-cc* olmo-mix-v1-sample-mix2_* olmo-mix-v1-gopher-like_*'
     'stack-v2* stack-v4*'
-    'c4-stack-15p* c4_p85-stack_v4_p15* c4_p85-starcoder_p15*'
+    'GPT-Neox-20B* c4-stack-15p* c4_p85-stack_v4_p15* c4_p85-starcoder_p15*'
     'v1-small-hatespeech-filtered-low* v1-small-nsfw-filtered-low* v1-small-hatespeech-filtered-high* v1-small-nsfw-filtered-high* abl-cc-v1-small-dedup_*'
     'abl-cc-v1-small-dedup_* abl-cc-v2-small-dedup*'
     'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_* v1-small-c4-filtered_* v1-small-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
