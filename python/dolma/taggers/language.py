@@ -115,6 +115,12 @@ class FastTextAllLanguagesDocumentTagger(BaseFastTextTagger):
         ]
 
 
+@TaggerRegistry.add("ft_lang_id_paragraph_v1")
+class FastTextAllLanguageParagraphTagger(FastTextAllLanguagesDocumentTagger):
+    def __init__(self):
+        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
+
+
 @TaggerRegistry.add("ft_lang_id_en_doc_v2")
 class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
