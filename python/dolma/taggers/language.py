@@ -100,6 +100,21 @@ class Cld2LanguageFilterParagraph(Cld2LanguageFilter):
         return DocResult(doc=doc, spans=spans)
 
 
+@TaggerRegistry.add("ft_lang_id_doc_v1")
+class FastTextAllLanguagesDocumentTagger(BaseFastTextTagger):
+    MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+
+    def __init__(self):
+        super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+        preds = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
+        return [
+            Prediction(label=label.replace("__label__", ""), score=score)
+            for label, score in sorted(zip(*preds), key=lambda x: x[1], reverse=True)
+        ]
+
+
 @TaggerRegistry.add("ft_lang_id_en_doc_v2")
 class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
