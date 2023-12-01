@@ -30,20 +30,20 @@ class BaseRepetitionsTagger(BaseTagger):
         doc_max_span = Span(
             start=0,
             end=len(doc.text),
-            type="doc_max_repetition",
+            type="doc_max_score_repetition",
             score=max(spans, key=lambda s: s.score).score if spans else 0.0,
         )
         doc_mean_reps_span = Span(
             start=0,
             end=len(doc.text),
-            type="doc_mean_repetition",
-            score=float(np.mean([s.score for s in spans]) if spans else 0),
+            type="doc_max_length_repetition",
+            score=max(s.end - s.start for s in spans) if spans else 0,
         )
         doc_frac_reps_span = Span(
             start=0,
             end=len(doc.text),
             type="doc_frac_repetition",
-            score=float(sum([s.score for s in spans]) / len(doc.text) if spans else 0),
+            score=float(sum(s.end - s.start for s in spans) / len(doc.text) if spans else 0),
         )
         return [doc_max_span, doc_mean_reps_span, doc_frac_reps_span]
 
@@ -66,12 +66,15 @@ class RepetitionsTagger(BaseRepetitionsTagger):
     def _extract_from_text(self, text: str) -> Generator[Span, None, None]:
         """Extract repetitions of characters in the text."""
         for match in self.re_char_repetitions.finditer(text):
-            yield Span(
-                start=(start := match.start()),
-                end=(end := match.end()),
+            repeated_text = match.group(1)
+            span = Span(
+                start=match.start(),
+                end=match.end(),
                 type="repetition",
-                score=float(end - start),
+                # score=float(end - start) // len(repeated_text),
+                score=match.group(0).count(repeated_text),
             )
+            yield span
 
 
 @TaggerRegistry.add("paragraph_repetitions_v1")
@@ -110,12 +113,13 @@ class TokenizerRepetitionsTagger(BaseRepetitionsTagger):
             arr=np.array(tokens.ids), min_period=self.MIN_PERIOD, max_period=self.MAX_PERIOD
         )
         for seq in sequences_iter:
-            yield Span(
-                start=(s := tokens.offsets[seq.start][0]),
-                end=(e := tokens.offsets[seq.end - 1][1]),
+            out = Span(
+                start=tokens.offsets[seq.start][0],
+                end=tokens.offsets[seq.end - 1][1],
                 type="repetition",
-                score=float(e - s),
+                score=seq.times,
             )
+            yield out
 
 
 @TaggerRegistry.add("paragraph_tokenizer_repetitions_v1")

@@ -196,7 +196,6 @@ fn write_attributes(
                         ];
                         duplicate_docs_array.push(Value::Array(attr));
                         attributes[&cfg.attribute_name] = Value::Array(duplicate_docs_array);
-
                     } else if !bloom_filter.read_only {
                         bloom_filter.insert(&dedupe_key);
                     }
