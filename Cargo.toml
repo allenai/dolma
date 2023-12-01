@@ -1,6 +1,6 @@
 [package]
 name = "dolma"
-version = "0.9.2"
+version = "0.9.3"
 edition = "2021"
 license = "Apache-2.0"
 
@@ -33,12 +33,12 @@ rand = "0.8.4"
 rayon = "1.7.0"
 regex = "1.8.4"
 serde = { version = "1.0.160", features = ["derive", "rc"] }
-serde_json = "1.0.97"
+serde_json = "1.0.108"
 simple_logger = { version = "3.0", features = ["stderr", "colors"], default-features = false, optional = true }
 structopt = { version = "0.3", optional = true }
 thousands = "0.2"
 threadpool = "1.8.1"
-tokenizers = { git = "https://github.com/epwalsh/tokenizers", branch = "into-tokens" }
+tokenizers = {version = "0.15.0", features = ["http"]}
 tokio = {version = "1.27.0", features = ["full"]}
 tokio-util = "0.7.7"
 unicode-segmentation = "1.7"

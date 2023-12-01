@@ -12,6 +12,7 @@ use flate2::Compression;
 use serde_json::{json, Value};
 use threadpool::ThreadPool;
 
+use crate::wimbd::tokens::tokenize;
 use crate::bloom_filter::BloomFilter;
 use crate::s3_util;
 use crate::shard::shard_config::WorkDirConfig;
@@ -129,6 +130,9 @@ fn write_attributes(
             GzEncoder::new(tmp_output, Compression::default()),
         );
 
+        let min_content_length = dedupe_config.min_length.unwrap_or(1);
+        let min_word_length = dedupe_config.min_words.unwrap_or(0);
+
         for (line_number, line) in reader.lines().enumerate() {
             let line = match line {
                 Ok(line) => line,
@@ -162,7 +166,16 @@ fn write_attributes(
                         .to_string()
                 };
 
-                if document_key.len() == 0 {
+                if min_word_length > 0 {
+                    // Split the text into words and check the number of words.
+                    let words = tokenize(&document_key);
+
+                    if words.count() < min_word_length {
+                        // skip documents with fewer than min_words words
+                        continue;
+                    }
+                }
+                else if document_key.len() < min_content_length {
                     // skip length 0 documents
                     continue;
                 } else if dedupe_config.skip_empty.unwrap_or(false)
@@ -201,10 +214,21 @@ fn write_attributes(
                             }
                             let par_end = offset;
 
-                            if par_start == par_end {
+                            if offset < min_content_length {
                                 // skip length 0 paragraphs
                                 continue;
-                            } else if dedupe_config.skip_empty.unwrap_or(false)
+                            }
+                            if min_word_length > 0 {
+                                // Split the text into words and check the number of words.
+                                let words = tokenize(&p);
+
+                                if words.count() < min_word_length {
+                                    // skip documents with fewer than min_words words
+                                    continue;
+                                }
+                            }
+
+                            else if dedupe_config.skip_empty.unwrap_or(false)
                                 && p.trim().is_empty()
                             {
                                 // skip empty paragraphs if dedupe_config.skip_empty is true
@@ -286,7 +310,8 @@ pub mod deduper_config {
         pub name: String,
         pub documents: Option<DocumentDedupeConfig>,
         pub paragraphs: Option<ParagraphDedupeConfig>,
-
+        pub min_length: Option<usize>,
+        pub min_words: Option<usize>,
         pub skip_empty: Option<bool>,
     }
 

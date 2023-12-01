@@ -1,3 +1,6 @@
+//! Code imported from github.com/allenai/wimbd/blob/main/src/io.rs
+//! and modified by @soldni to integrate in dolma.
+//!
 //! IO helpers.
 
 use std::{

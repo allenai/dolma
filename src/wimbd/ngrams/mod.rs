@@ -1,3 +1,5 @@
+//! Code imported from github.com/allenai/wimbd/blob/main/src/ngrams/mod.rs
+//! and modified by @soldni to integrate in dolma.
 //! Utilities for working with and counting ngrams.
 
 use std::collections::VecDeque;
@@ -11,7 +13,7 @@ mod topk;
 pub use counter::NgramCounter;
 pub use topk::TopKNgrams;
 
-use crate::tokens::{tokenize, PretrainedTokenizer};
+use crate::wimbd::tokens::{tokenize, PretrainedTokenizer};
 
 /// A helper function to quickly create an [`Ngram`] iterator given some text and a tokenizer.
 pub fn ngrams<'a>(

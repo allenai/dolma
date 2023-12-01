@@ -1,3 +1,6 @@
+//! Code imported from github.com/allenai/wimbd/blob/main/src/ngrams/counter.rs
+//! and modified by @soldni to integrate in dolma.
+
 use std::hash::{BuildHasher, Hash, Hasher};
 use std::sync::atomic::Ordering;
 

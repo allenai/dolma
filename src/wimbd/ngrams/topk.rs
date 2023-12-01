@@ -1,3 +1,6 @@
+//! Code imported from github.com/allenai/wimbd/blob/main/src/ngrams/topk.rs
+//! and modified by @soldni to integrate in dolma.
+
 use std::collections::{BTreeSet, HashMap};
 use std::hash::Hash;
 use std::rc::Rc;

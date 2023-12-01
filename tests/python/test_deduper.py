@@ -3,9 +3,12 @@ import shutil
 from contextlib import ExitStack
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import List, Optional
 from unittest import TestCase
+from uuid import uuid4
 
 from dolma.cli.__main__ import main
+import smart_open
 
 from .utils import (
     clean_test_data,
@@ -104,3 +107,49 @@ class TestDeduper(TestCase):
         expected = load_jsonl("tests/data/expected/dedupe-by-url.json.gz")
         computed = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/attributes/dedupe_by_url/000.json.gz")
         self.assertEqual(expected, computed)
+
+
+class TestAdvancedDeduper(TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def write_docs(self, docs: List[str], ext_dir: Optional[Path] = None) -> Path:
+        encoded_docs = [
+            {'id': str(i), 'text': d, 'source': __file__}
+            for i, d in enumerate(docs)
+        ]
+        dir_name = uuid4()
+        file_name = uuid4()
+        fp = Path(self.temp_dir.name) / f'{dir_name}/documents/{file_name}.jsonl.gz'
+        with smart_open.open(fp, 'w') as f:
+            for doc in encoded_docs:
+                f.write(json.dumps(doc) + '\n')
+        return fp
+
+    def read_docs(self, fp: Path) -> List[str]:
+        ...
+
+    def test_skip_empty(self):
+        documents = [
+            "Short document\n" + "\n" + "More text\n",
+            "Short document #2\n" + "\n" + "More text\n"
+        ]
+
+        docs_fp = self.write_docs(documents)
+
+        config = {
+            "documents": [str(docs_fp)],
+            "attributes": [
+                {
+                    "name": "dedupe_paragraphs",
+                    "type": "dedupe",
+                    "params": {
+                        "dedupe_by": "paragraphs",
+                        "skip_empty": True
+                    }
+                }
+            ]
+        }
