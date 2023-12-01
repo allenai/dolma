@@ -186,7 +186,17 @@ fn write_attributes(
                 } else {
                     let dedupe_key = VecDeque::from([document_key.as_str()]);
                     if bloom_filter.contains(&dedupe_key) {
-                        attributes[&cfg.attribute_name] = Value::Bool(true);
+                        // attributes[&cfg.attribute_name] = Value::Bool(true);
+
+                        let mut duplicate_docs_array = Vec::new();
+                        let attr = vec![
+                            Value::from(0),
+                            Value::Number(document_key.len().into()),
+                            Value::from(1),
+                        ];
+                        duplicate_docs_array.push(Value::Array(attr));
+                        attributes[&cfg.attribute_name] = Value::Array(duplicate_docs_array);
+
                     } else if !bloom_filter.read_only {
                         bloom_filter.insert(&dedupe_key);
                     }
