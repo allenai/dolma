@@ -39,12 +39,12 @@ cc_quality:
 
 # Reddit ablations
 reddit_selection:
-    reddit-v5-ablation-filtered-*: Reddit v5 (Filtered)
-    reddit-v5-ablation-base-*: Reddit v5
-    reddit-v4-ablation-base-*: Reddit v4
-    reddit-v3-ablation-base-*: Reddit v3
-    reddit-v2-ablation-base-*: Reddit v2
-    reddit-v1-ablation-base_*: Reddit v1
+
+    reddit-v5-ablation-filtered-gen-2_*: Atomic Content, Dedup, PII, Toxic
+    reddit-v3-ablation-base-*: Atomic Content
+    reddit-v2-ablation-base-*: Partial Threads, Dedup
+    reddit-v4-ablation-base-*: Complete Threads
+    reddit-v1-ablation-base_*: Partial Threads
 
 # Code Experiments
 stack-v2*: Dolma (Stack v2)
