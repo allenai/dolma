@@ -12,11 +12,11 @@ use flate2::Compression;
 use serde_json::{json, Value};
 use threadpool::ThreadPool;
 
-use crate::wimbd::tokens::tokenize;
 use crate::bloom_filter::BloomFilter;
 use crate::s3_util;
 use crate::shard::shard_config::WorkDirConfig;
 use crate::shard::{find_objects_matching_patterns, FileCache};
+use crate::wimbd::tokens::tokenize;
 
 use deduper_config::*;
 
@@ -174,8 +174,7 @@ fn write_attributes(
                         // skip documents with fewer than min_words words
                         continue;
                     }
-                }
-                else if document_key.len() < min_content_length {
+                } else if document_key.len() < min_content_length {
                     // skip length 0 documents
                     continue;
                 } else if dedupe_config.skip_empty.unwrap_or(false)
@@ -226,9 +225,7 @@ fn write_attributes(
                                     // skip documents with fewer than min_words words
                                     continue;
                                 }
-                            }
-
-                            else if dedupe_config.skip_empty.unwrap_or(false)
+                            } else if dedupe_config.skip_empty.unwrap_or(false)
                                 && p.trim().is_empty()
                             {
                                 // skip empty paragraphs if dedupe_config.skip_empty is true

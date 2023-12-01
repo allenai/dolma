@@ -7,8 +7,9 @@ from typing import List, Optional
 from unittest import TestCase
 from uuid import uuid4
 
-from dolma.cli.__main__ import main
 import smart_open
+
+from dolma.cli.__main__ import main
 
 from .utils import (
     clean_test_data,
@@ -117,26 +118,20 @@ class TestAdvancedDeduper(TestCase):
         self.temp_dir.cleanup()
 
     def write_docs(self, docs: List[str], ext_dir: Optional[Path] = None) -> Path:
-        encoded_docs = [
-            {'id': str(i), 'text': d, 'source': __file__}
-            for i, d in enumerate(docs)
-        ]
+        encoded_docs = [{"id": str(i), "text": d, "source": __file__} for i, d in enumerate(docs)]
         dir_name = uuid4()
         file_name = uuid4()
-        fp = Path(self.temp_dir.name) / f'{dir_name}/documents/{file_name}.jsonl.gz'
-        with smart_open.open(fp, 'w') as f:
+        fp = Path(self.temp_dir.name) / f"{dir_name}/documents/{file_name}.jsonl.gz"
+        with smart_open.open(fp, "w") as f:
             for doc in encoded_docs:
-                f.write(json.dumps(doc) + '\n')
+                f.write(json.dumps(doc) + "\n")
         return fp
 
     def read_docs(self, fp: Path) -> List[str]:
         ...
 
     def test_skip_empty(self):
-        documents = [
-            "Short document\n" + "\n" + "More text\n",
-            "Short document #2\n" + "\n" + "More text\n"
-        ]
+        documents = ["Short document\n" + "\n" + "More text\n", "Short document #2\n" + "\n" + "More text\n"]
 
         docs_fp = self.write_docs(documents)
 
@@ -146,10 +141,7 @@ class TestAdvancedDeduper(TestCase):
                 {
                     "name": "dedupe_paragraphs",
                     "type": "dedupe",
-                    "params": {
-                        "dedupe_by": "paragraphs",
-                        "skip_empty": True
-                    }
+                    "params": {"dedupe_by": "paragraphs", "skip_empty": True},
                 }
-            ]
+            ],
         }
