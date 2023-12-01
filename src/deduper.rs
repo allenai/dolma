@@ -162,7 +162,12 @@ fn write_attributes(
                         .to_string()
                 };
 
-                if dedupe_config.skip_empty.unwrap_or(false) && document_key.trim().is_empty() {
+                if document_key.len() == 0 {
+                    // skip length 0 documents
+                    continue;
+                } else if dedupe_config.skip_empty.unwrap_or(false)
+                    && document_key.trim().is_empty()
+                {
                     // skip empty documents if dedupe_config.skip_empty is true
                     // and the document key is empty after trimming (i.e., removing whitespace)
                     continue;
@@ -196,7 +201,12 @@ fn write_attributes(
                             }
                             let par_end = offset;
 
-                            if dedupe_config.skip_empty.unwrap_or(false) && p.trim().is_empty() {
+                            if par_start == par_end {
+                                // skip length 0 paragraphs
+                                continue;
+                            } else if dedupe_config.skip_empty.unwrap_or(false)
+                                && p.trim().is_empty()
+                            {
                                 // skip empty paragraphs if dedupe_config.skip_empty is true
                                 // and the paragraph is empty after trimming (i.e., removing whitespace)
                                 continue;

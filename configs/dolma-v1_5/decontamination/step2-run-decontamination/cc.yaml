@@ -1,0 +1,20 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_head/*.gz
+  - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_middle/*.gz
+  - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_tail/*.gz
+  # - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_middle/cc_en_middle-0954.json.gz
+  # - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_tail/cc_en_tail-1690.json.gz
+
+dedupe:
+  name: perplexity_suite_v3_option2
+  paragraphs:
+    attribute_name: bff_duplicate_paragraph_spans_decontamination
+  skip_empty: true
+
+bloom_filter:
+  read_only: true
+  estimated_doc_count: 488541
+  size_in_bytes: 104857600  # 100 MB; smaller causes too many FPs
+  file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option2.bin
+
+processes: 188

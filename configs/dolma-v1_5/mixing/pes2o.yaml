@@ -1,0 +1,43 @@
+---
+streams:
+- name: pes2o_v2
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=0/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=1/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=2/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=3/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=4/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=5/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=6/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=7/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=8/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2ag/split=train/part_id=9/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=0/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=1/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=2/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=3/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=4/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=5/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=6/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=7/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=8/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=9/*.gz
+  output:
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/pes2o
+    max_size_in_bytes: 4294967296
+    discard_fields:
+    - attributes
+
+  attributes:
+    - perplexity_suite_v3_option2
+
+  filter:
+    include: []
+    exclude:
+    - "$@.attributes[?(@.bff_duplicate_paragraph_spans && @.bff_duplicate_paragraph_spans[0]
+      && @.bff_duplicate_paragraph_spans[0][2] >= 1.0)]"
+
+work_dir:
+  input: "/tmp/olmo-mix-v1_5/input"
+  output: "/tmp/olmo-mix-v1_5/output"
+processes: 188
