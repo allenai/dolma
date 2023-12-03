@@ -2,7 +2,11 @@ import json
 import os
 import re
 import uuid
-from typing import List, Tuple
+from itertools import chain
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import List, Optional, Tuple, Union
+from unittest import TestCase
 from urllib.parse import urlparse
 
 import boto3
@@ -123,6 +127,68 @@ def upload_s3_prefix(s3_prefix: str, local_prefix: str):
         s3.upload_file(Bucket=bucket_name, Key=f"{prefix}/{name}", Filename=local_fp)
 
 
-def load_jsonl(fp: str) -> List[dict]:
+def load_jsonl(fp: Union[str, Path]) -> List[dict]:
     with smart_open.open(fp, "r") as f:
         return [json.loads(ln) for ln in f]
+
+
+class TestCasePipeline(TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self.temp_dir.cleanup()
+
+    def readUnits(self, paths: List[Union[Path, str]]) -> List[dict]:
+        units = chain.from_iterable(load_jsonl(fp) for fp in paths)
+        return sorted(units, key=lambda x: int(x["id"]))
+
+    def writeUnits(
+        self, units: List[dict], unit_type: str, partitions: int = 1, ext_dir: Optional[Path] = None
+    ) -> List[str]:
+        if len(units) < partitions:
+            raise ValueError(f"Cannot partition {len(units)} {unit_type} over {partitions} partitions")
+
+        dir_path = ext_dir or Path(self.makeUniquePath())
+        file_paths = []
+        for i in range(partitions):
+            fp = dir_path / f"{unit_type}/{i}.jsonl.gz"
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            with smart_open.open(fp, "w") as f:
+                for doc in units[i::partitions]:
+                    f.write(json.dumps(doc) + "\n")
+            file_paths.append(fp)
+
+        return [str(p) for p in file_paths]
+
+    def writeDocs(self, docs: List[str], partitions: int = 1, ext_dir: Optional[Path] = None) -> List[str]:
+        encoded_docs = [{"id": str(i), "text": d, "source": __file__} for i, d in enumerate(docs)]
+        return self.writeUnits(units=encoded_docs, unit_type="documents", partitions=partitions, ext_dir=ext_dir)
+
+    def writeAttributes(
+        self,
+        attributes: List[List[Tuple[int, int, float]]],
+        attribute_name: str,
+        partitions: int = 1,
+        ext_dir: Optional[Path] = None,
+    ) -> List[str]:
+        encoded_attributes = [{"id": str(i), "attributes": d} for i, d in enumerate(attributes)]
+        return self.writeUnits(
+            units=encoded_attributes,
+            unit_type=f"attributes/{attribute_name}",
+            partitions=partitions,
+            ext_dir=ext_dir,
+        )
+
+    def makeUniquePath(self, ext_dir: Optional[Path] = None, ext: str = "") -> str:
+        ext = f".{ext.lstrip('.')}" if ext else ext
+        return f"{ext_dir or self.temp_dir.name}/{uuid.uuid4()}{ext}"
+
+    def writeConfig(self, config: dict, ext_dir: Optional[Path] = None) -> str:
+        fp = Path(self.makeUniquePath(ext="json", ext_dir=ext_dir))
+        with smart_open.open(fp, "wt") as f:
+            json.dump(config, f, indent=2, sort_keys=True)
+        return str(fp)
+
+    def combineIntoDoc(self, *lines: str, join: str = "\n") -> str:
+        return join.join(lines)

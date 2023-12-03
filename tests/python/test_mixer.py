@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from typing import List
 from unittest import TestCase
 
 from dolma.cli.__main__ import main
@@ -35,37 +36,52 @@ class TestMixer(TestCase):
         if self.remote_test_prefix is not None:
             clean_test_data(self.remote_test_prefix)
 
+    def checkAndRemoveProvenance(self, provided: List[dict]) -> List[dict]:
+        prev_id = 0
+        for row in provided:
+            self.assertIn("metadata", row)
+            self.assertIn("provenance", row["metadata"])
+            provenance = row["metadata"].pop("provenance")
+            path, lid = provenance.rsplit(":", 1)
+            self.assertGreater(int(lid), prev_id)
+            prev_id = int(lid)
+
+            # remove metadata if empty
+            len(row["metadata"]) == 0 and row.pop("metadata")
+
+        return provided
+
     def test_email_spans(self):
         main(argv=["-c", str(EMAIL_SPANS), "mix"])
 
-        self.assertEqual(
-            load_jsonl("tests/data/expected/email-spans.json.gz"),
-            load_jsonl("tests/work/output/email-spans/email-spans-0000.json.gz"),
-        )
+        expected = load_jsonl("tests/data/expected/email-spans.json.gz")
+        provided = load_jsonl("tests/work/output/email-spans/email-spans-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)
 
     def test_filter_by_spans(self):
         main(argv=["-c", str(FILTER_BY_SPANS), "mix"])
 
-        self.assertEqual(
-            load_jsonl("tests/data/expected/filter-by-spans.json.gz"),
-            load_jsonl("tests/work/output/filter-by-spans/filter-by-spans-test-0000.json.gz"),
-        )
+        expected = load_jsonl("tests/data/expected/filter-by-spans.json.gz")
+        provided = load_jsonl("tests/work/output/filter-by-spans/filter-by-spans-test-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)
 
     def test_mixer(self):
         main(argv=["-c", str(MIXER), "mix"])
 
-        self.assertEqual(
-            load_jsonl("tests/data/expected/mixer.json.gz"),
-            load_jsonl("tests/work/output/mixer/mixer-test-0000.json.gz"),
-        )
+        expected = load_jsonl("tests/data/expected/mixer.json.gz")
+        provided = load_jsonl("tests/work/output/mixer/mixer-test-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)
 
     def test_paragraph_spans(self):
         main(argv=["-c", str(PARAGRAPH_SPANS), "mix"])
 
-        self.assertEqual(
-            load_jsonl("tests/data/expected/remove-paragraphs.json.gz"),
-            load_jsonl("tests/work/output/paragraph-spans/paragraph-spans-test-0000.json.gz"),
-        )
+        expected = load_jsonl("tests/data/expected/remove-paragraphs.json.gz")
+        provided = load_jsonl("tests/work/output/paragraph-spans/paragraph-spans-test-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)
 
     def test_local_input_remote_output(self):
         if self.remote_test_prefix is None:
@@ -88,10 +104,10 @@ class TestMixer(TestCase):
 
         download_s3_prefix(f"{self.remote_test_prefix}/tests/work", "tests/work/remote")
 
-        self.assertEqual(
-            load_jsonl("tests/data/expected/mixer.json.gz"),
-            load_jsonl("tests/work/remote/output/mixer/mixer-test-0000.json.gz"),
-        )
+        expected = load_jsonl("tests/data/expected/mixer.json.gz")
+        provided = load_jsonl("tests/work/remote/output/mixer/mixer-test-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)
 
     def test_remote_input_remote_output(self):
         if self.remote_test_prefix is None:
@@ -117,11 +133,10 @@ class TestMixer(TestCase):
             main(argv=["-c", f.name, "mix"])
 
         download_s3_prefix(f"{self.remote_test_prefix}/tests/work", "tests/work/remote")
-
-        self.assertEqual(
-            load_jsonl("tests/data/expected/mixer.json.gz"),
-            load_jsonl("tests/work/remote/output/mixer/mixer-test-0000.json.gz"),
-        )
+        expected = load_jsonl("tests/data/expected/mixer.json.gz")
+        provided = load_jsonl("tests/work/remote/output/mixer/mixer-test-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)
 
     def test_remote_input_local_output(self):
         if self.remote_test_prefix is None:
@@ -142,7 +157,7 @@ class TestMixer(TestCase):
 
             main(argv=["-c", f.name, "mix"])
 
-        self.assertEqual(
-            load_jsonl("tests/data/expected/mixer.json.gz"),
-            load_jsonl("tests/work/output/mixer/mixer-test-0000.json.gz"),
-        )
+        expected = load_jsonl("tests/data/expected/mixer.json.gz")
+        provided = load_jsonl("tests/work/output/mixer/mixer-test-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)

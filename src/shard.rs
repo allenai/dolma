@@ -23,6 +23,7 @@ pub struct Shard {
     pub filter: Option<FilterConfig>,
     pub span_replacements: Option<Vec<SpanReplacementConfig>>,
     pub discard_fields: Option<Vec<String>>,
+    pub min_text_length: Option<usize>,
 }
 
 // A collection of paths to a document file and corresponding attribute files.
@@ -78,12 +79,13 @@ impl Shard {
                         "{}/{}-{:04}.json.gz",
                         stream_config.output.path, stream_config.name, stream_shard_count
                     );
-                    let shard = Shard {
+                    let shard: Shard = Shard {
                         inputs: shard_inputs.clone(),
                         output: output.clone(),
                         filter: stream_config.filter.clone(),
                         span_replacements: stream_config.span_replacement.clone(),
                         discard_fields: stream_config.output.discard_fields.clone(),
+                        min_text_length: stream_config.output.min_text_length.clone(),
                     };
                     shards.push(shard);
                     stream_shard_count += 1;
@@ -103,6 +105,7 @@ impl Shard {
                     filter: stream_config.filter.clone(),
                     span_replacements: stream_config.span_replacement.clone(),
                     discard_fields: stream_config.output.discard_fields.clone(),
+                    min_text_length: stream_config.output.min_text_length.clone(),
                 };
                 shards.push(shard);
                 stream_shard_count += 1;
@@ -129,8 +132,9 @@ impl Shard {
             s3_client: Box::new(s3_util::new_client(None)?),
             work: work_dirs.clone(),
         };
+        let min_text_length = self.min_text_length.clone().unwrap_or(0);
 
-        let output_path = cache.prepare_output(&self.output)?;
+        let output_path: PathBuf = cache.prepare_output(&self.output)?;
         {
             let output_file = OpenOptions::new()
                 .read(false)
@@ -350,12 +354,33 @@ impl Shard {
                             data.as_object_mut().unwrap().remove(f);
                         }
 
-                        // TODO: add check to make sure that the text field is not empty. Something like
-                        // if !data["text"].as_str().unwrap().is_empty() || skip_empty
-                        // make it configurable and off by default
-                        lines_written += 1;
-                        serde_json::to_writer(&mut writer, &data)?;
-                        writer.write_all(b"\n")?;
+                        // length of text after cleanup
+                        let curr_text_length = data["text"].as_str().unwrap().len();
+
+                        // If min_text_length is not set, default to 0
+                        if curr_text_length >= min_text_length {
+                            let provenance_string = Value::String(format!(
+                                "{}:{}",
+                                Path::new(&input_path.doc_path)
+                                    .file_name()
+                                    .unwrap()
+                                    .to_str()
+                                    .unwrap(),
+                                line_number
+                            ));
+
+                            // provenance string is assigned to a key of data["metadata"]
+                            // if "metadata" is a key in data; otherwise, create "metadata"
+                            // and add provenance to it
+                            if !data["metadata"].is_object() {
+                                data["metadata"] = Value::Object(serde_json::Map::new());
+                            }
+                            data["metadata"]["provenance"] = provenance_string;
+
+                            lines_written += 1;
+                            serde_json::to_writer(&mut writer, &data)?;
+                            writer.write_all(b"\n")?;
+                        }
                     }
                 }
                 cache.finalize_input(&input_path.doc_path)?;
@@ -407,6 +432,7 @@ pub mod shard_config {
         pub path: String,
         pub max_size_in_bytes: usize,
         pub discard_fields: Option<Vec<String>>,
+        pub min_text_length: Option<usize>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
