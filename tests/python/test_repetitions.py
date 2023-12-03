@@ -5,6 +5,7 @@ from dolma.taggers.repetitions import (
     ParagraphRepetitionsTagger,
     RepetitionsTagger,
     TokenizerRepetitionsTagger,
+    TokenizerRepetitionsSkipEmptyTagger,
 )
 
 DOCUMENT_WITH_REPETITIONS = """
@@ -140,3 +141,41 @@ class TestTokenizerRepetitionsTagger(unittest.TestCase):
 
         self.assertEqual(all_results.spans[i].type, "doc_frac_repetition")
         self.assertEqual(all_results.spans[i].score, matches_length / len(self.doc_with_reps.text))
+
+    def test_multiple_matches(self):
+        text = "NOOOOOOOOOOOOOO If it is a Pizza Oven, then it's first meal MUST be PIZZA!!!!!! otherwise it will fall apart!!!!!"
+        doc = Document(source=__file__, id="0", text=text)
+
+        rep_tagger = TokenizerRepetitionsTagger()
+        rep_tagger_uniq = TokenizerRepetitionsSkipEmptyTagger()
+
+        all_results = rep_tagger.predict(doc)
+        uniq_results = rep_tagger_uniq.predict(doc)
+
+        self.assertEqual(len(all_results.spans), 5)
+        self.assertEqual(len(uniq_results.spans), 4)
+
+        self.assertEqual(all_results.spans[0].start, 1)
+        self.assertEqual(all_results.spans[0].end, 15)
+        self.assertEqual(all_results.spans[0].score, 7)
+
+        self.assertEqual(all_results.spans[1].start, 1)
+        self.assertEqual(all_results.spans[1].end, 15)
+        self.assertEqual(all_results.spans[1].score, 3)
+
+        self.assertEqual(uniq_results.spans[0].start, 1)
+        self.assertEqual(uniq_results.spans[0].end, 15)
+        self.assertEqual(uniq_results.spans[0].score, 7)
+
+    def test_skip_empty(self):
+        text = "Nothing to note."
+        doc = Document(source=__file__, id="0", text=text)
+
+        rep_tagger = TokenizerRepetitionsTagger()
+        rep_tagger_uniq = TokenizerRepetitionsSkipEmptyTagger()
+
+        all_results = rep_tagger.predict(doc)
+        uniq_results = rep_tagger_uniq.predict(doc)
+
+        self.assertEqual(len(all_results.spans), 3)
+        self.assertEqual(len(uniq_results.spans), 0)

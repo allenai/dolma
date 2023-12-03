@@ -19,6 +19,8 @@ from .utils import find_periodic_sequences
 
 
 class BaseRepetitionsTagger(BaseTagger):
+    keep_stats_when_empty: bool = True
+
     @abstractmethod
     def _extract_from_text(self, text: str) -> Generator[Span, None, None]:
         raise NotImplementedError()
@@ -49,9 +51,11 @@ class BaseRepetitionsTagger(BaseTagger):
 
     def predict(self, doc: Document) -> DocResult:
         """Predict method for the tagger."""
-        reps_spans = list(self._extract_from_doc(doc))
-        document_stats_spans = self._compute_document_stats(spans=reps_spans, doc=doc)
-        return DocResult(doc=doc, spans=reps_spans + document_stats_spans)
+        span_reps = list(self._extract_from_doc(doc))
+        if self.keep_stats_when_empty or span_reps:
+            span_reps += self._compute_document_stats(spans=span_reps, doc=doc)
+
+        return DocResult(doc=doc, spans=span_reps)
 
 
 @TaggerRegistry.add("repetitions_v1")
@@ -138,3 +142,33 @@ class ParagraphTokenizerRepetitionsTagger(TokenizerRepetitionsTagger):
                 span.end += offset - 1
                 yield span
             offset += len(paragraph.text)
+
+
+@TaggerRegistry.add("tokenizer_repetitions_v2")
+class TokenizerRepetitionsSkipEmptyTagger(TokenizerRepetitionsTagger):
+    keep_stats_when_empty: bool = False
+    max_length: int = 100_000
+
+    def _extract_from_text(self, text: str) -> Generator[Span, None, None]:
+        sorted_spans = sorted(
+            super()._extract_from_text(text), key=lambda span: (span.start, -span.end, -span.score)
+        )
+        prev_start = prev_end = -1
+        for span in sorted_spans:
+            if span.start >= prev_start and span.end <= prev_end:
+                # avoid overlapping spans
+                continue
+
+            prev_start = span.start
+            prev_end = span.end
+            yield span
+
+    def _extract_from_doc(self, doc: Document) -> Generator[Span, None, None]:
+        offset = 0
+        for i in range(0, len(doc.text), self.max_length):
+            text = doc.text[i : i + self.max_length]
+            for span in self._extract_from_text(text):
+                span.start += offset
+                span.end += offset
+                yield span
+            offset += len(text)

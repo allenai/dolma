@@ -1,0 +1,26 @@
+
+streams:
+- name: reddit-v5-dedupe-pii-nsfw-toxic
+
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/*.gz
+
+  attributes:
+  - perplexity_suite_v3_option2
+
+  output:
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/reddit
+    max_size_in_bytes: 4294967296
+    discard_fields:
+    - attributes
+
+  filter:
+    exclude:
+    - "$@.attributes[?(@.bff_duplicate_paragraph_spans_decontamination && @.bff_duplicate_paragraph_spans_decontamination[0]
+      && @.bff_duplicate_paragraph_spans_decontamination[0][2] >= 1.0)]"
+
+
+work_dir:
+  input: "/tmp/olmo-mix-v1_5/input"
+  output: "/tmp/olmo-mix-v1_5/output"
+processes: 188
