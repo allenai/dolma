@@ -7,6 +7,7 @@ from unittest import TestCase
 from dolma.cli.__main__ import main
 
 from .utils import (
+    TestCasePipeline,
     clean_test_data,
     download_s3_prefix,
     get_test_prefix,

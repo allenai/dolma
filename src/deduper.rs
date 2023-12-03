@@ -130,7 +130,7 @@ fn write_attributes(
             GzEncoder::new(tmp_output, Compression::default()),
         );
 
-        let min_content_length = dedupe_config.min_length.unwrap_or(1);
+        let min_content_length = dedupe_config.min_length.unwrap_or(0);
         let min_word_length = dedupe_config.min_words.unwrap_or(0);
 
         for (line_number, line) in reader.lines().enumerate() {
