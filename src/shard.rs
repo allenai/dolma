@@ -355,7 +355,7 @@ impl Shard {
                         }
 
                         // length of text after cleanup
-                        let curr_text_length = data["text"].as_str().unwrap().len();
+                        let curr_text_length = data["text"].as_str().unwrap().trim().len();
 
                         // If min_text_length is not set, default to 0
                         if curr_text_length >= min_text_length {

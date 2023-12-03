@@ -162,3 +162,53 @@ class TestMixer(TestCase):
         provided = load_jsonl("tests/work/output/mixer/mixer-test-0000.json.gz")
         provided = self.checkAndRemoveProvenance(provided)
         self.assertEqual(expected, provided)
+
+
+class TestMixerPipeline(TestCasePipeline):
+    def test_min_length(self):
+        source_dir = Path(self.makeUniquePath())
+        output_dir = Path(self.makeUniquePath())
+
+        to_remove = "remove second sentence"
+        to_keep_head = "This is a test"
+        to_keep_tail = "do not touch"
+        documents = [
+            "doc",
+            self.combineIntoDoc(to_keep_head, to_remove),
+            self.combineIntoDoc("A", to_remove),
+            self.combineIntoDoc(to_keep_head, to_keep_tail),
+            self.combineIntoDoc("", "", "", "p", "", "", ""),
+        ]
+        docs_path = self.writeDocs(docs=documents, ext_dir=source_dir)
+
+        attributes = [
+            [],
+            [((start := documents[1].find(to_remove)), start + len(to_remove), 1)],
+            [((start := documents[2].find(to_remove)), start + len(to_remove), 1)],
+            [],
+            [],
+        ]
+        self.writeAttributes(attributes=attributes, attribute_name="test", ext_dir=source_dir)
+
+        config = {
+            "streams": [
+                {
+                    "name": "test",
+                    "documents": docs_path,
+                    "attributes": ["test"],
+                    "output": {"path": str(output_dir), "max_size_in_bytes": 10000000, "min_text_length": 4},
+                    "span_replacement": [{"span": "$.attributes.test", "min_score": 0.5, "replacement": ""}],
+                }
+            ],
+            "processes": 1,
+        }
+
+        config_path = self.writeConfig(config=config)
+
+        main(argv=["-c", config_path, "mix"])
+
+        new_docs = self.readUnits(list(output_dir.iterdir()))
+
+        self.assertEqual(len(new_docs), 2)
+        self.assertEqual(new_docs[0]["text"], self.combineIntoDoc(to_keep_head, ""))
+        self.assertEqual(new_docs[1]["text"], self.combineIntoDoc(to_keep_head, to_keep_tail))
