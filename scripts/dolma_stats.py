@@ -673,7 +673,7 @@ class LineStatsCC(cc_v1_c4_cleaned):
             debug=debug,
             **process_single_kwargs,
         )
-            
+
     @classmethod
     def process_single(
         cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
@@ -806,6 +806,56 @@ class c4(BaseStatsProcessor):
                 debug=debug,
             )
             processor(**process_single_kwargs)
+
+
+
+
+
+@Registry.add
+class cc_repetitions(BaseStatsProcessor):
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        attrs_path = source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v2/")
+
+        documents_decoder = msgspec.json.Decoder(InputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+        counts = Counts()
+        interval = 10_000
+
+        with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, attributes_line in zip(doc_file, attrs_file):
+                document = documents_decoder.decode(source_line)
+                attributes = attributes_decoder.decode(attributes_line)
+
+                text = document.text
+                for start, end, _ in sorted(
+                    attributes.attributes.get("bff_duplicate_paragraph_spans_decontamination", []),
+                    key=lambda t: -t[1],
+                ):
+                    # remove duplicate
+                    text = text[:start] + text[end:]
+
+                counts.add(text=text, url=document.metadata["url"])
+
+                if counts.documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=counts.documents % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counts.to_dict(), indent=2))
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+
+
+
+
+
+
+
 
 
 @Registry.add

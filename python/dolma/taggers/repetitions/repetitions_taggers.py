@@ -144,7 +144,7 @@ class ParagraphTokenizerRepetitionsTagger(TokenizerRepetitionsTagger):
             offset += len(paragraph.text)
 
 
-@TaggerRegistry.add("tokenizer_repetitions_v2")
+@TaggerRegistry.add("tokenizer_repetitions_v2r2")
 class TokenizerRepetitionsSkipEmptyTagger(TokenizerRepetitionsTagger):
     keep_stats_when_empty: bool = False
     max_length: int = 100_000
