@@ -846,7 +846,7 @@ dependencies = [
 
 [[package]]
 name = "dolma"
-version = "0.9.3"
+version = "0.9.2"
 dependencies = [
  "ahash",
  "anyhow",
