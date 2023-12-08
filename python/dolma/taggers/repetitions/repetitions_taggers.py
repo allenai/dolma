@@ -129,8 +129,8 @@ class TokenizerRepetitionsTagger(BaseRepetitionsTagger):
 @TaggerRegistry.add("paragraph_tokenizer_repetitions_v1")
 class ParagraphTokenizerRepetitionsTagger(TokenizerRepetitionsTagger):
     """Tagger to detect repetitions of tokens in paragraphs.
-    It's faster than the tokenizer repetition tagger, but it does not account for
-    repetitions of tokens that span multiple paragraphs."""
+    It's faster than the tokenizer repetition tagger, but it does not account
+    for repetitions of tokens that span multiple paragraphs."""
 
     def _extract_from_doc(self, doc: Document) -> Generator[Span, None, None]:
         offset = 0

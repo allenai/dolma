@@ -635,6 +635,77 @@ class v15_cc_c4_cleaned(cc_v1_c4_cleaned):
     stats = "s3://ai2-llm/stats/olmo-mix/v15/cc/v1_c4_cleaned/**/*.gz"
     decontamination_key: str = "perplexity_suite_v3_option2"
 
+
+@Registry.add
+class v15r2_cc_c4_cleaned_dup(cc_v1_c4_cleaned):
+    documents = (
+        "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
+    )
+    stats = "s3://ai2-llm/stats/olmo-mix/v15/cc/v15r2_cc_c4_cleaned_dup/**/*.gz"
+    decontamination_key: str = "perplexity_suite_v3_option2"
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        attributes = [
+            source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v2r2/"),
+            source_path.replace("/documents/", "/attributes/dedupe_paragraphs/"),
+            # source_path.replace("/documents/", "/attributes/dedupe_docs/"),
+        ]
+
+        doc_decoder = msgspec.json.Decoder(InputSpec)
+        attr_decoder = msgspec.json.Decoder(OutputSpec)
+
+        stats = {
+            'doc_length': 0,
+            'doc_count': 0,
+            'repetitions_count': defaultdict(int),
+            'repetitions_length': defaultdict(int),
+            'repetitions_period': defaultdict(int),
+        }
+        interval = 10_000
+
+        with ExitStack() as stack:
+            doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
+
+            try:
+                atts_files = [stack.enter_context(smart_open.open(path, "rb")) for path in attributes]
+            except Exception:
+                return
+
+            for doc_line, *attr_lines in zip(doc_file, *atts_files):
+                doc = doc_decoder.decode(doc_line)
+                stats['doc_length'] += len(doc.text)
+                stats['doc_count'] += 1
+
+                attrs = {}
+                for line in attr_lines:
+                    attrs.update(attr_decoder.decode(line).attributes)
+
+                repetitions = attrs.get("tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__repetition", [])
+                stats['repetitions_count'][len(repetitions)] += 1
+
+                repetition_max_length = attrs.get(
+                    'tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_length_repetition', [[0, 0, 0]]
+                )[0][-1]
+                stats['repetitions_length'][repetition_max_length] += 1
+
+                repetitions_period = attrs.get(
+                    "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition",
+                    [[0, 0, 0]],
+                )[0][-1]
+                stats['repetitions_period'][repetitions_period] += 1
+
+                if stats['doc_count'] % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=stats['doc_count'] % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(stats, indent=2))
+
+
 @Registry.add
 class LineStatsCC(cc_v1_c4_cleaned):
     # Selection of documents:
@@ -663,7 +734,7 @@ class LineStatsCC(cc_v1_c4_cleaned):
         "./cc_en_head-0786-stats.json.gz",
         "./cc_en_head-0857-stats.json.gz",
     ]
-    decontamination_key: str = 'decontamination'
+    decontamination_key: str = "decontamination"
 
     @classmethod
     def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
@@ -751,6 +822,7 @@ class LineStatsCC(cc_v1_c4_cleaned):
 
         cls.increment_progressbar(queue, files=1, documents=documents % interval)
 
+
 class C4InputSpec(InputSpec):
     metadata: Dict[str, Any] = msgspec.field(default_factory=dict)
 
@@ -806,56 +878,6 @@ class c4(BaseStatsProcessor):
                 debug=debug,
             )
             processor(**process_single_kwargs)
-
-
-
-
-
-@Registry.add
-class cc_repetitions(BaseStatsProcessor):
-    @classmethod
-    def process_single(
-        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
-    ):
-        attrs_path = source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v2/")
-
-        documents_decoder = msgspec.json.Decoder(InputSpec)
-        attributes_decoder = msgspec.json.Decoder(OutputSpec)
-        counts = Counts()
-        interval = 10_000
-
-        with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
-            for source_line, attributes_line in zip(doc_file, attrs_file):
-                document = documents_decoder.decode(source_line)
-                attributes = attributes_decoder.decode(attributes_line)
-
-                text = document.text
-                for start, end, _ in sorted(
-                    attributes.attributes.get("bff_duplicate_paragraph_spans_decontamination", []),
-                    key=lambda t: -t[1],
-                ):
-                    # remove duplicate
-                    text = text[:start] + text[end:]
-
-                counts.add(text=text, url=document.metadata["url"])
-
-                if counts.documents % interval == 0:
-                    cls.increment_progressbar(queue, documents=interval)
-
-        cls.increment_progressbar(queue, files=1, documents=counts.documents % interval)
-
-        with smart_open.open(destination_path, "wt") as destination_file:
-            destination_file.write(json.dumps(counts.to_dict(), indent=2))
-
-    @classmethod
-    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
-
-
-
-
-
-
-
 
 
 @Registry.add
