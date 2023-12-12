@@ -1,0 +1,17 @@
+streams:
+- name: my_data_deconned # ❗ Give this a name
+  documents:
+  - pretraining-data/tests/mixer/inputs/v0/documents/*/0000.json.gz # ❗ Change this to the path to your data
+  output:
+    path: pretraining-data/tests/mixer/inputs/v0_paloma_decon # ❗ Change this to the path to output your data
+    max_size_in_bytes: 1000000000
+  attributes:
+  - paloma_decon
+  filter:
+    exclude:
+    - "$@.attributes[?(@.bff_duplicate_paragraph_spans_decontamination && @.bff_duplicate_paragraph_spans_decontamination[0]
+      && @.bff_duplicate_paragraph_spans_decontamination[0][2] >= 1.0)]"
+work_dir:
+  input: tests/work/paloma_decon_removal/input
+  output: tests/work/paloma_decon_removal/output
+processes: 1 # ❗ Change this to the number of cores you want to use

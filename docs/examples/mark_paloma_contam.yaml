@@ -1,0 +1,20 @@
+documents:
+   - pretraining-data/tests/mixer/inputs/v0/documents/*/0000.json.gz # ❗ Change this to the path to your data
+
+ dedupe:
+   name: paloma_decon
+   paragraphs:
+     attribute_name: bff_duplicate_paragraph_spans_decontamination
+   skip_empty: true
+
+ bloom_filter:
+   read_only: true
+   estimated_doc_count: 488541
+   size_in_bytes: 33554432
+   file: bloom_filters/paloma_decon.bin
+
+ processes: 1 # ❗ Change this to the number of cores you want to use
+
+ work_dir:
+   input: tests/work/paloma_decon/input
+   output: tests/work/paloma_decon/output
