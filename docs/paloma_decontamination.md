@@ -1,4 +1,4 @@
-# Deduplication
+# Paloma Decontamination
 
 Dolma pioneers an approach for the removal of pretraining data contaminated with respect to perplexity evaluations. The following procedure is used to remove contamination with respect to [Paloma](paloma.allen.ai), a benchmark of perplexity evaluations, which we apply to Dolma. Here we describe how to apply this same decontamination to your own data.
 
