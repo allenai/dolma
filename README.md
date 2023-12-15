@@ -35,23 +35,12 @@ If you use the Dolma dataset or toolkit, please cite the following items:
 
 <!-- {% raw %} -->
 ```bibtex
-@techreport{DolmaDataset,
-    author = {Soldaini, Luca and Kinney, Rodney and Bhagia, Akshita and Schwenk, Dustin and Atkinson, David and Authur, Russell and Chandu, Khyathi and Dumas, Jennifer and Lucy, Li and Lyu, Xinxi and Magnusson, Ian and Naik, Aakanksha and Nam , Crystal and  Peters, Matthew E.  and Ravichander, Abhilasha and Shen, Zejiang and Strubell, Emma and Subramani, Nishant and Tafjord, Oyvind and Walsh, Evan Pete and Hajishirzi, Hannaneh and Smith, Noah A. and Zettlemoyer, Luke and Beltagy, Iz and Groeneveld, Dirk and Dodge, Jesse and Lo, Kyle},
-    title = {{Dolma: An Open Corpus of 3 Trillion Tokens for Language Model Pretraining Research}},
-    institution = {{Allen Institute for AI}},
-    year = {2023},
-    note = {Released under ImpACT License as Medium Risk artifact, \url{https://github.com/allenai/dolma}}
+@article{dolma,
+  title = {{Dolma: An Open Corpus of Three Trillion Tokens for Language Model Pretraining Research}},
+  author = {Luca Soldaini and Rodney Kinney and Akshita Bhagia and Dustin Schwenk and David Atkinson and Russell Authur and Ben Bogin and Khyathi Chandu and Jennifer Dumas and Yanai Elazar and Valentin Hofmann and Ananya Harsh Jha and Sachin Kumar and Li Lucy and Xinxi Lyu and Ian Magnusson and Jacob Morrison and Niklas Muennighoff and Aakanksha Naik and Crystal Nam and Matthew E. Peters and Abhilasha Ravichander and Kyle Richardson and Zejiang Shen and Emma Strubell and Nishant Subramani and Oyvind Tafjord and Evan Pete Walsh and Hannaneh Hajishirzi and Noah A. Smith and Luke Zettlemoyer and Iz Beltagy and Dirk Groeneveld and Jesse Dodge and Kyle Lo},
+  year = {2023},
+  journal={arXiv preprint},
 }
 ```
 <!-- {% endraw %} -->
 
-<!-- {% raw %} -->
-```bibtex
-@software{DolmaToolkit,
-    author = {{Soldaini, Luca and Lo, Kyle and Kinney, Rodney and Naik, Aakanksha and Ravichander, Abhilasha and Bhagia, Akshita and Groeneveld, Dirk and Schwenk, Dustin and Magnusson, Ian and Chandu, Khyathi}},
-    title = {{The Dolma Toolkit}},
-    year = {2023},
-    note = {{Apache 2.0 License, Version \texttt{0.9.0}, \url{https://github.com/allenai/dolma}}}
-}
-```
-<!-- {% endraw %} -->
