@@ -5,8 +5,10 @@ streams:
 
   attributes:
   - olmo_mix_v1_taggers
-  - perplexity_suite_v3_option2
+  # - perplexity_suite_v3_option2
   - dedupe_paragraphs
+  - dedupe_docs
+  - tokenizer_repetitions_v2r2
 
   output:
     path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/c4
@@ -93,6 +95,16 @@ streams:
     - "$.attributes[?(@.pii_detection__pii_regex_with_counts_fast_v2__doc_count &&
       @.pii_detection__pii_regex_with_counts_fast_v2__doc_count[0] && @.pii_detection__pii_regex_with_counts_fast_v2__doc_count[0][2]
       > 5)]"
+
+    # 100+ repetitions
+    - "$.attributes[?(@.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition
+      && @.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0]
+      && @.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][2]
+      >= 100)]"
+
+    # remove duplicate docs
+    - "$@.attributes[?(@.bff_duplicate_docs && @.bff_duplicate_docs[0]
+      && @.bff_duplicate_docs[0][2] >= 1.0)]"
   span_replacement:
   - span: "$.attributes.bff_duplicate_paragraph_spans"
     min_score: 0.5

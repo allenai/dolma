@@ -5,14 +5,15 @@ streams:
   - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_tail/*.json.gz
 
   attributes:
-  - perplexity_suite_v3_option2
   - dedupe_paragraphs
   - gopher_rules
   - hatespeech_nsfw_cc_v3
   - pii_detection
+  - tokenizer_repetitions_v2r2
+  - dedupe_docs
 
   output:
-    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_tail
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail
     max_size_in_bytes: 4294967296
     discard_fields:
     - attributes
@@ -85,11 +86,20 @@ streams:
       && @.gopher_rules__gopher_v1__fraction_of_characters_in_duplicate_10grams[0]
       && @.gopher_rules__gopher_v1__fraction_of_characters_in_duplicate_10grams[0][2]
       > 0.10)]"
-    - "$@.attributes[?(@.bff_duplicate_paragraph_spans_decontamination && @.bff_duplicate_paragraph_spans_decontamination[0]
-      && @.bff_duplicate_paragraph_spans_decontamination[0][2] >= 1.0)]"
+
     - "$.attributes[?(@.pii_detection__pii_regex_with_counts_fast_v2__doc_count &&
       @.pii_detection__pii_regex_with_counts_fast_v2__doc_count[0] && @.pii_detection__pii_regex_with_counts_fast_v2__doc_count[0][2]
       > 5)]"
+
+    # 100+ repetitions
+    - "$.attributes[?(@.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition
+      && @.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0]
+      && @.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][2]
+      >= 100)]"
+
+    # remove duplicate docs
+    - "$@.attributes[?(@.bff_duplicate_docs && @.bff_duplicate_docs[0]
+      && @.bff_duplicate_docs[0][2] >= 1.0)]"
   span_replacement:
   - span: "$.attributes.bff_duplicate_paragraph_spans"
     min_score: 0.5
