@@ -11,7 +11,7 @@ streams:
   - tokenizer_repetitions_v2r2
 
   output:
-    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/c4
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/c4
     max_size_in_bytes: 4294967296
     discard_fields:
     - attributes

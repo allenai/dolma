@@ -10,7 +10,7 @@ streams:
   - perplexity_suite_v3_option2
   - olmo_mix_v1_taggers
   output:
-    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/wiki
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki
     max_size_in_bytes: 4294967296
     discard_fields:
     - attributes

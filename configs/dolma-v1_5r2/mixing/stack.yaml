@@ -354,7 +354,7 @@ streams:
     - s3://ai2-llm/pretraining-data/sources/stack-dedup/v4-train/documents/zimpl/*.gz
 
   output:
-    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/stack
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/stack
     max_size_in_bytes: 4294967296
     discard_fields:
     - attributes

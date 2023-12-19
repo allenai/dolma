@@ -9,7 +9,7 @@ streams:
   - perplexity_suite_v3_option2
 
   output:
-    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/reddit
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/reddit
     max_size_in_bytes: 4294967296
     discard_fields:
     - attributes

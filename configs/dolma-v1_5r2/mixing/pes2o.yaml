@@ -23,7 +23,7 @@ streams:
   - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=8/*.gz
   - s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=s2orc/split=train/part_id=9/*.gz
   output:
-    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/pes2o
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/pes2o
     max_size_in_bytes: 4294967296
     discard_fields:
     - attributes
