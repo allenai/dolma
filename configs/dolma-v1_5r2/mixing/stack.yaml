@@ -360,13 +360,18 @@ streams:
     - attributes
 
   attributes:
-    - perplexity_suite_v3_option2
+    # - perplexity_suite_v3_option2
+    - dedupe_docs
+    - tokenizer_repetitions_v2r2
 
   filter:
     include: []
     exclude:
-    - "$@.attributes[?(@.bff_duplicate_paragraph_spans && @.bff_duplicate_paragraph_spans[0]
-      && @.bff_duplicate_paragraph_spans[0][2] >= 1.0)]"
+      # 100+ repetitions
+      - "$.attributes[?(@.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition && @.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0] && @.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][2]>= 100)]"
+
+    # remove duplicate docs
+      - "$@.attributes[?(@.bff_duplicate_docs && @.bff_duplicate_docs[0] && @.bff_duplicate_docs[0][2] >= 1.0)]"
 
 
 work_dir:
