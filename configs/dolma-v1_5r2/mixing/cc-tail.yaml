@@ -10,7 +10,7 @@ streams:
   - hatespeech_nsfw_cc_v3
   - pii_detection
   - tokenizer_repetitions_v2r2
-  - dedupe_docs
+  - dedupe_docs_v2
 
   output:
     path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail

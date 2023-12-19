@@ -2,10 +2,10 @@ documents:
   - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_head/*.gz
 
 dedupe:
-  name: dedupe_docs_v3
+  name: dedupe_docs_v2
   paragraphs:
     attribute_name: bff_duplicate_docs
-  skip_empty: false
+  skip_empty: true
 
 bloom_filter:
   file: /tmp/cc_en_head.bloom
