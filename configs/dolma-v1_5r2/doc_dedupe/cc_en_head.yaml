@@ -3,9 +3,10 @@ documents:
 
 dedupe:
   name: dedupe_docs_v2
-  paragraphs:
+  documents:
     attribute_name: bff_duplicate_docs
-  skip_empty: true
+    key: $.text
+  skip_empty: false
 
 bloom_filter:
   file: /tmp/cc_en_head.bloom

@@ -1,6 +1,7 @@
 import argparse
 import bisect
 import fnmatch
+from math import ceil, floor, log10
 import re
 from collections import defaultdict
 from functools import lru_cache, partial
@@ -42,7 +43,6 @@ def parse_args():
     ap.add_argument("-N", "--experiment-nickname", type=str, default=None, help="Experiment nickname")
     ap.add_argument("--plotly-theme", type=str, default="none", help="Plotly theme to use")
     ap.add_argument("--plotly-font-size", type=int, default=10, help="Plotly font size")
-    ap.add_argument("--plotly-show-title", action="store_true", help="Show plot title")
     ap.add_argument("--plotly-figure-width", type=int, default=800, help="Plotly figure width")
     ap.add_argument("--plotly-figure-height", type=int, default=500, help="Plotly figure height")
     return ap.parse_args()
@@ -98,7 +98,8 @@ def main():
         **{k: v for k, v in vocabulary.get(opts.experiment_nickname, {}).items() if isinstance(v, str)},
     }
 
-    metrics = defaultdict(lambda: {n: {"x": [], "y": []} for n in opts.wandb_names})
+    metrics_values = defaultdict(lambda: {n: {"x": [], "y": []} for n in opts.wandb_names})
+    metrics_names = defaultdict(lambda: {n: "" for n in opts.wandb_names})
     run_name_matcher = partial(match_run_name, run_names=opts.wandb_names)
 
     print(f"Found {len(wb_runs)} matching runs in {wb_path}")
@@ -130,21 +131,42 @@ def main():
 
         for y_axis in opts.y_axis:
             yaxis_pretty_name = vocabulary.get(y_axis, y_axis)
+
+            inferred_metric_name = ""
+            if "perplexity" in y_axis.lower():
+                inferred_metric_name = "Perplexity"
+            elif "_f1" in y_axis.lower():
+                inferred_metric_name = "F1 Score"
+            elif "crossentropyloss" in y_axis.lower():
+                inferred_metric_name = "Cross Entropy"
+            elif "downstream" in y_axis.lower():
+                inferred_metric_name = "Accuracy"
+
+            metric_name = vocabulary.get("metrics", {}).get(y_axis, inferred_metric_name)
+            metrics_names[yaxis_pretty_name][plot_group_name] = metric_name
+
             for wb_step in history:
                 loc = min(bisect.bisect_left(steps, wb_step["_step"]), len(x_axis) - 1)
-                metrics[yaxis_pretty_name][plot_group_name]["x"].append(x_axis[loc])
-                metrics[yaxis_pretty_name][plot_group_name]["y"].append(wb_step[y_axis])
+                metrics_values[yaxis_pretty_name][plot_group_name]["x"].append(x_axis[loc])
+                metrics_values[yaxis_pretty_name][plot_group_name]["y"].append(wb_step[y_axis])
 
     xaxis_pretty_name = vocabulary.get(opts.x_axis, opts.x_axis)
 
-    for y_axis, plot_groups in metrics.items():
+    for y_axis, plot_groups in metrics_values.items():
         fig = go.Figure()
 
         # these we figure out as we go
         use_y_log = opts.y_log_scale
         top_right_legend = False
+        metric_name = None
+        global_min_y = float("inf")
+        global_max_y = float("-inf")
 
         for run_name, run_data in plot_groups.items():
+            if metric_name is not None:
+                assert metrics_names[y_axis][run_name] == metric_name, "Inconsistent metric names"
+            metric_name = metrics_names[y_axis][run_name]
+
             if len(run_data["y"]) == 0:
                 print(f"WARNING: skipping {run_name} because it has no data for {y_axis}")
                 continue
@@ -170,6 +192,10 @@ def main():
                 min_y = min([y for y in y if y > 0] or [1e-3])  # avoid diving by zero
                 use_y_log = use_y_log or (max(y) / min_y > 100)
 
+            # keep track of global min and max
+            global_min_y = min(global_min_y, min(y))
+            global_max_y = max(global_max_y, max(y))
+
             figure_run_name = vocabulary.get(run_name, run_name)
             fig.add_trace(go.Scatter(name=figure_run_name, x=x, y=y, mode="lines"))
 
@@ -184,13 +210,12 @@ def main():
         }
         fig.update_layout(legend=legend_config)
 
-        title_text = vocabulary.get(opts.experiment_nickname, opts.experiment_nickname)
         fig.update_layout(
             template=opts.plotly_theme,
             xaxis_title=xaxis_pretty_name,
-            yaxis_title=y_axis,
+            yaxis_title=metric_name,
             legend_title=opts.legend_title,
-            title_text=title_text if opts.plotly_show_title else None,
+            title_text=y_axis,
             font=dict(size=opts.plotly_font_size),
             width=opts.plotly_figure_width,
             height=opts.plotly_figure_height,
@@ -198,10 +223,20 @@ def main():
                 l=4 * opts.plotly_font_size,
                 r=opts.plotly_font_size,
                 b=4 * opts.plotly_font_size,
-                t=opts.plotly_font_size,
+                t=3 * opts.plotly_font_size,
             ),
         )
-        fig.update_yaxes(type="log" if use_y_log else "linear")
+        if use_y_log:
+            steps = []
+            for decade in range(ceil(global_max_y / global_min_y if global_min_y > 0 else log10(global_max_y))):
+                unit = 10**decade
+                start = max(unit, floor(global_min_y / unit) * unit)
+                end = min(10 ** (decade + 1), ceil(global_max_y / unit) * unit)
+                steps.extend(range(int(start), int(end) + unit, unit))
+
+            fig.update_yaxes(type="log")
+            fig.update_layout(yaxis={"tickmode": "array", "tickvals": steps})
+
         fig.update_xaxes(range=([0, opts.max_x_axis] if opts.max_x_axis is not None else None))
 
         file_name = re.sub(r"\W+", "_", y_axis).lower().strip("_")

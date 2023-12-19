@@ -1,5 +1,5 @@
 # Run Names
-olmo-small-pile-fixed-*: The Pile
+olmo-small-pile-fixed-*: Pile
 olmo-small-rpj-*: Red Pajama v1
 olmo-small-dolma-*: Dolma v1.5
 olmo-small-falcon-*: RefinedWeb
@@ -67,8 +67,8 @@ v1-small-nsfw-filtered-high*: NSFW Filter (High Threshold)
 
 # Training Metrics
 throughput/total_tokens: Total Tokens
-train/Perplexity: Perplexity (Train)
-train/CrossEntropyLoss: CE Loss (Train)
+train/Perplexity: Train
+train/CrossEntropyLoss: Train
 
 
 # Downstream Metrics
@@ -101,7 +101,7 @@ eval/v3-small-dolma_common-crawl-validation/Perplexity: Dolma (Common Crawl)
 eval/v2-small-gab-validation/Perplexity: GAB
 eval/v2-small-ice-validation/Perplexity: ICE
 eval/v2-small-ptb-validation/Perplexity: Penn Treebank
-eval/v2-small-pile-validation/Perplexity: The Pile
+eval/v2-small-pile-validation/Perplexity: Pile
 eval/v2-small-4chan-validation/Perplexity: 4chan
 eval/v2-small-c4_en-validation/Perplexity: C4
 eval/v2-small-mc4_en-validation/Perplexity: mC4 (English)
@@ -117,7 +117,7 @@ eval/v2-small-c4_100_domains-validation/Perplexity: C4 (100 Domains)
 eval/gab-validation/Perplexity: GAB
 eval/ice-validation/Perplexity: ICE
 eval/ptb-validation/Perplexity: Penn Treebank
-eval/pile-validation/Perplexity: The Pile
+eval/pile-validation/Perplexity: Pile
 eval/4chan-validation/Perplexity: 4chan
 eval/c4_en-validation/Perplexity: C4
 eval/mc4_en-validation/Perplexity: mC4 (English)
