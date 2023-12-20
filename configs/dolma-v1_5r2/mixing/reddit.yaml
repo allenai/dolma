@@ -11,6 +11,7 @@ streams:
   output:
     path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/reddit
     max_size_in_bytes: 4294967296
+    min_text_length: 1
     discard_fields:
     - attributes
 
