@@ -38,7 +38,10 @@ cc_quality:
   olmo-mix-v1-sample-all-cc*: C4 (EoS), Gopher (All), Dedup, PII, Toxic
 
 cc_quality_only:
-  v1-small-c4-cleaned-gopher-filtered_*: C4 (EoS) + Gopher (All)
+  v1-small-c4-filtered_*: C4 All
+  v1-small-c4-cleaned_*: C4 NoPunc
+  v1-small-gopher-filtered_*: Gopher All
+  v1-small-c4-cleaned-gopher-filtered_*: C4 NoPunc + Gopher All
 
 cc_to_quality_plus_content:
   v1-small-c4-cleaned-gopher-filtered_*: Quality Filters
