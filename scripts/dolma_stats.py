@@ -1135,6 +1135,83 @@ class stack_v4(stack_v2):
 
 
 @Registry.add
+class LineStatsStack(BaseStatsProcessor):
+    # Testing
+    #documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/documents/abap/data_0000.jsonl.gz"
+    #stats = "/data/niklas/dolma/abap/data_0000.json.gz"
+    documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/documents/*/*.gz"
+    stats = "/data/niklas/dolma/stack"
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+        stats_root = cls.stats
+
+        cls._run_parallel_processor(
+            stats_root=stats_root,
+            num_workers=num_workers,
+            debug=debug,
+            **process_single_kwargs,
+        )
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        # E.g. `s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/attributes/paper_analysis/abap/`
+        attr_path = source_path.replace("/documents/", "/attributes/paper_analysis/")
+
+        doc_decoder = msgspec.json.Decoder(InputSpec)
+        attr_decoder = msgspec.json.Decoder(OutputSpec)
+        documents = 0
+        interval = 10_000
+
+        with ExitStack() as stack:
+            doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
+            out_file = stack.enter_context(smart_open.open(destination_path, "wt"))
+
+            try:
+                attr_file = stack.enter_context(smart_open.open(attr_path, "rb"))
+            except Exception as e:
+                print(e)
+                return
+            
+            for doc_line, attrs in zip(doc_file, attr_file):
+                doc = doc_decoder.decode(doc_line)
+                attrs = attr_decoder.decode(attrs).attributes
+                out_line = {}
+
+                ## RPJ ##
+                if (attrs["paper_analysis__code_redpajama_taggers_v1__max_line_length_doc"][0][2] > 1000) or \
+                    (attrs["paper_analysis__code_redpajama_taggers_v1__avg_line_length_doc"][0][2] > 100) or \
+                    (attrs["paper_analysis__code_redpajama_taggers_v1__alnum_prop_doc"][0][2] < 0.25) or \
+                    (attrs["paper_analysis__code_redpajama_taggers_v1__alpha_token_prop_doc"][0][2] < 1.5):
+                    out_line["rpj"] = 1
+                else:
+                    out_line["rpj"] = 0
+
+                ## StarCoder ##
+                if (attrs["paper_analysis__code_starcoder_taggers_v2__has_xml_template_doc"][0][2] > 0.0) or \
+                (attrs["paper_analysis__code_starcoder_taggers_v2__code_to_comment_ratio_doc"][0][2] > 0.8) or \
+                (attrs["paper_analysis__code_starcoder_taggers_v2__code_to_comment_ratio_doc"][0][2] <= 0.01) or \
+                (
+                    any(x in source_path for x in ["python", "java", "javascript"]) and \
+                    (attrs["paper_analysis__code_starcoder_taggers_v2__code_to_text_ratio_html_doc"][0][2] <= 0.1)
+                ):
+                    out_line["starcoder"] = 1
+                else:
+                    out_line["starcoder"] = 0
+
+                documents += 1
+
+                if documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+                out_file.write(json.dumps(out_line) + "\n")
+
+        cls.increment_progressbar(queue, files=1, documents=documents % interval)
+
+
+@Registry.add
 class decon_ppl_v3(BaseStatsProcessor):
     documents = [
         "s3://ai2-llm/pretraining-data/sources/gutenberg/v0/documents/*.gz",
