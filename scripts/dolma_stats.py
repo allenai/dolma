@@ -416,6 +416,7 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
     documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
     stats = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1_c4_cleaned/**/*.gz"
     decontamination_key: str = "decontamination"
+    repetitions_threshold = 100
 
     @classmethod
     def gopher_rules(cls, attrs: Dict[str, List[Tuple[int, int, float]]]) -> List[Tuple[int, int, float]]:
@@ -527,6 +528,8 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
             source_path.replace("/documents/", "/attributes/hatespeech_nsfw_cc_v3/"),
             source_path.replace("/documents/", "/attributes/pii_detection/"),
             source_path.replace("/documents/", "/attributes/dedupe_paragraphs/"),
+            source_path.replace("/documents/", "/attributes/dedupe_docs_v2/"),
+            source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v2r2/"),
         ]
 
         doc_decoder = msgspec.json.Decoder(InputSpec)
@@ -543,6 +546,12 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
             "dedupe_paragraphs_count": 0,
             "dedupe_paragraphs_length": 0,
             "dedupe_paragraphs_matches": 0,
+            "dedupe_docs_count": 0,
+            "dedupe_docs_length": 0,
+            "dedupe_docs_matches": 0,
+            "repetitions_count": 0,
+            "repetitions_length": 0,
+            "repetitions_matches": 0,
             "hatespeech_nsfw_count": 0,
             "hatespeech_nsfw_length": 0,
             "hatespeech_nsfw_matches": 0,
@@ -618,6 +627,28 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
                 stats["dedupe_paragraphs_length"] += sum(s[1] - s[0] for s in dups)
                 stats["dedupe_paragraphs_matches"] += 1 if dups else 0
 
+                docs_dups = [p for p in attrs.get("bff_duplicate_docs", []) if p[1] - p[0] > 0]
+                stats["dedupe_docs_count"] += len(docs_dups)
+                stats["dedupe_docs_length"] += sum(s[1] - s[0] for s in docs_dups)
+                stats["dedupe_docs_matches"] += 1 if docs_dups else 0
+
+                # Repetitions stats
+
+                (_, _, max_reps), *_ = attrs.get(
+                    "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition", [[0, 0, 0]]
+                )
+                if max_reps >= cls.repetitions_threshold:
+                    reps = [
+                        r
+                        for r in attrs.get(
+                            "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__repetition", []
+                        )
+                        if r[-1] >= cls.repetitions_threshold
+                    ]
+                    stats["repetitions_count"] += len(reps)
+                    stats["repetitions_length"] += sum(s[1] - s[0] for s in reps)
+                    stats["repetitions_matches"] += 1
+
                 documents += 1
 
                 if documents % interval == 0:
@@ -638,9 +669,7 @@ class v15_cc_c4_cleaned(cc_v1_c4_cleaned):
 
 @Registry.add
 class v15r2_cc_c4_cleaned_dup(cc_v1_c4_cleaned):
-    documents = (
-        "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
-    )
+    documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
     stats = "s3://ai2-llm/stats/olmo-mix/v15/cc/v15r2_cc_c4_cleaned_dup/**/*.gz"
     decontamination_key: str = "perplexity_suite_v3_option2"
 
@@ -658,11 +687,11 @@ class v15r2_cc_c4_cleaned_dup(cc_v1_c4_cleaned):
         attr_decoder = msgspec.json.Decoder(OutputSpec)
 
         stats = {
-            'doc_length': 0,
-            'doc_count': 0,
-            'repetitions_count': defaultdict(int),
-            'repetitions_length': defaultdict(int),
-            'repetitions_period': defaultdict(int),
+            "doc_length": 0,
+            "doc_count": 0,
+            "repetitions_count": defaultdict(int),
+            "repetitions_length": defaultdict(int),
+            "repetitions_period": defaultdict(int),
         }
         interval = 10_000
 
@@ -676,31 +705,32 @@ class v15r2_cc_c4_cleaned_dup(cc_v1_c4_cleaned):
 
             for doc_line, *attr_lines in zip(doc_file, *atts_files):
                 doc = doc_decoder.decode(doc_line)
-                stats['doc_length'] += len(doc.text)
-                stats['doc_count'] += 1
+                stats["doc_length"] += len(doc.text)
+                stats["doc_count"] += 1
 
                 attrs = {}
                 for line in attr_lines:
                     attrs.update(attr_decoder.decode(line).attributes)
 
                 repetitions = attrs.get("tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__repetition", [])
-                stats['repetitions_count'][len(repetitions)] += 1
+                stats["repetitions_count"][len(repetitions)] += 1
 
                 repetition_max_length = attrs.get(
-                    'tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_length_repetition', [[0, 0, 0]]
+                    "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_length_repetition",
+                    [[0, 0, 0]],
                 )[0][-1]
-                stats['repetitions_length'][repetition_max_length] += 1
+                stats["repetitions_length"][repetition_max_length] += 1
 
                 repetitions_period = attrs.get(
                     "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition",
                     [[0, 0, 0]],
                 )[0][-1]
-                stats['repetitions_period'][repetitions_period] += 1
+                stats["repetitions_period"][repetitions_period] += 1
 
-                if stats['doc_count'] % interval == 0:
+                if stats["doc_count"] % interval == 0:
                     cls.increment_progressbar(queue, documents=interval)
 
-        cls.increment_progressbar(queue, files=1, documents=stats['doc_count'] % interval)
+        cls.increment_progressbar(queue, files=1, documents=stats["doc_count"] % interval)
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(stats, indent=2))
