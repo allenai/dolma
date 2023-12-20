@@ -37,6 +37,14 @@ v1-small-c4-cleaned-gopher-filtered-deduped_*: C4 (EoS), Gopher (All), Dedup
 cc_quality:
   olmo-mix-v1-sample-all-cc*: C4 (EoS), Gopher (All), Dedup, PII, Toxic
 
+cc_quality_only:
+  v1-small-c4-cleaned-gopher-filtered_*: C4 (EoS) + Gopher (All)
+
+cc_to_quality_plus_content:
+  v1-small-c4-cleaned-gopher-filtered_*: Quality Filters
+  v1-small-c4-cleaned-gopher-filtered-deduped_*: Quality Filters + Dedup
+  olmo-mix-v1-sample-all-cc*: Quality Filters + Dedup + Content Filters
+
 # Reddit ablations
 reddit_selection:
 

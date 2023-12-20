@@ -241,6 +241,8 @@ ablations_runs=(
     'v1-small-hatespeech-filtered-low* v1-small-nsfw-filtered-low* v1-small-hatespeech-filtered-high* v1-small-nsfw-filtered-high* abl-cc-v1-small-dedup_*'
     'abl-cc-v1-small-dedup_* abl-cc-v2-small-dedup*'
     'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_* v1-small-c4-filtered_* v1-small-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
+    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_* v1-small-c4-filtered_* v1-small-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered_*'
+    'v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
     'reddit-v5-ablation-filtered-gen-2_* reddit-v3-ablation-base-* reddit-v2-ablation-base-* reddit-v4-ablation-base-* reddit-v1-ablation-base_*'
 )
 ablations_names=(
@@ -252,6 +254,8 @@ ablations_names=(
     'cc_toxic_filtering'
     'cc_dedupe'
     'cc_quality'
+    'cc_quality_only'
+    'cc_to_quality_plus_content'
     'reddit_selection'
 )
 
@@ -261,6 +265,8 @@ limits=(
     '150e9'
     '50e9'
     '50e9'
+    '150e9'
+    '150e9'
     '150e9'
     '150e9'
     '150e9'
