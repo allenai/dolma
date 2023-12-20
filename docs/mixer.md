@@ -22,10 +22,11 @@ The following parameters are supported either via CLI (e.g. `dolma mix --paramet
 |`streams[].output.discard_fields`|No| Top-level fields in the `discard_fields` list will be dropped from the output documents. |
 |`streams[].filter.include`|No| Optional content-based filtering. Default = keep everything. Documents are retained if they match any of the `include` patterns (or if no `include` patterns are specified) AND if they match none of the `exclude` patterns. Pattern syntax is [jsonpath](https://support.smartbear.com/alertsite/docs/monitors/api/endpoint/jsonpath.html#filters). |
 |`streams[].filter.exclude`|No| Optional content-based filtering. Default = keep everything. Documents are retained if they match any of the `include` patterns (or if no `include` patterns are specified) AND if they match none of the `exclude` patterns. Pattern syntax is [jsonpath](https://support.smartbear.com/alertsite/docs/monitors/api/endpoint/jsonpath.html#filters). |
-|`streams[].span_replacement`|No| A list of objects specifying spans of text to be replaced. |
-|`streams[].span_replacement[].span`|No| A json-path expression for an attribute that contains an array of spans. Each span should be list of length three:  `[start, end, score]`. |
-|`streams[].span_replacement[].min_score`|No| If the span score is less than this value, the span will not be replaced. |
-|`streams[].span_replacement[].replacement`|No| The text that should be inserted in place of the span. Use `{}` to represent the original text. |
+|`streams[].text_modification.trim_whitespace`|No| Remove leading and trailing whitespace from document text. |
+|`streams[].text_modification.minimum_text_length`|No| Skip writing the document if the final text is shorter than this size (in bytes). |
+|`streams[].text_modification.span_replacement[].span`|No| A json-path expression for an attribute that contains an array of spans. Each span should be list of length three:  `[start, end, score]`. |
+|`streams[].text_modification.span_replacement[].min_score`|No| If the span score is less than this value, the span will not be replaced. |
+|`streams[].text_modification.span_replacement[].replacement`|No| The text that should be inserted in place of the span. Use `{}` to represent the original text. |
 |`work_dir.input`|No| Path to a local scratch directory where temporary input files can be placed. If not provided, Dolma will make one for you and delete it upon completion. |
 |`work_dir.output`|No| Path to a local scratch directory where temporary output files can be placed. If not provided, Dolma will make one for you and delete it upon completion. |
 |`processes`|No| Number of processes to use for mixing. By default 1 process is used. |

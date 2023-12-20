@@ -34,15 +34,16 @@ streams:
         # exclude documents that contain one or more naughty words
         - $.attributes[?(@.c4_v2__c4_v2__has_naughty_word && @.c4_v2__c4_v2__has_naughty_word[0] && @.c4_v2__c4_v2__has_naughty_word[0][2] > 0.5)]
 
-    span_replacement:
-      # remove lines that do not end in punctuation
-      - span: $.attributes.c4_v2__c4_v2__lines_with_no_ending_punctuation
-        min_score: 0.5
-        replacement: ""
+    text_modification:
+      span_replacement:
+        # remove lines that do not end in punctuation
+        - span: $.attributes.c4_v2__c4_v2__lines_with_no_ending_punctuation
+          min_score: 0.5
+          replacement: ""
 
-      # remove lines that are too short (less than 3 words as defined by C4 rules)
-      - span: $.attributes.c4_v2__c4_v2__lines_with_too_few_words
-        min_score: 0.5
-        replacement: ""
+        # remove lines that are too short (less than 3 words as defined by C4 rules)
+        - span: $.attributes.c4_v2__c4_v2__lines_with_too_few_words
+          min_score: 0.5
+          replacement: ""
 
 processes: 8

@@ -21,7 +21,7 @@ pub struct Shard {
     pub inputs: Vec<DocumentPaths>,
     pub output: String,
     pub filter: Option<FilterConfig>,
-    pub span_replacements: Option<Vec<SpanReplacementConfig>>,
+    pub text_modification: Option<TextModificationConfig>,
     pub discard_fields: Option<Vec<String>>,
 }
 
@@ -82,7 +82,7 @@ impl Shard {
                         inputs: shard_inputs.clone(),
                         output: output.clone(),
                         filter: stream_config.filter.clone(),
-                        span_replacements: stream_config.span_replacement.clone(),
+                        text_modification: stream_config.text_modification.clone(),
                         discard_fields: stream_config.output.discard_fields.clone(),
                     };
                     shards.push(shard);
@@ -101,7 +101,7 @@ impl Shard {
                     inputs: shard_inputs.clone(),
                     output: output.clone(),
                     filter: stream_config.filter.clone(),
-                    span_replacements: stream_config.span_replacement.clone(),
+                    text_modification: stream_config.text_modification.clone(),
                     discard_fields: stream_config.output.discard_fields.clone(),
                 };
                 shards.push(shard);
@@ -271,91 +271,115 @@ impl Shard {
                         }
                     }
                     if should_write {
-                        if self.span_replacements.is_some() {
-                            let mut replacements = self
-                                .span_replacements
-                                .as_ref()
-                                .unwrap()
-                                .iter()
-                                .flat_map(|r| r.find_spans_to_replace(&data).unwrap())
-                                .collect::<Vec<SpanReplacement>>();
-                            if !replacements.is_empty() {
-                                replacements.sort_by(|a, b| a.start.cmp(&b.start));
-
-                                let mut new_text = String::new();
+                        self.text_modification
+                            .as_ref()
+                            .map(|text_modification_config| {
                                 let old_text = data["text"].as_str().unwrap().to_owned();
-                                let mut span_index = 0;
-                                let mut i = 0;
-                                let mut span_start_byte_index = 0;
-                                let mut chars = old_text.char_indices();
-                                let mut byte_index_with_char = chars.next();
-                                while byte_index_with_char.is_some() {
-                                    let (byte_index, c) = byte_index_with_char.unwrap();
-                                    if span_index < replacements.len() {
-                                        let is_inside_span = i >= replacements[span_index].start
-                                            && i < replacements[span_index].end;
-                                        if i == replacements[span_index].start {
-                                            span_start_byte_index = byte_index;
-                                        }
-                                        if !is_inside_span {
-                                            if i == replacements[span_index].end {
-                                                if !replacements[span_index].replacement.is_empty()
-                                                {
-                                                    let replacement_text = replacements[span_index]
-                                                        .replacement
-                                                        .to_owned()
-                                                        .replace(
-                                                            "{}",
-                                                            old_text
-                                                                [span_start_byte_index..byte_index]
+                                let mut new_text = String::new();
+                                if text_modification_config.span_replacement.is_some() {
+                                    let mut replacements = text_modification_config
+                                        .span_replacement
+                                        .as_ref()
+                                        .unwrap()
+                                        .iter()
+                                        .flat_map(|r| r.find_spans_to_replace(&data).unwrap())
+                                        .collect::<Vec<SpanReplacement>>();
+                                    if !replacements.is_empty() {
+                                        replacements.sort_by(|a, b| a.start.cmp(&b.start));
+
+                                        let mut span_index = 0;
+                                        let mut i = 0;
+                                        let mut span_start_byte_index = 0;
+                                        let mut chars = old_text.char_indices();
+                                        let mut byte_index_with_char = chars.next();
+                                        while byte_index_with_char.is_some() {
+                                            let (byte_index, c) = byte_index_with_char.unwrap();
+                                            if span_index < replacements.len() {
+                                                let is_inside_span = i
+                                                    >= replacements[span_index].start
+                                                    && i < replacements[span_index].end;
+                                                if i == replacements[span_index].start {
+                                                    span_start_byte_index = byte_index;
+                                                }
+                                                if !is_inside_span {
+                                                    if i == replacements[span_index].end {
+                                                        if !replacements[span_index]
+                                                            .replacement
+                                                            .is_empty()
+                                                        {
+                                                            let replacement_text = replacements
+                                                                [span_index]
+                                                                .replacement
                                                                 .to_owned()
-                                                                .as_str(),
-                                                        );
-                                                    new_text.push_str(&replacement_text);
+                                                                .replace(
+                                                                    "{}",
+                                                                    old_text[span_start_byte_index
+                                                                        ..byte_index]
+                                                                        .to_owned()
+                                                                        .as_str(),
+                                                                );
+                                                            new_text.push_str(&replacement_text);
+                                                        }
+                                                        while span_index < replacements.len()
+                                                            && replacements[span_index].start < i
+                                                        {
+                                                            span_index += 1;
+                                                        }
+                                                    }
+                                                    if span_index < replacements.len()
+                                                        && replacements[span_index].start == i
+                                                    {
+                                                        span_start_byte_index = byte_index;
+                                                    } else {
+                                                        new_text.push(c);
+                                                    }
                                                 }
-                                                while span_index < replacements.len()
-                                                    && replacements[span_index].start < i
-                                                {
-                                                    span_index += 1;
-                                                }
-                                            }
-                                            if span_index < replacements.len()
-                                                && replacements[span_index].start == i
-                                            {
-                                                span_start_byte_index = byte_index;
                                             } else {
                                                 new_text.push(c);
                                             }
+                                            i += 1;
+                                            byte_index_with_char = chars.next();
+                                        }
+                                        if span_index < replacements.len()
+                                            && !replacements[span_index].replacement.is_empty()
+                                        {
+                                            let replacement_text = replacements[span_index]
+                                                .replacement
+                                                .to_owned()
+                                                .replace(
+                                                    "{}",
+                                                    old_text[span_start_byte_index..]
+                                                        .to_owned()
+                                                        .as_str(),
+                                                );
+                                            new_text.push_str(&replacement_text);
                                         }
                                     } else {
-                                        new_text.push(c);
+                                        new_text = old_text;
                                     }
-                                    i += 1;
-                                    byte_index_with_char = chars.next();
+                                } else {
+                                    new_text = old_text;
                                 }
-                                if span_index < replacements.len()
-                                    && !replacements[span_index].replacement.is_empty()
-                                {
-                                    let replacement_text =
-                                        replacements[span_index].replacement.to_owned().replace(
-                                            "{}",
-                                            old_text[span_start_byte_index..].to_owned().as_str(),
-                                        );
-                                    new_text.push_str(&replacement_text);
+                                if text_modification_config.trim_whitespace {
+                                    new_text = new_text.trim().to_owned();
                                 }
                                 data["text"] = Value::String(new_text);
-                            }
-                        }
+                            });
+
                         for f in self.discard_fields.iter().flatten() {
                             data.as_object_mut().unwrap().remove(f);
                         }
 
-                        // TODO: add check to make sure that the text field is not empty. Something like
-                        // if !data["text"].as_str().unwrap().is_empty() || skip_empty
-                        // make it configurable and off by default
-                        lines_written += 1;
-                        serde_json::to_writer(&mut writer, &data)?;
-                        writer.write_all(b"\n")?;
+                        let min_text_length = self
+                            .text_modification
+                            .as_ref()
+                            .map_or(0, |c| c.minimum_text_length)
+                            as usize;
+                        if data["text"].as_str().unwrap().len() >= min_text_length {
+                            lines_written += 1;
+                            serde_json::to_writer(&mut writer, &data)?;
+                            writer.write_all(b"\n")?;
+                        }
                     }
                 }
                 cache.finalize_input(&input_path.doc_path)?;
@@ -397,9 +421,19 @@ pub mod shard_config {
         pub attributes: Vec<String>,
         // json-path-based filtering
         pub filter: Option<FilterConfig>,
+        // text modification
+        pub text_modification: Option<TextModificationConfig>,
+        pub output: StreamOutputConfig,
+    }
+
+    #[derive(Serialize, Deserialize, Clone)]
+    pub struct TextModificationConfig {
         // span replacement
         pub span_replacement: Option<Vec<SpanReplacementConfig>>,
-        pub output: StreamOutputConfig,
+        // leading/trailing whitespace
+        pub trim_whitespace: bool,
+        // Cutoff for final document length
+        pub minimum_text_length: i32,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
