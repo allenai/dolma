@@ -5,7 +5,7 @@ streams:
   - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_middle/*.json.gz
 
   attributes:
-  - dedupe_paragraphs
+  - dedupe_paragraphs_v2
   - gopher_rules
   - hatespeech_nsfw_cc_v3
   - pii_detection
