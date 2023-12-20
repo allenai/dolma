@@ -6,6 +6,7 @@ use aws_sdk_s3::error::ProvideErrorMetadata;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client as S3Client;
 use tokio::fs::File as TokioFile;
+use tokio::time::Duration;
 
 // Split an s3:// url into a bucket and key
 pub fn split_url(s3_url: &str) -> Result<(&str, &str), &'static str> {
@@ -35,31 +36,55 @@ pub async fn download_to_file(
     bucket: &str,
     key: &str,
     path: &Path,
+    max_attempts: Option<u8>,
 ) -> Result<(), io::Error> {
-    let result = s3_client
-        .get_object()
-        .bucket(bucket)
-        // the type `str` does not implement `Clone`, so calling `clone` on `&str` copies the reference, which does not do anything and can be removed
-        .key(key)
-        .send()
-        .await
-        .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Error downloading {}: {}",
-                    key,
-                    e.message().unwrap_or_default()
-                ),
-            )
-        })?;
+    let max_attempts = max_attempts.unwrap_or(1); // Default to no retries if max_attempts is not provided
+                                                  // Check that max_attempts is greater than 0
+    if max_attempts <= 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "max_attempts must be greater than 0",
+        ));
+    }
 
-    std::fs::create_dir_all(path.parent().unwrap())?;
-    let mut file = TokioFile::create(path).await?;
-    let mut body = result.body.into_async_read();
-    tokio::io::copy(&mut body, &mut file).await?;
+    for _attempt in 0..max_attempts {
+        match s3_client.get_object().bucket(bucket).key(key).send().await {
+            Ok(response) => {
+                std::fs::create_dir_all(path.parent().unwrap())?;
+                let mut file = TokioFile::create(path).await?;
+                let mut body = response.body.into_async_read();
+                tokio::io::copy(&mut body, &mut file).await?;
+                return Ok(());
+            }
+            Err(e) => {
+                let error = io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "Error downloading {}: {}",
+                        key,
+                        e.message().unwrap_or_default()
+                    ),
+                );
+                if _attempt == max_attempts - 1 {
+                    // This was the last attempt
+                    return Err(error);
+                } else {
+                    eprintln!(
+                        "Failed attempt {}/{} to download file: {}",
+                        _attempt, max_attempts, error
+                    );
+                    // short wait (1s) before retrying
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+    }
 
-    Ok(())
+    // If we got here, all attempts failed
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        format!("All {} attempts to download {} failed", max_attempts, key),
+    ))
 }
 
 pub async fn upload_file(
@@ -67,27 +92,56 @@ pub async fn upload_file(
     path: &Path,
     bucket: &str,
     key: &str,
+    max_attempts: Option<u8>,
 ) -> Result<(), io::Error> {
-    s3_client
-        .put_object()
-        .bucket(bucket)
-        // note: the type `str` does not implement `Clone`, so calling `clone` on `&str` copies the reference, which does not do anything and can be removed
-        .key(key)
-        .body(ByteStream::from_path(path).await?)
-        .send()
-        .await
-        .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Error uploading {}: {}",
-                    key,
-                    e.message().unwrap_or_default()
-                ),
-            )
-        })?;
+    let max_attempts = max_attempts.unwrap_or(1); // Default to no retries if max_attempts is not provided
+                                                  // Check that max_attempts is greater than 0
+    if max_attempts <= 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "max_attempts must be greater than 0",
+        ));
+    }
 
-    Ok(())
+    for _attempt in 0..max_attempts {
+        match s3_client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(ByteStream::from_path(path).await?)
+            .send()
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                let error = io::Error::new(
+                    io::ErrorKind::Other,
+                    format!(
+                        "Error uploading {}: {}",
+                        key,
+                        e.message().unwrap_or_default()
+                    ),
+                );
+                if _attempt == max_attempts - 1 {
+                    // This was the last attempt
+                    return Err(error);
+                } else {
+                    eprintln!(
+                        "Failed attempt {}/{} to upload file: {}",
+                        _attempt, max_attempts, error
+                    );
+                    // short wait (1s) before retrying
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+    }
+
+    // If we got here, all attempts failed
+    Err(io::Error::new(
+        io::ErrorKind::Other,
+        format!("All {} attempts to upload {} failed", max_attempts, key),
+    ))
 }
 
 pub async fn object_size(
@@ -336,6 +390,7 @@ mod test {
             "ai2-llm",
             s3_path,
             Path::new(local_output_file),
+            Some(3), // number of attempts
         ))?;
 
         compare_contents("tests/data/documents.json.gz", local_output_file);

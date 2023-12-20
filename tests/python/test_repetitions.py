@@ -4,8 +4,8 @@ from dolma.core.data_types import Document
 from dolma.taggers.repetitions import (
     ParagraphRepetitionsTagger,
     RepetitionsTagger,
-    TokenizerRepetitionsTagger,
     TokenizerRepetitionsSkipEmptyTagger,
+    TokenizerRepetitionsTagger,
 )
 
 DOCUMENT_WITH_REPETITIONS = """

@@ -1,8 +1,8 @@
 import argparse
 import json
 from tempfile import TemporaryDirectory
-from transformers import AutoTokenizer
 
+from transformers import AutoTokenizer
 
 OG_TOKENIZER_NAME = "eleutherai/gpt-neox-20b"
 OLD_TOKENIZER_NAME = "allenai/eleuther-ai-gpt-neox-20b-pii-special"

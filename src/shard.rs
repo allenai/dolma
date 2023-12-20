@@ -554,6 +554,7 @@ impl FileCache {
                 bucket,
                 key,
                 &path,
+                Some(3), // retry twice if fail
             ))?;
             Ok(path.clone())
         } else {
@@ -606,7 +607,13 @@ impl FileCache {
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(s3_util::upload_file(&self.s3_client, &path, bucket, key))?;
+            rt.block_on(s3_util::upload_file(
+                &self.s3_client,
+                &path,
+                bucket,
+                key,
+                Some(3), // retry twice if fail
+            ))?;
             std::fs::remove_file(&path)?;
             {
                 // Create empty file to indicate that the shard is done.

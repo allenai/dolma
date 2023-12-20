@@ -172,10 +172,7 @@ class TestCasePipeline(TestCase):
         partitions: int = 1,
         ext_dir: Optional[Path] = None,
     ) -> List[str]:
-        encoded_attributes = [
-            {"id": str(i), "attributes": {attribute_name: d}}
-            for i, d in enumerate(attributes)
-        ]
+        encoded_attributes = [{"id": str(i), "attributes": {attribute_name: d}} for i, d in enumerate(attributes)]
         return self.writeUnits(
             units=encoded_attributes,
             unit_type=f"attributes/{attribute_name}",

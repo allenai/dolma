@@ -1,10 +1,10 @@
 import argparse
 import bisect
 import fnmatch
-from math import ceil, floor, log10
 import re
 from collections import defaultdict
 from functools import lru_cache, partial
+from math import ceil, floor, log10
 from pathlib import Path
 from statistics import stdev
 from typing import List, Optional, Sequence, Tuple
@@ -17,9 +17,8 @@ with necessary(
 ):
     import plotly.graph_objs as go
     import plotly.io as pio
-    import yaml
-
     import wandb
+    import yaml
 
     pio.kaleido.scope.mathjax = None
 

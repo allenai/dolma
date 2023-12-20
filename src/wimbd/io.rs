@@ -23,6 +23,8 @@ fn new_buf() -> Rc<String> {
 }
 
 impl GzBufReader {
+    // TODO: remove once open is used.
+    #[allow(dead_code)]
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self> {
         let reader = io::BufReader::new(MultiGzDecoder::new(File::open(path)?));
         let buf = new_buf();

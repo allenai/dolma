@@ -1,8 +1,8 @@
 from .repetitions_taggers import (
     ParagraphRepetitionsTagger,
     RepetitionsTagger,
-    TokenizerRepetitionsTagger,
     TokenizerRepetitionsSkipEmptyTagger,
+    TokenizerRepetitionsTagger,
 )
 
 __all__ = [
