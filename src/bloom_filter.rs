@@ -11,7 +11,9 @@ use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+mod bloom_math;
 mod bloom_test;
+
 // A thread-safe bloom filter.
 pub struct BloomFilter {
     bits: Vec<AtomicU32>,
@@ -24,41 +26,6 @@ pub struct BloomFilter {
 impl BloomFilter {
     const MAGIC: u32 = 0x81F0F117;
     const VERSION: u32 = 1;
-
-    pub fn optimal_number_of_hashers(size_in_bytes: usize, expected_elements: usize) -> usize {
-        let expected_elements = expected_elements as f64;
-        let size_in_bits = (size_in_bytes * 8) as f64;
-        let k = (size_in_bits / expected_elements) * (2.0f64.ln());
-        k.ceil() as usize
-    }
-
-    pub fn prob_of_false_positive(
-        size_in_bytes: usize,
-        expected_elements: usize,
-        num_hashers: usize,
-    ) -> f64 {
-        let k = num_hashers as f64;
-        let m = (size_in_bytes * 8) as f64;
-        let n = expected_elements as f64;
-        (1.0 - (1.0 - (1.0 / m)).powf(k * n)).powf(k)
-    }
-
-    pub fn suggest_size_in_bytes(
-        expected_elements: usize,
-        desired_false_positive_rate: f64,
-    ) -> usize {
-        let mut size_in_bytes = 1024 * 1024;
-        while size_in_bytes < usize::MAX / 2
-            && Self::prob_of_false_positive(
-                size_in_bytes,
-                expected_elements,
-                Self::optimal_number_of_hashers(size_in_bytes, expected_elements),
-            ) > desired_false_positive_rate
-        {
-            size_in_bytes *= 2;
-        }
-        size_in_bytes
-    }
 
     #[allow(dead_code)]
     pub fn my_prob_of_false_positive(&self, expected_elements: usize) -> f64 {
