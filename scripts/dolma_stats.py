@@ -633,7 +633,6 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
                 stats["dedupe_docs_matches"] += 1 if docs_dups else 0
 
                 # Repetitions stats
-
                 (_, _, max_reps), *_ = attrs.get(
                     "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition", [[0, 0, 0]]
                 )
@@ -646,7 +645,7 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
                         if r[-1] >= cls.repetitions_threshold
                     ]
                     stats["repetitions_count"] += len(reps)
-                    stats["repetitions_length"] += sum(s[1] - s[0] for s in reps)
+                    stats["repetitions_length"] += len(doc.text)
                     stats["repetitions_matches"] += 1
 
                 documents += 1
@@ -989,6 +988,91 @@ class s2(BaseStatsProcessor):
             processor(**process_single_kwargs)
 
 
+@Registry.add
+class reddit(BaseStatsProcessor):
+    repetitions_threshold = 100
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        attrs_path = source_path.replace(
+            "/documents/",
+            "/attributes/tokenizer_repetitions_v2r2/",
+        )
+
+        documents_decoder = msgspec.json.Decoder(C4InputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+
+        interval = 10_000
+
+        stats = {
+            "length": 0,
+            "count": 0,
+            "tokens": 0,
+            "dedupe_docs_count": 0,
+            "dedupe_docs_length": 0,
+            "dedupe_docs_matches": 0,
+        }
+        cnt = 0
+
+        with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, attributes_line in zip(doc_file, attrs_file):
+                cnt += 1
+
+                document = documents_decoder.decode(source_line)
+                attributes = attributes_decoder.decode(attributes_line)
+                text = document.text
+
+                if not (text := text.strip()):
+                    continue
+
+                stats["documents"] += 1
+                stats["tokens"] += len(blingfire.text_to_words(text).split())
+                stats["length"] += len(text)
+
+                (_, _, max_reps), *_ = attributes.attributes.get(
+                    "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition", [[0, 0, 0]]
+                )
+                if max_reps >= cls.repetitions_threshold:
+                    reps = [
+                        r
+                        for r in attributes.attributes.get(
+                            "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__repetition", []
+                        )
+                        if r[-1] >= cls.repetitions_threshold
+                    ]
+                    stats["repetitions_count"] += len(reps)
+                    stats["repetitions_length"] += sum(s[1] - s[0] for s in reps)
+                    stats["repetitions_matches"] += 1
+
+                if cnt % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=cnt % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(stats, indent=2))
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+        with TemporaryDirectory() as tempdir:
+            documents = (
+                "s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=*/split=train/part_id=*/*.gz"
+            )
+            stats = "s3://ai2-llm/stats/olmo-mix/v1/papers/peS2o"
+            metadata = os.path.join(tempdir, "s2")
+
+            processor = cls(
+                source_prefix=documents,
+                destination_prefix=stats,
+                metadata_prefix=metadata,
+                num_processes=num_workers,
+                debug=debug,
+            )
+            processor(**process_single_kwargs)
+
+
 class StackInputSpec(InputSpec):
     metadata: Dict[str, Any] = msgspec.field(default_factory=dict)
     attributes: Dict[str, Any] = msgspec.field(default_factory=dict)
@@ -1239,8 +1323,8 @@ class stack_v4(stack_v2):
 @Registry.add
 class LineStatsStack(BaseStatsProcessor):
     # Testing
-    #documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/documents/abap/data_0000.jsonl.gz"
-    #stats = "/data/niklas/dolma/abap/data_0000.json.gz"
+    # documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/documents/abap/data_0000.jsonl.gz"
+    # stats = "/data/niklas/dolma/abap/data_0000.json.gz"
     documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/documents/*/*.gz"
     stats = "/data/niklas/dolma/stack"
 
@@ -1276,28 +1360,37 @@ class LineStatsStack(BaseStatsProcessor):
             except Exception as e:
                 print(e)
                 return
-            
+
             for doc_line, attrs in zip(doc_file, attr_file):
                 doc = doc_decoder.decode(doc_line)
                 attrs = attr_decoder.decode(attrs).attributes
                 out_line = {}
 
                 ## RPJ ##
-                if (attrs["paper_analysis__code_redpajama_taggers_v1__max_line_length_doc"][0][2] > 1000) or \
-                    (attrs["paper_analysis__code_redpajama_taggers_v1__avg_line_length_doc"][0][2] > 100) or \
-                    (attrs["paper_analysis__code_redpajama_taggers_v1__alnum_prop_doc"][0][2] < 0.25) or \
-                    (attrs["paper_analysis__code_redpajama_taggers_v1__alpha_token_prop_doc"][0][2] < 1.5):
+                if (
+                    (attrs["paper_analysis__code_redpajama_taggers_v1__max_line_length_doc"][0][2] > 1000)
+                    or (attrs["paper_analysis__code_redpajama_taggers_v1__avg_line_length_doc"][0][2] > 100)
+                    or (attrs["paper_analysis__code_redpajama_taggers_v1__alnum_prop_doc"][0][2] < 0.25)
+                    or (attrs["paper_analysis__code_redpajama_taggers_v1__alpha_token_prop_doc"][0][2] < 1.5)
+                ):
                     out_line["rpj"] = 1
                 else:
                     out_line["rpj"] = 0
 
                 ## StarCoder ##
-                if (attrs["paper_analysis__code_starcoder_taggers_v2__has_xml_template_doc"][0][2] > 0.0) or \
-                (attrs["paper_analysis__code_starcoder_taggers_v2__code_to_comment_ratio_doc"][0][2] > 0.8) or \
-                (attrs["paper_analysis__code_starcoder_taggers_v2__code_to_comment_ratio_doc"][0][2] <= 0.01) or \
-                (
-                    any(x in source_path for x in ["python", "java", "javascript"]) and \
-                    (attrs["paper_analysis__code_starcoder_taggers_v2__code_to_text_ratio_html_doc"][0][2] <= 0.1)
+                if (
+                    (attrs["paper_analysis__code_starcoder_taggers_v2__has_xml_template_doc"][0][2] > 0.0)
+                    or (attrs["paper_analysis__code_starcoder_taggers_v2__code_to_comment_ratio_doc"][0][2] > 0.8)
+                    or (
+                        attrs["paper_analysis__code_starcoder_taggers_v2__code_to_comment_ratio_doc"][0][2] <= 0.01
+                    )
+                    or (
+                        any(x in source_path for x in ["python", "java", "javascript"])
+                        and (
+                            attrs["paper_analysis__code_starcoder_taggers_v2__code_to_text_ratio_html_doc"][0][2]
+                            <= 0.1
+                        )
+                    )
                 ):
                     out_line["starcoder"] = 1
                 else:
