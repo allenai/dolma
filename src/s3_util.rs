@@ -300,6 +300,15 @@ mod test {
         false
     }
 
+    fn get_dolma_test_prefix() -> String {
+        let prefix = std::env::var_os("DOLMA_TESTS_S3_PREFIX")
+            .map(|var| var.to_str().unwrap().to_string())
+            .unwrap_or_else(|| "s3://dolma-tests".to_string());
+
+        // remove any trailing slashes
+        return prefix.strip_suffix("/").unwrap_or(&prefix).to_string();
+    }
+
     fn compare_contents(expected: &str, actual: &str) {
         let expected_lines = BufReader::new(MultiGzDecoder::new(
             OpenOptions::new()
@@ -382,18 +391,37 @@ mod test {
             .unwrap();
         let s3_client = new_client(None)?;
 
+        let s3_prefix = get_dolma_test_prefix();
+        let s3_dest = "/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
+        let s3_path = s3_prefix + s3_dest;
+        let (s3_bucket, s3_key) = split_url(s3_path.as_str()).unwrap();
+
+        // upload a file to s3
+        let local_source_file = "tests/data/provided/documents/000.json.gz";
+        rt.block_on(
+            upload_file(
+                &s3_client,
+                Path::new(local_source_file),
+                s3_bucket,
+                s3_key,
+                Some(3), // number of attempts
+            )
+        )?;
+
+        // download the file back from s3
         let local_output_file =
             "tests/work/output/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
-        let s3_path: &str = "pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
         rt.block_on(download_to_file(
             &s3_client,
-            "ai2-llm",
-            s3_path,
+            s3_bucket,
+            // s3_path,
+            s3_key,
             Path::new(local_output_file),
             Some(3), // number of attempts
         ))?;
 
-        compare_contents("tests/data/documents.json.gz", local_output_file);
+        // compare the contents of the two files
+        compare_contents(local_source_file, local_output_file);
 
         Ok(())
     }
@@ -403,19 +431,61 @@ mod test {
         if skip_dolma_aws_tests() {
             return Ok(());
         }
-        let s3_client = new_client(None)?;
 
-        let patterns =
-            vec!["s3://ai2-llm/pretraining-data/tests/mixer/expected/*.json.gz".to_string()];
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let s3_client = new_client(None)?;
+        let s3_prefix = get_dolma_test_prefix();
+
+        let local_source_dir = "tests/data/expected";
+        // iterate over the files in `tests/data/expected` and upload them to s3
+        let entries = read_dir(local_source_dir)?;
+        for entry in entries {
+            let local_source_file = entry?.path();
+
+            // skip files not ending with .json.gz
+            if !local_source_file.to_str().unwrap().ends_with(".json.gz") {
+                continue;
+            }
+
+            let s3_url = format!(
+                "{}/pretraining-data/tests/mixer/expected/{}",
+                s3_prefix,
+                local_source_file.file_name().unwrap().to_str().unwrap()
+            );
+            let (s3_bucket, s3_key) = split_url(s3_url.as_str()).unwrap();
+            rt.block_on(upload_file(
+                &s3_client,
+                Path::new(local_source_file.to_str().unwrap()),
+                s3_bucket,
+                s3_key,
+                Some(3), // number of attempts
+            ))?;
+        }
+
+        let patterns = vec![
+            format!("{}/{}", s3_prefix, "pretraining-data/tests/mixer/expected/*.json.gz")
+        ];
+
+        //print patterns
+        println!("patterns: {:?}", patterns);
 
         let resp = find_objects_matching_patterns(&s3_client, &patterns).unwrap();
+
+        //print objects
+        println!("objects: {:?}", resp);
+
         let mut matches: HashSet<String> = HashSet::from_iter(resp.iter().map(|s| s.to_owned()));
 
         // list the contents of `tests/data/expected` and check that they match
-        let entries = read_dir("tests/data/expected")?;
+        let entries = read_dir(local_source_dir)?;
         for entry in entries {
             let remote_path = format!(
-                "s3://ai2-llm/pretraining-data/tests/mixer/expected/{}",
+                "{}/pretraining-data/tests/mixer/expected/{}",
+                s3_prefix,
                 entry?.file_name().to_str().unwrap()
             );
             matches.remove(&remote_path);
