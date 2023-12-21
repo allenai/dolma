@@ -1010,9 +1010,9 @@ class reddit(BaseStatsProcessor):
             "length": 0,
             "count": 0,
             "tokens": 0,
-            "dedupe_docs_count": 0,
-            "dedupe_docs_length": 0,
-            "dedupe_docs_matches": 0,
+            "repetitions_count": 0,
+            "repetitions_length": 0,
+            "repetitions_matches": 0,
         }
         cnt = 0
 
@@ -1027,7 +1027,7 @@ class reddit(BaseStatsProcessor):
                 if not (text := text.strip()):
                     continue
 
-                stats["documents"] += 1
+                stats["count"] += 1
                 stats["tokens"] += len(blingfire.text_to_words(text).split())
                 stats["length"] += len(text)
 
