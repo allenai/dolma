@@ -1058,10 +1058,10 @@ class reddit(BaseStatsProcessor):
     def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
         with TemporaryDirectory() as tempdir:
             documents = (
-                "s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/dataset=*/split=train/part_id=*/*.gz"
+                "s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/*.gz"
             )
-            stats = "s3://ai2-llm/stats/olmo-mix/v1/papers/peS2o"
-            metadata = os.path.join(tempdir, "s2")
+            stats = "s3://ai2-llm/stats/olmo-mix/v1_5/forums/reddit"
+            metadata = os.path.join(tempdir, "reddit")
 
             processor = cls(
                 source_prefix=documents,
