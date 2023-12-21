@@ -8,6 +8,7 @@ from yaml import safe_load
 from .analyzer import AnalyzerCli
 from .deduper import DeduperCli
 from .mixer import MixerCli
+from .warc import WarcExtractorCli
 
 # must import these to register the resolvers
 from .resolvers import *  # noqa: F401,F403,W0401
@@ -21,6 +22,7 @@ AVAILABLE_COMMANDS = {
     "list": ListTaggerCli,
     "stat": AnalyzerCli,
     "tokens": TokenizerCli,
+    "warc": WarcExtractorCli
     # following functionality is not yet implemented
     # "train-ft": None,
     # "train-lm": None,

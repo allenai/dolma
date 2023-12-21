@@ -1,6 +1,6 @@
 import logging
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Dict, Type, Union
+from typing import TYPE_CHECKING, Dict, Iterable, Optional, Type, Union
 
 from necessary import necessary
 
@@ -19,6 +19,13 @@ with necessary("goose3", soft=True) as GOOSE3_AVAILABLE:
     if GOOSE3_AVAILABLE or TYPE_CHECKING:
         from goose3 import Goose  # noqa: F401
 
+with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
+    if RESILIPARSE_AVAILABLE or TYPE_CHECKING:
+        from resiliparse.extract.html2text import extract_plain_text
+        from resiliparse.parse.html import HTMLTree
+        from resiliparse.parse.encoding import detect_encoding
+
+
 
 class BaseHtmlExtractor:
     """A base class for extractors. Turns HTML into text."""
@@ -26,6 +33,63 @@ class BaseHtmlExtractor:
     @abstractmethod
     def __call__(self, content: Union[str, bytes]) -> str:
         pass
+
+
+class ResiliparseHtmlExtractor(BaseHtmlExtractor):
+    def __init__(
+        self,
+        preserve_formatting: bool = True,
+        main_content: bool = True,
+        list_bullets: bool = True,
+        alt_texts: bool = False,
+        links: bool = True,
+        form_fields: bool = False,
+        noscript: bool = False,
+        comments: bool = True,
+        skip_elements: Optional[Iterable[str]] = None,
+    ) -> None:
+        assert RESILIPARSE_AVAILABLE, raise_dependency_error("resiliparse")
+
+        self.preserve_formatting = preserve_formatting
+        self.main_content = main_content
+        self.list_bullets = list_bullets
+        self.alt_texts = alt_texts
+        self.links = links
+        self.form_fields = form_fields
+        self.noscript = noscript
+        self.comments = comments
+        self.skip_elements = skip_elements
+
+    def __call__(self, content: Union[str, bytes]) -> str:
+        #         html (HTMLTree or str) – HTML as DOM tree or Unicode string
+        # preserve_formatting (bool) – preserve basic block-level formatting
+        # main_content (bool) – apply simple heuristics for extracting only “main-content” elements
+        # list_bullets (bool) – insert bullets / numbers for list items
+        # alt_texts (bool) – preserve alternative text descriptions
+        # links (bool) – extract link target URLs
+        # form_fields (bool) – extract form fields and their values
+        # noscript (bool) – extract contents of <noscript> elements
+        # comments (bool) – treat comment sections as main content
+        # skip_elements (t.Iterable[str] or None) – list of CSS selectors for elements to skip
+        if isinstance(content, bytes):
+            encoding = detect_encoding(content)
+            html = HTMLTree.parse_from_bytes(content, encoding)
+        else:
+            html = HTMLTree.parse(content)
+
+        text = extract_plain_text(
+            html=html,
+            preserve_formatting=self.preserve_formatting,
+            main_content=self.main_content,
+            list_bullets=self.list_bullets,
+            alt_texts=self.alt_texts,
+            links=self.links,
+            form_fields=self.form_fields,
+            noscript=self.noscript,
+            comments=self.comments,
+            skip_elements=self.skip_elements,
+        )
+        return text
 
 
 class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
@@ -85,4 +149,5 @@ class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
 
 HTML_EXTRACTORS: Dict[str, Type[BaseHtmlExtractor]] = {
     "trafilatura": TrafilaturaHtmlExtractor,
+    "resiliparse": ResiliparseHtmlExtractor,
 }

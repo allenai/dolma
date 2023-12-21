@@ -1,4 +1,4 @@
-from ..errors import DolmaFatalError
+from ..core.errors import DolmaFatalError
 
 
 def raise_dependency_error(package: str):

@@ -2,14 +2,14 @@ import datetime
 import io
 import multiprocessing
 import re
-from typing import TYPE_CHECKING, Dict, Generator, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, Generator, Optional, Type, Union
 
 import msgspec
 import smart_open
 from charset_normalizer import detect
 from necessary import necessary
 
-from ..parallel import BaseParallelProcessor, QueueType
+from ..core.parallel import BaseParallelProcessor, QueueType
 from .html import HTML_EXTRACTORS, BaseHtmlExtractor
 from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
 from .types import WarcDocument, WarcDocumentMetadata
@@ -106,22 +106,25 @@ class WarcProcessor(BaseParallelProcessor):
 
         # skip license if unknown
         skip_unknown_license: bool = kwargs.get("skip_unknown_license", False)
+        keep_html_in_metadata: bool = kwargs.get("keep_html_in_metadata", False)
 
         # create the html extractor
         html_extractor_name: str = kwargs.get("html_extractor", "trafilatura")
+        html_extractor_kwargs: Dict[str, Any] = kwargs.get("html_kwargs", {})
         html_extractor_cls: Union[Type[BaseHtmlExtractor], None] = HTML_EXTRACTORS.get(html_extractor_name)
         if html_extractor_cls is None:
-            raise ValueError(f"Extractor {kwargs.get('extractor', 'trafilatura')} is not supported.")
-        html_extractor = html_extractor_cls(**kwargs.get("extractor_kwargs", {}))
+            raise ValueError(f"Extractor `{html_extractor_name}` is not supported.")
+        html_extractor = html_extractor_cls(**html_extractor_kwargs)
 
         # create the license extractor
         license_extr_name: str = kwargs.get("license_extractor", "cc_regex")
+        license_extr_kwargs: Dict[str, Any] = kwargs.get("license_kwargs", {})
         license_extr_cls: Union[Type[BaseLicenseExtractor], None] = LICENSE_EXTRACTORS.get(license_extr_name)
         if license_extr_cls is None:
             raise ValueError(f"License extractor {license_extr_name} is not supported.")
-        license_extractor = license_extr_cls()
+        license_extractor = license_extr_cls(**license_extr_kwargs)
 
-        # play with extensions
+        # derive the destination path if it is not provided and the source path contains a WARC extension
         if not destination_path.endswith(".jsonl.gz"):
             destination_path = re.sub(r"(\.warc)?\.gz$", "", destination_path) + ".jsonl.gz"
 
@@ -158,7 +161,7 @@ class WarcProcessor(BaseParallelProcessor):
 
                     metadata = WarcDocumentMetadata(
                         url=target_uri,
-                        content=str_content,
+                        content=str_content if keep_html_in_metadata else "",
                         warc_date=cls._format_to_dolma_timestamp(warc_date),
                         warc_filename=warc_filename or "",
                         content_type=content_type,
@@ -173,6 +176,8 @@ class WarcProcessor(BaseParallelProcessor):
                         text=text or "",
                         metadata=metadata,
                     )
+
+                    breakpoint()
 
                     output_file.write(encoder.encode(document) + b"\n")  # pyright: ignore
 
