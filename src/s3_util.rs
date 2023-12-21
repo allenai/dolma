@@ -398,15 +398,13 @@ mod test {
 
         // upload a file to s3
         let local_source_file = "tests/data/provided/documents/000.json.gz";
-        rt.block_on(
-            upload_file(
-                &s3_client,
-                Path::new(local_source_file),
-                s3_bucket,
-                s3_key,
-                Some(3), // number of attempts
-            )
-        )?;
+        rt.block_on(upload_file(
+            &s3_client,
+            Path::new(local_source_file),
+            s3_bucket,
+            s3_key,
+            Some(3), // number of attempts
+        ))?;
 
         // download the file back from s3
         let local_output_file =
@@ -466,18 +464,17 @@ mod test {
             ))?;
         }
 
-        let patterns = vec![
-            format!("{}/{}", s3_prefix, "pretraining-data/tests/mixer/expected/*.json.gz")
-        ];
+        // If we don't shutdown the runtime, the test will hang when running
+        // find_objects_matching_patterns.
+        // I'm not sure why this is the case. Need to read more. -@soldni
+        rt.shutdown_background();
 
-        //print patterns
-        println!("patterns: {:?}", patterns);
+        let patterns = vec![format!(
+            "{}/{}",
+            s3_prefix, "pretraining-data/tests/mixer/expected/*.json.gz"
+        )];
 
         let resp = find_objects_matching_patterns(&s3_client, &patterns).unwrap();
-
-        //print objects
-        println!("objects: {:?}", resp);
-
         let mut matches: HashSet<String> = HashSet::from_iter(resp.iter().map(|s| s.to_owned()));
 
         // list the contents of `tests/data/expected` and check that they match
