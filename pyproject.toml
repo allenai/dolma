@@ -16,7 +16,8 @@ dependencies = [
     "msgspec>=0.14.2",
     "nltk==3.8.1",
     "omegaconf>=2.3.0",
-    "pycld2==0.41",
+    "LTpycld2==0.42",     # fork of pycld2 that works on Apple Silicon
+    # "pycld2==0.41",
     # "pycld3==0.22",       # does not install correctly
     "pyyaml",
     "requests",
