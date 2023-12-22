@@ -32,6 +32,7 @@ class CreativeCommonsRegexLicenseExtractor(BaseLicenseExtractor):
     )
 
     def __call__(self, content: Union[str, bytes]) -> License:
+
         if isinstance(content, bytes):
             if b"creativecommons.org/licenses" not in content:
                 return License(type_="unk")
@@ -40,10 +41,10 @@ class CreativeCommonsRegexLicenseExtractor(BaseLicenseExtractor):
                 return License(type_="unk")
             content = content.decode(str(encoding))
 
-        if "creativecommons.org/licenses" not in content:
+        if "creativecommons.org/licenses" not in content:  # pyright: ignore
             return License(type_="unk")
 
-        for match in self.RE_LICENSE_ATTRIBUTE_PATTERN.finditer(content):
+        for match in self.RE_LICENSE_ATTRIBUTE_PATTERN.finditer(content):   # pyright: ignore
             *_, type_, version, lang, __ = match.groups()
             return License(
                 type_=type_.strip("/"),

@@ -26,7 +26,6 @@ with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
         from resiliparse.parse.encoding import detect_encoding
 
 
-
 class BaseHtmlExtractor:
     """A base class for extractors. Turns HTML into text."""
 

@@ -10,6 +10,12 @@ from charset_normalizer import detect
 from necessary import necessary
 
 from ..core.parallel import BaseParallelProcessor, QueueType
+from ..taggers.language import (
+    FastTextLangIdTagger,
+    ResiliparseLangIdTagger,
+    Cld2LanguageTagger,
+    Cld3LanguageTagger
+)
 from .html import HTML_EXTRACTORS, BaseHtmlExtractor
 from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
 from .types import WarcDocument, WarcDocumentMetadata
@@ -26,6 +32,13 @@ with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
 
 
 DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
+
+LANGUAGE_TAGGERS = {
+    'fasttext': FastTextLangIdTagger,
+    'resiliparse': ResiliparseLangIdTagger,
+    'cld2': Cld2LanguageTagger,
+    'cld3': Cld3LanguageTagger
+}
 
 
 class WarcProcessor(BaseParallelProcessor):

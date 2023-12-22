@@ -1,16 +1,15 @@
 """
-
-Filters.
+Language filters
 
 @kylel, @soldni
 
 """
-from typing import TYPE_CHECKING, Iterable, List, Tuple
+from typing import TYPE_CHECKING, Iterable, List, NamedTuple
 
-import necessary
 import pycld2 as cld2
 import regex
 from anyascii import anyascii
+from necessary import necessary
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.ft_tagger import BaseFastTextTagger, Prediction
@@ -18,44 +17,106 @@ from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
 
-with necessary.necessary("cld3", soft=True) as CLD3_AVAILABLE:
+with necessary("cld3", soft=True) as CLD3_AVAILABLE:
     if CLD3_AVAILABLE or TYPE_CHECKING:
         import cld3  # pyright:ignore pylint:disable=import-error
 
+with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
+    if RESILIPARSE_AVAILABLE or TYPE_CHECKING:
+        from resiliparse.parse.lang import (  # pyright:ignore pylint:disable=import-error
+            detect_fast,
+            supported_langs,
+        )
 
-@TaggerRegistry.add("cld3_en_doc_v2")
-class Cld3LanguageTagger(BaseTagger):
-    def __init__(self) -> None:
-        if not CLD3_AVAILABLE:
-            raise ImportError(f"cld3 is not install, cannot instantiate {self.__class__.__name__}")
 
-    def _predict_text(self, text: str) -> Tuple[str, float]:
-        pred = cld3.get_language(text)  # pyright: ignore
-        score = pred.probability if pred.language == "en" else 0.0
-        return "en", score
+class LanguagePrediction(NamedTuple):
+    lang: str
+    score: float
+
+
+class BaseLanguageTagger(BaseTagger):
+    add_negative_spans: bool = False
+
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        raise NotImplementedError
+
+    def _build_spans(self, text: str, matches: Iterable[LanguagePrediction], offset: int = 0) -> List[Span]:
+        spans = [Span(start=offset, end=len(text) + offset, type=lang, score=score) for lang, score in matches]
+        if self.add_negative_spans:
+            negs = [Span(start=s.start, end=s.end, type=f"not_{s.type}", score=1 - s.score) for s in spans]
+            spans.extend(negs)
+        return spans
 
     def predict(self, doc: Document) -> DocResult:
-        lang, score = self._predict_text(doc.text)
-        positive_span = Span(start=0, end=len(doc.text), type=lang, score=score)
-        negative_span = Span(start=0, end=len(doc.text), type=f"not_{lang}", score=1.0 - score)
-        return DocResult(doc=doc, spans=[positive_span, negative_span])
+        matches = self.predict_text(doc.text)
+        spans = self._build_spans(doc.text, matches)
+        return DocResult(doc=doc, spans=spans)
 
 
-@TaggerRegistry.add("cld3_en_paragraph_v2")
-class Cld3LanguageTaggerParagraph(Cld3LanguageTagger):
+class BaseParagraphLanguageTagger(BaseLanguageTagger):
     def predict(self, doc: Document) -> DocResult:
         paragraphs = split_paragraphs(doc.text)
         spans: List[Span] = []
         for paragraph in paragraphs:
-            lang, score = self._predict_text(paragraph.text)  # pyright: ignore
-            positive_span = Span(start=paragraph.start, end=paragraph.end, type=lang, score=score)
-            negative_span = Span(start=paragraph.start, end=paragraph.end, type=f"not_{lang}", score=1.0 - score)
-            spans.extend((positive_span, negative_span))
+            matches = self.predict_text(paragraph.text)
+            paragraph_spans = self._build_spans(paragraph.text, matches, offset=paragraph.start)
+            spans.extend(paragraph_spans)
         return DocResult(doc=doc, spans=spans)
 
 
-@TaggerRegistry.add("cld2_en_doc_v2")
-class Cld2LanguageFilter(BaseTagger):
+@TaggerRegistry.add("resiliparse_v1")
+class ResiliparseLangIdTagger(BaseLanguageTagger):
+    # from docs: max 101 languages detected
+    top_k: int = len(supported_langs())
+
+    # from docs: "The lower the value, the more accurate the prediction probably is.
+    #             Values above 1200 are most likely false results."
+    # I'm picking 1000 here since everything above 1000 is rarely a language.
+    max_score: int = 1000
+
+    def __init__(self) -> None:
+        if not RESILIPARSE_AVAILABLE:
+            raise ImportError(f"resiliparse is not install, cannot instantiate {self.__class__.__name__}")
+
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        pred = detect_fast(text, n_results=self.top_k, cutoff=self.max_score)
+        return [
+            LanguagePrediction(lang=lang, score=1 - (max(score, self.max_score) / self.max_score))
+            for lang, score in pred
+        ]
+
+
+@TaggerRegistry.add("cld3_en_v2")
+class Cld3LanguageTagger(BaseLanguageTagger):
+    def __init__(self) -> None:
+        if not CLD3_AVAILABLE:
+            raise ImportError(f"cld3 is not install, cannot instantiate {self.__class__.__name__}")
+
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        raw_preds = cld3.get_language(text)
+        return [
+            LanguagePrediction(lang=pred.language, score=pred.probability)
+            for pred in raw_preds
+            if pred.is_reliable
+        ]
+
+
+@TaggerRegistry.add("cld3_en_doc_v2")
+class Cld3EnglishLanguageTagger(Cld3LanguageTagger):
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        preds = super().predict_text(text)
+        en_pred = next((p for p in preds if p.lang == "en"), LanguagePrediction(lang="en", score=0.0))
+        return [en_pred]
+
+
+@TaggerRegistry.add("cld3_en_paragraph_v2")
+class Cld3EnglishLanguageParagraphTagger(Cld3EnglishLanguageTagger, BaseParagraphLanguageTagger):
+    def predict(self, doc: Document) -> DocResult:
+        return BaseParagraphLanguageTagger.predict(self, doc)
+
+
+@TaggerRegistry.add("cld2_en_v2")
+class Cld2LanguageTagger(BaseLanguageTagger):
     RE_BAD_CHARS = regex.compile(r"[\p{Cc}\p{Cs}]+")
 
     def _sanitize_input(self, text: str) -> str:
@@ -67,58 +128,77 @@ class Cld2LanguageFilter(BaseTagger):
     def _identity_fn(self, text: str) -> str:
         return text
 
-    def _predict_text(self, text: str) -> Tuple[str, float]:
-        details = []
-        is_reliable = False
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        isReliable, textBytesFound, details = False, 0, []
         for fn in (self._identity_fn, self._to_ascii_input, self._sanitize_input):
             try:
-                is_reliable, _, details = cld2.detect(fn(text))
+                isReliable, textBytesFound, details = cld2.detect(fn(text))
                 break
             except cld2.error:
                 ...
 
-        score = max([d[2] for d in details if d[0] == "ENGLISH" and is_reliable] or [0])
-        return "en", score / 100.0
+        if not isReliable:
+            return []
 
-    def predict(self, doc: Document) -> DocResult:
-        lang, score = self._predict_text(doc.text)
-        positive_span = Span(start=0, end=len(doc.text), type=lang, score=score)
-        negative_span = Span(start=0, end=len(doc.text), type=f"not_{lang}", score=1.0 - score)
-        return DocResult(doc=doc, spans=[positive_span, negative_span])
+        return [
+            LanguagePrediction(lang=languageCode, score=percent / 100.0)
+            for languageName, languageCode, percent, score in details
+        ]
+
+
+@TaggerRegistry.add("cld2_en_doc_v2")
+class Cld2EnglishLanguageTagger(Cld2LanguageTagger):
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        preds = super().predict_text(text)
+        en_pred = next((p for p in preds if p.lang == "en"), LanguagePrediction(lang="en", score=0.0))
+        return [en_pred]
 
 
 @TaggerRegistry.add("cld2_en_paragraph_v2")
-class Cld2LanguageFilterParagraph(Cld2LanguageFilter):
+class Cld2EnglishLanguageParagraphTagger(Cld2EnglishLanguageTagger, BaseParagraphLanguageTagger):
     def predict(self, doc: Document) -> DocResult:
-        paragraphs = split_paragraphs(doc.text)
-        spans: List[Span] = []
-        for paragraph in paragraphs:
-            lang, score = self._predict_text(paragraph.text)  # pyright: ignore
-            positive_span = Span(start=paragraph.start, end=paragraph.end, type=lang, score=score)
-            negative_span = Span(start=paragraph.start, end=paragraph.end, type=f"not_{lang}", score=1.0 - score)
-            spans.extend((positive_span, negative_span))
-        return DocResult(doc=doc, spans=spans)
+        return BaseParagraphLanguageTagger.predict(self, doc)
 
 
-@TaggerRegistry.add("ft_lang_id_en_doc_v2")
-class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
+@TaggerRegistry.add("ft_lang_id_doc_v1")
+class FastTextLangIdTagger(BaseFastTextTagger, BaseLanguageTagger):
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
 
     def __init__(self):
         super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
 
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        preds = self.classifier.predict(text.lower().replace("\n", " ").strip(), k=-1)
+        return [
+            LanguagePrediction(lang=label.replace("__label__", ""), score=score) for label, score in zip(*preds)
+        ]
+
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
-        pred = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
-        for label, score in zip(*pred):
-            if label == "__label__en":
-                return Prediction(label="en", score=score), Prediction(label="not_en", score=1.0 - score)
-        return Prediction(label="en", score=0.0), Prediction(label="not_en", score=1.0)
+        preds = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
+        return [
+            Prediction(label=label.replace("__label__", ""), score=score)
+            for label, score in sorted(zip(*preds), key=lambda x: x[1], reverse=True)
+        ]
+
+
+@TaggerRegistry.add("ft_lang_id_paragraph_v1")
+class FastTextLangIdParagraphTagger(FastTextLangIdTagger):
+    def __init__(self):
+        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
+
+
+@TaggerRegistry.add("ft_lang_id_en_doc_v2")
+class FastTextEnglishLanguageDocumentTagger(FastTextLangIdTagger):
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        preds = super().predict_text(text)
+        en_pred = next((p for p in preds if p.lang == "en"), LanguagePrediction(lang="en", score=0.0))
+        return [en_pred]
 
 
 @TaggerRegistry.add("ft_lang_id_en_paragraph_v2")
-class FastTextEnglishLanguageParagraphTagger(FastTextEnglishLanguageDocumentTagger):
+class FastTextEnglishLanguageParagraphTagger(FastTextEnglishLanguageDocumentTagger, FastTextLangIdParagraphTagger):
     def __init__(self):
-        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
+        FastTextLangIdParagraphTagger.__init__(self)
 
 
 def add_global_language_score_from_slice_score(result: DocResult) -> DocResult:
@@ -141,7 +221,7 @@ def add_global_language_score_from_slice_score(result: DocResult) -> DocResult:
 
 
 @TaggerRegistry.add("cld2_en_paragraph_with_doc_score_v2")
-class Cld2LanguageFilterParagraphWithDocScoreTagger(Cld2LanguageFilterParagraph):
+class Cld2LanguageFilterParagraphWithDocScoreTagger(Cld2EnglishLanguageParagraphTagger):
     def predict(self, doc: Document) -> DocResult:
         doc_result = super().predict(doc)
         doc_result = add_global_language_score_from_slice_score(doc_result)
@@ -149,7 +229,7 @@ class Cld2LanguageFilterParagraphWithDocScoreTagger(Cld2LanguageFilterParagraph)
 
 
 @TaggerRegistry.add("cld3_en_paragraph_with_doc_score_v2")
-class Cld3LanguageFilterParagraphWithDocScoreTagger(Cld3LanguageTaggerParagraph):
+class Cld3LanguageFilterParagraphWithDocScoreTagger(Cld2EnglishLanguageParagraphTagger):
     def predict(self, doc: Document) -> DocResult:
         doc_result = super().predict(doc)
         doc_result = add_global_language_score_from_slice_score(doc_result)
