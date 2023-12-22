@@ -35,14 +35,14 @@ class LanguagePrediction(NamedTuple):
 
 
 class BaseLanguageTagger(BaseTagger):
-    add_negative_spans: bool = False
+    ADD_NEGATIVE_SPANS: bool = False
 
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         raise NotImplementedError
 
     def _build_spans(self, text: str, matches: Iterable[LanguagePrediction], offset: int = 0) -> List[Span]:
         spans = [Span(start=offset, end=len(text) + offset, type=lang, score=score) for lang, score in matches]
-        if self.add_negative_spans:
+        if self.ADD_NEGATIVE_SPANS:
             negs = [Span(start=s.start, end=s.end, type=f"not_{s.type}", score=1 - s.score) for s in spans]
             spans.extend(negs)
         return spans
@@ -71,8 +71,7 @@ class ResiliparseLangIdTagger(BaseLanguageTagger):
 
     # from docs: "The lower the value, the more accurate the prediction probably is.
     #             Values above 1200 are most likely false results."
-    # I'm picking 1000 here since everything above 1000 is rarely a language.
-    max_score: int = 1000
+    max_score: int = 1200
 
     def __init__(self) -> None:
         if not RESILIPARSE_AVAILABLE:
@@ -81,13 +80,21 @@ class ResiliparseLangIdTagger(BaseLanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         pred = detect_fast(text, n_results=self.top_k, cutoff=self.max_score)
         return [
-            LanguagePrediction(lang=lang, score=1 - (max(score, self.max_score) / self.max_score))
+            LanguagePrediction(lang=lang, score=1 - (min(score, self.max_score) / self.max_score))
             for lang, score in pred
         ]
 
 
+@TaggerRegistry.add("resiliparse_paragraph_v1")
+class ResiliparseLangIdParagraphTagger(ResiliparseLangIdTagger, BaseParagraphLanguageTagger):
+    def predict(self, doc: Document) -> DocResult:
+        return BaseParagraphLanguageTagger.predict(self, doc)
+
+
 @TaggerRegistry.add("cld3_en_v2")
 class Cld3LanguageTagger(BaseLanguageTagger):
+    ADD_NEGATIVE_SPANS = True
+
     def __init__(self) -> None:
         if not CLD3_AVAILABLE:
             raise ImportError(f"cld3 is not install, cannot instantiate {self.__class__.__name__}")
@@ -117,6 +124,7 @@ class Cld3EnglishLanguageParagraphTagger(Cld3EnglishLanguageTagger, BaseParagrap
 
 @TaggerRegistry.add("cld2_en_v2")
 class Cld2LanguageTagger(BaseLanguageTagger):
+    ADD_NEGATIVE_SPANS = True
     RE_BAD_CHARS = regex.compile(r"[\p{Cc}\p{Cs}]+")
 
     def _sanitize_input(self, text: str) -> str:
@@ -174,11 +182,8 @@ class FastTextLangIdTagger(BaseFastTextTagger, BaseLanguageTagger):
         ]
 
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
-        preds = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
-        return [
-            Prediction(label=label.replace("__label__", ""), score=score)
-            for label, score in sorted(zip(*preds), key=lambda x: x[1], reverse=True)
-        ]
+        preds = self.predict_text(text_slice.text)
+        return [Prediction(label=pred.lang, score=pred.score) for pred in preds]
 
 
 @TaggerRegistry.add("ft_lang_id_paragraph_v1")
@@ -189,9 +194,14 @@ class FastTextLangIdParagraphTagger(FastTextLangIdTagger):
 
 @TaggerRegistry.add("ft_lang_id_en_doc_v2")
 class FastTextEnglishLanguageDocumentTagger(FastTextLangIdTagger):
+    ADD_NEGATIVE_SPANS = True
+
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         preds = super().predict_text(text)
         en_pred = next((p for p in preds if p.lang == "en"), LanguagePrediction(lang="en", score=0.0))
+        if self.ADD_NEGATIVE_SPANS:
+            neg_pred = LanguagePrediction(lang=f"not_{en_pred.lang}", score=1 - en_pred.score)
+            return [en_pred, neg_pred]
         return [en_pred]
 
 
