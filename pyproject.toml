@@ -124,9 +124,11 @@ warc = [
     "warcio>=1.7.4",
     "trafilatura>=1.6.1",
     "justext>=3.0.0",
-    "goose3>=3.1.17",
     "resiliparse",
     "fastwarc",
+    "dateparser",
+    "w3lib>=2.1.2",
+    "url-normalize>=1.4.3",
 
     # following are all for speeding up trafilatura
     "brotli",
@@ -195,7 +197,7 @@ recursive = true
 aggressive = 3
 
 [tool.mypy]
-python_version = 3.8
+python_version = "3.8"
 ignore_missing_imports = true
 no_site_packages = true
 allow_redefinition = false

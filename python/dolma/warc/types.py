@@ -1,12 +1,14 @@
-from typing import List, Optional
+from typing import Optional, Sequence
 
 import msgspec
 
 from .license import License
 
-
 MAX_DIGITS_LANG_CONF = 3
 MIN_SCORE_LANG_CONF = 10**-MAX_DIGITS_LANG_CONF
+
+MAX_DIGITS_LICENSE_CONF = 3
+MIN_SCORE_LICENSE_CONF = 10**-MAX_DIGITS_LICENSE_CONF
 
 
 class WarcDocumentMetadataLanguage(msgspec.Struct):
@@ -21,15 +23,17 @@ class WarcDocumentMetadataLanguage(msgspec.Struct):
 class WarcDocumentMetadata(msgspec.Struct):
     content: Optional[str]
     url: str
+    norm_url: str
     content_type: str
     warc_date: str
     warc_filename: str
-    license: License
-    languages: List[WarcDocumentMetadataLanguage]
+    licenses: Sequence[License]
+    languages: Sequence[WarcDocumentMetadataLanguage]
 
     def __post_init__(self):
-        # Only keep languages with a confidence > 0.0
+        # Only keep languages and licenses with a confidence above the threshold
         self.languages = [lang for lang in self.languages if lang.conf > MIN_SCORE_LANG_CONF]
+        self.licenses = [l_ for l_ in self.licenses if l_.conf > MIN_SCORE_LICENSE_CONF]
 
 
 class WarcDocument(msgspec.Struct):

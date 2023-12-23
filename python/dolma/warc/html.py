@@ -1,10 +1,11 @@
 import logging
+import re
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Dict, Iterable, Optional, Type, Union
 
 from necessary import necessary
 
-from .utils import raise_dependency_error
+from .utils import raise_warc_dependency_error
 
 with necessary("justext", soft=True) as JUSTEXT_AVAILABLE:
     if JUSTEXT_AVAILABLE or TYPE_CHECKING:
@@ -15,15 +16,39 @@ with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
         import trafilatura  # noqa: F401
         import trafilatura.meta  # noqa: F401
 
-with necessary("goose3", soft=True) as GOOSE3_AVAILABLE:
-    if GOOSE3_AVAILABLE or TYPE_CHECKING:
-        from goose3 import Goose  # noqa: F401
-
 with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
     if RESILIPARSE_AVAILABLE or TYPE_CHECKING:
-        from resiliparse.extract.html2text import extract_plain_text
-        from resiliparse.parse.encoding import detect_encoding
-        from resiliparse.parse.html import HTMLTree
+        from resiliparse.extract.html2text import extract_plain_text  # noqa: F401
+        from resiliparse.parse.encoding import detect_encoding  # noqa: F401
+        from resiliparse.parse.html import HTMLTree  # noqa: F401
+
+
+with necessary("w3lib", soft=True) as W3LIB_AVAILABLE:
+    if W3LIB_AVAILABLE or TYPE_CHECKING:
+        from w3lib.url import canonicalize_url  # noqa: F401
+
+with necessary("url_normalize", soft=True) as URL_NORMALIZE_AVAILABLE:
+    if URL_NORMALIZE_AVAILABLE or TYPE_CHECKING:
+        from url_normalize import url_normalize  # noqa: F401
+
+
+class UrlNormalizer:
+    def __init__(self):
+        assert URL_NORMALIZE_AVAILABLE, raise_warc_dependency_error("url-normalize")
+        assert W3LIB_AVAILABLE, raise_warc_dependency_error("w3lib")
+        self.www_subdomain_regex = re.compile(r"^(www\d*\.)", re.IGNORECASE)
+
+    def __call__(self, url: str) -> str:
+        canonical = canonicalize_url(url)
+        normalized = str(url_normalize(canonical))
+
+        # remove the protocol
+        _, normalized = normalized.split("://", 1)
+
+        # remove the www subdomain
+        normalized = self.www_subdomain_regex.sub("", normalized)
+
+        return normalized
 
 
 class BaseHtmlExtractor:
@@ -41,13 +66,13 @@ class ResiliparseHtmlExtractor(BaseHtmlExtractor):
         main_content: bool = True,
         list_bullets: bool = True,
         alt_texts: bool = False,
-        links: bool = True,
+        links: bool = False,
         form_fields: bool = False,
         noscript: bool = False,
         comments: bool = True,
         skip_elements: Optional[Iterable[str]] = None,
     ) -> None:
-        assert RESILIPARSE_AVAILABLE, raise_dependency_error("resiliparse")
+        assert RESILIPARSE_AVAILABLE, raise_warc_dependency_error("resiliparse")
 
         self.preserve_formatting = preserve_formatting
         self.main_content = main_content
@@ -109,7 +134,7 @@ class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
         logging.getLogger("trafilatura").setLevel(logging.CRITICAL)
 
         # make sure trafilatura is available
-        assert TRAFILATURA_AVAILABLE, raise_dependency_error("trafilatura")
+        assert TRAFILATURA_AVAILABLE, raise_warc_dependency_error("trafilatura")
 
         self.include_comments = include_comments
         self.include_links = include_links

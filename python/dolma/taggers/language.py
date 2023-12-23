@@ -111,7 +111,8 @@ class Cld3LanguageTagger(BaseLanguageTagger):
         raw_preds = cld3.get_language(text)
         return [
             LanguagePrediction(code=pred.language, conf=float(pred.probability))
-            for pred in raw_preds if pred.is_reliable
+            for pred in raw_preds
+            if pred.is_reliable
         ]
 
 
