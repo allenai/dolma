@@ -1,23 +1,19 @@
 import unittest
-from dolma.core import Document, BaseTagger, Span
-from dolma.taggers.language import (
-    # Cld2LanguageFilter,
-    # Cld2LanguageFilterParagraph,
-    # Cld2LanguageFilterParagraphWithDocScoreTagger,
-    Cld2EnglishLanguageTagger,
+from typing import Callable, Dict, List, Tuple, Type
+
+from dolma.core import BaseTagger, Document, Span
+from dolma.taggers.language import (  # Cld2LanguageFilter,; Cld2LanguageFilterParagraph,; Cld2LanguageFilterParagraphWithDocScoreTagger,; FastTextAllLanguagesDocumentTagger,; FastTextAllLanguageParagraphTagger,
     Cld2EnglishLanguageParagraphTagger,
+    Cld2EnglishLanguageTagger,
     Cld2LanguageFilterParagraphWithDocScoreTagger,
-    # FastTextAllLanguagesDocumentTagger,
-    # FastTextAllLanguageParagraphTagger,
-    FastTextLangIdTagger,
-    FastTextLangIdParagraphTagger,
     FastTextEnglishLanguageDocumentTagger,
     FastTextEnglishLanguageParagraphTagger,
     FastTextEnglishLanguageParagraphWithDocScoreTagger,
+    FastTextLangIdParagraphTagger,
+    FastTextLangIdTagger,
     ResiliparseLangIdParagraphTagger,
     ResiliparseLangIdTagger,
 )
-from typing import Callable, Dict, List, Tuple, Type
 
 ENGLISH_PARAGRAPH = """
 English is a West Germanic language in the Indo-European language family, whose speakers, called Anglophones, originated in early medieval England. The namesake of the language is the Angles, one of the ancient Germanic peoples that migrated to the island of Great Britain. Modern English is both the most spoken language in the world and the third-most spoken native language, after Mandarin Chinese and Spanish. It is also the most widely learned second language in the world, with more second-language speakers than native speakers. English is either the official language or one of the official languages in 59 sovereign states (such as in India, Ireland, and Canada). In some other countries, it is the sole or dominant language for historical reasons without being explicitly defined by law (such as in the United States or United Kingdom). It is a co-official language of the United Nations, the European Union, and many other international and regional organizations. It has also become the de facto language of diplomacy, science, international trade, tourism, aviation, entertainment and the internet. English accounts for at least 70% of total speakers of the Germanic language branch, and as of 2005, it was estimated that there were over two billion speakers worldwide.

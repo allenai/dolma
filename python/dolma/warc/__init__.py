@@ -1,6 +1,6 @@
-from contextlib import ExitStack
 import os
 import tempfile
+from contextlib import ExitStack
 from typing import List, Optional, Union
 
 from ..core.paths import glob_path
@@ -19,13 +19,11 @@ def create_and_run_warc_pipeline(
     retries_on_error: int = 0,
     num_processes: int = 1,
     skip_unknown_license: bool = False,
-    html_extractor: str = "trafilatura",
+    html_extractor: str = "resiliparse",
     html_kwargs: Optional[dict] = None,
-    license_extractor: str = "cc_regex_fast",
+    license_extractor: str = "null",
     license_kwargs: Optional[dict] = None,
 ):
-    os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"
-
     with ExitStack() as stack:
         if metadata is None:
             if isinstance(destination, str):

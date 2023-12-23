@@ -30,8 +30,8 @@ with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
 
 
 class LanguagePrediction(NamedTuple):
-    lang: str
-    score: float
+    code: str
+    conf: float
 
 
 class BaseLanguageTagger(BaseTagger):
@@ -64,6 +64,14 @@ class BaseParagraphLanguageTagger(BaseLanguageTagger):
         return DocResult(doc=doc, spans=spans)
 
 
+class NullLanguageTagger(BaseLanguageTagger):
+    """A language tagger that does nothing. Useful when you want to disable language tagging.
+    Currently used for the `null` option in WARC the pipeline."""
+
+    def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
+        return []
+
+
 @TaggerRegistry.add("resiliparse_v1")
 class ResiliparseLangIdTagger(BaseLanguageTagger):
     # from docs: max 101 languages detected
@@ -80,7 +88,7 @@ class ResiliparseLangIdTagger(BaseLanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         pred = detect_fast(text, n_results=self.top_k, cutoff=self.max_score)
         return [
-            LanguagePrediction(lang=lang, score=1 - (min(score, self.max_score) / self.max_score))
+            LanguagePrediction(code=lang, conf=1 - (min(score, self.max_score) / self.max_score))
             for lang, score in pred
         ]
 
@@ -102,9 +110,7 @@ class Cld3LanguageTagger(BaseLanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         raw_preds = cld3.get_language(text)
         return [
-            LanguagePrediction(lang=pred.language, score=pred.probability)
-            for pred in raw_preds
-            if pred.is_reliable
+            LanguagePrediction(code=pred.language, conf=pred.probability) for pred in raw_preds if pred.is_reliable
         ]
 
 
@@ -112,7 +118,7 @@ class Cld3LanguageTagger(BaseLanguageTagger):
 class Cld3EnglishLanguageTagger(Cld3LanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         preds = super().predict_text(text)
-        en_pred = next((p for p in preds if p.lang == "en"), LanguagePrediction(lang="en", score=0.0))
+        en_pred = next((p for p in preds if p.code == "en"), LanguagePrediction(code="en", conf=0.0))
         return [en_pred]
 
 
@@ -149,7 +155,7 @@ class Cld2LanguageTagger(BaseLanguageTagger):
             return []
 
         return [
-            LanguagePrediction(lang=languageCode, score=percent / 100.0)
+            LanguagePrediction(code=languageCode, conf=percent / 100.0)
             for languageName, languageCode, percent, score in details
         ]
 
@@ -158,7 +164,7 @@ class Cld2LanguageTagger(BaseLanguageTagger):
 class Cld2EnglishLanguageTagger(Cld2LanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         preds = super().predict_text(text)
-        en_pred = next((p for p in preds if p.lang == "en"), LanguagePrediction(lang="en", score=0.0))
+        en_pred = next((p for p in preds if p.code == "en"), LanguagePrediction(code="en", conf=0.0))
         return [en_pred]
 
 
@@ -178,12 +184,12 @@ class FastTextLangIdTagger(BaseFastTextTagger, BaseLanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         preds = self.classifier.predict(text.lower().replace("\n", " ").strip(), k=-1)
         return [
-            LanguagePrediction(lang=label.replace("__label__", ""), score=score) for label, score in zip(*preds)
+            LanguagePrediction(code=label.replace("__label__", ""), conf=score) for label, score in zip(*preds)
         ]
 
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
         preds = self.predict_text(text_slice.text)
-        return [Prediction(label=pred.lang, score=pred.score) for pred in preds]
+        return [Prediction(label=pred.code, score=pred.conf) for pred in preds]
 
 
 @TaggerRegistry.add("ft_lang_id_paragraph_v1")
@@ -198,9 +204,9 @@ class FastTextEnglishLanguageDocumentTagger(FastTextLangIdTagger):
 
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         preds = super().predict_text(text)
-        en_pred = next((p for p in preds if p.lang == "en"), LanguagePrediction(lang="en", score=0.0))
+        en_pred = next((p for p in preds if p.code == "en"), LanguagePrediction(code="en", conf=0.0))
         if self.ADD_NEGATIVE_SPANS:
-            neg_pred = LanguagePrediction(lang=f"not_{en_pred.lang}", score=1 - en_pred.score)
+            neg_pred = LanguagePrediction(code=f"not_{en_pred.code}", conf=1 - en_pred.conf)
             return [en_pred, neg_pred]
         return [en_pred]
 

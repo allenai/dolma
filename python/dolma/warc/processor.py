@@ -11,14 +11,16 @@ from necessary import necessary
 
 from ..core.parallel import BaseParallelProcessor, QueueType
 from ..taggers.language import (
-    FastTextLangIdTagger,
-    ResiliparseLangIdTagger,
+    BaseLanguageTagger,
     Cld2LanguageTagger,
-    Cld3LanguageTagger
+    Cld3LanguageTagger,
+    FastTextLangIdTagger,
+    NullLanguageTagger,
+    ResiliparseLangIdTagger,
 )
 from .html import HTML_EXTRACTORS, BaseHtmlExtractor
 from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
-from .types import WarcDocument, WarcDocumentMetadata
+from .types import WarcDocument, WarcDocumentMetadata, WarcDocumentMetadataLanguage
 from .utils import raise_dependency_error
 
 with necessary("warcio", soft=True) as WARCIO_AVAILABLE:
@@ -34,10 +36,11 @@ with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
 DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
 
 LANGUAGE_TAGGERS = {
-    'fasttext': FastTextLangIdTagger,
-    'resiliparse': ResiliparseLangIdTagger,
-    'cld2': Cld2LanguageTagger,
-    'cld3': Cld3LanguageTagger
+    "fasttext": FastTextLangIdTagger,
+    "resiliparse": ResiliparseLangIdTagger,
+    "cld2": Cld2LanguageTagger,
+    "cld3": Cld3LanguageTagger,
+    "null": NullLanguageTagger,
 }
 
 
@@ -137,6 +140,14 @@ class WarcProcessor(BaseParallelProcessor):
             raise ValueError(f"License extractor {license_extr_name} is not supported.")
         license_extractor = license_extr_cls(**license_extr_kwargs)
 
+        # Create the language tagger
+        language_tagger_name: str = kwargs.get("language_tagger", "null")
+        language_tagger_kwargs: Dict[str, Any] = kwargs.get("language_tagger_kwargs", {})
+        language_tagger_cls: Union[Type[BaseLanguageTagger], None] = LANGUAGE_TAGGERS.get(language_tagger_name)
+        if language_tagger_cls is None:
+            raise ValueError(f"Language tagger {language_tagger_name} is not supported.")
+        language_tagger = language_tagger_cls(**language_tagger_kwargs)
+
         # derive the destination path if it is not provided and the source path contains a WARC extension
         if not destination_path.endswith(".jsonl.gz"):
             destination_path = re.sub(r"(\.warc)?\.gz$", "", destination_path) + ".jsonl.gz"
@@ -151,11 +162,11 @@ class WarcProcessor(BaseParallelProcessor):
 
                 elif record.rec_type == "response":
                     content = record.content_stream().read()
-                    cc_license = license_extractor(content=content)
+                    license = license_extractor(content=content)
 
                     records_cnt += 1
 
-                    if skip_unknown_license and cc_license.type_ == "unk":
+                    if skip_unknown_license and license.type_ == "unk":
                         continue
 
                     str_content = cls._decode_content(content)
@@ -165,20 +176,27 @@ class WarcProcessor(BaseParallelProcessor):
                     text = html_extractor(content=str_content)
 
                     # metadata
-                    content_type, *_ = record.http_headers.get_header("Content-Type", record.content_type).split(
-                        ";"
-                    )
+                    ctype, *_ = record.http_headers.get_header("Content-Type", record.content_type).split(";")
                     date = record.http_headers.get_header("Date")
                     target_uri = record.rec_headers.get_header("WARC-Target-URI")
                     payload_id = record.rec_headers.get_header("WARC-Payload-Digest").split(":")[1].lower()
+
+                    # sort the predicted languages by score
+                    predicted_languages = [
+                        WarcDocumentMetadataLanguage(code=lang.code, conf=lang.conf)
+                        for lang in sorted(
+                            language_tagger.predict_text(text=text), key=lambda x: x.conf, reverse=True
+                        )
+                    ]
 
                     metadata = WarcDocumentMetadata(
                         url=target_uri,
                         content=str_content if keep_html_in_metadata else "",
                         warc_date=cls._format_to_dolma_timestamp(warc_date),
                         warc_filename=warc_filename or "",
-                        content_type=content_type,
-                        cc_license=cc_license,
+                        content_type=ctype,
+                        license=license,
+                        languages=predicted_languages,
                     )
 
                     document = WarcDocument(
@@ -189,8 +207,6 @@ class WarcProcessor(BaseParallelProcessor):
                         text=text or "",
                         metadata=metadata,
                     )
-
-                    breakpoint()
 
                     output_file.write(encoder.encode(document) + b"\n")  # pyright: ignore
 

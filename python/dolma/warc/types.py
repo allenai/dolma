@@ -1,8 +1,13 @@
-from typing import Union
+from typing import List, Union
 
 import msgspec
 
 from .license import License
+
+
+class WarcDocumentMetadataLanguage(msgspec.Struct):
+    code: str
+    conf: float
 
 
 class WarcDocumentMetadata(msgspec.Struct):
@@ -11,7 +16,8 @@ class WarcDocumentMetadata(msgspec.Struct):
     content_type: str
     warc_date: str
     warc_filename: str
-    cc_license: License
+    license: License
+    languages: List[WarcDocumentMetadataLanguage]
 
 
 class WarcDocument(msgspec.Struct):

@@ -22,8 +22,8 @@ with necessary("goose3", soft=True) as GOOSE3_AVAILABLE:
 with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
     if RESILIPARSE_AVAILABLE or TYPE_CHECKING:
         from resiliparse.extract.html2text import extract_plain_text
-        from resiliparse.parse.html import HTMLTree
         from resiliparse.parse.encoding import detect_encoding
+        from resiliparse.parse.html import HTMLTree
 
 
 class BaseHtmlExtractor:

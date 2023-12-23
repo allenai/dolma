@@ -8,12 +8,12 @@ from yaml import safe_load
 from .analyzer import AnalyzerCli
 from .deduper import DeduperCli
 from .mixer import MixerCli
-from .warc import WarcExtractorCli
 
 # must import these to register the resolvers
 from .resolvers import *  # noqa: F401,F403,W0401
 from .tagger import ListTaggerCli, TaggerCli
 from .tokenizer import TokenizerCli
+from .warc import WarcExtractorCli
 
 AVAILABLE_COMMANDS = {
     "dedupe": DeduperCli,
