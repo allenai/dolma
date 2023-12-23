@@ -11,6 +11,7 @@ from .processor import WarcProcessor
 def create_and_run_warc_pipeline(
     documents: Union[str, List[str]],
     destination: Union[str, List[str]],
+    source_name: str,
     metadata: Union[None, str, List[str]] = None,
     debug: bool = False,
     seed: int = 0,
@@ -21,8 +22,10 @@ def create_and_run_warc_pipeline(
     skip_unknown_license: bool = False,
     html_extractor: str = "resiliparse",
     html_kwargs: Optional[dict] = None,
-    license_extractor: str = "null",
+    license_extractor: Optional[str] = None,
     license_kwargs: Optional[dict] = None,
+    language_tagger: Optional[str] = None,
+    language_kwargs: Optional[dict] = None,
 ):
     with ExitStack() as stack:
         if metadata is None:
@@ -73,7 +76,10 @@ def create_and_run_warc_pipeline(
             skip_on_failure=skip_on_failure,
             skip_unknown_license=skip_unknown_license,
             html_extractor=html_extractor,
-            html_kwargs=(html_kwargs or {}),
+            html_kwargs=html_kwargs,
             license_extractor=license_extractor,
-            license_kwargs=(license_kwargs or {}),
+            license_kwargs=license_kwargs,
+            language_tagger=language_tagger,
+            language_kwargs=language_kwargs,
+            source_name=source_name,
         )

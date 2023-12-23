@@ -39,6 +39,7 @@ class WarcExtractorConfig:
         default=False,
         help="Whether to skip documents with unknown licenses.",
     )
+    source_name: str = field(help="Name to assign to the source.")
     html_extractor: str = field(
         default="trafilatura",
         help="HTML extractor to use.",
@@ -47,13 +48,21 @@ class WarcExtractorConfig:
         default=None,
         help="HTML extractor arguments.",
     )
-    license_extractor: str = field(
-        default="cc_regex_fast",
+    license_extractor: Optional[str] = field(
+        default=None,
         help="License extractor to use.",
     )
     license_kwargs: Optional[dict] = field(
         default=None,
         help="License extractor arguments.",
+    )
+    language_tagger: Optional[str] = field(
+        default=None,
+        help="Language tagger to use for extraction.",
+    )
+    language_kwargs: Optional[dict] = field(
+        default=None,
+        help="Language tagger arguments.",
     )
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
     dryrun: bool = field(
@@ -73,6 +82,10 @@ class WarcExtractorCli(BaseCli):
         with make_workdirs(parsed_config.work_dir) as work_dirs:
             documents = [str(p) for p in parsed_config.documents]
             destination = [str(p) for p in parsed_config.destination]
+
+            source_name = parsed_config.source_name
+            if not isinstance(source_name, str):
+                raise ValueError(f"source_name must be a string, not {source_name} ({type(source_name)})")
 
             # perform some path validation to make sure we don't call
             # the extractor with invalid config
@@ -101,10 +114,13 @@ class WarcExtractorCli(BaseCli):
                 ignore_existing=parsed_config.ignore_existing,
                 debug=parsed_config.debug,
                 skip_unknown_license=parsed_config.skip_unknown_license,
+                source_name=source_name,
                 html_extractor=parsed_config.html_extractor,
                 html_kwargs=parsed_config.html_kwargs,
                 license_extractor=parsed_config.license_extractor,
                 license_kwargs=parsed_config.license_kwargs,
+                language_tagger=parsed_config.language_tagger,
+                language_kwargs=parsed_config.language_kwargs,
             )
 
 

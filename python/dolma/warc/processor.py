@@ -121,28 +121,33 @@ class WarcProcessor(BaseParallelProcessor):
         encoder = msgspec.json.Encoder()
 
         # skip license if unknown
-        skip_unknown_license: bool = kwargs.get("skip_unknown_license", False)
-        keep_html_in_metadata: bool = kwargs.get("keep_html_in_metadata", False)
+        skip_unknown_license: bool = kwargs.get("skip_unknown_license") or False
+        keep_html_in_metadata: bool = kwargs.get("keep_html_in_metadata") or False
+
+        # get the name of this source
+        source_name = kwargs.get("source_name", None)
+        if not isinstance(source_name, str):
+            raise ValueError(f"source_name must be a string, not {source_name} ({type(source_name)})")
 
         # create the html extractor
-        html_extractor_name: str = kwargs.get("html_extractor", "trafilatura")
-        html_extractor_kwargs: Dict[str, Any] = kwargs.get("html_kwargs", {})
+        html_extractor_name: str = kwargs.get("html_extractor") or "resiliparse"
+        html_extractor_kwargs: Dict[str, Any] = kwargs.get("html_kwargs") or {}
         html_extractor_cls: Union[Type[BaseHtmlExtractor], None] = HTML_EXTRACTORS.get(html_extractor_name)
         if html_extractor_cls is None:
             raise ValueError(f"Extractor `{html_extractor_name}` is not supported.")
         html_extractor = html_extractor_cls(**html_extractor_kwargs)
 
         # create the license extractor
-        license_extr_name: str = kwargs.get("license_extractor", "cc_regex")
-        license_extr_kwargs: Dict[str, Any] = kwargs.get("license_kwargs", {})
+        license_extr_name: str = kwargs.get("license_extractor") or "null"
+        license_extr_kwargs: Dict[str, Any] = kwargs.get("license_kwargs") or {}
         license_extr_cls: Union[Type[BaseLicenseExtractor], None] = LICENSE_EXTRACTORS.get(license_extr_name)
         if license_extr_cls is None:
             raise ValueError(f"License extractor {license_extr_name} is not supported.")
         license_extractor = license_extr_cls(**license_extr_kwargs)
 
         # Create the language tagger
-        language_tagger_name: str = kwargs.get("language_tagger", "null")
-        language_tagger_kwargs: Dict[str, Any] = kwargs.get("language_tagger_kwargs", {})
+        language_tagger_name: str = kwargs.get("language_tagger") or "null"
+        language_tagger_kwargs: Dict[str, Any] = kwargs.get("language_tagger_kwargs") or {}
         language_tagger_cls: Union[Type[BaseLanguageTagger], None] = LANGUAGE_TAGGERS.get(language_tagger_name)
         if language_tagger_cls is None:
             raise ValueError(f"Language tagger {language_tagger_name} is not supported.")
@@ -191,7 +196,7 @@ class WarcProcessor(BaseParallelProcessor):
 
                     metadata = WarcDocumentMetadata(
                         url=target_uri,
-                        content=str_content if keep_html_in_metadata else "",
+                        content=str_content if keep_html_in_metadata else None,
                         warc_date=cls._format_to_dolma_timestamp(warc_date),
                         warc_filename=warc_filename or "",
                         content_type=ctype,

@@ -88,7 +88,7 @@ class ResiliparseLangIdTagger(BaseLanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         pred = detect_fast(text, n_results=self.top_k, cutoff=self.max_score)
         return [
-            LanguagePrediction(code=lang, conf=1 - (min(score, self.max_score) / self.max_score))
+            LanguagePrediction(code=lang, conf=1 - (min(float(score), self.max_score) / self.max_score))
             for lang, score in pred
         ]
 
@@ -110,7 +110,8 @@ class Cld3LanguageTagger(BaseLanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         raw_preds = cld3.get_language(text)
         return [
-            LanguagePrediction(code=pred.language, conf=pred.probability) for pred in raw_preds if pred.is_reliable
+            LanguagePrediction(code=pred.language, conf=float(pred.probability))
+            for pred in raw_preds if pred.is_reliable
         ]
 
 
@@ -155,7 +156,7 @@ class Cld2LanguageTagger(BaseLanguageTagger):
             return []
 
         return [
-            LanguagePrediction(code=languageCode, conf=percent / 100.0)
+            LanguagePrediction(code=languageCode, conf=float(percent) / 100.0)
             for languageName, languageCode, percent, score in details
         ]
 
@@ -184,7 +185,8 @@ class FastTextLangIdTagger(BaseFastTextTagger, BaseLanguageTagger):
     def predict_text(self, text: str) -> Iterable[LanguagePrediction]:
         preds = self.classifier.predict(text.lower().replace("\n", " ").strip(), k=-1)
         return [
-            LanguagePrediction(code=label.replace("__label__", ""), conf=score) for label, score in zip(*preds)
+            LanguagePrediction(code=label.replace("__label__", ""), conf=float(score))
+            for label, score in zip(*preds)
         ]
 
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
