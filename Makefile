@@ -31,6 +31,7 @@ publish:
 test: test-python test-rust
 
 test-python:
+	maturin develop --extras=all
 	pytest -vsx tests/python
 	rm -rf tests/work/*
 

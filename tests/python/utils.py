@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import uuid
@@ -18,6 +19,8 @@ from dolma.core.paths import glob_path, mkdir_p
 DOLMA_TESTS_S3_PREFIX_ENV_VAR = "DOLMA_TESTS_S3_PREFIX"
 DOLMA_TESTS_SKIP_AWS_ENV_VAR = "DOLMA_TESTS_SKIP_AWS"
 DOLMA_TESTS_S3_PREFIX_DEFAULT = "s3://dolma-tests"
+
+LOGGER = logging.getLogger(__name__)
 
 
 def parse_s3_path(s3_path: str) -> Tuple[str, str]:
@@ -62,7 +65,7 @@ def get_test_prefix() -> str:
 
 def skip_aws_tests() -> bool:
     dolma_tests_skip = os.environ.get(DOLMA_TESTS_SKIP_AWS_ENV_VAR)
-    print(f"{DOLMA_TESTS_SKIP_AWS_ENV_VAR}: {dolma_tests_skip}")
+    LOGGER.info(f"{DOLMA_TESTS_SKIP_AWS_ENV_VAR}: {dolma_tests_skip}")
     return (dolma_tests_skip or "false").lower() == "true"
 
 

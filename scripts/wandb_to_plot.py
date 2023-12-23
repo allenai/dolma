@@ -17,8 +17,9 @@ with necessary(
 ):
     import plotly.graph_objs as go
     import plotly.io as pio
-    import wandb
     import yaml
+
+    import wandb
 
     pio.kaleido.scope.mathjax = None
 
