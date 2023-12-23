@@ -169,20 +169,19 @@ fn write_attributes(
                 if min_word_length > 0 {
                     // Split the text into words and check the number of words.
                     let words = tokenize(&document_key);
-
                     if words.count() < min_word_length {
                         // skip documents with fewer than min_words words
-                        continue;
+                        attributes[&cfg.attribute_name] = Value::Array(Vec::new());
                     }
                 } else if document_key.len() < min_content_length {
                     // skip length 0 documents
-                    continue;
+                    attributes[&cfg.attribute_name] = Value::Array(Vec::new());
                 } else if dedupe_config.skip_empty.unwrap_or(false)
                     && document_key.trim().is_empty()
                 {
                     // skip empty documents if dedupe_config.skip_empty is true
                     // and the document key is empty after trimming (i.e., removing whitespace)
-                    continue;
+                    attributes[&cfg.attribute_name] = Value::Array(Vec::new());
                 } else {
                     let dedupe_key = VecDeque::from([document_key.as_str()]);
                     if bloom_filter.contains(&dedupe_key) {
@@ -213,7 +212,6 @@ fn write_attributes(
 
                     if text_length > 0 {
                         // skip empty documents if text_length is 0
-
                         for p in paragraphs {
                             let par_start = offset;
                             offset += p.chars().count();
