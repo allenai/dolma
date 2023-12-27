@@ -9,6 +9,8 @@ streams:
   attributes:
     # - perplexity_suite_v3_option2
   - olmo_mix_v1_taggers
+  - tokenizer_repetitions_v2r2
+
   output:
     path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki
     max_size_in_bytes: 4294967296
@@ -18,8 +20,14 @@ streams:
 
   filter:
     exclude:
-    - "$.attributes[?(@.olmo_mix_v1_taggers__uniseg_length_paragraphs_with_doc_length_v1__document[0][2]
-      < 25)]"
+      - "$.attributes[?(@.olmo_mix_v1_taggers__uniseg_length_paragraphs_with_doc_length_v1__document[0][2] < 25)]"
+
+      # 100+ repetitions
+      - "$.attributes[?(@.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition && @.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0] && @.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][2]>= 100)]"
+
+      # remove duplicate docs
+      # - "$@.attributes[?(@.bff_duplicate_docs && @.bff_duplicate_docs[0] && @.bff_duplicate_docs[0][2] >= 1.0)]"
+
       # - "$@.attributes[?(@.bff_duplicate_paragraph_spans_decontamination && @.bff_duplicate_paragraph_spans_decontamination[0] && @.bff_duplicate_paragraph_spans_decontamination[0][2] >= 1.0)]"
 
 work_dir:
