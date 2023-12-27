@@ -7,7 +7,7 @@ streams:
   - s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=en/*.gz
   - s3://ai2-llm/pretraining-data/sources/wikibooks/v0/documents/lang=simple/*.gz
   attributes:
-  - perplexity_suite_v3_option2
+    # - perplexity_suite_v3_option2
   - olmo_mix_v1_taggers
   output:
     path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki
@@ -20,8 +20,7 @@ streams:
     exclude:
     - "$.attributes[?(@.olmo_mix_v1_taggers__uniseg_length_paragraphs_with_doc_length_v1__document[0][2]
       < 25)]"
-    - "$@.attributes[?(@.bff_duplicate_paragraph_spans_decontamination && @.bff_duplicate_paragraph_spans_decontamination[0]
-      && @.bff_duplicate_paragraph_spans_decontamination[0][2] >= 1.0)]"
+      # - "$@.attributes[?(@.bff_duplicate_paragraph_spans_decontamination && @.bff_duplicate_paragraph_spans_decontamination[0] && @.bff_duplicate_paragraph_spans_decontamination[0][2] >= 1.0)]"
 
 work_dir:
   input: "/tmp/olmo-mix-v1_5/input"
