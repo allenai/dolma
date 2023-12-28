@@ -24,6 +24,7 @@ import tqdm
 from dolma.core.data_types import InputSpec, OutputSpec
 from dolma.core.parallel import BaseParallelProcessor
 from dolma.core.paths import glob_path
+from dolma.tokenizer import Tokenizer
 
 T = TypeVar("T", bound=Type["BaseStatsProcessor"])
 
@@ -409,6 +410,52 @@ class just_cc_dedup(BaseStatsProcessor):
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(stats, indent=2))
+
+
+@Registry.add
+class dolma_v15r2_counts(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1_5r2/*.gz"
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        # for the data sheet, what statistics you think we should include? I could
+        # do # of docs, # tokens, distribution of URLs, pronouns, s2 FOS, stack
+        # languages?
+        decoder = msgspec.json.Decoder(InputSpec)
+        documents = words = 0
+        olmo_tokens = llama_tokens = 0
+        interval = 10_000
+
+        olmo_tokenizer = Tokenizer.from_pretrained("allenai/gpt-neox-olmo-dolma-v1_5")
+        llama_tokenizer = Tokenizer.from_pretrained("NousResearch/Llama-2-7b-hf")
+
+        with smart_open.open(source_path, "rb") as source_file:
+            for line in source_file:
+                document = decoder.decode(line)
+                documents += 1
+                words += len(blingfire.text_to_words(document.text).split())
+                olmo_tokens += len(olmo_tokenizer.encode(document.text, add_special_tokens=False))
+                llama_tokens += len(llama_tokenizer.encode(document.text, add_special_tokens=False))
+
+                if documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=documents % interval)
+
+        counters = {
+            "documents": documents,
+            "words": words,
+            "olmo_tokens": olmo_tokens,
+            "llama_tokens": llama_tokens,
+        }
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counters, indent=2, sort_keys=True))
 
 
 @Registry.add
