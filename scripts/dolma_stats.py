@@ -415,7 +415,7 @@ class just_cc_dedup(BaseStatsProcessor):
 @Registry.add
 class dolma_v15r2_counts(BaseStatsProcessor):
     documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/*/*.gz"
-    stats = "s3://ai2-llm/stats/olmo-mix/v1_5r2/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/dolma-v1_5r2/counts/*.gz"
 
     @classmethod
     def process_single(
