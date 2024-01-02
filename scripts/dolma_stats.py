@@ -1,6 +1,7 @@
 import argparse
 import bisect
 import copy
+import gzip
 import hashlib
 import json
 import multiprocessing
@@ -23,7 +24,7 @@ import tqdm
 
 from dolma.core.data_types import InputSpec, OutputSpec
 from dolma.core.parallel import BaseParallelProcessor
-from dolma.core.paths import glob_path
+from dolma.core.paths import glob_path, split_path, make_relative
 from dolma.tokenizer import Tokenizer
 
 T = TypeVar("T", bound=Type["BaseStatsProcessor"])
@@ -207,6 +208,7 @@ class Registry:
 class BaseStatsProcessor(BaseParallelProcessor):
     documents: Union[str, List[str]]
     stats: str
+    skip_parallel: bool = False
 
     @classmethod
     def increment_progressbar(
@@ -245,7 +247,19 @@ class BaseStatsProcessor(BaseParallelProcessor):
                 num_processes=num_workers,
                 debug=debug,
             )
-            processor(**process_single_kwargs)
+            if not cls.skip_parallel:
+                processor(**process_single_kwargs)
+
+    @staticmethod
+    def _group_by_subset(paths: List[str]) -> Dict[str, List[str]]:
+        shared, _ = make_relative(paths)
+        shared = shared.rstrip("/") + "/"
+
+        grouped_paths: Dict[str, List[str]] = {}
+        for path in sorted(paths):
+            _, parts = split_path(path.replace(shared, ""))
+            grouped_paths.setdefault("/".join(parts[:-1]), []).append(path)
+        return grouped_paths
 
     @classmethod
     def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
@@ -259,17 +273,31 @@ class BaseStatsProcessor(BaseParallelProcessor):
         )
 
         paths = list(glob_path(cls.stats))
-        counts: dict = {}
+        grouped_paths = cls._group_by_subset(paths)
 
-        with multiprocessing.Pool(num_workers) as pool:
-            data = (cls._read_json(path) for path in paths) if debug else pool.imap(cls._read_json, paths)
+        grouped_counts: Dict[str, dict] = defaultdict(dict)
 
-            for content in tqdm.tqdm(data, desc=f"Merging {cls.__name__} stats", unit=" files", total=len(paths)):
-                counts = cls._merge_dicts(counts, content)
+        with tqdm.tqdm(desc=f"Merging {cls.__name__} stats", unit=" files", total=len(paths)) as pbar:
+            for subset, sub_paths in grouped_paths.items():
+                with multiprocessing.Pool(num_workers) as pool:
+                    if debug:
+                        data = (cls._read_json(path) for path in sub_paths)
+                    else:
+                        data = (e for e in pool.imap(cls._read_json, sub_paths))
+
+                    for content in data:
+                        pbar.update(1)
+                        grouped_counts[subset] = cls._merge_dicts(grouped_counts[subset], content)
+
+        global_counts: dict = {}
+        for subset_count in grouped_counts.values():
+            for k, v in cls._merge_dicts(global_counts, subset_count).items():
+                global_counts[k] = v
+        grouped_counts["__GLOBAL__"] = global_counts
 
         summary_dest = f"{stats_root}/summary.json"
         with smart_open.open(summary_dest, "wt") as destination_file:
-            destination_file.write(json.dumps(counts, indent=2, sort_keys=True))
+            destination_file.write(json.dumps(grouped_counts, indent=2, sort_keys=True))
 
 
 @Registry.add
@@ -452,6 +480,56 @@ class dolma_v15r2_counts(BaseStatsProcessor):
             "words": words,
             "olmo_tokens": olmo_tokens,
             "llama_tokens": llama_tokens,
+        }
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counters, indent=2, sort_keys=True))
+
+
+@Registry.add
+class dolma_v15r2_olmo(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/dolma-v1_5r2/counts_with_bytes/*/*.gz"
+    skip_parallel = True
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        decoder = msgspec.json.Decoder(InputSpec)
+        documents = words = 0
+        olmo_tokens = 0
+        utf8_length = 0
+        bytes_length = 0
+        gzip_bytes_length = 0
+        interval = 10_000
+
+        olmo_tokenizer = Tokenizer.from_pretrained("allenai/gpt-neox-olmo-dolma-v1_5")
+
+        with smart_open.open(source_path, "rb") as source_file:
+            for line in source_file:
+                document = decoder.decode(line)
+                documents += 1
+                words += len(blingfire.text_to_words(document.text).split())
+                olmo_tokens += len(olmo_tokenizer.encode(document.text, add_special_tokens=False))
+                bytes_length += len(d := document.text.encode("utf-8"))
+                utf8_length += len(d.decode("utf-8"))
+                gzip_bytes_length += gzip.compress(document.text.encode("utf-8")).__sizeof__()
+
+                if documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=documents % interval)
+
+        counters = {
+            "documents": documents,
+            "words": words,
+            "olmo_tokens": olmo_tokens,
+            "bytes_length": bytes_length,
+            "gzip_bytes_length": gzip_bytes_length,
+            "utf8_length": utf8_length,
         }
 
         with smart_open.open(destination_path, "wt") as destination_file:
