@@ -242,7 +242,7 @@ ablations_runs=(
     'abl-cc-v1-small-dedup_* abl-cc-v2-small-dedup*'
     'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_* v1-small-c4-filtered_* v1-small-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
     'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_* v1-small-c4-filtered_* v1-small-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered_*'
-    'v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
+    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
     'reddit-v5-ablation-filtered-gen-2_* reddit-v3-ablation-base-* reddit-v2-ablation-base-* reddit-v4-ablation-base-* reddit-v1-ablation-base_*'
 )
 ablations_names=(
