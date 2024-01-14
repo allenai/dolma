@@ -171,7 +171,12 @@ jobs:
         run: pip install 'maturin[patchelf]>=1.1,<2.0'
       - name: Building wheels
         run: |
-          maturin build --release --no-sdist --out dist --find-interpreter --manylinux ${{ matrix.target == 'x86' && 'auto' || '2_28' }} --target ${{ matrix.target }}
+          maturin build \
+          --release \
+          --out dist \
+          --find-interpreter \
+            --manylinux ${{ matrix.target == 'x86' && 'auto' || '2_28' }} \
+            --target ${{ matrix.target }}
       # - name: Build wheels
       #   uses: PyO3/maturin-action@v1
       #   with:
