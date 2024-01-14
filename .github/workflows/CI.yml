@@ -152,7 +152,7 @@ jobs:
     strategy:
       matrix:
         # target: [x86_64, x86, aarch64, armv7]
-        target: [x86_64]
+        target: [x86_64-unknown-linux-gnu]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v5
@@ -169,21 +169,18 @@ jobs:
           sudo apt-get install --yes --upgrade libc6-dev-i386
       - name: Install Maturin
         run: pip install 'maturin[patchelf]>=1.1,<2.0'
-      # - name: Building wheels
-      #   run: |
-      #     maturin build \
-      #     --release \
-      #     --out dist \
-      #     --find-interpreter \
-      #     --manylinux ${{ matrix.target == 'x86' && 'auto' || '2_28' }} \
-      #     --target ${{ matrix.target }}
-      - name: Build wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
-          sccache: ${{ matrix.target == 'x86' && 'false' || 'true' }}
-          manylinux: ${{ matrix.target == 'x86' && 'auto' || '2_28' }}
+      - name: Building wheels
+        run: |
+          maturin build --release --out dist --find-interpreter \
+          --manylinux ${{ matrix.target == 'x86' && 'auto' || '2_28' }} \
+          --target ${{ matrix.target }}
+      # - name: Build wheels
+      #   uses: PyO3/maturin-action@v1
+      #   with:
+      #     target: ${{ matrix.target }}
+      #     args: --release --out dist --find-interpreter
+      #     sccache: ${{ matrix.target == 'x86' && 'false' || 'true' }}
+      #     manylinux: ${{ matrix.target == 'x86' && 'auto' || '2_28' }}
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
