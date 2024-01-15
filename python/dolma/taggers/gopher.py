@@ -2,7 +2,7 @@ import logging
 from collections import Counter
 from dataclasses import dataclass
 from statistics import median
-from typing import Counter as CounterType
+from typing import Counter as CounterType, Union
 from typing import List, Tuple
 
 from ..core.data_types import DocResult, Document, Span
@@ -26,7 +26,7 @@ class GopherAttributes:
     fraction_of_characters_in_duplicate_ngrams: List[Tuple[int, float]]
     character_count: int = 0
     word_count: int = 0
-    median_word_length: float | bool = False
+    median_word_length: Union[float, bool] = False
     symbol_to_word_ratio: float = 0.0
     fraction_of_words_with_alpha_character: float = 0.0
     required_word_count: int = 0
