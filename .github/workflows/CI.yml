@@ -152,7 +152,10 @@ jobs:
     strategy:
       matrix:
         # target: [x86_64, x86, aarch64, armv7]
+        # target: [x86_64-unknown-linux-gnu , i686-unknown-linux-gnu, aarch64-unknown-linux-gnu, armv7-unknown-linux-gnueabihf]
         target: [x86_64-unknown-linux-gnu]
+        # python: [3.8, 3.9, 3.10, 3.11, 3.12]
+        python: [3.10]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v5
@@ -171,9 +174,8 @@ jobs:
         run: pip install 'maturin[patchelf]>=1.1,<2.0'
       - name: Building wheels
         run: |
-          maturin build --release --out dist --find-interpreter \
-          --manylinux ${{ matrix.target == 'x86' && 'auto' || '2_28' }} \
-          --target ${{ matrix.target }}
+          maturin build --release --out dist --find-interpreter --target ${{ matrix.target }}
+      # --manylinux ${{ matrix.target == 'x86' && 'auto' || '2_28' }}
       # - name: Build wheels
       #   uses: PyO3/maturin-action@v1
       #   with:
