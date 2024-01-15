@@ -173,7 +173,7 @@ jobs:
       - name: Setup cross-compilation to ARM
         if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
         run: |
-          sudo apt-get install --yes --upgrade gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross libc6-dev-arm64-cross libssl-dev-arm64-cross
+          sudo apt-get install --yes --upgrade gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross gcc-arm-linux-gnueabihf
           export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
           export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
           export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
