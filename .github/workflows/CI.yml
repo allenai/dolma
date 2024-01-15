@@ -145,7 +145,7 @@ jobs:
           source .venv/bin/activate
           ${{ matrix.task.run }}
 
-  build-linux-2:
+  build-linux:
     runs-on: ubuntu-latest
     strategy:
       matrix:
