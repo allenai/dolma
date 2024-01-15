@@ -184,7 +184,7 @@ jobs:
         run: pip install 'maturin[patchelf]>=1.1,<2.0'
       - name: Building wheels
         run: |
-          maturin build \
+          RUST_BACKTRACE=1 maturin build \
             --release \
             --out dist \
             --target ${{ matrix.target }} \
