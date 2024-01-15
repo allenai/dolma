@@ -201,10 +201,10 @@ jobs:
         if: ${{ matrix.target == 'x86' }}
         run: |
           sudo apt-get install --yes --upgrade libc6-dev-i386
-      # - name: Setup cross-compilation to ARM
-      #   if: ${{ contains(matrix.target, 'aarch64') }}
-      #   run: |
-      #     sudo apt-get install --yes --upgrade gcc-aarch64-linux-gnu g++-aarch64-linux-gnu     libc6-dev-arm64-cross
+      - name: Setup cross-compilation to ARM
+        if: ${{ contains(matrix.target, 'aarch64') }}
+        run: |
+          sudo apt-get install --yes --upgrade gcc-aarch64-linux-gnu g++-aarch64-linux-gnu     libc6-dev-arm64-cross
       #     CROSS_TOOLCHAIN_PREFIX="aarch64-linux-gnu-"
       #     CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="${CROSS_TOOLCHAIN_PREFIX}-gcc"
       #     AR_aarch64_unknown_linux_gnu="${CROSS_TOOLCHAIN_PREFIX}-ar"
