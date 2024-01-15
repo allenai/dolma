@@ -178,10 +178,11 @@ jobs:
     strategy:
       matrix:
         # target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu]
-        target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+        # target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu, aarch64-unknown-linux-gnu]
         # target: [armv7-unknown-linux-gnueabihf]
         # target: [x86_64-unknown-linux-gnu]
         # python: ['3.8', '3.9', '3.10', '3.11', '3.12']
+        target: [x86_64, x86, aarch64, armv7]
         python: ['3.10']
     name: "Build Linux (python${{ matrix.python }}, ${{ matrix.target }})"
     steps:
