@@ -166,7 +166,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
       - name: Install 32bit version of libc
-        if: ${{ matrix.target == 'x86' }}
+        if: ${{ matrix.target == 'i686-unknown-linux-gnu' }}
         run: |
           sudo apt-get install --yes --upgrade libc6-dev-i386
       - name: Add Rust Target
