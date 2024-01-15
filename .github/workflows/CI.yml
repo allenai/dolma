@@ -182,7 +182,8 @@ jobs:
         # target: [armv7-unknown-linux-gnueabihf]
         # target: [x86_64-unknown-linux-gnu]
         # python: ['3.8', '3.9', '3.10', '3.11', '3.12']
-        target: [x86_64, x86, aarch64, armv7]
+        # target: [x86_64, x86, aarch64, armv7]
+        target: [x86_64, aarch64]
         python: ['3.10']
     name: "Build Linux (python${{ matrix.python }}, ${{ matrix.target }})"
     steps:
@@ -196,7 +197,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
       - name: Install 32bit version of libc
-        if: ${{ contains(matrix.target, 'i686') }}
+        # if: ${{ contains(matrix.target, 'i686') }}
+        if: ${{ matrix.target == 'x86' }}
         run: |
           sudo apt-get install --yes --upgrade libc6-dev-i386
       # - name: Setup cross-compilation to ARM
