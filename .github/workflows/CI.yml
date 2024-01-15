@@ -176,16 +176,16 @@ jobs:
         if: ${{ contains(matrix.target, 'aarch64') }}
         run: |
           sudo apt-get install --yes --upgrade gcc-aarch64-linux-gnu g++-aarch64-linux-gnu     libc6-dev-arm64-cross
-          export CROSS_TOOLCHAIN_PREFIX=aarch64-linux-gnu-
-          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$CROSS_TOOLCHAIN_PREFIX"gcc
-          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="$CROSS_TARGET_RUNNER"
-          export AR_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"ar
-          export CC_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"gcc
-          export CXX_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"g++
-          export CMAKE_TOOLCHAIN_FILE_aarch64_unknown_linux_gnu=/opt/toolchain.cmake
-          export RUST_TEST_THREADS=1
-          export PKG_CONFIG_ALLOW_CROSS=1
-          export RUST_BACKTRACE=1
+          CROSS_TOOLCHAIN_PREFIX=aarch64-linux-gnu-
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$CROSS_TOOLCHAIN_PREFIX"gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="$CROSS_TARGET_RUNNER"
+          AR_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"ar
+          CC_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"gcc
+          CXX_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"g++
+          CMAKE_TOOLCHAIN_FILE_aarch64_unknown_linux_gnu=/opt/toolchain.cmake
+          RUST_TEST_THREADS=1
+          PKG_CONFIG_ALLOW_CROSS=1
+          RUST_BACKTRACE=1
         # export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
         # export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
         # export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
