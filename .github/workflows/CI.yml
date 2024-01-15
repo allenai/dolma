@@ -150,7 +150,7 @@ jobs:
       CXX:  g++-11
     strategy:
       matrix:
-        target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu, aarch64-unknown-linux-gnu, armv7-unknown-linux-musleabihf]
+        target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu, aarch64-unknown-linux-gnu]
         # target: [x86_64-unknown-linux-gnu]
         python: ['3.8', '3.9', '3.10', '3.11', '3.12']
         # python: [3.10]
