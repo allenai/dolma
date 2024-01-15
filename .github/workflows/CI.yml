@@ -151,8 +151,8 @@ jobs:
       CXX:  g++-11
     strategy:
       matrix:
-        target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu]
-        # target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+        # target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu]
+        target: [x86_64-unknown-linux-gnu, i686-unknown-linux-gnu, aarch64-unknown-linux-gnu]
         # target: [armv7-unknown-linux-gnueabihf]
         # target: [x86_64-unknown-linux-gnu]
         # python: ['3.8', '3.9', '3.10', '3.11', '3.12']
@@ -169,16 +169,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
       - name: Install 32bit version of libc
-        if: ${{ matrix.target == 'i686-unknown-linux-gnu' }}
+        if: ${{ contains(matrix.target, 'i686') }}
         run: |
           sudo apt-get install --yes --upgrade libc6-dev-i386
       - name: Setup cross-compilation to ARM
-        if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
+        if: ${{ contains(matrix.target, 'aarch64') }}
         run: |
-          sudo apt-get install --yes --upgrade gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
-          export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
-          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
-          export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
+          sudo apt-get install --yes --upgrade gcc-aarch64-linux-gnu g++-aarch64-linux-gnu     libc6-dev-arm64-cross
+          export CROSS_TOOLCHAIN_PREFIX=aarch64-linux-gnu-
+          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER="$CROSS_TOOLCHAIN_PREFIX"gcc
+          export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="$CROSS_TARGET_RUNNER"
+          export AR_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"ar
+          export CC_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"gcc
+          export CXX_aarch64_unknown_linux_gnu="$CROSS_TOOLCHAIN_PREFIX"g++
+          export CMAKE_TOOLCHAIN_FILE_aarch64_unknown_linux_gnu=/opt/toolchain.cmake
+          export RUST_TEST_THREADS=1
+          export PKG_CONFIG_ALLOW_CROSS=1
+          export RUST_BACKTRACE=1
+        # export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
+        # export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+        # export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
       - name: Add Rust Target
         run: |
           rustup target add ${{ matrix.target }}
@@ -186,7 +196,8 @@ jobs:
         run: pip install 'maturin[patchelf]>=1.1,<2.0'
       - name: Building wheels
         run: |
-          RUST_BACKTRACE=1 maturin build \
+          echo "rust backtrace: $RUST_BACKTRACE"
+          maturin build \
             --release \
             --out dist \
             --target ${{ matrix.target }} \
