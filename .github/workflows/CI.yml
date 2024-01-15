@@ -145,7 +145,7 @@ jobs:
           ${{ matrix.task.run }}
 
   build-linux:
-    # if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -173,9 +173,8 @@ jobs:
           name: wheels
           path: dist
 
-
   build-windows:
-    # if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: windows-latest
     name: "Build Windows (${{ matrix.target }})"
     strategy:
@@ -199,7 +198,7 @@ jobs:
           path: dist
 
   build-macos:
-    # if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: macos-latest
     name: "Build macOS (${{ matrix.target }})"
     strategy:
