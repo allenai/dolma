@@ -195,7 +195,7 @@ jobs:
       - name: Setup environment
         run:  |
           sudo apt-get update
-          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
+          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source gcc
       - name: Install 32bit version of libc
         # if: ${{ contains(matrix.target, 'i686') }}
         if: ${{ matrix.target == 'x86' }}
