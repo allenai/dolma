@@ -24,7 +24,7 @@ import tqdm
 
 from dolma.core.data_types import InputSpec, OutputSpec
 from dolma.core.parallel import BaseParallelProcessor
-from dolma.core.paths import glob_path, split_path, make_relative
+from dolma.core.paths import glob_path, make_relative, split_path
 from dolma.tokenizer import Tokenizer
 
 T = TypeVar("T", bound=Type["BaseStatsProcessor"])
