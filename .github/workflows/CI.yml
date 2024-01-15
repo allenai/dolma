@@ -154,6 +154,7 @@ jobs:
         target: [x86_64-unknown-linux-gnu]
         python: ['3.8', '3.9', '3.10', '3.11', '3.12']
         # python: [3.10]
+    name: Build for Linux ${{ matrix.target }} (Python ${{ matrix.python }})
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v5
@@ -168,11 +169,13 @@ jobs:
         if: ${{ matrix.target == 'x86' }}
         run: |
           sudo apt-get install --yes --upgrade libc6-dev-i386
+      - name: Add Rust Target
+        run: rustup target add ${{ matrix.target }}
       - name: Install Maturin
         run: pip install 'maturin[patchelf]>=1.1,<2.0'
       - name: Building wheels
         run: |
-          maturin build --release --out dist --find-interpreter --target ${{ matrix.target }}
+          maturin build --release --out dist --target ${{ matrix.target }} --interpreter $(which python${{ matrix.python }})
       # --manylinux ${{ matrix.target == 'x86' && 'auto' || '2_28' }}
       # - name: Build wheels
       #   uses: PyO3/maturin-action@v1
