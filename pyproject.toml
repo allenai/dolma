@@ -33,7 +33,7 @@ dependencies = [
     "charset-normalizer>=3.2.0"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Typing :: Typed",
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
