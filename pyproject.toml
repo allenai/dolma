@@ -34,9 +34,13 @@ dependencies = [
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
-    "Typing :: Typed",
-    "Programming Language :: Rust",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing",
+    "Typing :: Typed",
 ]
 
 [[project.authors]]
@@ -191,7 +195,7 @@ recursive = true
 aggressive = 3
 
 [tool.mypy]
-python_version = 3.8
+python_version = "3.8"
 ignore_missing_imports = true
 no_site_packages = true
 allow_redefinition = false
