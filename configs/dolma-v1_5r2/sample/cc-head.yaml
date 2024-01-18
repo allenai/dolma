@@ -1,0 +1,18 @@
+
+streams:
+- name: cc_en_head
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/*.gz
+  output:
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2-sample/documents/cc_en_head
+    max_size_in_bytes: 3894967296
+  attributes:
+  - random_number_v1
+  filter:
+    include:
+    - "$.attributes[?(@.random_number_v1__random_number_v1__random[0][2] < 0.5104606781)]"
+
+work_dir:
+  input: "/tmp/cc-head-sample/mixer/input"
+  output: "/tmp/cc-head-sample/mixer/output"
+processes: 188
