@@ -1,0 +1,17 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_tail/cc_en_tail-0*.json.gz
+
+dedupe:
+  name: dedupe_docs_v2
+  documents:
+    attribute_name: bff_duplicate_docs
+    key: $.text
+  skip_empty: true
+
+bloom_filter:
+  file: /tmp/cc_en_tail_dedupe_docs.bloom
+  read_only: false
+  estimated_doc_count: 30000000000 
+  desired_false_positive_rate: 1e-06
+
+processes: 188

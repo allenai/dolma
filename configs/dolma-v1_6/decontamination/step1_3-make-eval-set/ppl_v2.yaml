@@ -1,0 +1,41 @@
+streams:
+  - name: "v2_small"
+    documents:
+      - ${oc.env:HOME}/perplexity/v2_small/documents/c4_100_domains/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/c4_100_domains/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/c4_en/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/c4_en/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/gab/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/gab/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/ice/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/ice/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/m2d2_s2orc/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/m2d2_s2orc/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/m2d2_wiki/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/m2d2_wiki/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/manosphere/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/manosphere/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/mc4_en/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/mc4_en/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/pile/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/pile/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/ptb/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/ptb/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/twitterAEE/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/twitterAEE/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/wikitext_103/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2_small/documents/wikitext_103/test/*.gz
+
+    output:
+      path: ${oc.env:HOME}/perplexity/ppl_v2/documents
+      max_size_in_bytes: 500000000
+      discard_fields:
+        - attributes
+
+    attributes:
+      - uniseg_length_paragraphs_with_empty_v1
+
+    span_replacement: &span_replacement
+      - span: $.attributes.uniseg_length_paragraphs_with_empty_v1__uniseg_length_paragraphs_with_empty_v1__negative_paragraph
+        min_score: -12
+        replacement: ""
