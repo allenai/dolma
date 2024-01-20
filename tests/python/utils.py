@@ -7,8 +7,9 @@ from urllib.parse import urlparse
 
 import boto3
 import smart_open
-from dolma.core.paths import glob_path, mkdir_p
 from smart_open import open
+
+from dolma.core.paths import glob_path, mkdir_p
 
 DOLMA_TESTS_S3_PREFIX_ENV_VAR = "DOLMA_TESTS_S3_PREFIX"
 DOLMA_TESTS_SKIP_AWS_ENV_VAR = "DOLMA_TESTS_SKIP_AWS"

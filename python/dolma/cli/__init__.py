@@ -26,12 +26,13 @@ from typing import (
     get_origin,
 )
 
-from dolma.core.errors import DolmaConfigError
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
 from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
+
+from dolma.core.errors import DolmaConfigError
 
 __all__ = [
     "BaseCli",

@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 import smart_open
+
 from dolma.core.runtime import (
     _make_paths_from_prefix,
     _make_paths_from_substitution,

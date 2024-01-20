@@ -1,6 +1,7 @@
 from unittest import TestCase
 
 import numpy as np
+
 from dolma.taggers.repetitions.utils import (
     find_end_first_consecutive_true,
     find_periodic_sequences,
