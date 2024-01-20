@@ -1,0 +1,21 @@
+destination: ${oc.env:HOME}/ai2-llm/preprocessed/olmo-mix/v1_5-sample/meta-llama-pii-special-20240120/
+documents:
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/books/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/c4/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-sample/documents/cc_en_head/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-sample/documents/cc_en_middle/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5-sample/documents/cc_en_tail/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/pes2o/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/reddit/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/stack/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/wiki/*.json.gz
+
+processes: 168
+seed: 3920
+max_size: 21_474_836_480
+
+tokenizer:
+  name_or_path: allenai/eleuther-ai-gpt-neox-20b-pii-special
+  bos_token_id: 1
+  eos_token_id: 2
+  pad_token_id: 0
