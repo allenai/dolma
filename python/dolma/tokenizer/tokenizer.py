@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from enum import Enum
+from functools import cached_property
+from itertools import chain
 from os import PathLike
 from pathlib import Path
-from typing import Generator, List, Optional, Union
+from tempfile import NamedTemporaryFile
+from typing import Generator, List, Optional, Tuple, Union
 
 import msgspec
 import smart_open
@@ -18,7 +23,7 @@ from .data_types import InputSpec, TokenizerOutput
 
 PathOrStr = Union[str, PathLike]
 
-log = get_logger(__name__)
+logger = get_logger(__name__)
 
 
 __all__ = ["Tokenizer"]
@@ -57,17 +62,68 @@ class Tokenizer:
     def __init__(
         self,
         base_tokenizer: BaseTokenizer,
-        eos_token_id: int,
+        bos_token_id: Optional[int] = None,
+        eos_token_id: Optional[int] = None,
         pad_token_id: Optional[int] = None,
         truncate_to: Optional[int] = None,
         truncate_direction: Union[str, TruncationDirection] = TruncationDirection.right,
+        segment_before_tokenization: bool = False,
     ):
         self.base_tokenizer = base_tokenizer
         self.base_tokenizer.no_truncation()
+        self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id if pad_token_id is not None else eos_token_id
+
+        if self.pad_token_id:
+            logger.warning("No pad token ID provided; using 0.")
+            self.pad_token_id = 0
+
         self.truncate_to = truncate_to
         self.truncate_direction = TruncationDirection(truncate_direction)
+        self.segment_before_tokenization = segment_before_tokenization
+
+        self.config = self.get_base_tokenizer_config()
+
+    @cached_property
+    def tokenizer_has_prefix(self) -> bool:
+        """Returns true if the tokenizer has a prefix space. Used to determine if we need to add a space before
+        tokenizer when segment_before_tokenization is True."""
+
+        # if the tokenizer adds a prefix space, we much return True
+        pretokenizer_config: dict = self.config.get("pre_tokenizer") or {}
+        if pretokenizer_config.get("type") == "Sequence":
+            # it's a sequence of pretokenizers, so we gotta check each one
+            for pretok in pretokenizer_config.get("pretokenizers", []):
+                if pretok.get("add_prefix_space", False):
+                    return True
+        elif pretokenizer_config.get("add_prefix_space", False):
+            # this covers the case where the pretokenizer is a single pretokenizer
+            return True
+
+        # check if the normalizer or one of the components of the normalizer appends a prefix
+        normalizer_config: dict = self.config.get("normalizer") or {}
+        if normalizer_config.get("type") == "Sequence":
+            # it's a sequence of normalizers, so we gotta check each one
+            for norm in normalizer_config.get("normalizers", []):
+                if norm.get("type", None) == "Prepend":
+                    return True
+        elif normalizer_config.get("type", None) == "Prepend":
+            # this covers the case where the normalizer is a single normalizer
+            return True
+
+        # all checks above failed, so we return False
+        return False
+
+    def get_base_tokenizer_config(self) -> dict:
+        # Rust HuggingFace tokenizers don't have a way to get the full configuration through Python bindings,
+        # so we hack around it by saving the tokenizer to a temporary file and reading the config.
+        with NamedTemporaryFile() as f:
+            self.base_tokenizer.save(f.name)
+            f.flush()
+            f.seek(0)
+            config = json.load(f)
+        return config
 
     @property
     def vocab_size(self) -> int:
@@ -102,8 +158,7 @@ class Tokenizer:
         :param kwargs: Other key word arguments passed to :class:`Tokenizer`.
         """
         base_tokenizer = BaseTokenizer.from_pretrained(identifier)
-        eos_token_id = kwargs.pop("eos_token_id", base_tokenizer.get_vocab_size() - 1)
-        return cls(base_tokenizer, eos_token_id, **kwargs)
+        return cls(base_tokenizer=base_tokenizer, **kwargs)
 
     @classmethod
     def from_file(cls, filename: PathOrStr, **kwargs) -> "Tokenizer":
@@ -116,8 +171,7 @@ class Tokenizer:
         :param kwargs: Other key word arguments passed to :class:`Tokenizer`.
         """
         base_tokenizer = BaseTokenizer.from_file(filename)
-        eos_token_id = kwargs.pop("eos_token_id", base_tokenizer.get_vocab_size() - 1)
-        return cls(base_tokenizer, eos_token_id, **kwargs)
+        return cls(base_tokenizer=base_tokenizer, **kwargs)
 
     @classmethod
     def from_checkpoint(cls, checkpoint_dir: PathOrStr) -> "Tokenizer":
@@ -145,12 +199,19 @@ class Tokenizer:
         """
         Add special tokens in-place (if not already present) to the given token IDs.
         """
-        if not input_ids or input_ids[-1] != self.eos_token_id:
+        if not input_ids:
+            return input_ids
+
+        if self.bos_token_id is not None and input_ids[0] != self.bos_token_id:
+            input_ids.insert(0, self.bos_token_id)
+
+        if self.eos_token_id is not None and input_ids[-1] != self.eos_token_id:
             input_ids.append(self.eos_token_id)
+
         return input_ids
 
-    def num_special_tokens_to_add(self, is_pair: bool = False) -> int:
-        return 2 if is_pair else 1
+    def num_special_tokens_to_add(self) -> int:
+        return (1 if self.eos_token_id is not None else 0) + (1 if self.bos_token_id is not None else 0)
 
     def _truncate(
         self, input_ids: List[int], truncate_to: Optional[int], direction: TruncationDirection
@@ -168,19 +229,58 @@ class Tokenizer:
         """
         return self.encode_batch([input], add_special_tokens=add_special_tokens)[0]
 
+    def split_into_paragraphs(self, inputs: List[str]) -> Tuple[List[str], List[Tuple[int, int]]]:
+        slices = []
+        batch = []
+        curr = 0
+        for input in inputs:
+            paragraphs = [
+                # if a tokenizer adds a prefix in front of sequences, then the tokenization of the first
+                # symbol in each paragraph will be different depending on whether paragraphs are split
+                # before tokenization or not. To counter this, we add a space in front of each paragraph
+                # except the first one. We will remove the space from the tokenized symbols later.
+                (" " if self.tokenizer_has_prefix and i > 0 else "") + match.group()
+                # this regular expression keeps newlines at the beginning of paragraphs unless
+                # the paragraph is the first one in the document
+                for i, match in enumerate(re.finditer(r"(^\n*|\n+)[^\n]*", input))
+            ]
+            slices.append((curr, curr + len(paragraphs)))
+            batch.extend(paragraphs)
+            curr += len(paragraphs)
+        return batch, slices
+
+    def merge_paragraphs(self, encoded: List[List[int]], slices: List[Tuple[int, int]]) -> List[List[int]]:
+        merged = []
+        for start, end in slices:
+            encoded_slice_iter = (
+                # the slicing operation is required if we have added a space in front of each paragraph
+                # during the `split_into_paragraphs` method.
+                encoded[pos][1:] if (self.tokenizer_has_prefix and pos > 0) else encoded[pos]
+                for pos in range(start, end)
+            )
+            merged.append(list(chain.from_iterable(encoded_slice_iter)))
+        return merged
+
     def encode_batch(self, inputs: List[str], add_special_tokens: bool = True) -> List[List[int]]:
         """
         Encode a batch of strings into token IDs.
         """
         truncate_to = self.truncate_to
         if truncate_to is not None and add_special_tokens:
-            truncate_to -= self.num_special_tokens_to_add(False)
+            truncate_to -= self.num_special_tokens_to_add()
 
-        batch_encoding = self.base_tokenizer.encode_batch(inputs)
+        if self.segment_before_tokenization:
+            sliced_inputs, slice_locs = self.split_into_paragraphs(inputs)
+            sliced_batch_encoding = [
+                e.ids for e in self.base_tokenizer.encode_batch(sliced_inputs, add_special_tokens=False)
+            ]
+            batch_encoding = self.merge_paragraphs(sliced_batch_encoding, slice_locs)
+        else:
+            batch_encoding = [e.ids for e in self.base_tokenizer.encode_batch(inputs, add_special_tokens=False)]
 
         all_input_ids = []
         for encoding in batch_encoding:
-            input_ids = self._truncate(encoding.ids, truncate_to, self.truncate_direction)
+            input_ids = self._truncate(encoding, truncate_to, self.truncate_direction)
             if add_special_tokens:
                 input_ids = self.add_special_tokens(input_ids)
             all_input_ids.append(input_ids)
@@ -209,4 +309,4 @@ def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[TokenizerOutput,
                     yield TokenizerOutput.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)
                 i += 1
             except Exception as ex:
-                log.error("Error processing %s:%d", path, i, exc_info=ex)
+                logger.error("Error processing %s:%d", path, i, exc_info=ex)

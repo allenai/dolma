@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from typing_extensions import TypeAlias
 
+from ..core.loggers import get_logger
 from ..core.parallel import BaseParallelProcessor, QueueType
 from ..core.paths import glob_path, join_path, mkdir_p
 from .data_types import TokenizerOutput
@@ -38,6 +39,8 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
     @classmethod
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
+        logger = get_logger(__name__)
+
         max_size: int = kwargs.pop("max_size", 1024 * 1024 * 1024)
         dtype: np.dtype = np.dtype(kwargs.pop("dtype", "uint16"))
         local_shuffle: int = kwargs.pop("local_shuffle", 10_000)
@@ -52,13 +55,27 @@ class MemMapParallelWriter(BaseParallelProcessor):
         if tokenizer_name_or_path is None:
             raise RuntimeError("tokenizer_name_or_path not provided")
 
+        eos_token_id = kwargs.pop("eos_token_id", None)
+        if eos_token_id is None:
+            raise ValueError("eos_token_id not provided")
+
+        pad_token_id = kwargs.pop("pad_token_id", None)
+        if pad_token_id is None:
+            logger.warning("pad_token_id not provided, using eos_token_id")
+            pad_token_id = eos_token_id
+
+        # this is useful for making sure the queue does not grows too much
         cpu_count = multiprocessing.cpu_count()
 
         documents_cnt = tokens_cnt = 0
         update_interval = 1
         mm_cnt = 0
 
-        tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path)
+        tokenizer = Tokenizer.from_pretrained(
+            tokenizer_name_or_path,
+            eos_token_id=eos_token_id,
+            pad_token_id=pad_token_id,
+        )
         tokenizer_ring = []
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
@@ -185,7 +202,10 @@ def tokenize_in_parallel(
     num_readers: Optional[int] = None,
     local_shuffle: int = 10_000,
     ring_size: int = 8,
-    tokenizer_name_or_path: str = "allenai/eleuther-ai-gpt-neox-20b-pii-special",
+    tokenizer_name_or_path: str = "allenai/gpt-neox-olmo-dolma-v1_5",
+    eos_token_id: Optional[int] = 50279,
+    pad_token_id: Optional[int] = 1,
+    segment_before_tokenization: bool = False,
     seed: int = 3920,
     metadata_dir: Optional[str] = None,
     max_size: int = 1024 * 1024 * 1024,
@@ -222,5 +242,8 @@ def tokenize_in_parallel(
         ring_size=ring_size,
         max_size=max_size,
         dtype=dtype,
+        pad_token_id=pad_token_id,
+        eos_token_id=eos_token_id,
+        segment_docs_before_tokenization=segment_before_tokenization,
         tokenizer_name_or_path=tokenizer_name_or_path,
     )
