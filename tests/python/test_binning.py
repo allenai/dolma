@@ -1,7 +1,6 @@
 import unittest
 
 import numpy as np
-
 from dolma.core.binning import (
     FixedBucketsValTracker,
     InferBucketsValTracker,
