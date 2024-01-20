@@ -31,6 +31,12 @@ TEXT_WITH_NEW_LINES = {
     "gpt_neo": [34, 5474, 342, 187, 1826, 8737, 15, 187, 187, 53, 24560, 320, 253, 1072, 2, 187, 50279],
 }
 
+TEXT_NEWLINE_START = {
+    "text": "\nSimple doc with leading newline.",
+    "llama": [1, 29871, 13, 15427, 1574, 411, 8236, 25899, 29889, 2],
+    "gpt_neo": [187, 21595, 5474, 342, 4283, 747, 1282, 15, 50279],
+}
+
 
 class TestTokenizer(TestCase):
     def test_llama_process_by_paragraph(self):
@@ -51,6 +57,12 @@ class TestTokenizer(TestCase):
         self.assertEqual(no_split_tokens, split_tokens)
         self.assertEqual(split_tokens, TEXT_WITH_NEW_LINES["llama"])
 
+        # Test how it behaves when the document starts with a newline
+        no_split_tokens = no_split_tok.encode(TEXT_NEWLINE_START["text"])
+        split_tokens = split_tok.encode(TEXT_NEWLINE_START["text"])
+        self.assertEqual(no_split_tokens, split_tokens)
+        self.assertEqual(split_tokens, TEXT_NEWLINE_START["llama"])
+
     def test_gpt_neo_process_by_paragraph(self):
         no_split_tok = Tokenizer.from_file(**GPT_NEO_TOKENIZER, segment_before_tokenization=False)
         split_tok = Tokenizer.from_file(**GPT_NEO_TOKENIZER, segment_before_tokenization=True)
@@ -68,3 +80,9 @@ class TestTokenizer(TestCase):
         split_tokens = split_tok.encode(TEXT_WITH_NEW_LINES["text"])
         self.assertEqual(no_split_tokens, split_tokens)
         self.assertEqual(split_tokens, TEXT_WITH_NEW_LINES["gpt_neo"])
+
+        # Test how it behaves when the document starts with a newline
+        no_split_tokens = no_split_tok.encode(TEXT_NEWLINE_START["text"])
+        split_tokens = split_tok.encode(TEXT_NEWLINE_START["text"])
+        self.assertEqual(no_split_tokens, split_tokens)
+        self.assertEqual(split_tokens, TEXT_NEWLINE_START["gpt_neo"])

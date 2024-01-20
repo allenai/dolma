@@ -242,7 +242,7 @@ class Tokenizer:
                 (" " if self.tokenizer_has_prefix and i > 0 else "") + match.group()
                 # this regular expression keeps newlines at the beginning of paragraphs unless
                 # the paragraph is the first one in the document
-                for i, match in enumerate(re.finditer(r"(^|\n+)[^\n]*", input))
+                for i, match in enumerate(re.finditer(r"(^\n*|\n+)[^\n]*", input))
             ]
             slices.append((curr, curr + len(paragraphs)))
             batch.extend(paragraphs)
