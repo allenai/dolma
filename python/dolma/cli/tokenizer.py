@@ -49,6 +49,13 @@ class TokenizerConfig:
             logger.warning("No pad token ID provided; using EOS token ID.")
             self.pad_token_id = self.eos_token_id
 
+        if self.segment_before_tokenization:
+            logger.warning(
+                "EXPERIMENTAL FEATURE: segmenting before tokenization is enabled. "
+                "This option has only been tested with Llama and GPT-NeoX tokenizers. "
+                "USE AT YOUR OWN RISK."
+            )
+
     @classmethod
     def deprecated_init(cls, tokenizer_name_or_path: str) -> "TokenizerConfig":
         logger = get_logger(__file__)
