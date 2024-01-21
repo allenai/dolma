@@ -29,7 +29,11 @@ The following parameters are supported either via CLI (e.g. `dolma tokens --para
 |:---:|---|---|
 |`documents`|Yes| One or more paths for input document files. Paths can contain arbitrary wildcards. Can be local, or an S3-compatible cloud path. |
 |`destination`|Yes| One or more paths for output files. Should match number of `documents` paths. Can be local, or an S3-compatible cloud path. |
-|`tokenizer_name_or_path`|Yes| Name or path of the tokenizer to use. Must be a HuggingFace-compatible tokenizer. |
+|`tokenizer.name_or_path`|Yes| Name or path of the tokenizer to use. Must be a HuggingFace-compatible tokenizer. |
+| `tokenzier.bos_token_id`| Yes if `tokenizer.eos_token_id` is missing | The id of the beginning-of-sequence token. |
+| `tokenizer.eos_token_id`| Yes if `tokenizer.bos_token_id` is missing | The id of the end-of-sequence token. |
+| `tokenizer.pad_token_id`| No | The id of the padding token. |
+| `tokenizer.segment_before_tokenization`| No | Whether to segment documents by paragraph before tokenization. This is useful for tokenizers like Llama that are very slow on long documents. Might not be needed once [this bugfix is merged](https://github.com/huggingface/tokenizers/pull/1413). Defaults to False.|
 |`processes`|No| Number of processes to use for tokenization. By default 1 process is used. |
 |`files_per_process`|No| Maximum number of files per tokenization process. By default, only one file is processed. This controls the number of output files generated. |
 |`batch_size`|No| Number of k sequences to tokenize and shuffle before writing to disk. By default, k=10000. |
