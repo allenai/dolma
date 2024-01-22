@@ -2,8 +2,8 @@ import logging
 from collections import Counter
 from dataclasses import dataclass
 from statistics import median
-from typing import Counter as CounterType, Union
-from typing import List, Tuple
+from typing import Counter as CounterType
+from typing import List, Tuple, Union
 
 from ..core.data_types import DocResult, Document, Span
 from ..core.registry import TaggerRegistry
