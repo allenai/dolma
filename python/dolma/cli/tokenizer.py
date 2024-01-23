@@ -188,6 +188,7 @@ class TokenizerCli(BaseCli):
                 local_shuffle=parsed_config.batch_size,
                 ring_size=parsed_config.ring_size,
                 tokenizer_name_or_path=parsed_config.tokenizer.name_or_path,
+                bos_token_id=parsed_config.tokenizer.bos_token_id,
                 eos_token_id=parsed_config.tokenizer.eos_token_id,
                 pad_token_id=parsed_config.tokenizer.pad_token_id,
                 segment_before_tokenization=parsed_config.tokenizer.segment_before_tokenization,
