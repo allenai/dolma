@@ -186,7 +186,6 @@ exclude = '''
 
 [tool.isort]
 profile = "black"
-multi_line_output = 3
 
 [tool.autopep8]
 max_line_length = 115

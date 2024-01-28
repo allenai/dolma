@@ -4,7 +4,6 @@ Utilities to work with a OmegaConf structured config object
 Author: Luca Soldaini (@soldni)
 """
 
-
 from argparse import ArgumentParser, Namespace
 from collections.abc import Iterable
 from copy import deepcopy
