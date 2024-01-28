@@ -8,14 +8,12 @@ documents:
   - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/reddit/*.gz
   - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/stack/*.gz
   - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki/*.gz
-  # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/books/*.gz
-  # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki/*.gz
 
 
 dedupe:
   name: paloma_documents
   documents:
-    attribute_name: bff_duplicates
+    attribute_name: paloma_documents_bff_duplicates
     key: $.text
   skip_empty: true
 

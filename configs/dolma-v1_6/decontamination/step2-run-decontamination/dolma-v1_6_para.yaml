@@ -15,7 +15,7 @@ documents:
 dedupe:
   name: paloma_paragraphs
   paragraphs:
-    attribute_name: bff_duplicates
+    attribute_name: paloma_paragraphs_bff_duplicates
   skip_empty: true
 
 bloom_filter:

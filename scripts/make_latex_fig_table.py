@@ -9,10 +9,11 @@
 # from statistics import stdev
 # from typing import List, Optional, Sequence, Tuple
 
+from math import ceil
 from pathlib import Path
 from typing import Dict, List
+
 from necessary import necessary
-from math import ceil
 
 with necessary(
     modules=["click"],
