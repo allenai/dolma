@@ -252,6 +252,13 @@ def add_suffix(a: str, b: str) -> str:
     return join_path(prot_a, str(path_a / path_b))
 
 
+def exists(path: str) -> bool:
+    """Check if a path exists."""
+
+    fs = _get_fs(path)
+    return fs.exists(path)
+
+
 def mkdir_p(path: str) -> None:
     """
     Create a directory if it does not exist.
