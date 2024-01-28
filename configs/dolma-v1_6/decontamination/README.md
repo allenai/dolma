@@ -55,20 +55,31 @@ dolma -c configs/dolma-v1_6/decontamination/step1_3-make-eval-set/option2.yaml m
 
 ```
 
-### Step 1.4: create bloom filter
+### Step 1.4: create two bllom filters; one for paragraphs and one for documents
 
 First, we cat the contents of each dataset to get number of documents:
 
 ```bash
 zcat $HOME/perplexity/option2/documents/* | jq '.text' -cr | wc -l
->>> 2336120
+>>> 2336120 # paragraphs
 ```
-
-We use this numbers in the config files at `bloom_filter.estimated_doc_count`. For all three options, we set a `bloom_filter.desired_false_positive_rate` of 0.00001.
 
 ```bash
-dolma -c configs/dolma-v1_6/decontamination/step1_4-create-bloom-filter/option2.yaml dedupe
+zcat $HOME/perplexity/option2/documents/*  | wc -l
+>>> 188815 # documents
 ```
+
+We use this numbers in the config files at `bloom_filter.estimated_doc_count`.
+For both bloom filters, we use the same `bloom_filter.false_positive_rate` of `1e-15`.
+
+Build both bloom filters:
+
+```bash
+dolma -c configs/dolma-v1_6/decontamination/step1_4-create-bloom-filter/option2_docs.yaml dedupe
+dolma -c configs/dolma-v1_6/decontamination/step1_4-create-bloom-filter/option2_para.yaml dedupe
+```
+
+This will create two bloom filters in `${HOME}/perplexity/filters/` called `paloma_paragraphs.bin` and `paloma_documents.bin`.
 
 ## Step 2: Tag contaminated documents
 
@@ -76,5 +87,11 @@ Tag content for Dolma V1.6 for decontamination:
 
 
 ```bash
-dolma -c configs/dolma-v1_6/decontamination/step2-run-decontamination/dolma-v1_6.yaml dedupe
+dolma -c configs/dolma-v1_6/decontamination/step2-run-decontamination/dolma-v1_6_docs.yaml dedupe
+
+dolma -c configs/dolma-v1_6/decontamination/step2-run-decontamination/dolma-v1_6_para.yaml dedupe
 ```
+
+## Step 3: Create a version of the dataset that has been decontaminated
+
+TODO: add this step

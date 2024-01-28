@@ -8,18 +8,21 @@ documents:
   - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/reddit/*.gz
   - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/stack/*.gz
   - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki/*.gz
+  # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/books/*.gz
+  # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki/*.gz
 
 
 dedupe:
-  name: perplexity_suite_v3_option2
-  paragraphs:
-    attribute_name: bff_duplicate_paragraph_spans_decontamination
+  name: paloma_documents
+  documents:
+    attribute_name: bff_duplicates
+    key: $.text
   skip_empty: true
 
 bloom_filter:
   read_only: true
-  estimated_doc_count: 2337305
+  estimated_doc_count: 188815
   desired_false_positive_rate: 1e-15
-  file: ${oc.env:HOME}/perplexity-suite-v3_option2.bin
+  file: ${oc.env:HOME}/perplexity/filters/paloma_documents.bin
 
-processes: 188
+processes: 94
