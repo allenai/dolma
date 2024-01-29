@@ -101,15 +101,14 @@ dolma = "dolma.cli.__main__:main"
 [project.optional-dependencies]
 dev = [
     "black>=22.6.0",
+    "flake8>=5.0",
+    "flake8-pyi>=22.8.1",
+    "Flake8-pyproject>=1.1.0",
+    "ipdb>=0.13.0",
+    "ipython>=8.4.0",
     "isort>=5.10.1",
     "mypy>=0.971",
     "pytest>=5.2",
-    "ipython>=8.4.0",
-    "autopep8>=1.7.0",
-    "flake8>=5.0",
-    "ipdb>=0.13.0",
-    "flake8-pyi>=22.8.1",
-    "Flake8-pyproject>=1.1.0",
 ]
 # extension to process code
 code = [
