@@ -10,7 +10,6 @@ from typing import Generator
 
 try:
     import click
-
     from dolma.core.paths import _get_fs, _pathify, glob_path, join_path, sub_prefix
 except ImportError as e:
     raise ImportError("Missing dependency; plese run `pip install dolma click`.") from e

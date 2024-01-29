@@ -44,9 +44,7 @@ develop:
 
 style:
 	rustfmt --edition 2021 src/*.rs
-	autopep8 --in-place --recursive python/
 	isort python/
 	black python/
-	autopep8 --in-place --recursive tests/python/
 	isort tests/python/
 	black tests/python/

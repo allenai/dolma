@@ -21,7 +21,6 @@ import numpy as np
 import smart_open
 import tldextract
 import tqdm
-
 from dolma.core.data_types import InputSpec, OutputSpec
 from dolma.core.parallel import BaseParallelProcessor
 from dolma.core.paths import glob_path, make_relative, split_path
