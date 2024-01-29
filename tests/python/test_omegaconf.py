@@ -2,8 +2,9 @@ from argparse import ArgumentParser
 from dataclasses import dataclass
 from unittest import TestCase
 
-from dolma.cli import field, make_parser, namespace_to_nested_omegaconf
 from omegaconf import MissingMandatoryValue
+
+from dolma.cli import field, make_parser, namespace_to_nested_omegaconf
 
 
 @dataclass

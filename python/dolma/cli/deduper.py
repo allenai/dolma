@@ -4,13 +4,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import smart_open
+from omegaconf import OmegaConf as om
+
 from dolma import deduper
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig, get_path_to_temp_file, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path, is_local
-from omegaconf import OmegaConf as om
 
 
 @dataclass

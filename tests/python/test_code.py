@@ -10,6 +10,7 @@ import re
 import unittest
 
 from bs4 import BeautifulSoup
+
 from dolma.core.data_types import Document, DocumentWithMetadata
 from dolma.taggers.code import (
     CodeCopyrightTagger,
