@@ -14,10 +14,10 @@ SYMBOLS = {"#", "\u2026"}
 BULLET_POINTS = {"*", "-"}
 
 
-def robust_median(values):
+def robust_median(values: List[Union[int, float]]) -> float:
     if not values:
-        return False
-    return median(values)
+        return 0.0
+    return float(median(values))
 
 
 @dataclass
@@ -26,7 +26,7 @@ class GopherAttributes:
     fraction_of_characters_in_duplicate_ngrams: List[Tuple[int, float]]
     character_count: int = 0
     word_count: int = 0
-    median_word_length: Union[float, bool] = False
+    median_word_length: float = 0.0
     symbol_to_word_ratio: float = 0.0
     fraction_of_words_with_alpha_character: float = 0.0
     required_word_count: int = 0

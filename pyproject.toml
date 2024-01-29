@@ -173,11 +173,36 @@ exclude = '''
     | \.venv
     | \bdist\b
     | \bdoc\b
+    | \.cargo
+    | configs
+    | docs
+    | scripts
+    | sources
+    | src
+    | target
+    | tests/config
+    | tests/data
+    | tests/work
 )
 '''
+target-version = ["py38", "py39", "py310", "py311", "py312"]
+
 
 [tool.isort]
 profile = "black"
+py_version=38
+known_first_party = ["dolma"]
+known_local_folder = ["tests", "python"]
+extend_skip_glob = [
+    "configs/*",
+    "docs/*",
+    "scripts/*",
+    "sources/*",
+    "src/*",
+    "tests/config/*",
+    "tests/data/*",
+    "tests/work/*"
+]
 
 [tool.autopep8]
 max_line_length = 115
