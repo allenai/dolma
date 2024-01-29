@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import numpy as np
 from typing_extensions import TypeAlias
 
+from ..core.loggers import get_logger
 from ..core.parallel import BaseParallelProcessor, QueueType
 from ..core.paths import glob_path, join_path, mkdir_p
 from .data_types import TokenizerOutput
@@ -38,6 +39,8 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
     @classmethod
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
+        logger = get_logger(__name__)
+
         max_size: int = kwargs.pop("max_size", 1024 * 1024 * 1024)
         dtype: np.dtype = np.dtype(kwargs.pop("dtype", "uint16"))
         local_shuffle: int = kwargs.pop("local_shuffle", 10_000)
@@ -52,13 +55,37 @@ class MemMapParallelWriter(BaseParallelProcessor):
         if tokenizer_name_or_path is None:
             raise RuntimeError("tokenizer_name_or_path not provided")
 
+        tokenizer_kwargs = {}
+        tokenizer_kwargs["bos_token_id"] = kwargs.pop("bos_token_id", None)
+        tokenizer_kwargs["eos_token_id"] = kwargs.pop("eos_token_id", None)
+        if tokenizer_kwargs["bos_token_id"] is None and tokenizer_kwargs["eos_token_id"] is None:
+            raise ValueError(
+                "Neither eos_token_id nor bos_token_id specified. "
+                "At least one of them should be provided; otherwise, documents will not be properly separated."
+            )
+
+        tokenizer_kwargs["pad_token_id"] = kwargs.pop("pad_token_id", None)
+        if tokenizer_kwargs["pad_token_id"] is None:
+            logger.warning("pad_token_id not provided, using eos_token_id")
+            tokenizer_kwargs["pad_token_id"] = tokenizer_kwargs["eos_token_id"]
+
+        # flag to control whether to segment the documents before tokenization
+        tokenizer_kwargs["segment_before_tokenization"] = kwargs.pop("segment_before_tokenization", False)
+
+        # this is useful for making sure the queue does not grows too much
         cpu_count = multiprocessing.cpu_count()
 
+        # these are used to keep track of the progress
         documents_cnt = tokens_cnt = 0
         update_interval = 1
         mm_cnt = 0
 
-        tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path)
+        # create the tokenizer from file if it exists, otherwise from pretrained
+        if os.path.exists(tokenizer_name_or_path) and os.path.isfile(tokenizer_name_or_path):
+            tokenizer = Tokenizer.from_file(tokenizer_name_or_path, **tokenizer_kwargs)
+        else:
+            tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path, **tokenizer_kwargs)
+
         tokenizer_ring = []
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
@@ -185,7 +212,11 @@ def tokenize_in_parallel(
     num_readers: Optional[int] = None,
     local_shuffle: int = 10_000,
     ring_size: int = 8,
-    tokenizer_name_or_path: str = "allenai/eleuther-ai-gpt-neox-20b-pii-special",
+    tokenizer_name_or_path: str = "allenai/gpt-neox-olmo-dolma-v1_5",
+    bos_token_id: Optional[int] = None,
+    eos_token_id: Optional[int] = 50279,
+    pad_token_id: Optional[int] = 1,
+    segment_before_tokenization: bool = False,
     seed: int = 3920,
     metadata_dir: Optional[str] = None,
     max_size: int = 1024 * 1024 * 1024,
@@ -196,8 +227,9 @@ def tokenize_in_parallel(
     os.environ["PYTHONBREAKPOINT"] = "ipdb.set_trace"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    # do it once so it gets cached
-    Tokenizer.from_pretrained(tokenizer_name_or_path, truncate_to=None)
+    # do it once so it gets cached (unless it's local path, so no need)
+    if not os.path.exists(tokenizer_name_or_path):
+        Tokenizer.from_pretrained(tokenizer_name_or_path)
 
     # get a run hash
     run_hash = hashlib.sha256(("".join(sources) + tokenizer_name_or_path).encode("utf-8")).hexdigest()[:8]
@@ -222,5 +254,9 @@ def tokenize_in_parallel(
         ring_size=ring_size,
         max_size=max_size,
         dtype=dtype,
+        bos_token_id=bos_token_id,
+        pad_token_id=pad_token_id,
+        eos_token_id=eos_token_id,
+        segment_before_tokenization=segment_before_tokenization,
         tokenizer_name_or_path=tokenizer_name_or_path,
     )

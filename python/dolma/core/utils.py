@@ -61,12 +61,16 @@ def split_paragraphs(text: str, remove_empty: bool = True) -> List[TextSlice]:
     """
     Split a string into paragraphs. A paragraph is defined as a sequence of zero or more characters, followed
     by a newline character, or a sequence of one or more characters, followed by the end of the string.
+
+    Args:
+        text (str): The text to split into paragraphs.
+        remove_empty (bool): Whether to remove empty paragraphs. Defaults to True.
     """
     text_slices = [
         TextSlice(doc=text, start=match.start(), end=match.end())
         for match in re.finditer(r"([^\n]*\n|[^\n]+$)", text)
     ]
-    if remove_empty is True:
+    if remove_empty:
         text_slices = [text_slice for text_slice in text_slices if text_slice.text.strip()]
     return text_slices
 
