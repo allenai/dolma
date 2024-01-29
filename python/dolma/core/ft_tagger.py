@@ -5,6 +5,7 @@ Base implementation for a fasttext tagger; all fasttext taggers should inherit f
 @kylel, @soldni
 
 """
+
 import os
 from tempfile import NamedTemporaryFile
 from typing import Iterable, Literal, NamedTuple, Optional

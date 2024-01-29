@@ -107,8 +107,11 @@ jobs:
         task:
           - name: Check Python style
             run: |
-              isort --check tests/python/ && isort --check python/
-              black --check tests/python/ && black --check python/
+              set -e
+              isort --check --verbose tests/python/
+              isort --check --verbose python/
+              black --check --verbose tests/python/
+              black --check --verbose python/
 
           - name: Check Rust style
             run: |
