@@ -17,7 +17,6 @@ from typing import (
 
 import msgspec
 import smart_open
-
 from dolma.core.taggers import BaseTaggerWithMetadata
 
 from .data_types import (

@@ -2,9 +2,6 @@ from dataclasses import dataclass
 from pstats import SortKey
 from typing import List, Optional
 
-from rich.console import Console
-from rich.table import Table
-
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
@@ -13,6 +10,8 @@ from dolma.core.paths import glob_path
 from dolma.core.registry import TaggerRegistry
 from dolma.core.runtime import create_and_run_tagger
 from dolma.core.utils import import_modules
+from rich.console import Console
+from rich.table import Table
 
 
 @dataclass

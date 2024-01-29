@@ -40,7 +40,7 @@ def check_if_version_requested(options: Namespace, *_):
         return
 
     # user has requested the version; print it and exit
-    module_name, *_ = __name__.split(".")
+    module_name = __name__.split(".")[0]
     print(version(module_name))
     sys.exit(0)
 

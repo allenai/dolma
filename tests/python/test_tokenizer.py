@@ -6,10 +6,9 @@ from unittest import TestCase
 
 import numpy
 import smart_open
-from tokenizers import Tokenizer as BaseTokenizer
-
 from dolma.cli.__main__ import main
 from dolma.tokenizer import Tokenizer
+from tokenizers import Tokenizer as BaseTokenizer
 
 TEST_DIR = Path(__file__).parent.parent.resolve()
 

@@ -7,7 +7,6 @@ from typing import Any
 from unittest import TestCase
 
 import smart_open
-
 from dolma.core.parallel import BaseParallelProcessor, QueueType
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"

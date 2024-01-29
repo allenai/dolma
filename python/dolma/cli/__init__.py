@@ -31,7 +31,7 @@ from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
 
-from dolma.core.errors import DolmaConfigError
+from ..core.errors import DolmaConfigError
 
 __all__ = [
     "BaseCli",
