@@ -3,7 +3,7 @@ from collections import Counter
 from dataclasses import dataclass
 from statistics import median
 from typing import Counter as CounterType
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 from ..core.data_types import DocResult, Document, Span
 from ..core.registry import TaggerRegistry
@@ -14,13 +14,19 @@ SYMBOLS = {"#", "\u2026"}
 BULLET_POINTS = {"*", "-"}
 
 
+def robust_median(values: List[Union[int, float]]) -> float:
+    if not values:
+        return 0.0
+    return float(median(values))
+
+
 @dataclass
 class GopherAttributes:
     fraction_of_characters_in_most_common_ngram: List[Tuple[int, float]]
     fraction_of_characters_in_duplicate_ngrams: List[Tuple[int, float]]
     character_count: int = 0
     word_count: int = 0
-    median_word_length: float = False
+    median_word_length: float = 0.0
     symbol_to_word_ratio: float = 0.0
     fraction_of_words_with_alpha_character: float = 0.0
     required_word_count: int = 0
@@ -33,20 +39,51 @@ class GopherAttributes:
         spans = []
         spans.extend(
             [
-                Span(0, self.character_count, f"fraction_of_characters_in_most_common_{n}grams", v)
+                Span(
+                    0,
+                    self.character_count,
+                    f"fraction_of_characters_in_most_common_{n}grams",
+                    v,
+                )
                 for n, v in self.fraction_of_characters_in_most_common_ngram
             ]
         )
         spans.extend(
             [
-                Span(0, self.character_count, f"fraction_of_characters_in_duplicate_{n}grams", v)
+                Span(
+                    0,
+                    self.character_count,
+                    f"fraction_of_characters_in_duplicate_{n}grams",
+                    v,
+                )
                 for n, v in self.fraction_of_characters_in_duplicate_ngrams
             ]
         )
-        spans.append(Span(0, self.character_count, type="character_count", score=self.character_count))
+        spans.append(
+            Span(
+                0,
+                self.character_count,
+                type="character_count",
+                score=self.character_count,
+            )
+        )
         spans.append(Span(0, self.character_count, type="word_count", score=self.word_count))
-        spans.append(Span(0, self.character_count, type="median_word_length", score=self.median_word_length))
-        spans.append(Span(0, self.character_count, type="symbol_to_word_ratio", score=self.symbol_to_word_ratio))
+        spans.append(
+            Span(
+                0,
+                self.character_count,
+                type="median_word_length",
+                score=self.median_word_length,
+            )
+        )
+        spans.append(
+            Span(
+                0,
+                self.character_count,
+                type="symbol_to_word_ratio",
+                score=self.symbol_to_word_ratio,
+            )
+        )
         spans.append(
             Span(
                 0,
@@ -55,7 +92,14 @@ class GopherAttributes:
                 score=self.fraction_of_words_with_alpha_character,
             )
         )
-        spans.append(Span(0, self.character_count, type="required_word_count", score=self.required_word_count))
+        spans.append(
+            Span(
+                0,
+                self.character_count,
+                type="required_word_count",
+                score=self.required_word_count,
+            )
+        )
         spans.append(
             Span(
                 0,
@@ -74,7 +118,10 @@ class GopherAttributes:
         )
         spans.append(
             Span(
-                0, self.character_count, type="fraction_of_duplicate_lines", score=self.fraction_of_duplicate_lines
+                0,
+                self.character_count,
+                type="fraction_of_duplicate_lines",
+                score=self.fraction_of_duplicate_lines,
             )
         )
         spans.append(
@@ -100,7 +147,7 @@ def get_attributes(text: str) -> GopherAttributes:
         character_count = sum(len(word) for word in words)
 
         attrs.word_count = word_count
-        attrs.median_word_length = median([len(word) for word in words])
+        attrs.median_word_length = robust_median([len(word) for word in words])
         attrs.symbol_to_word_ratio = sum(1 for word in words if any(s in word for s in SYMBOLS)) / word_count
         attrs.fraction_of_words_with_alpha_character = (
             sum(1 for word in words if any(c.isalpha() for c in word)) / word_count

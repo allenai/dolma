@@ -96,15 +96,14 @@ dolma = "dolma.cli.__main__:main"
 [project.optional-dependencies]
 dev = [
     "black>=22.6.0",
+    "flake8>=5.0",
+    "flake8-pyi>=22.8.1",
+    "Flake8-pyproject>=1.1.0",
+    "ipdb>=0.13.0",
+    "ipython>=8.4.0",
     "isort>=5.10.1",
     "mypy>=0.971",
     "pytest>=5.2",
-    "ipython>=8.4.0",
-    "autopep8>=1.7.0",
-    "flake8>=5.0",
-    "ipdb>=0.13.0",
-    "flake8-pyi>=22.8.1",
-    "Flake8-pyproject>=1.1.0",
 ]
 # extension to process code
 code = [
@@ -163,9 +162,7 @@ dolma = ["py.typed", "data/*"]
 
 [tool.black]
 line-length = 115
-
 include = '\.pyi?$'
-
 exclude = '''
 (
       __pycache__
@@ -176,12 +173,36 @@ exclude = '''
     | \.venv
     | \bdist\b
     | \bdoc\b
+    | \.cargo
+    | configs
+    | docs
+    | scripts
+    | sources
+    | src
+    | target
+    | tests/config
+    | tests/data
+    | tests/work
 )
 '''
+target-version = ["py38", "py39", "py310", "py311", "py312"]
+
 
 [tool.isort]
 profile = "black"
-multi_line_output = 3
+py_version=38
+known_first_party = ["dolma"]
+known_local_folder = ["tests", "python"]
+extend_skip_glob = [
+    "configs/*",
+    "docs/*",
+    "scripts/*",
+    "sources/*",
+    "src/*",
+    "tests/config/*",
+    "tests/data/*",
+    "tests/work/*"
+]
 
 [tool.autopep8]
 max_line_length = 115
