@@ -3,21 +3,21 @@
 Dolma is two things:
 
 1. **Dolma Dataset**: an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
-2. **Dolma Toolkit**: a high-performance toolkit for curating datasets for language modeling.
+2. **Dolma Toolkit**: a high-performance toolkit for curating datasets for language modeling -- this repo contains the source code for the Dolma Toolkit.
 
 ## Dolma Dataset
 
 Dolma is an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
 It was created as a training corpus for [OLMo](https://allenai.org/olmo), a language model from the [Allen Institute for AI](https://allenai.org) (AI2).
 
-Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr). Once agreed you can follow the instructions [here](https://huggingface.co/datasets/allenai/dolma#download) to download it.
+Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr) on the [HuggingFace 🤗 Hub](https://huggingface.co/datasets/allenai/dolma). Once agreed you can follow the instructions [here](https://huggingface.co/datasets/allenai/dolma#download) to download the dataset.
 
 You can also read more about Dolma in [our announcement](https://blog.allenai.org/dolma-3-trillion-tokens-open-llm-corpus-9a0ff4b8da64), as well as by consulting its [data sheet](docs/assets/dolma-datasheet-v0.1.pdf).
 
 
 ## Dolma Toolkit
 
-Dolma is a toolkit to curate large datasets for (pre)-training ML models. Its key features are:
+This repository houses the Dolma Toolkit, which enables curation of large datasets for (pre)-training ML models. Its key features are:
 
 1. **High Performance** ⚡: Can process billions of documents concurrently thanks to built-in parallelism.
 2. **Portabilty** 🧳: Works on a single machine, a cluster, or cloud environment.

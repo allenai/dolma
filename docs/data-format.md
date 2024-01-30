@@ -1,6 +1,6 @@
 # Data Format
 
-In this document, we explain the data format for the datasets processed by Dolma.
+In this document, we explain the data format for the datasets processed by Dolma toolkit.
 
 
 ## Directory Structure
@@ -67,7 +67,7 @@ The `metadata` field will be a free-for-all field that contains any source-speci
 
 It is especially important to preserve source-specific identifiers when possible. For example, in S2 raw data, we have S2 IDs for each document, but we should also persist things like the DOI, arXiv ID, ACL ID, PubMed ID, etc. when they're available to us.
 
-### Dolma Attributes Format
+### Dolma Toolkit Attributes Format
 
 Let's say we are at a good state of document, but we need to iterate on the toxicity classifier a few times. We don't want to duplicate multiple copies of the dataset just because we updated the toxicity classifier. Hence, we store **documents** separately from **attributes**, where attributes are newly derived/predicted aspects as a result of using our tools to analyze the documents.
 
