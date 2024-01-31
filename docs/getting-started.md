@@ -1,12 +1,12 @@
 # Getting Started
 
-To get started, please install Dolma using `pip`:
+To get started, please install Dolma toolkit using `pip`:
 
 ```shell
 pip install dolma
 ```
 
-After installing Dolma, you get access to the `dolma` command line tool. To see the available commands, use the `--help` flag.
+After installing Dolma toolkit, you get access to the `dolma` command line tool. To see the available commands, use the `--help` flag.
 
 ```plain-text
 $ dolma --help

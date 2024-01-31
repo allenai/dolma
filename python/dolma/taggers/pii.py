@@ -6,7 +6,6 @@ Filters.
 
 """
 
-
 import re
 from typing import List
 from warnings import warn
