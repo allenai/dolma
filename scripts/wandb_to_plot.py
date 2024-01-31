@@ -214,7 +214,7 @@ def main():
             xaxis_title=xaxis_pretty_name,
             yaxis_title=metric_name,
             legend_title=opts.legend_title,
-            title_text=y_axis,
+            title_text=y_axis.split('@@@')[0],
             font=dict(size=opts.plotly_font_size),
             width=opts.plotly_figure_width,
             height=opts.plotly_figure_height,

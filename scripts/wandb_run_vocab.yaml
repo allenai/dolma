@@ -20,10 +20,10 @@ reddit-v1-ablation-pii-nsfw-toxic_filtered_*: PII + NSFW + Hate Filter
 reddit-v1-ablation-toxic-filtered_*: NSFW + Hate Filter
 
 # Data mixture
-olmo-mix-v1-sample_*: Equal Data Mix
-olmo-mix-v1-sample-mix2_*: "↗ Reference (200% Wiki, 200% peS2o)"
-olmo-mix-v1-sample-all-cc*: "Only Common Crawl (CC)"
-olmo-mix-v1-gopher-like_*: "Gopher-like (20% Code, 60% CC, 200% peS2o)"
+olmo-mix-v1-sample_*: Naïve Mix
+olmo-mix-v1-sample-mix2_*: "Reference+ Mix"
+olmo-mix-v1-sample-all-cc*: "Web Only Mix"
+olmo-mix-v1-gopher-like_*: "Gopher-like Mix"
 
 # Dedupe
 abl-cc-v2-small-dedup*: Paragraph Deduplication
@@ -78,8 +78,8 @@ v1-small-nsfw-filtered-high*: NSFW Filter (High Threshold)
 
 # Training Metrics
 throughput/total_tokens: Total Tokens
-train/Perplexity: Train
-train/CrossEntropyLoss: Train
+train/Perplexity: Train@@@Perplexity
+train/CrossEntropyLoss: Train@@@CE
 
 
 # Downstream Metrics
