@@ -157,15 +157,17 @@ Further, we override the number of processes to use to 96 using the `--processes
           "$@.attributes[?(@.bff_duplicate_paragraph_spans && @.bff_duplicate_paragraph_spans[0] && @.bff_duplicate_paragraph_spans[0][2] >= 1.0)]"
         ]
       },
-      # span replacement allows you to replace spans of text with a different string
-      "span_replacement": [
-        {
-          # remove paragraphs whose not-English cld2 socre is below 0.9 in a document
-          "span": "$.attributes.exp__cld2_en_paragraph_with_doc_score_v2__not_en",
-          "min_score": 0.1,
-          "replacement": ""
-        }
-      ]
+      "text_modification": {
+        # span replacement allows you to replace spans of text with a different string
+        "span_replacement": [
+          {
+            # remove paragraphs whose not-English cld2 socre is below 0.9 in a document
+            "span": "$.attributes.exp__cld2_en_paragraph_with_doc_score_v2__not_en",
+            "min_score": 0.1,
+            "replacement": ""
+          }
+        ]
+      }
     }
   ],
   # this process option is overridden by the command line flag
