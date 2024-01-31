@@ -10,7 +10,7 @@ from copy import deepcopy
 from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
-from logging import warn
+from logging import warning
 from typing import (
     Any,
     Dict,
@@ -73,14 +73,13 @@ def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None
         typ_ = config.__annotations__.get(field_name, dt_field.metadata.get("type", MISSING))
 
         if typ_ is MISSING:
-            warn(f"No type annotation for field {field_name} in {config.__name__}")
+            warning(f"No type annotation for field {field_name} in {config.__name__}")
             continue
 
         # join prefix and field name
         field_name = f"{prefix}.{field_name}" if prefix else field_name
 
-        # This section here is to handle Optional[T] types
-        # We only care for cases where T is a dataclass
+        # This section here is to handle Optional[T] types; we only care for cases where T is a dataclass
         # So we first check if type is Union since Optional[T] is just a shorthand for Union[T, None]
         # and that the union contains only one non-None type
         if get_origin(typ_) == Union:
