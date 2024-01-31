@@ -80,6 +80,9 @@ class MemMapParallelWriter(BaseParallelProcessor):
         update_interval = 1
         mm_cnt = 0
 
+        # def test(**kwargs):
+        #     breakpoint()
+
         # create the tokenizer from file if it exists, otherwise from pretrained
         if os.path.exists(tokenizer_name_or_path) and os.path.isfile(tokenizer_name_or_path):
             tokenizer = Tokenizer.from_file(tokenizer_name_or_path, **tokenizer_kwargs)
@@ -229,7 +232,12 @@ def tokenize_in_parallel(
 
     # do it once so it gets cached (unless it's local path, so no need)
     if not os.path.exists(tokenizer_name_or_path):
-        Tokenizer.from_pretrained(tokenizer_name_or_path)
+        Tokenizer.from_pretrained(
+            identifier=tokenizer_name_or_path,
+            bos_token_id=bos_token_id,
+            eos_token_id=eos_token_id,
+            pad_token_id=pad_token_id,
+        )
 
     # get a run hash
     run_hash = hashlib.sha256(("".join(sources) + tokenizer_name_or_path).encode("utf-8")).hexdigest()[:8]
