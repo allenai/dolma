@@ -13,7 +13,7 @@ crate-type = ["cdylib"]
 ahash = { version = "0.8.1", features = ["runtime-rng"] }
 anyhow = "1.0"
 atomic-traits = "0.3"
-aws-config = { version = "0.55.0"}
+aws-config = "0.55.3"
 aws-sdk-s3 = "0.25.0"
 byteorder = "1"
 clap = { version = "4.1.11", features = ["derive"] }
@@ -42,6 +42,10 @@ tokenizers = {version = "0.15.0", features = ["http"]}
 tokio = {version = "1.27.0", features = ["full"]}
 tokio-util = "0.7.7"
 unicode-segmentation = "1.7"
+openssl = { version = "0.10.63", features = ["vendored"] }
 
 # [target.'cfg(target_arch = "aarch64")'.dependencies]
-# flate2 = "1.0.28"
+# openssl = { version = "0.10.63", features = ["vendored"] }
+
+# [target.'cfg(target_arch = "arm")'.dependencies]
+# openssl = { version = "0.10.63", features = ["vendored"] }

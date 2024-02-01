@@ -61,7 +61,7 @@ jobs:
         if: steps.cache-venv.outputs.cache-hit != 'true'
         run:  |
           sudo apt-get update
-          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
+          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
 
       - name: Install Rust toolchain
         if: steps.cache-venv.outputs.cache-hit != 'true'
@@ -150,7 +150,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [x86_64, x86, aarch64, armv7]
+        # fails to build on x86, so removing for now; low use anyway.
+        # target: [x86_64, x86, aarch64, armv7]
+        target: [x86_64, aarch64, armv7]
     name: "Build Linux (${{ matrix.target }})"
     steps:
       - uses: actions/checkout@v3
@@ -167,7 +169,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
-          manylinux: auto
+          manylinux: manylinux_2_28
+          container: "ghcr.io/rust-cross/manylinux_2_28-cross:${{ matrix.target }}"
+          before-script-linux: |
+            sudo apt-get update
+            sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
