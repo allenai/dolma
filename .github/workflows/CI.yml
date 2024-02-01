@@ -150,7 +150,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [x86_64, x86, aarch64, armv7]
+        target: [x86_64, aarch64, armv7]
     name: "Build Linux (${{ matrix.target }})"
     steps:
       - uses: actions/checkout@v3
