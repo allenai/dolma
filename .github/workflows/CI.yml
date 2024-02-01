@@ -169,6 +169,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           manylinux: manylinux_2_28
+          container: "ghcr.io/rust-cross/manylinux_2_28-cross:{{ matrix.target }}"
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
