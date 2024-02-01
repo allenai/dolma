@@ -170,8 +170,8 @@ jobs:
           args: --release --out dist --find-interpreter
           manylinux: manylinux_2_28
           before-script-linux: |
-            sudo apt-get update
-            sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools libssl-dev
+            apt-get update
+            apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
