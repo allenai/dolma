@@ -45,3 +45,6 @@ unicode-segmentation = "1.7"
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 openssl = { version = "0.10.63", features = ["vendored"] }
+
+[target.'cfg(target_arch = "arm")'.dependencies]
+openssl = { version = "0.10.63", features = ["vendored"] }
