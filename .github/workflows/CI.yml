@@ -150,6 +150,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
+        # target: [x86_64, x86, aarch64, armv7]
         target: [x86_64, aarch64, armv7]
     name: "Build Linux (${{ matrix.target }})"
     steps:
@@ -168,6 +169,9 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           manylinux: manylinux_2_28
+          before-script-linux: |
+            sudo apt-get update
+            sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools libssl-dev
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
