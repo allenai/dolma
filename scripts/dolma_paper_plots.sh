@@ -96,8 +96,10 @@ V2_V3_PERPLEXITY_SUITE="$(printf "%s " "${v2_v3_perplexity_suite[@]}" | sed 's/ 
 runs_up_to_150b=(
     'olmo-small-rpj-*'
     'olmo-small-pile-fixed-*'
-    'olmo-small-dolma-*'
+    'olmo-small-c4-*'
+    'olmo-small-mc4-*'
     'olmo-small-falcon-*'
+    'olmo-small-dolma-*'
 )
 RUNS_UP_TO_150B="$(printf "%s " "${runs_up_to_150b[@]}" | sed 's/ $//')"
 
@@ -235,10 +237,13 @@ ablations_runs=(
     'reddit-v1-ablation-base_* reddit-v1-ablation-pii-nsfw-toxic_filtered_* reddit-v1-ablation-toxic-filtered_*'
     'olmo-mix-v1-sample_* olmo-mix-v1-sample-all-cc* olmo-mix-v1-sample-mix2_* olmo-mix-v1-gopher-like_*'
     'stack-v2* stack-v4*'
-    'c4-stack-15p* c4_p85-stack_v4_p15* c4_p85-starcoder_p15*'
+    'GPT-Neox-20B* c4-stack-15p* c4_p85-stack_v4_p15* c4_p85-starcoder_p15*'
     'v1-small-hatespeech-filtered-low* v1-small-nsfw-filtered-low* v1-small-hatespeech-filtered-high* v1-small-nsfw-filtered-high* abl-cc-v1-small-dedup_*'
     'abl-cc-v1-small-dedup_* abl-cc-v2-small-dedup*'
-    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_\d+ v1-small-c4-filtered_\d+ v1-small-gopher-filtered_\d+ v1-small-c4-cleaned-gopher-filtered_\d+ v1-small-c4-cleaned-gopher-filtered-deduped_\d+ olmo-mix-v1-sample-all-cc*'
+    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_* v1-small-c4-filtered_* v1-small-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
+    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned_* v1-small-c4-filtered_* v1-small-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered_*'
+    'abl-cc-v1-small-dedup_* v1-small-c4-cleaned-gopher-filtered_* v1-small-c4-cleaned-gopher-filtered-deduped_* olmo-mix-v1-sample-all-cc*'
+    'reddit-v5-ablation-filtered-gen-2_* reddit-v3-ablation-base-* reddit-v2-ablation-base-* reddit-v4-ablation-base-* reddit-v1-ablation-base_*'
 )
 ablations_names=(
     'cc_pii_filtering'
@@ -249,17 +254,23 @@ ablations_names=(
     'cc_toxic_filtering'
     'cc_dedupe'
     'cc_quality'
+    'cc_quality_only'
+    'cc_to_quality_plus_content'
+    'reddit_selection'
 )
 
 limits=(
     '150e9'
-    '150e9'
+    '60e9'
     '150e9'
     '50e9'
     '50e9'
     '150e9'
     '150e9'
     '150e9'
+    '150e9'
+    '150e9'
+    '60e9'
 )
 
 # Loop through the indices of the array.
@@ -288,7 +299,7 @@ for index in "${!ablations_names[@]}"; do
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
             --plotly-font-size 9 \
             --plotly-figure-width 400 \
-            --plotly-figure-height 400
+            --plotly-figure-height 250
 
         set +ex
     fi
@@ -309,7 +320,7 @@ for index in "${!ablations_names[@]}"; do
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
             --plotly-font-size 9 \
             --plotly-figure-width 400 \
-            --plotly-figure-height 400
+            --plotly-figure-height 250
 
         set +ex
 
@@ -333,7 +344,7 @@ for index in "${!ablations_names[@]}"; do
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
             --plotly-font-size 9 \
             --plotly-figure-width 400 \
-            --plotly-figure-height 400
+            --plotly-figure-height 250
 
         set +ex
     fi
@@ -356,7 +367,7 @@ for index in "${!ablations_names[@]}"; do
             -v ${SCRIPT_DIR}/wandb_run_vocab.yaml \
             --plotly-font-size 9 \
             --plotly-figure-width 400 \
-            --plotly-figure-height 400
+            --plotly-figure-height 250
 
         set +ex
     fi

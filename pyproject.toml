@@ -1,6 +1,6 @@
 [project]
 name = "dolma"
-version = "0.9.4"
+version = "1.0.0"
 description = "Data filters"
 license = {text = "Apache-2.0"}
 readme = "README.md"
@@ -16,7 +16,8 @@ dependencies = [
     "msgspec>=0.14.2",
     "nltk==3.8.1",
     "omegaconf>=2.3.0",
-    "pycld2==0.41",
+    "LTpycld2==0.42",     # fork of pycld2 that works on Apple Silicon
+    # "pycld2==0.41",
     # "pycld3==0.22",       # does not install correctly
     "pyyaml",
     "requests",
@@ -32,10 +33,14 @@ dependencies = [
     "charset-normalizer>=3.2.0"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Typing :: Typed",
-    "Programming Language :: Rust",
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Text Processing",
+    "Typing :: Typed",
 ]
 
 [[project.authors]]

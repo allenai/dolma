@@ -1,0 +1,86 @@
+streams:
+  - name: "v2"
+    documents:
+      - ${oc.env:HOME}/perplexity/v2/documents/c4_100_domains/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/c4_100_domains/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/c4_en/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/c4_en/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/gab/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/gab/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/ice/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/ice/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/m2d2_s2orc/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/m2d2_s2orc/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/m2d2_wiki/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/m2d2_wiki/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/manosphere/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/manosphere/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/mc4_en/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/mc4_en/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/pile/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/pile/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/ptb/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/ptb/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/twitterAEE/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/twitterAEE/test/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/wikitext_103/val/*.gz
+      - ${oc.env:HOME}/perplexity/v2/documents/wikitext_103/test/*.gz
+
+    output: &output
+      path: ${oc.env:HOME}/perplexity/option1/documents
+      max_size_in_bytes: 500000000
+      discard_fields:
+        - attributes
+
+    attributes: &attributes
+      - uniseg_length_paragraphs_with_empty_v1
+      - not_alphanum_paragraph_v1
+
+    span_replacement: &span_replacement
+      - span: $.attributes.uniseg_length_paragraphs_with_empty_v1__uniseg_length_paragraphs_with_empty_v1__negative_paragraph
+        min_score: -12
+        replacement: ""
+      - span: $.attributes.not_alphanum_paragraph_v1__not_alphanum_paragraph_v1__all_punct
+        min_score: 0.5
+        replacement: ""
+
+  - name: "v3"
+    documents:
+      - ${oc.env:HOME}/perplexity/v3/documents/4chan_meta_sep/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/4chan_meta_sep/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/c4_100_domains/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/c4_100_domains/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/c4_en/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/c4_en/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/dolma_100_subreddits/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/dolma_100_subreddits/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/dolma-v1_5/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/dolma-v1_5/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/falcon-refinedweb/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/falcon-refinedweb/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/gab/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/gab/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/ice_fixed/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/ice_fixed/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/m2d2_s2orc_unsplit/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/m2d2_s2orc_unsplit/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/m2d2_wikipedia_unsplit/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/m2d2_wikipedia_unsplit/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/manosphere_meta_sep/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/manosphere_meta_sep/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/mc4/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/mc4/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/pile/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/pile/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/ptb/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/ptb/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/redpajama/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/redpajama/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/twitterAAE_HELM_fixed/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/twitterAAE_HELM_fixed/test/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/wikitext_103/val/*.gz
+      - ${oc.env:HOME}/perplexity/v3/documents/wikitext_103/test/*.gz
+
+    output: *output
+    attributes: *attributes
+    span_replacement: *span_replacement

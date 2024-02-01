@@ -1,0 +1,18 @@
+documents:
+  - ${oc.env:HOME}/perplexity/option2/documents/*.gz
+
+dedupe:
+  name: paloma_paragraphs
+  paragraphs:
+    attribute_name: bff_duplicates
+  skip_empty: true
+
+bloom_filter:
+  read_only: false
+  estimated_doc_count: 2336120
+  # size_in_bytes: 104857600  # 100 MB; smaller causes too many FPs
+  desired_false_positive_rate: 1e-15
+  # file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option2.bin
+  file: ${oc.env:HOME}/perplexity/filters/paloma_paragraphs.bin
+
+processes: 188

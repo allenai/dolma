@@ -35,6 +35,7 @@ RE_GLOB_OPEN_ESCAPE = re.compile(r"(?<!\\)\[")
 RE_GLOB_CLOSE_ESCAPE = re.compile(r"(?<!\\)\]")
 ESCAPE_SYMBOLS_MAP = {"*": "\u2581", "?": "\u2582", "[": "\u2583", "]": "\u2584"}
 REVERSE_ESCAPE_SYMBOLS_MAP = {v: k for k, v in ESCAPE_SYMBOLS_MAP.items()}
+PATCHED_GLOB = False
 
 
 def _get_fs(path: Union[Path, str]) -> AbstractFileSystem:
@@ -45,9 +46,14 @@ def _get_fs(path: Union[Path, str]) -> AbstractFileSystem:
     protocol = urlparse(path).scheme
     fs = get_filesystem_class(protocol)(**FS_KWARGS.get(protocol, {}))
 
+    global PATCHED_GLOB  # pylint: disable=global-statement
+
     # patch glob method to support recursive globbing
-    if protocol == "":
+    if protocol == "" and not PATCHED_GLOB:
         fs.glob = partial(glob.glob, recursive=True)
+
+        # only patch once
+        PATCHED_GLOB = True
 
     return fs
 
@@ -244,6 +250,13 @@ def add_suffix(a: str, b: str) -> str:
         raise ValueError(f"{b} is not a relative path")
 
     return join_path(prot_a, str(path_a / path_b))
+
+
+def exists(path: str) -> bool:
+    """Check if a path exists."""
+
+    fs = _get_fs(path)
+    return fs.exists(path)
 
 
 def mkdir_p(path: str) -> None:

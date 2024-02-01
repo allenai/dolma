@@ -12,14 +12,13 @@ paths = sorted(os.listdir(PATH))
 halfway = len(paths) // 2
 
 for i, lang in enumerate(paths):
-    
     all_data = []
 
     for dataset in os.listdir(os.path.join(PATH, lang)):
         # Load json.gz
         data = pd.read_json(os.path.join(PATH, lang, dataset), lines=True)
         all_data.append(data)
-    
+
     # Concatenate all dataframes
     all_data = pd.concat(all_data)
     # Cast to int
@@ -33,7 +32,7 @@ for i, lang in enumerate(paths):
         corr = round(all_data["rpj"].corr(all_data["starcoder"]), 3)
 
     if i >= halfway:
-        TABLE_ROWS[i-halfway] += f" & {lang} & {rpj_flagged} & {sc_flagged} & {corr} \\\\"
+        TABLE_ROWS[i - halfway] += f" & {lang} & {rpj_flagged} & {sc_flagged} & {corr} \\\\"
     else:
         TABLE_ROWS.append(f"{lang} & {rpj_flagged} & {sc_flagged} & {corr}")
         # TABLE_ROWS.append(f"{lang} & {rpj_flagged} & {sc_flagged} & {corr} \\\\")

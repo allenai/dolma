@@ -7,7 +7,6 @@ from tempfile import TemporaryDirectory
 from typing import Any, Tuple, Union
 
 import smart_open
-
 from dolma.core.parallel import BaseParallelProcessor
 
 

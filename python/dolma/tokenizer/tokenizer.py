@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from enum import Enum
 from functools import cached_property
@@ -14,7 +13,6 @@ from typing import Generator, List, Optional, Tuple, Union
 import msgspec
 import smart_open
 from omegaconf import DictConfig
-from omegaconf.omegaconf import OmegaConf as om
 from tokenizers import Tokenizer as BaseTokenizer
 
 from ..core.errors import DolmaConfigError
@@ -73,11 +71,11 @@ class Tokenizer:
         self.base_tokenizer.no_truncation()
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
-        self.pad_token_id = pad_token_id if pad_token_id is not None else eos_token_id
+        self.pad_token_id = pad_token_id
 
-        if self.pad_token_id:
-            logger.warning("No pad token ID provided; using 0.")
-            self.pad_token_id = 0
+        if self.pad_token_id is None:
+            logger.warning(f"No pad token ID provided; using EOS token ID {eos_token_id}.")
+            self.pad_token_id = eos_token_id
 
         self.truncate_to = truncate_to
         self.truncate_direction = TruncationDirection(truncate_direction)
@@ -173,27 +171,27 @@ class Tokenizer:
         base_tokenizer = BaseTokenizer.from_file(filename)
         return cls(base_tokenizer=base_tokenizer, **kwargs)
 
-    @classmethod
-    def from_checkpoint(cls, checkpoint_dir: PathOrStr) -> "Tokenizer":
-        """
-        Load a tokenizer from a checkpoint.
-        """
-        from cached_path import cached_path
+    # @classmethod
+    # def from_checkpoint(cls, checkpoint_dir: PathOrStr) -> "Tokenizer":
+    #     """
+    #     Load a tokenizer from a checkpoint.
+    #     """
+    #     from cached_path import cached_path
 
-        # Load configs.
-        config_path = cached_path(os.path.join(checkpoint_dir, "config.yaml"))
-        tokenizer_config = om.load(config_path).tokenizer
-        model_config = om.load(config_path).model
+    #     # Load configs.
+    #     config_path = cached_path(os.path.join(checkpoint_dir, "config.yaml"))
+    #     tokenizer_config = om.load(config_path).tokenizer
+    #     model_config = om.load(config_path).model
 
-        # Initialize tokenizer and validate vocab size.
-        tokenizer = cls.from_pretrained(
-            tokenizer_config.identifier,
-            eos_token_id=model_config.eos_token_id,
-            pad_token_id=model_config.pad_token_id,
-        )
-        if model_config.vocab_size != tokenizer.vocab_size:
-            raise DolmaConfigError("vocab size mismatch between config and tokenizer")
-        return tokenizer
+    #     # Initialize tokenizer and validate vocab size.
+    #     tokenizer = cls.from_pretrained(
+    #         tokenizer_config.identifier,
+    #         eos_token_id=model_config.eos_token_id,
+    #         pad_token_id=model_config.pad_token_id,
+    #     )
+    #     if model_config.vocab_size != tokenizer.vocab_size:
+    #         raise DolmaConfigError("vocab size mismatch between config and tokenizer")
+    #     return tokenizer
 
     def add_special_tokens(self, input_ids: List[int]) -> List[int]:
         """

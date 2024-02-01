@@ -1,0 +1,13 @@
+taggers:
+  - tokenizer_repetitions_v1
+  - char_length_strip_ws_v1
+
+documents:
+  - s3://ai2-llm/pretraining-data/sources/stack-dedup/v4-train/documents/*/*.gz
+  - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/*.gz
+  - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/*.gz
+  - s3://ai2-llm/pretraining-data/sources/s2/v3/documents/*/split=train/*/*.gz
+  - s3://ai2-llm/pretraining-data/sources/gutenberg/v0/documents/*.gz
+  - s3://ai2-llm/pretraining-data/sources/wikipedia/v0/documents/*/*.gz
+
+processes: 188

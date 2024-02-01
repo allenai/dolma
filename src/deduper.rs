@@ -16,6 +16,7 @@ use crate::bloom_filter::BloomFilter;
 use crate::s3_util;
 use crate::shard::shard_config::WorkDirConfig;
 use crate::shard::{find_objects_matching_patterns, FileCache};
+use crate::wimbd::tokens::tokenize;
 
 use deduper_config::*;
 
@@ -129,6 +130,9 @@ fn write_attributes(
             GzEncoder::new(tmp_output, Compression::default()),
         );
 
+        let min_content_length = dedupe_config.min_length.unwrap_or(0);
+        let min_word_length = dedupe_config.min_words.unwrap_or(0);
+
         for (line_number, line) in reader.lines().enumerate() {
             let line = match line {
                 Ok(line) => line,
@@ -162,14 +166,35 @@ fn write_attributes(
                         .to_string()
                 };
 
-                if dedupe_config.skip_empty.unwrap_or(false) && document_key.trim().is_empty() {
+                if min_word_length > 0 {
+                    // Split the text into words and check the number of words.
+                    let words = tokenize(&document_key);
+                    if words.count() < min_word_length {
+                        // skip documents with fewer than min_words words
+                        attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                    }
+                } else if document_key.len() < min_content_length {
+                    // skip length 0 documents
+                    attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                } else if dedupe_config.skip_empty.unwrap_or(false)
+                    && document_key.trim().is_empty()
+                {
                     // skip empty documents if dedupe_config.skip_empty is true
                     // and the document key is empty after trimming (i.e., removing whitespace)
-                    continue;
+                    attributes[&cfg.attribute_name] = Value::Array(Vec::new());
                 } else {
                     let dedupe_key = VecDeque::from([document_key.as_str()]);
                     if bloom_filter.contains(&dedupe_key) {
-                        attributes[&cfg.attribute_name] = Value::Bool(true);
+                        // attributes[&cfg.attribute_name] = Value::Bool(true);
+
+                        let mut duplicate_docs_array = Vec::new();
+                        let attr = vec![
+                            Value::from(0),
+                            Value::Number(document_key.len().into()),
+                            Value::from(1),
+                        ];
+                        duplicate_docs_array.push(Value::Array(attr));
+                        attributes[&cfg.attribute_name] = Value::Array(duplicate_docs_array);
                     } else if !bloom_filter.read_only {
                         bloom_filter.insert(&dedupe_key);
                     }
@@ -187,7 +212,6 @@ fn write_attributes(
 
                     if text_length > 0 {
                         // skip empty documents if text_length is 0
-
                         for p in paragraphs {
                             let par_start = offset;
                             offset += p.chars().count();
@@ -196,7 +220,21 @@ fn write_attributes(
                             }
                             let par_end = offset;
 
-                            if dedupe_config.skip_empty.unwrap_or(false) && p.trim().is_empty() {
+                            if offset < min_content_length {
+                                // skip length 0 paragraphs
+                                continue;
+                            }
+                            if min_word_length > 0 {
+                                // Split the text into words and check the number of words.
+                                let words = tokenize(&p);
+
+                                if words.count() < min_word_length {
+                                    // skip documents with fewer than min_words words
+                                    continue;
+                                }
+                            } else if dedupe_config.skip_empty.unwrap_or(false)
+                                && p.trim().is_empty()
+                            {
                                 // skip empty paragraphs if dedupe_config.skip_empty is true
                                 // and the paragraph is empty after trimming (i.e., removing whitespace)
                                 continue;
@@ -276,7 +314,8 @@ pub mod deduper_config {
         pub name: String,
         pub documents: Option<DocumentDedupeConfig>,
         pub paragraphs: Option<ParagraphDedupeConfig>,
-
+        pub min_length: Option<usize>,
+        pub min_words: Option<usize>,
         pub skip_empty: Option<bool>,
     }
 

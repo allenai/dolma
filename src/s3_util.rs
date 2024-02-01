@@ -6,6 +6,7 @@ use aws_sdk_s3::error::ProvideErrorMetadata;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client as S3Client;
 use tokio::fs::File as TokioFile;
+use tokio::time::Duration;
 
 // Split an s3:// url into a bucket and key
 pub fn split_url(s3_url: &str) -> Result<(&str, &str), &'static str> {
@@ -35,31 +36,70 @@ pub async fn download_to_file(
     bucket: &str,
     key: &str,
     path: &Path,
+    max_attempts: Option<u8>,
 ) -> Result<(), io::Error> {
-    let result = s3_client
-        .get_object()
-        .bucket(bucket)
-        // the type `str` does not implement `Clone`, so calling `clone` on `&str` copies the reference, which does not do anything and can be removed
-        .key(key)
-        .send()
-        .await
-        .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Error downloading {}: {}",
-                    key,
-                    e.message().unwrap_or_default()
-                ),
-            )
-        })?;
+    // Default to no retries if max_attempts is not provided
+    let max_attempts: u8 = max_attempts.unwrap_or_else(|| 1);
 
-    std::fs::create_dir_all(path.parent().unwrap())?;
-    let mut file = TokioFile::create(path).await?;
-    let mut body = result.body.into_async_read();
-    tokio::io::copy(&mut body, &mut file).await?;
+    // Check that max_attempts is greater than 0
+    if max_attempts == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "max_attempts must be greater than 0",
+        ));
+    }
 
-    Ok(())
+    let remote_path = format!("s3://{}/{}", bucket, key);
+    let local_path = path.to_str().unwrap_or_default();
+
+    for _attempt in 1..(max_attempts + 1) {
+        match s3_client.get_object().bucket(bucket).key(key).send().await {
+            Ok(response) => {
+                std::fs::create_dir_all(path.parent().unwrap())?;
+                let mut file = TokioFile::create(path).await?;
+                let mut body = response.body.into_async_read();
+                tokio::io::copy(&mut body, &mut file).await?;
+                return Ok(());
+            }
+            Err(error) => {
+                let error_message = error.message().unwrap_or_default();
+                if _attempt == max_attempts {
+                    log::error!(
+                        "Failed LAST attempt {}/{} to download '{}' to '{}': {} ('{}')",
+                        _attempt,
+                        max_attempts,
+                        remote_path,
+                        local_path,
+                        error,
+                        error_message
+                    );
+                    // This was the last attempt
+                    break;
+                } else {
+                    // short wait (1s) before retrying
+                    log::warn!(
+                        "Failed attempt {}/{} to download '{}' to '{}': {} ('{}'); will retry...",
+                        _attempt,
+                        max_attempts,
+                        remote_path,
+                        local_path,
+                        error,
+                        error_message
+                    );
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+    }
+
+    // If we got here, all attempts failed
+    return Err(io::Error::new(
+        io::ErrorKind::Other,
+        format!(
+            "All {} attempts to download '{}' to '{}' failed",
+            max_attempts, remote_path, local_path
+        ),
+    ));
 }
 
 pub async fn upload_file(
@@ -67,27 +107,71 @@ pub async fn upload_file(
     path: &Path,
     bucket: &str,
     key: &str,
+    max_attempts: Option<u8>,
 ) -> Result<(), io::Error> {
-    s3_client
-        .put_object()
-        .bucket(bucket)
-        // note: the type `str` does not implement `Clone`, so calling `clone` on `&str` copies the reference, which does not do anything and can be removed
-        .key(key)
-        .body(ByteStream::from_path(path).await?)
-        .send()
-        .await
-        .map_err(|e| {
-            io::Error::new(
-                io::ErrorKind::Other,
-                format!(
-                    "Error uploading {}: {}",
-                    key,
-                    e.message().unwrap_or_default()
-                ),
-            )
-        })?;
+    // Default to no retries if max_attempts is not provided
+    let max_attempts: u8 = max_attempts.unwrap_or_else(|| 1);
 
-    Ok(())
+    // Check that max_attempts is greater than 0
+    if max_attempts == 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "max_attempts must be greater than 0",
+        ));
+    }
+
+    let remote_path = format!("s3://{}/{}", bucket, key);
+    let local_path = path.to_str().unwrap_or_default();
+
+    for _attempt in 1..(max_attempts + 1) {
+        match s3_client
+            .put_object()
+            .bucket(bucket)
+            .key(key)
+            .body(ByteStream::from_path(path).await?)
+            .send()
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err(error) => {
+                let error_message = error.message().unwrap_or_default();
+                if _attempt == max_attempts {
+                    log::error!(
+                        "Failed LAST attempt {}/{} to upload '{}' to '{}': {} ('{}')",
+                        _attempt,
+                        max_attempts,
+                        local_path,
+                        remote_path,
+                        error,
+                        error_message
+                    );
+                    // This was the last attempt
+                    break;
+                } else {
+                    // short wait (1s) before retrying
+                    log::warn!(
+                        "Failed attempt {}/{} to upload '{}' to '{}': {} ('{}'); will retry...",
+                        _attempt,
+                        max_attempts,
+                        local_path,
+                        remote_path,
+                        error,
+                        error_message
+                    );
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                }
+            }
+        }
+    }
+
+    // If we got here, all attempts failed
+    return Err(io::Error::new(
+        io::ErrorKind::Other,
+        format!(
+            "All {} attempts to upload '{}' to '{}' failed",
+            max_attempts, remote_path, local_path
+        ),
+    ));
 }
 
 pub async fn object_size(
@@ -246,6 +330,15 @@ mod test {
         false
     }
 
+    fn get_dolma_test_prefix() -> String {
+        let prefix = std::env::var_os("DOLMA_TESTS_S3_PREFIX")
+            .map(|var| var.to_str().unwrap().to_string())
+            .unwrap_or_else(|| "s3://dolma-tests".to_string());
+
+        // remove any trailing slashes
+        return prefix.strip_suffix("/").unwrap_or(&prefix).to_string();
+    }
+
     fn compare_contents(expected: &str, actual: &str) {
         let expected_lines = BufReader::new(MultiGzDecoder::new(
             OpenOptions::new()
@@ -328,18 +421,85 @@ mod test {
             .unwrap();
         let s3_client = new_client(None)?;
 
-        let local_output_file =
-            "tests/work/output/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
-        let s3_path: &str = "pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
-        rt.block_on(download_to_file(
+        let s3_prefix = get_dolma_test_prefix();
+        let s3_dest = "/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
+        let s3_path = s3_prefix + s3_dest;
+        let (s3_bucket, s3_key) = split_url(s3_path.as_str()).unwrap();
+
+        // upload a file to s3
+        let local_source_file = "tests/data/provided/documents/000.json.gz";
+        rt.block_on(upload_file(
             &s3_client,
-            "ai2-llm",
-            s3_path,
-            Path::new(local_output_file),
+            Path::new(local_source_file),
+            s3_bucket,
+            s3_key,
+            Some(3), // number of attempts
         ))?;
 
-        compare_contents("tests/data/documents.json.gz", local_output_file);
+        // download the file back from s3
+        let local_output_file =
+            "tests/work/output/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
+        rt.block_on(download_to_file(
+            &s3_client,
+            s3_bucket,
+            // s3_path,
+            s3_key,
+            Path::new(local_output_file),
+            Some(3), // number of attempts
+        ))?;
 
+        // compare the contents of the two files
+        compare_contents(local_source_file, local_output_file);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_failed_download_file() -> Result<(), io::Error> {
+        if skip_dolma_aws_tests() {
+            return Ok(());
+        }
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let s3_client = new_client(None)?;
+
+        let s3_prefix = get_dolma_test_prefix();
+        let s3_dest = "/foo/bar/baz.json.gz";
+        let s3_path = s3_prefix + s3_dest;
+        let (s3_bucket, s3_key) = split_url(s3_path.as_str()).unwrap();
+
+        // download the file back from s3
+        let local_output_file = "tests/work/foo/bar/bz.json.gz";
+
+        let resp_too_few_attempts: Result<(), io::Error> = rt.block_on(download_to_file(
+            &s3_client,
+            s3_bucket,
+            s3_key,
+            Path::new(local_output_file),
+            Some(0), // number of attempts
+        ));
+        assert!(resp_too_few_attempts.is_err());
+        assert_eq!(
+            resp_too_few_attempts.unwrap_err().to_string(),
+            "max_attempts must be greater than 0"
+        );
+
+        let resp_no_such_location: Result<(), io::Error> = rt.block_on(download_to_file(
+            &s3_client,
+            s3_bucket,
+            s3_key,
+            Path::new(local_output_file),
+            Some(3), // number of attempts
+        ));
+
+        assert!(resp_no_such_location.is_err());
+        let exp_msg = format!(
+            "All 3 attempts to download '{}' to '{}' failed",
+            s3_path, local_output_file
+        );
+        assert_eq!(resp_no_such_location.unwrap_err().to_string(), exp_msg);
         Ok(())
     }
 
@@ -348,19 +508,60 @@ mod test {
         if skip_dolma_aws_tests() {
             return Ok(());
         }
-        let s3_client = new_client(None)?;
 
-        let patterns =
-            vec!["s3://ai2-llm/pretraining-data/tests/mixer/expected/*.json.gz".to_string()];
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let s3_client = new_client(None)?;
+        let s3_prefix = get_dolma_test_prefix();
+
+        let local_source_dir = "tests/data/expected";
+        // iterate over the files in `tests/data/expected` and upload them to s3
+        let entries = read_dir(local_source_dir)?;
+        for entry in entries {
+            let local_source_file = entry?.path();
+
+            // skip files not ending with .json.gz
+            if !local_source_file.to_str().unwrap().ends_with(".json.gz") {
+                continue;
+            }
+
+            let s3_url = format!(
+                "{}/pretraining-data/tests/mixer/expected/{}",
+                s3_prefix,
+                local_source_file.file_name().unwrap().to_str().unwrap()
+            );
+            let (s3_bucket, s3_key) = split_url(s3_url.as_str()).unwrap();
+            rt.block_on(upload_file(
+                &s3_client,
+                Path::new(local_source_file.to_str().unwrap()),
+                s3_bucket,
+                s3_key,
+                Some(3), // number of attempts
+            ))?;
+        }
+
+        // If we don't shutdown the runtime, the test will hang when running
+        // find_objects_matching_patterns.
+        // I'm not sure why this is the case. Need to read more. -@soldni
+        rt.shutdown_background();
+
+        let patterns = vec![format!(
+            "{}/{}",
+            s3_prefix, "pretraining-data/tests/mixer/expected/*.json.gz"
+        )];
 
         let resp = find_objects_matching_patterns(&s3_client, &patterns).unwrap();
         let mut matches: HashSet<String> = HashSet::from_iter(resp.iter().map(|s| s.to_owned()));
 
         // list the contents of `tests/data/expected` and check that they match
-        let entries = read_dir("tests/data/expected")?;
+        let entries = read_dir(local_source_dir)?;
         for entry in entries {
             let remote_path = format!(
-                "s3://ai2-llm/pretraining-data/tests/mixer/expected/{}",
+                "{}/pretraining-data/tests/mixer/expected/{}",
+                s3_prefix,
                 entry?.file_name().to_str().unwrap()
             );
             matches.remove(&remote_path);

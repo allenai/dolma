@@ -1,0 +1,31 @@
+---
+streams:
+- name: v1_5r2_sample
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/books/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/c4/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/pes2o/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/reddit/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/stack/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki/*.json.gz
+  attributes:
+    - random_number_v1
+
+  output:
+    path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2_03p_sample/documents/
+    max_size_in_bytes: 53_687_091_200
+    min_text_length: 1
+    discard_fields:
+    - attributes
+
+  filter:
+    exclude:
+      - "$.attributes[?(@.random_number_v1__random_number_v1__random[0][2] >= 0.003)]"
+
+work_dir:
+  input: "/tmp/olmo-mix-v1_5r2/input"
+  output: "/tmp/olmo-mix-v1_5r2/output"
+processes: 188

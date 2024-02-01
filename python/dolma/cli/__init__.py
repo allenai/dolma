@@ -31,7 +31,7 @@ from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
 
-from dolma.core.errors import DolmaConfigError
+from ..core.errors import DolmaConfigError
 
 __all__ = [
     "BaseCli",
@@ -148,7 +148,17 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
 
     base_structured_config: DictConfig = om.structured(structured)
     merged_config = om.merge(base_structured_config, untyped_config)
-    assert isinstance(merged_config, DictConfig)
+
+    # check for type
+    if not isinstance(merged_config, DictConfig):
+        raise DolmaConfigError(f"Expected a DictConfig, got {type(merged_config).__name__}")
+
+    # try resolving all cross references in the config, raise a DolmaConfigError if it fails
+    try:
+        om.resolve(merged_config)
+    except OmegaConfBaseException as ex:
+        raise DolmaConfigError(f"Invalid error while parsing key `{ex.full_key}`: {type(ex).__name__}") from ex
+
     return merged_config  # pyright: ignore
 
 

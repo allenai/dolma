@@ -1,0 +1,17 @@
+documents:
+  - ${oc.env:HOME}/perplexity/option1/documents/*.gz
+
+dedupe:
+  name: perplexity_suite_v3
+  paragraphs:
+    attribute_name: bff_duplicate_paragraph_spans_decontamination
+  skip_empty: true
+
+bloom_filter:
+  read_only: false
+  estimated_doc_count: 3686676
+  # size_in_bytes: 104857600  # 100 MB; smaller causes too many FPs
+  desired_false_positive_rate: 1e-15
+  file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option1.bin
+
+processes: 188

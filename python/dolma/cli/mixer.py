@@ -16,6 +16,7 @@ class StreamOutputConfig:
         default=2 * 2**30, help="Maximum size of the output file in bytes. Defaults to 2GB."
     )
     discard_fields: List[str] = field(default=[], help="List of fields to discard from the output documents.")
+    min_text_length: Optional[int] = field(default=0, help="Minimum length of the text in the output documents.")
 
 
 @dataclass
@@ -119,6 +120,11 @@ class MixerCli(BaseCli):
                     "path": str(stream_config.output.path),
                     "max_size_in_bytes": int(stream_config.output.max_size_in_bytes),
                 }
+
+                if stream_config.output.min_text_length:
+                    stream_config_dict["output"]["min_text_length"] = int(stream_config.output.min_text_length)
+                    if stream_config.output.min_text_length < 0:
+                        raise ValueError("min_text_length must be >= 0")
 
                 if stream_config.output.discard_fields:
                     stream_config_dict["output"]["discard_fields"] = [
