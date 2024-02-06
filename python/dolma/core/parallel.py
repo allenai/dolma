@@ -188,8 +188,11 @@ class BaseParallelProcessor:
                 if retries_on_error == 0:
                     raise DolmaError from exception
 
+        # make sure the metadata directory exists before writing the metadata file
+        mkdir_p(parent(metadata_path))
+
+        # actually write the metadata file
         with smart_open.open(metadata_path, "wt") as f:
-            mkdir_p(parent(metadata_path))
             f.write(datetime.now().isoformat())
 
     @classmethod
