@@ -43,6 +43,7 @@ tokio = {version = "1.27.0", features = ["full"]}
 tokio-util = "0.7.7"
 unicode-segmentation = "1.7"
 openssl = { version = "0.10.63", features = ["vendored"] }
+adblock = { version = "0.8.6", features = ["content-blocking"] }
 
 # [target.'cfg(target_arch = "aarch64")'.dependencies]
 # openssl = { version = "0.10.63", features = ["vendored"] }
