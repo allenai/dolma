@@ -1,10 +1,10 @@
 import json
-from pathlib import Path
 import warnings
-import urllib3.util
+from pathlib import Path
 from typing import List, Optional, Union
 
 import smart_open
+import urllib3.util
 
 # warning raised by pkg_resources used in a lot of google packages
 warnings.filterwarnings("ignore", message=r".*declare_namespace\(\'.*google.*", category=DeprecationWarning)
@@ -105,12 +105,8 @@ class UrlBlocker:
             UrlBlocker: An instance of UrlBlocker created from the AdBlock Plus file.
 
         """
-        with smart_open.open(adblockplus_filepath, 'rt') as adb_file:
-            rules = [
-                ln.strip()
-                for ln in adb_file
-                if not ln.startswith('!')
-            ]
+        with smart_open.open(adblockplus_filepath, "rt") as adb_file:
+            rules = [ln.strip() for ln in adb_file if not ln.startswith("!")]
         return cls(rules)
 
     def check_network_urls(

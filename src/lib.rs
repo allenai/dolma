@@ -1,9 +1,9 @@
 use pyo3::exceptions;
 use pyo3::prelude::*;
 
-use adblock::Engine;
 use adblock::lists::ParseOptions;
 use adblock::request::Request;
+use adblock::Engine;
 
 pub mod bloom_filter;
 pub mod deduper;
@@ -42,7 +42,6 @@ fn mixer_entrypoint(config_str: &str) -> PyResult<()> {
     Ok(())
 }
 
-
 /// Adblocker class
 /// Hold the adblocker engine loaded with the rules
 ///
@@ -65,7 +64,9 @@ struct UrlBlocker {
 impl UrlBlocker {
     #[new]
     fn new(rules: Vec<String>) -> Self {
-        UrlBlocker { engine: Engine::from_rules(&rules, ParseOptions::default()) }
+        UrlBlocker {
+            engine: Engine::from_rules(&rules, ParseOptions::default()),
+        }
     }
     /// The function that should tell whether a specific request should be blocked according to the loaded rules
     ///
@@ -93,19 +94,17 @@ impl UrlBlocker {
         source_url: &str,
         request_type: &str,
     ) -> PyResult<bool> {
-        match Request::new(url,source_url,request_type) {
+        match Request::new(url, source_url, request_type) {
             Ok(request) => {
                 let blocker_result = self.engine.check_network_request(&request);
                 Ok(blocker_result.matched)
-            },
+            }
             Err(_) => {
                 return Err(exceptions::PyValueError::new_err("Invalid request"));
-            },
+            }
         }
-
     }
 }
-
 
 // A Python module implemented in Rust. The name of this function must match
 // the `lib.name` setting in the `Cargo.toml`, else Python will not be able to

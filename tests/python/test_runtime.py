@@ -1,7 +1,7 @@
 import json
 import os
-from pathlib import Path
 import shutil
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest import TestCase
 

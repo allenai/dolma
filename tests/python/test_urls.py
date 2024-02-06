@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest import TestCase
+
 from dolma import UrlBlocker
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"

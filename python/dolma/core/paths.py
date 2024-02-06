@@ -259,6 +259,15 @@ def exists(path: str) -> bool:
     return fs.exists(path)
 
 
+def parent(path: str) -> str:
+    """Get the parent directory of a path; if the parent is the root, return the root."""
+
+    prot, parts = split_path(path)
+    if len(parts) == 1:
+        return path
+    return join_path(prot, *parts[:-1])
+
+
 def mkdir_p(path: str) -> None:
     """
     Create a directory if it does not exist.

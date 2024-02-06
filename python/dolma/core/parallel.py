@@ -24,6 +24,8 @@ from .paths import (
     glob_path,
     join_path,
     make_relative,
+    mkdir_p,
+    parent,
     split_path,
     sub_prefix,
 )
@@ -187,6 +189,7 @@ class BaseParallelProcessor:
                     raise DolmaError from exception
 
         with smart_open.open(metadata_path, "wt") as f:
+            mkdir_p(parent(metadata_path))
             f.write(datetime.now().isoformat())
 
     @classmethod
