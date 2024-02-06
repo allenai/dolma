@@ -175,6 +175,10 @@ class BaseParallelProcessor:
     ):
         """A wrapper around process single that saves a metadata file if processing is successful."""
 
+        # make destination directory if it doesn't exist for the destination and metadata paths
+        mkdir_p(parent(destination_path))
+        mkdir_p(parent(metadata_path))
+
         kwargs = pickle.loads(serialized_kwargs)
         retries_on_error = kwargs.get("retries_on_error", 0) + 1
         while True:
@@ -188,10 +192,7 @@ class BaseParallelProcessor:
                 if retries_on_error == 0:
                     raise DolmaError from exception
 
-        # make sure the metadata directory exists before writing the metadata file
-        mkdir_p(parent(metadata_path))
-
-        # actually write the metadata file
+        # write the metadata file
         with smart_open.open(metadata_path, "wt") as f:
             f.write(datetime.now().isoformat())
 
