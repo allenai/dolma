@@ -6,7 +6,6 @@ from tempfile import TemporaryDirectory
 from typing import List, Optional
 from unittest import TestCase
 
-import attr
 import smart_open
 
 from dolma.core.runtime import (
@@ -217,6 +216,8 @@ class TestRuntimeUtilities(TestCase):
                 self.assertEqual(tagger_names, set(taggers))
 
     def test_multiple_with_exp_name(self):
+        # same as test_multiple_taggers, but provide an experiment name
+        # this is to test failure reported here: https://github.com/allenai/dolma/pull/113
         self.test_multiple_taggers(experiment_name="experiment_name")
 
     def test_alt_exp(self):
