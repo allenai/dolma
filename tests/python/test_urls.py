@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest import TestCase
 
-from dolma import UrlBlocker
+from dolma.core.url_blocker import UrlBlocker
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"
 
@@ -29,7 +29,7 @@ class TestUrlBlocker(TestCase):
         self.assertFalse(engine.check_network_urls(not_to_block))
 
     def test_load_from_file(self):
-        engine = UrlBlocker.from_adblockplus_filepath(LOCAL_DATA / "urls/easylist.txt.gz")
+        engine = UrlBlocker.from_adb_paths(LOCAL_DATA / "urls/easylist.txt.gz")
 
         # global rules
         self.assertTrue(engine.check_network_urls("berush.com"))

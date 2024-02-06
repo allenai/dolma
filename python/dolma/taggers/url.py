@@ -6,6 +6,7 @@ import urllib3.util
 from ..core.data_types import DocResult, DocumentWithMetadata, Span
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTaggerWithMetadata
+from ..core.url_blocker import UrlBlocker
 
 
 class BaseUrlTagger(BaseTaggerWithMetadata):
@@ -64,9 +65,9 @@ class DomainBlocklistPhishingTagger(BaseDomainTagger):
 
 class AdbUrlTagger(BaseUrlTagger):
     def __init__(self) -> None:
-        from dolma import UrlBlocker
+        # from dolma import UrlBlocker
 
-        self.engine = UrlBlocker.from_adblockplus_filepath(self.BLOCKLIST_PATH)
+        self.engine = UrlBlocker.from_adb_paths(self.BLOCKLIST_PATH)
 
     def check_url(self, url: str) -> bool:
         return self.engine.check_network_urls(url)
