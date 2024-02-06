@@ -1,3 +1,12 @@
+"""
+Download the blocklists from the University of Toulouse (UT1) FTP server and upload them to
+an S3 bucket.
+More information about the blocklists can be found at: https://dsi.ut-capitole.fr/blacklists/
+
+Author: Luca Soldaini (@soldni)
+Email:  luca@soldaini.net
+"""
+
 import os
 import tarfile
 from datetime import datetime

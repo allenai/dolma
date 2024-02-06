@@ -49,8 +49,13 @@ def _make_paths_from_substitution(paths: List[str], find: str, replace: str) -> 
     """
     new_paths: List[str] = []
     for curr in paths:
-        curr_pre_glob, _ = split_glob(curr)
+        curr_pre_glob, post_glob = split_glob(curr)
         curr_prot, curr_parts = split_path(curr_pre_glob)
+
+        if not post_glob.strip():
+            # nothing past the glob pattern: then we wanna go back up one level in the directory structure
+            curr_parts = curr_parts[:-1]
+
         find_dir_index = curr_parts.index(find)
 
         if not curr_pre_glob.strip():
@@ -97,8 +102,14 @@ def _make_paths_from_prefix(paths: List[str], prefix: str) -> List[str]:
     _, relative_paths = make_relative(paths)
 
     for curr_path in relative_paths:
-        base_curr_path, _ = split_glob(curr_path)
-        new_paths.append(join_path(prefix_prot, prefix_path, base_curr_path))
+        curr_pre_glob, post_glob = split_glob(curr_path)
+        _, curr_parts = split_path(curr_pre_glob)
+
+        if not post_glob.strip():
+            # nothing past the glob pattern: then we wanna go back up one level in the directory structure
+            curr_parts = curr_parts[:-1]
+
+        new_paths.append(join_path(prefix_prot, prefix_path, *curr_parts))
 
     return new_paths
 

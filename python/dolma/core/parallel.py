@@ -2,7 +2,6 @@ import inspect
 import itertools
 import logging
 import multiprocessing
-import os
 import pickle
 import random
 import re
@@ -25,7 +24,6 @@ from .paths import (
     glob_path,
     join_path,
     make_relative,
-    mkdir_p,
     split_path,
     sub_prefix,
 )
@@ -367,13 +365,6 @@ class BaseParallelProcessor:
 
                 if not self._valid_path(path):
                     continue
-
-                # get relative path from source prefix
-                rel_dir, _ = os.path.split(path)
-
-                # make sure destination/metadata directories exists
-                mkdir_p(os.path.join(dst_prefix, rel_dir))
-                mkdir_p(os.path.join(meta_prefix, rel_dir))
 
                 # create new paths to pass to taggers
                 all_source_paths.append(add_suffix(prefix, path))

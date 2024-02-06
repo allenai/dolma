@@ -15,7 +15,7 @@ from ..core.registry import TaggerRegistry
 
 @TaggerRegistry.add("jigsaw_hatespeech_document_v2")
 class FastTextJigsawHatespeechDocumentTagger(BaseFastTextTagger):
-    MODEL_PATH = "https://ai2-s2-research-public.s3.us-west-2.amazonaws.com/aakankshan/olmo-data-filters/jigsaw_fasttext_bigrams_hatespeech_final.bin"  # noqa: E501
+    MODEL_PATH = "https://dolma-artifacts.org/fasttext_models/jigsaw_fasttext_bigrams_20230515/jigsaw_fasttext_bigrams_hatespeech_final.bin"  # noqa: E501
 
     def __init__(self):
         super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
@@ -37,9 +37,9 @@ class FastTextJigsawHatespeechSentenceTagger(FastTextJigsawHatespeechDocumentTag
 
 @TaggerRegistry.add("jigsaw_nsfw_document_v1")
 class FastTextJigsawNsfwDocumentTagger(FastTextJigsawHatespeechDocumentTagger):
-    MODEL_PATH = "https://ai2-s2-research-public.s3.us-west-2.amazonaws.com/aakankshan/olmo-data-filters/jigsaw_fasttext_bigrams_nsfw_final.bin"  # noqa: E501
+    MODEL_PATH = "https://dolma-artifacts.org/fasttext_models/jigsaw_fasttext_bigrams_20230515/jigsaw_fasttext_bigrams_nsfw_final.bin"  # noqa: E501
 
 
 @TaggerRegistry.add("jigsaw_nsfw_sencence_v2")
 class FastTextJigsawNsfwSentenceTagger(FastTextJigsawHatespeechSentenceTagger):
-    MODEL_PATH = "https://ai2-s2-research-public.s3.us-west-2.amazonaws.com/aakankshan/olmo-data-filters/jigsaw_fasttext_bigrams_nsfw_final.bin"  # noqa: E501
+    MODEL_PATH = "https://dolma-artifacts.org/fasttext_models/jigsaw_fasttext_bigrams_20230515/jigsaw_fasttext_bigrams_nsfw_final.bin"  # noqa: E501
