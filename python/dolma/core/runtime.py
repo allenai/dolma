@@ -413,6 +413,13 @@ def create_and_run_tagger(
         profile_sort_key (str, optional): Sort key for the profiling output. Defaults to 'tottime'.
     """
 
+    for tagger_name in taggers:
+        # instantiate the taggers here to make sure they are all valid + download any necessary resources
+        tagger = TaggerRegistry.get(tagger_name)
+
+        # delete the tagger after we are done with it so that we don't keep it in memory
+        del tagger
+
     # use placeholder experiment name if none is provided; raise an error if the placeholder name is used
     if experiment == EXPERIMENT_PLACEHOLDER_NAME:
         raise RuntimeError(f"Experiment name cannot be {EXPERIMENT_PLACEHOLDER_NAME}; reserved for internal use.")
@@ -437,7 +444,7 @@ def create_and_run_tagger(
         except Exception as exp:
             raise RuntimeError(f"Could not make metadata paths from prefix {metadata}") from exp
 
-        tagger = TaggerProcessor(
+        tagger_processor = TaggerProcessor(
             source_prefix=documents,
             destination_prefix=destination,
             metadata_prefix=metadata,
@@ -455,7 +462,7 @@ def create_and_run_tagger(
                     profiler(output=profile_output, sort_key=profile_sort_key, lines=profile_lines)
                 )
 
-            tagger(
+            tagger_processor(
                 experiment_name=experiment,
                 taggers_names=taggers,
                 taggers_modules=taggers_modules,
