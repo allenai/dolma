@@ -20,7 +20,7 @@ You can also read more about Dolma in [our announcement](https://blog.allenai.or
 This repository houses the Dolma Toolkit, which enables curation of large datasets for (pre)-training ML models. Its key features are:
 
 1. **High Performance** ⚡: Can process billions of documents concurrently thanks to built-in parallelism.
-2. **Portabilty** 🧳: Works on a single machine, a cluster, or cloud environment.
+2. **Portability** 🧳: Works on a single machine, a cluster, or cloud environment.
 3. **Built-In Taggers** 🏷: Includes ready-to-use taggers commonly used to curate datasets such as [Gopher](https://arxiv.org/abs/2112.11446), [C4](https://arxiv.org/abs/1910.10683), and [OpenWebText](https://openwebtext2.readthedocs.io/en/latest/).
 4. **Fast Deduplication** 🗑: Speedy document deduplication using a Rust Bloom filter.
 5. **Extensibility** 🧩 & **Cloud Support** ☁: Supports custom taggers and AWS S3-compatible locations.
