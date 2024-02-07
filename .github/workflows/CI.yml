@@ -24,6 +24,14 @@ env:
 
 
 jobs:
+
+  should-run:
+    name: Check if workflow should run
+    uses: ./.github/actions/should-build.yml
+    with:
+      github_ref: ${{ github.ref }}
+      modified_files: ${{ github.event.modified_files }}
+
   info:
     name: Run info
     runs-on: ubuntu-latest
@@ -35,10 +43,11 @@ jobs:
           echo "run tests:  ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}"
           echo "is main:    ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}"
           echo "is release: ${{ startsWith(github.ref, 'refs/tags/') }}"
-          echo "skip AWS:   ${{ env.DOLMA_TESTS_SKIP_AWS }}"
+          echo "skip AWS?   ${{ env.DOLMA_TESTS_SKIP_AWS }}"
           echo "commit:     ${{ github.sha }}"
           echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
           echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
+          echo "Build whl?  ${{ steps.should-run.outputs.should_run }}"
 
   prepare-venv:
     runs-on: ubuntu-latest
@@ -146,7 +155,7 @@ jobs:
           ${{ matrix.task.run }}
 
   build-linux:
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ steps.check.outputs.should_run }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -181,7 +190,7 @@ jobs:
           path: dist
 
   build-windows:
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ steps.check.outputs.should_run }}
     runs-on: windows-latest
     name: "Build Windows (${{ matrix.target }})"
     strategy:
@@ -205,7 +214,7 @@ jobs:
           path: dist
 
   build-macos:
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ steps.check.outputs.should_run }}
     runs-on: macos-latest
     name: "Build macOS (${{ matrix.target }})"
     strategy:
@@ -229,7 +238,7 @@ jobs:
 
   sdist:
     runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    if: ${{ steps.check.outputs.should_run }}
     steps:
       - uses: actions/checkout@v3
       - name: Build sdist

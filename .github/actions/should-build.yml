@@ -1,0 +1,24 @@
+# .github/actions/should-build/action.yml
+name: 'Should Build'
+description: 'Determines whether the workflow should build wheels'
+
+inputs:
+  github_ref:
+    description: 'The GitHub reference'
+    required: true
+  modified_files:
+    description: 'The modified files'
+    required: true
+
+outputs:
+  should_run:
+    description: 'Determines whether the workflow should build wheels'
+    value: ${{ steps.check.outputs.should_run }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: check
+      run: |
+        echo "should_run=$(( ${{ inputs.github_ref }} == 'refs/heads/main' || ${{ inputs.github_ref }} == 'refs/heads/master' || startsWith(${{ inputs.github_ref }}, 'refs/tags/') || contains(${{ inputs.modified_files }}, 'pyproject.toml') || contains(${{ inputs.modified_files }}, 'Cargo.toml') ))" >> $GITHUB_ENV
+      shell: bash
