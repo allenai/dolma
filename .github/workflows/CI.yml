@@ -43,8 +43,6 @@ jobs:
   new_version:
     name: "New Version"
     runs-on: ubuntu-latest
-    outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
     steps:
     - name: checkout
       uses: actions/checkout@v3
@@ -60,11 +58,13 @@ jobs:
       run: |
         has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -E 'pyproject.toml|Cargo.toml')
         if [[ -n $has_updated ]]; then
-          echo "should_run=true" >> $GITHUB_ENV
+          echo "new_version=true" >> $GITHUB_OUTPUT
         else
-          echo "should_run=false" >> $GITHUB_ENV
+          echo "new_version=false" >> $GITHUB_OUTPUT
         fi
       shell: bash
+    outputs:
+      new_version: ${{ steps.check_version.outputs.new_version }}
 
   temp:
     name: temp
@@ -73,8 +73,7 @@ jobs:
     steps:
       - name: echo
         run: |
-          echo "should_run: ${{ needs.new_version.outputs.should_run }}"
-          echo "should_run: ${{ steps.new_version.outputs.should_run }}"
+          echo "should_run: ${{ needs.new_version.outputs.new_version }}"
 
   # prepare-venv:
   #   runs-on: ubuntu-latest
