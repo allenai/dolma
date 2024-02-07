@@ -26,11 +26,20 @@ env:
 jobs:
 
   should-run:
-    name: Check if workflow should run
-    uses: .github/actions/should-build.yaml@main
-    with:
-      github_ref: ${{ github.ref }}
-      modified_files: ${{ github.event.modified_files }}
+    name: Check whether to build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checking Cargo.toml and pyproject.toml
+        run: |
+          echo "should_run=$(( ${{ github.ref }} == 'refs/heads/main' || ${{ github.ref }} == 'refs/heads/master' || startsWith(${{ github.ref }}, 'refs/tags/') || contains(${{ github.event.modified_files }}, 'pyproject.toml') || contains(${{ github.event.modified_files }}, 'Cargo.toml') ))" >> $GITHUB_ENV
+        shell: bash
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+
+    # uses: ./.github/actions/should-build
+    # with:
+    #   github_ref: ${{ github.ref }}
+    #   modified_files: ${{ github.event.modified_files }}
 
   info:
     name: Run info
