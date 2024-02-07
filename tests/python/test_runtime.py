@@ -175,7 +175,11 @@ class TestRuntimeUtilities(TestCase):
                 experiment=experiment_name,
                 debug=True,
             )
-            all_attribute_dirs = [temp_path / "attributes" / t for t in taggers]
+
+            if experiment_name is None:
+                all_attribute_dirs = [temp_path / "attributes" / t for t in taggers]
+            else:
+                all_attribute_dirs = [temp_path / "attributes" / experiment_name]
 
             for d in all_attribute_dirs:
                 # check if a folder for each tagger was created
@@ -209,7 +213,11 @@ class TestRuntimeUtilities(TestCase):
             for row in attributes:
                 # check if name of attribute files is correct
                 attribute_files_names = set(k.split("__")[0] for k in row["attributes"].keys())
-                self.assertEqual(attribute_files_names, set(taggers))
+
+                if experiment_name is None:
+                    self.assertEqual(attribute_files_names, set(taggers))
+                else:
+                    self.assertEqual(attribute_files_names, {experiment_name})
 
                 # check if name of taggers is correct
                 tagger_names = set(k.split("__")[1] for k in row["attributes"].keys())
