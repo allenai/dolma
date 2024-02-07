@@ -25,21 +25,17 @@ env:
 
 jobs:
 
-  should-run:
+  should_run:
     name: Check whether to build
     runs-on: ubuntu-latest
     steps:
       - name: Checking Cargo.toml and pyproject.toml
+        id: check
         run: |
           echo "should_run=$(( ${{ github.ref }} == 'refs/heads/main' || ${{ github.ref }} == 'refs/heads/master' || startsWith(${{ github.ref }}, 'refs/tags/') || contains(${{ github.event.modified_files }}, 'pyproject.toml') || contains(${{ github.event.modified_files }}, 'Cargo.toml') ))" >> $GITHUB_ENV
         shell: bash
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
-
-    # uses: ./.github/actions/should-build
-    # with:
-    #   github_ref: ${{ github.ref }}
-    #   modified_files: ${{ github.event.modified_files }}
 
   info:
     name: Run info
@@ -164,7 +160,8 @@ jobs:
           ${{ matrix.task.run }}
 
   build-linux:
-    if: ${{ steps.check.outputs.should_run }}
+    needs: should_run
+    if: ${{ needs.should_run.outputs.should_run }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -199,7 +196,8 @@ jobs:
           path: dist
 
   build-windows:
-    if: ${{ steps.check.outputs.should_run }}
+    needs: should_run
+    if: ${{ needs.should_run.outputs.should_run }}
     runs-on: windows-latest
     name: "Build Windows (${{ matrix.target }})"
     strategy:
@@ -223,7 +221,8 @@ jobs:
           path: dist
 
   build-macos:
-    if: ${{ steps.check.outputs.should_run }}
+    needs: should_run
+    if: ${{ needs.should_run.outputs.should_run }}
     runs-on: macos-latest
     name: "Build macOS (${{ matrix.target }})"
     strategy:
@@ -247,7 +246,8 @@ jobs:
 
   sdist:
     runs-on: ubuntu-latest
-    if: ${{ steps.check.outputs.should_run }}
+    needs: should_run
+    if: ${{ needs.should_run.outputs.should_run }}
     steps:
       - uses: actions/checkout@v3
       - name: Build sdist
