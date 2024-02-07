@@ -48,9 +48,13 @@ jobs:
     steps:
     - name: checkout
       uses: actions/checkout@v3
+    - name: List branches and tags
+      run: |
+        git branch -a
+        git tag -l
     - id: check_version
       run: |
-        has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -qE 'pyproject.toml|Cargo.toml')
+        has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -E 'pyproject.toml|Cargo.toml')
         if [[ -n $has_updated ]]; then
           echo "should_run=true" >> $GITHUB_ENV
         else
