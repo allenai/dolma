@@ -12,7 +12,7 @@ It was created as a training corpus for [OLMo](https://allenai.org/olmo), a lang
 
 Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr) on the [HuggingFace 🤗 Hub](https://huggingface.co/datasets/allenai/dolma). Once agreed you can follow the instructions [here](https://huggingface.co/datasets/allenai/dolma#download) to download the dataset.
 
-You can also read more about Dolma in [our announcement](https://blog.allenai.org/dolma-3-trillion-tokens-open-llm-corpus-9a0ff4b8da64), as well as by consulting its [data sheet](docs/assets/dolma-datasheet-v0.1.pdf).
+You can also read more about Dolma in [our announcement](https://blog.allenai.org/dolma-3-trillion-tokens-open-llm-corpus-9a0ff4b8da64), as well as by consulting its [data sheet](docs/assets/dolma-v0_1-20230819.pdf).
 
 
 ## Dolma Toolkit
