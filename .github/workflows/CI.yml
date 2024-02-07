@@ -40,7 +40,7 @@ jobs:
           echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
           echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
 
-  new_version:
+  should_build:
     name: "New Version"
     runs-on: ubuntu-latest
     steps:
@@ -58,25 +58,23 @@ jobs:
       run: |
         has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -E 'pyproject.toml|Cargo.toml')
         is_main_or_release='${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}'
-        echo "has_updated=$has_updated"
-        echo "is_main_or_release=$is_main_or_release"
-        if [[ -n $has_updated ]]; then
-          echo "new_version=true" >> $GITHUB_OUTPUT
+        if [[ -n $has_updated || $is_main_or_release == 'true' ]]; then
+          echo "should_build=true" >> $GITHUB_OUTPUT
         else
-          echo "new_version=false" >> $GITHUB_OUTPUT
+          echo "should_build=false" >> $GITHUB_OUTPUT
         fi
       shell: bash
     outputs:
-      new_version: ${{ steps.check_version.outputs.new_version }}
+      should_build: ${{ steps.check_version.outputs.should_build }}
 
   temp:
     name: temp
-    needs: new_version
+    needs: should_build
     runs-on: ubuntu-latest
     steps:
       - name: echo
         run: |
-          echo "should_run: ${{ needs.new_version.outputs.new_version }}"
+          echo "should_build: ${{ needs.new_version.outputs.should_build }}"
 
   # prepare-venv:
   #   runs-on: ubuntu-latest
