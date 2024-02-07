@@ -52,6 +52,7 @@ jobs:
       run: |
         git branch -a
         git tag -l
+        git log | head -n 1000
     - id: check_version
       run: |
         has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -E 'pyproject.toml|Cargo.toml')
