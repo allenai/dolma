@@ -69,15 +69,6 @@ jobs:
     outputs:
       should_build: ${{ steps.check_version.outputs.should_build }}
 
-  temp:
-    name: temp
-    needs: should_build
-    runs-on: ubuntu-latest
-    steps:
-      - name: echo
-        run: |
-          echo "should_build: ${{ needs.new_version.outputs.should_build }}"
-
   prepare-venv:
     runs-on: ubuntu-latest
     name: "Prepare Virtual Env"
