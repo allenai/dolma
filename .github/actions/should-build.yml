@@ -1,4 +1,4 @@
-# .github/actions/should-build/action.yml
+# .github/actions/should-build.yml
 name: 'Should Build'
 description: 'Determines whether the workflow should build wheels'
 
