@@ -24,19 +24,6 @@ env:
 
 
 jobs:
-
-  should_run:
-    name: Check whether to build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checking Cargo.toml and pyproject.toml
-        id: check
-        run: |
-          echo "should_run=$(( ${{ github.ref }} == 'refs/heads/main' || ${{ github.ref }} == 'refs/heads/master' || startsWith(${{ github.ref }}, 'refs/tags/') || contains(${{ github.event.modified_files }}, 'pyproject.toml') || contains(${{ github.event.modified_files }}, 'Cargo.toml') ))" >> $GITHUB_ENV
-        shell: bash
-    outputs:
-      should_run: ${{ steps.check.outputs.should_run }}
-
   info:
     name: Run info
     runs-on: ubuntu-latest
@@ -48,11 +35,10 @@ jobs:
           echo "run tests:  ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}"
           echo "is main:    ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}"
           echo "is release: ${{ startsWith(github.ref, 'refs/tags/') }}"
-          echo "skip AWS?   ${{ env.DOLMA_TESTS_SKIP_AWS }}"
+          echo "skip AWS:   ${{ env.DOLMA_TESTS_SKIP_AWS }}"
           echo "commit:     ${{ github.sha }}"
           echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
           echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
-          echo "Build whl?  ${{ steps.should-run.outputs.should_run }}"
 
   prepare-venv:
     runs-on: ubuntu-latest
@@ -160,8 +146,7 @@ jobs:
           ${{ matrix.task.run }}
 
   build-linux:
-    needs: should_run
-    if: ${{ needs.should_run.outputs.should_run }}
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') || contains(github.event.modified_files, 'pyproject.toml') || contains(github.event.modified_files, 'Cargo.toml')}}
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -196,8 +181,7 @@ jobs:
           path: dist
 
   build-windows:
-    needs: should_run
-    if: ${{ needs.should_run.outputs.should_run }}
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') || contains(github.event.modified_files, 'pyproject.toml') || contains(github.event.modified_files, 'Cargo.toml')}}
     runs-on: windows-latest
     name: "Build Windows (${{ matrix.target }})"
     strategy:
@@ -221,8 +205,7 @@ jobs:
           path: dist
 
   build-macos:
-    needs: should_run
-    if: ${{ needs.should_run.outputs.should_run }}
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') || contains(github.event.modified_files, 'pyproject.toml') || contains(github.event.modified_files, 'Cargo.toml')}}
     runs-on: macos-latest
     name: "Build macOS (${{ matrix.target }})"
     strategy:
@@ -246,8 +229,7 @@ jobs:
 
   sdist:
     runs-on: ubuntu-latest
-    needs: should_run
-    if: ${{ needs.should_run.outputs.should_run }}
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') || contains(github.event.modified_files, 'pyproject.toml') || contains(github.event.modified_files, 'Cargo.toml')}}
     steps:
       - uses: actions/checkout@v3
       - name: Build sdist
