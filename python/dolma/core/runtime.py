@@ -197,7 +197,8 @@ def _write_sample_to_streams(
 
         # if not set; it will potentially not write to the output stream
         # in case a tagger emits no spans
-        attributes_by_stream[tagger_output.path] = {}
+        if tagger_output.path not in attributes_by_stream:
+            attributes_by_stream[tagger_output.path] = {}
 
         for tagger_key, tagger_value in tagger_data.items():
             tagger_key = f"{tagger_output.exp}__{tagger_output.name}__{make_variable_name(tagger_key)}"
