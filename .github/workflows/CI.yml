@@ -39,7 +39,7 @@ jobs:
           echo "commit:     ${{ github.sha }}"
           echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
           echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
-          echo "modified files: ${{ github.event | toJSON }}"
+          echo "modified files: ${{ toJSON(github.event) }}"
 
   prepare-venv:
     runs-on: ubuntu-latest
