@@ -41,7 +41,7 @@ jobs:
           echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
 
   new_version:
-    name: Determine if version of Dolma has changed
+    name: "New Version"
     runs-on: ubuntu-latest
     outputs:
       should_run: ${{ steps.check.outputs.should_run }}
@@ -50,7 +50,7 @@ jobs:
       uses: actions/checkout@v3
     - id: check_version
       run: |
-        has_updated=$(git diff --name-only ${{ github.event.pull_request.base.sha }} | grep -qE 'pyproject.toml|Cargo.toml')
+        has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -qE 'pyproject.toml|Cargo.toml')
         if [[ -n $has_updated ]]; then
           echo "should_run=true" >> $GITHUB_ENV
         else
