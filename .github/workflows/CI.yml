@@ -57,6 +57,9 @@ jobs:
     - id: check_version
       run: |
         has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -E 'pyproject.toml|Cargo.toml')
+        is_main_or_release='${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}'
+        echo "has_updated=$has_updated"
+        echo "is_main_or_release=$is_main_or_release"
         if [[ -n $has_updated ]]; then
           echo "new_version=true" >> $GITHUB_OUTPUT
         else
