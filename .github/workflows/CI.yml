@@ -27,7 +27,7 @@ jobs:
 
   should-run:
     name: Check if workflow should run
-    uses: actions/should-build.yaml@main
+    uses: .github/workflows/actions/should-build.yaml@main
     with:
       github_ref: ${{ github.ref }}
       modified_files: ${{ github.event.modified_files }}
