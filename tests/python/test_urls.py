@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 import tempfile
 from pathlib import Path
 from unittest import TestCase
@@ -48,9 +49,11 @@ class TestUrlMatcher(TestCase):
     domains_tagger: BaseDomainTagger
 
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory(delete=False)
-        test_links = self.temp_dir.name + "/test_links.txt"
-        test_domains = self.temp_dir.name + "/test_domains.txt"
+        self.stack = ExitStack()
+        temp_dir = self.stack.enter_context(tempfile.TemporaryDirectory())
+
+        test_links = temp_dir + "/test_links.txt"
+        test_domains = temp_dir + "/test_domains.txt"
 
         with open(test_links, "w") as f:
             f.write("http://example.com/foo/bar\n")
@@ -71,7 +74,7 @@ class TestUrlMatcher(TestCase):
         self.domains_tagger = TestDomainTagger()
 
     def tearDown(self):
-        self.temp_dir.cleanup()
+        self.stack.close()
 
     def make_doc(self, url: str) -> DocumentWithMetadata:
         return DocumentWithMetadata(
