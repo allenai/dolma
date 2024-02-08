@@ -14,13 +14,15 @@ from typing import List
 import click
 import smart_open
 
+from dolma.core.runtime import EXPERIMENT_PLACEHOLDER_NAME
+
 
 @click.command()
 @click.option('--path', type=click.Path(file_okay=False, exists=True, path_type=Path), help='Path to tagger output', required=True)
 @click.option('--top-k-domains', type=int, default=50, help='Top k domains to show')
 def main(path: Path, top_k_domains: int):
     for tagger in sorted(path.iterdir()):
-        if not tagger.is_dir():
+        if not tagger.is_dir() or tagger.name == EXPERIMENT_PLACEHOLDER_NAME:
             continue
 
         total_count = 0
