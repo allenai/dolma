@@ -5,9 +5,13 @@ import smart_open
 import urllib3.util
 
 from ..core.data_types import DocResult, DocumentWithMetadata, Span
+from ..core.loggers import get_logger
+from ..core.paths import cached_path
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTaggerWithMetadata
 from ..core.url_blocker import UrlBlocker
+
+LOGGER = get_logger(__name__)
 
 
 class BaseUrlTagger(BaseTaggerWithMetadata):
@@ -18,14 +22,14 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
         self.blocklist: Set[str] = set()
 
         for blocklist_path in self.BLOCKLIST_PATHS:
-            with smart_open.open(blocklist_path) as blocklist_file:
-                for ln in blocklist_file:
-                    try:
+            with smart_open.open(cached_path(blocklist_path)) as blocklist_file:
+                try:
+                    for ln in blocklist_file:
                         for url in self.parse_line(ln):
                             self.blocklist.add(url)
-                    except ValueError as error:
-                        breakpoint()
-                        print(error)
+                except Exception as error:
+                    breakpoint()
+                    print(error)
 
         assert len(self.blocklist) > 0, f"Blocklist is empty for {self.__class__.__name__} tagger"
 
@@ -93,7 +97,7 @@ class AdbUrlTagger(BaseUrlTagger):
     def __init__(self) -> None:
         # from dolma import UrlBlocker
 
-        self.engine = UrlBlocker.from_adb_paths(*self.BLOCKLIST_PATHS)
+        self.engine = UrlBlocker.from_adb_paths(*[cached_path(p) for p in self.BLOCKLIST_PATHS])
 
     def check_url(self, url: str) -> bool:
         return self.engine.check_network_urls(url)
