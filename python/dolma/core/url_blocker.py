@@ -83,10 +83,10 @@ class UrlBlocker:
 
         if source_url is None:
             # if the source URL is not provided, we use the host from the URL
-            source_url = parsed.host
+            source_url = ""
 
         return self.engine.check_network_urls(
-            url=url,
-            source_url=source_url,
+            url=str(url),
+            source_url=str(source_url),
             request_type=request_type,
         )
