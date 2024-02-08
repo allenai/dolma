@@ -1,4 +1,5 @@
 import glob
+import pickle
 import re
 from functools import partial
 from hashlib import sha256
@@ -152,6 +153,12 @@ def delete_dir(path: str, ignore_missing: bool = False) -> bool:
         deleted = False
 
     return deleted
+
+
+def cache_location(key: Any) -> Tuple[str, bool]:
+    key_hash = sha256(pickle.dumps(key)).hexdigest()
+    path = f"{get_cache_dir()}/{key_hash}"
+    return path, exists(path)
 
 
 def partition_path(path: str) -> Tuple[str, Tuple[str, ...], Tuple[str, ...]]:
@@ -345,6 +352,10 @@ def split_glob(path: str) -> Tuple[str, str]:
 
     i = min(i for i, c in enumerate(parts) if is_glob(c))
 
+    if i == 0:
+        # no path, so it's all glob
+        return protocol, join_path("", *parts)
+
     path = join_path(protocol, *parts[:i])
     rest = join_path("", *parts[i:])
     return path, rest
@@ -404,7 +415,7 @@ def cached_path(path: str) -> str:
 
     destination = f"{get_cache_dir()}/{resource_to_filename(path)}"
     if exists(destination):
-        LOGGER.info(f"Using cached file {destination}")
+        LOGGER.info(f"Using cached file {destination} for {path}")
         return destination
 
     LOGGER.info(f"Downloading {path} to {destination}")

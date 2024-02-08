@@ -1,4 +1,5 @@
 import re
+import socket
 from typing import Generator, List, Set
 
 import smart_open
@@ -14,59 +15,133 @@ from ..core.url_blocker import UrlBlocker
 LOGGER = get_logger(__name__)
 
 
+def check_ipv6(n):
+    """
+    Check if the given string represents a valid IPv6 address.
+
+    Args:
+        n (str): The string to be checked.
+
+    Returns:
+        bool: True if the string represents a valid IPv6 address, False otherwise.
+    """
+    try:
+        socket.inet_pton(socket.AF_INET6, n)
+        return True
+    except socket.error:
+        return False
+
+
+def check_ipv4(n):
+    """
+    Check if the given string represents a valid IPv4 address.
+
+    Args:
+        n (str): The string to be checked.
+
+    Returns:
+        bool: True if the string represents a valid IPv4 address, False otherwise.
+    """
+    try:
+        socket.inet_pton(socket.AF_INET, n)
+        return True
+    except socket.error:
+        return False
+
+
+class UrlNotParsedError(ValueError):
+    ...
+
+
 class BaseUrlTagger(BaseTaggerWithMetadata):
     BLOCKLIST_PATHS: List[str]
     URL_METADATA_KEY = "url"
+    MAYBE_IP_REGEX = r"([0-9a-f\.\:]+)"
+    LOCALHOST_IP_REGEX = r"(127\.0\.0\.1|0\.0\.0\.0|::1)"
+    URL_REGEX = r"(([a-z0-9\-_]+\.?){2,}|localhost|localdomain)"
 
     def __init__(self) -> None:
         self.blocklist: Set[str] = set()
 
+        # # do some caching for the blocklist, since it otherwise it takes a long time to load
+        # blocklist_cache_loc, blocklist_cache_exists = cache_location(sorted(self.BLOCKLIST_PATHS))
+        # if blocklist_cache_exists:
+        #     with open(blocklist_cache_loc, "rb") as f:
+        #         self.blocklist = pickle.load(f)
+        #         return
+
+        # doing the loading here
         for blocklist_path in self.BLOCKLIST_PATHS:
             with smart_open.open(cached_path(blocklist_path)) as blocklist_file:
-                try:
-                    for ln in blocklist_file:
+                for i, ln in enumerate(blocklist_file):
+                    try:
                         for url in self.parse_line(ln):
                             self.blocklist.add(url)
-                except Exception as error:
-                    breakpoint()
-                    print(error)
-
+                    except UrlNotParsedError:
+                        LOGGER.warning(f"Invalid line {i} in {blocklist_path}: '{ln}'")
         assert len(self.blocklist) > 0, f"Blocklist is empty for {self.__class__.__name__} tagger"
 
+        # # cache the blocklist
+        # with open(blocklist_cache_loc, "wb") as f:
+        #     pickle.dump(self.blocklist, f)
+
     def parse_line(self, ln: str) -> Generator[str, None, None]:
-        if not (ln := ln.strip().lower()) or ln.startswith("#"):
+        if not (ln := ln.strip().lower()) or ln.startswith("#") or ln.startswith(";") or ln.startswith("!"):
             # either empty or a comment
             return
-        if expr := re.match(r"^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) (([a-z0-9-]+\.?){2,})", ln):
+        if expr := re.match(f"{self.MAYBE_IP_REGEX}\\s+{self.URL_REGEX}", ln):
             # the line contains both an IP and a URL; we yield both
-            yield expr.group(1)
-            yield expr.group(2)
-        elif expr := re.match(r"^(([a-z0-9-]+\.?){2,})", ln):
-            # the line contains only a URL; we yield it
-            yield ln
-        else:
-            raise ValueError(f"Invalid line: {ln}")
+            maybe_ipv6_or_ipv4 = expr.group(1)
+            url = expr.group(2)
 
-    def do_url_cleanup(self, url: str) -> str:
-        return url.strip().lower()
+            # further check if the IP is valid
+            if not check_ipv6(maybe_ipv6_or_ipv4) and not check_ipv4(maybe_ipv6_or_ipv4):
+                raise UrlNotParsedError(f"Invalid IP: {maybe_ipv6_or_ipv4}")
+
+            if not re.match(f"^{self.LOCALHOST_IP_REGEX}$", maybe_ipv6_or_ipv4):
+                # do not yield the IP if it a localhost
+                yield maybe_ipv6_or_ipv4
+
+            if url != "localhost" and url != "localdomain":
+                # do not yield the URL if it is a localhost
+                yield from self.do_url_cleanup(url)
+        elif expr := re.match(f"^{self.URL_REGEX}", ln):
+            # the line contains only a URL; we yield it
+            yield from self.do_url_cleanup(ln)
+        elif expr := re.match(f"\\|+{self.URL_REGEX}\\^", ln):
+            # this is in case we need to deal with data with ADP format
+            yield expr.group(1)
+        else:
+            raise UrlNotParsedError(f"Invalid line: {ln}")
+
+    def do_url_cleanup(self, url: str) -> Generator[str, None, None]:
+        """Remove query parameters and protocol from a URL."""
+        parsed = urllib3.util.parse_url(url)
+        yield f"{parsed.host}{(f':{parsed.port}') if parsed.port else ''}{parsed.path or ''}".rstrip("/").lower()
 
     def check_url(self, url: str) -> bool:
         return url in self.blocklist
 
     def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
         url = doc.metadata.get(self.URL_METADATA_KEY) or ""
-        cleaned_url = self.do_url_cleanup(url)
-        if cleaned_url and self.check_url(cleaned_url):
-            spans = [Span(start=0, end=len(doc.text), type=self.URL_METADATA_KEY, score=1.0)]
-        else:
-            spans = []
+
+        spans = []
+        for cleaned_url in self.do_url_cleanup(url):
+            if self.check_url(cleaned_url):
+                spans = [Span(start=0, end=len(doc.text), type=self.URL_METADATA_KEY, score=1.0)]
+                break
+
         return DocResult(doc=doc, spans=spans)
 
 
 class BaseDomainTagger(BaseUrlTagger):
-    def do_url_cleanup(self, url: str) -> str:
-        hostname = urllib3.util.parse_url(url).host
-        return hostname.lstrip("www.") if hostname else ""
+    def do_url_cleanup(self, url: str) -> Generator[str, None, None]:
+        for url in super().do_url_cleanup(url):
+            hostname = urllib3.util.parse_url(url).host
+            if not hostname:
+                return
+            yield hostname
+            yield f"www.{hostname}"
 
 
 @TaggerRegistry.add("domain_blocklist_utp_v1")
@@ -96,7 +171,6 @@ class DomainBlocklistPhishingTagger(BaseDomainTagger):
 class AdbUrlTagger(BaseUrlTagger):
     def __init__(self) -> None:
         # from dolma import UrlBlocker
-
         self.engine = UrlBlocker.from_adb_paths(*[cached_path(p) for p in self.BLOCKLIST_PATHS])
 
     def check_url(self, url: str) -> bool:
@@ -134,12 +208,12 @@ class BraveNSFWAdblockPlusTagger(AdbUrlTagger):
 
 
 @TaggerRegistry.add("blocklist_project_nsfw_v1")
-class BlocklistProjectNsfwTagger(BaseUrlTagger):
+class BlocklistProjectNsfwTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/porn.txt"]
 
 
 @TaggerRegistry.add("blocklist_project_social_v1")
-class BlocklistProjectSocialTagger(BaseUrlTagger):
+class BlocklistProjectSocialTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = [
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/facebook.txt",
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/fortnite.txt",
@@ -151,7 +225,7 @@ class BlocklistProjectSocialTagger(BaseUrlTagger):
 
 
 @TaggerRegistry.add("blocklist_project_crime_v1")
-class BlocklistProjectCrimeTagger(BaseUrlTagger):
+class BlocklistProjectCrimeTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = [
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/abuse.txt",
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/fraud.txt",
@@ -165,7 +239,7 @@ class BlocklistProjectCrimeTagger(BaseUrlTagger):
 
 
 @TaggerRegistry.add("blocklist_project_vice_v1")
-class BlocklistProjectViceTagger(BaseUrlTagger):
+class BlocklistProjectViceTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = [
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/crypto.txt",
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/drugs.txt",
@@ -175,11 +249,102 @@ class BlocklistProjectViceTagger(BaseUrlTagger):
 
 
 @TaggerRegistry.add("blocklist_project_ads_v1")
-class BlocklistProjectAdsTagger(BaseUrlTagger):
+class BlocklistProjectAdsTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = [
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/adobe.txt",
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/ads.txt",
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/basic.txt",
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/smart-tv.txt",
         "https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/tracking.txt",
+    ]
+
+
+@TaggerRegistry.add("blocklist_firebog_ads_v1")
+class BlocklistFirebogAdsTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/blue/hosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/AdguardDNS.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/Admiral.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/adservers.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/Easylist-2.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/hosts-2.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/hosts-3.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/hosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/serverlist.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/ads/green/simple_ad.txt",
+    ]
+
+
+@TaggerRegistry.add("blocklist_firebog_crypto_v1")
+class BlocklistFirebogCryptoTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/crypto/green/hosts_browser.txt",
+    ]
+
+
+@TaggerRegistry.add("blocklist_firebog_malicious_v1")
+class BlocklistFirebogMaliciousTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/blue/phishing-filter-hosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/blue/Prigent-Malware.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/AntiMalwareHosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/hostfile.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/hosts-2.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/hosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/latestdomains.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/main-blacklist.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/Mandiant_APT1_Report_Appendix_D.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/notrack-malware.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/phishing_army_blocklist_extended.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/Prigent-Crypto.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/RPiList-Malware.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/RPiList-Phishing.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/malicious/green/simple_malvertising.txt",
+    ]
+
+
+@TaggerRegistry.add("blocklist_firebog_nsfw_v1")
+class BlocklistFirebogNsfwTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/nsfw/blue/pi_blocklist_porn_top1m.list.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/nsfw/blue/Prigent-Adult.txt",
+    ]
+
+
+@TaggerRegistry.add("blocklist_firebog_social_v1")
+class BlocklistFirebogSocialTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/social/blue/facebook.txt",
+    ]
+
+
+@TaggerRegistry.add("blocklist_firebog_suspicious_v1")
+class BlocklistFirebogSuspiciousTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/blue/hosts-2.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/blue/hosts-3.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/blue/hosts-4.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/blue/hosts-file.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/blue/neohostsbasic.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/blue/SNAFU.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/blue/spammers.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/green/hosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/green/KADhosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/suspicious/green/w3kbl.txt",
+    ]
+
+
+@TaggerRegistry.add("blocklist_firebog_trackers_v1")
+class BlocklistFirebogTrackersTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/blue/ads-and-tracking-extended.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/blue/AmazonFireTV.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/blue/android-tracking.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/blue/notrack-blocklist.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/blue/SmartTV.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/green/Easyprivacy.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/green/firstparty-trackers-hosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/green/hosts.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/green/Prigent-Ads.txt",
+        "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/green/spy.txt",
     ]

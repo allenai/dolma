@@ -363,6 +363,17 @@ def profiler(
         ps.print_stats(lines)
 
 
+@contextmanager
+def delete_placeholder_attributes(tagger_destinations: List[str]) -> Generator[None, None, None]:
+    try:
+        yield
+    finally:
+        for path in tagger_destinations:
+            # remove any placeholder directories after computation is done
+            if any(part == EXPERIMENT_PLACEHOLDER_NAME for part in split_path(path)[1]):
+                delete_dir(path, ignore_missing=True)
+
+
 def create_and_run_tagger(
     documents: List[str],
     taggers: List[str],
@@ -463,6 +474,8 @@ def create_and_run_tagger(
                     profiler(output=profile_output, sort_key=profile_sort_key, lines=profile_lines)
                 )
 
+            stack.enter_context(delete_placeholder_attributes(tagger_destinations=destination))
+
             tagger_processor(
                 experiment_name=experiment,
                 taggers_names=taggers,
@@ -470,8 +483,3 @@ def create_and_run_tagger(
                 skip_on_failure=skip_on_failure,
                 steps=profile_steps,
             )
-
-        for path in destination:
-            # remove any placeholder directories after computation is done
-            if path.endswith(EXPERIMENT_PLACEHOLDER_NAME):
-                delete_dir(path, ignore_missing=True)
