@@ -6,6 +6,7 @@ Email:  lucas@allenai.org
 '''
 
 from collections import Counter
+import os
 import urllib3.util
 import json
 from pathlib import Path
@@ -26,11 +27,11 @@ def main(path: Path, top_k_domains: int):
         tagger_attributes: List[dict] = []
 
         # walk the tagger directory
-        for dirpath, _, filenames in tagger.walk():
+        for dirpath, _, filenames in os.walk(tagger):
             for filename in filenames:
                 if not filename.endswith('.gz'):
                     continue
-                with smart_open.open(dirpath / filename, 'rt') as f:
+                with smart_open.open(Path(dirpath) / filename, 'rt') as f:
                     for ln in f:
                         total_count += 1
                         if '"attributes":{}' in ln:
