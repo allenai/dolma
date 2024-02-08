@@ -50,7 +50,7 @@ def check_ipv4(n):
 
 
 class UrlNotParsedError(ValueError):
-    ...
+    pass
 
 
 class BaseUrlTagger(BaseTaggerWithMetadata):
@@ -63,13 +63,6 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
     def __init__(self) -> None:
         self.blocklist: Set[str] = set()
 
-        # # do some caching for the blocklist, since it otherwise it takes a long time to load
-        # blocklist_cache_loc, blocklist_cache_exists = cache_location(sorted(self.BLOCKLIST_PATHS))
-        # if blocklist_cache_exists:
-        #     with open(blocklist_cache_loc, "rb") as f:
-        #         self.blocklist = pickle.load(f)
-        #         return
-
         # doing the loading here
         for blocklist_path in self.BLOCKLIST_PATHS:
             with smart_open.open(cached_path(blocklist_path)) as blocklist_file:
@@ -78,12 +71,10 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
                         for url in self.parse_line(ln):
                             self.blocklist.add(url)
                     except UrlNotParsedError:
-                        LOGGER.warning(f"Invalid line {i} in {blocklist_path}: '{ln}'")
-        assert len(self.blocklist) > 0, f"Blocklist is empty for {self.__class__.__name__} tagger"
+                        message = f"Invalid line {i} in {blocklist_path}: '{ln}'"
+                        LOGGER.info(message)
 
-        # # cache the blocklist
-        # with open(blocklist_cache_loc, "wb") as f:
-        #     pickle.dump(self.blocklist, f)
+        assert len(self.blocklist) > 0, f"Blocklist is empty for {self.__class__.__name__} tagger"
 
     def parse_line(self, ln: str) -> Generator[str, None, None]:
         if not (ln := ln.strip().lower()) or ln.startswith("#") or ln.startswith(";") or ln.startswith("!"):

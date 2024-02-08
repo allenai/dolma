@@ -13,7 +13,16 @@ def get_logger(name: str) -> logging.Logger:
 
     if not logger.handlers:
         handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+        formatter = logging.Formatter(
+            "[%(asctime)s %(name)s %(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
+        )
+        handler.setFormatter(formatter)
         logger.addHandler(handler)
 
     return logger
+
+
+def reset_level_dolma_loggers(level: int) -> None:
+    for logger in logging.Logger.manager.loggerDict.values():
+        if logger.name.startswith("dolma"):
+            logger.setLevel(level)
