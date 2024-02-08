@@ -44,5 +44,6 @@ def reset_level(level: Union[int, str]) -> None:
             raise ValueError(f"Invalid log level: {level}")
 
     for logger in logging.Logger.manager.loggerDict.values():
-        if isinstance(logger, logging.Logger) and logger.name.startswith("dolma"):
-            logger.setLevel(level)
+        if isinstance(logger, logging.Logger):
+            if logger.name.startswith("dolma"):
+                logger.setLevel(level)
