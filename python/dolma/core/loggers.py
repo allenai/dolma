@@ -1,5 +1,8 @@
 import logging
 import multiprocessing
+from typing import Union
+
+DOLMA_PREFIX = "dolma"
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -22,7 +25,24 @@ def get_logger(name: str) -> logging.Logger:
     return logger
 
 
-def reset_level_dolma_loggers(level: int) -> None:
+def reset_level(level: Union[int, str]) -> None:
+    """
+    Reset the log level for all Dolma loggers.
+
+    Args:
+        level (Union[int, str]): The log level to set. It can be either an integer
+            representing the log level (e.g., logging.DEBUG) or a string
+            representing the log level name (e.g., 'debug').
+
+    Returns:
+        None
+    """
+    if isinstance(level, str):
+        if (level_tmp := getattr(logging, level.strip().upper(), None)) is not None:
+            level = level_tmp
+        else:
+            raise ValueError(f"Invalid log level: {level}")
+
     for logger in logging.Logger.manager.loggerDict.values():
-        if logger.name.startswith("dolma"):
+        if isinstance(logger, logging.Logger) and logger.name.startswith("dolma"):
             logger.setLevel(level)
