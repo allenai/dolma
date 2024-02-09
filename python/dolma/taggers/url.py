@@ -346,25 +346,25 @@ class BlocklistFirebogTrackersTagger(BaseDomainTagger):
 @TaggerRegistry.add("blocklist_hosts_adware_malware_v1")
 class BlocklistHostsAdwareMalwareTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = [
-        "https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/adware_malware.txt.gz"
+        "https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/adware_malware.txt"
     ]
 
 
 @TaggerRegistry.add("blocklist_hosts_fakenews_v1")
 class BlocklistHostsFakenewsTagger(BaseDomainTagger):
-    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/fakenews.txt.gz"]
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/fakenews.txt"]
 
 
 @TaggerRegistry.add("blocklist_hosts_gambling_v1")
 class BlocklistHostsGamblingTagger(BaseDomainTagger):
-    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/gambling.txt.gz"]
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/gambling.txt"]
 
 
 @TaggerRegistry.add("blocklist_hosts_porn_v1")
 class BlocklistHostsPornTagger(BaseDomainTagger):
-    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/porn.txt.gz"]
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/porn.txt"]
 
 
 @TaggerRegistry.add("blocklist_hosts_social_v1")
 class BlocklistHostsSocialTagger(BaseDomainTagger):
-    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/social.txt.gz"]
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/social.txt"]
