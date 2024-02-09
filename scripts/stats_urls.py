@@ -9,7 +9,7 @@ from collections import Counter, defaultdict
 import multiprocessing
 import os
 from tempfile import TemporaryDirectory
-from dolma.core.paths import sub_prefix
+from dolma.core.paths import exists, sub_prefix
 import urllib3.util
 import json
 from pathlib import Path
@@ -89,6 +89,11 @@ def main(path: Path, top_k_domains: int, processes: int, debug: bool, output: Un
         if not tagger.is_dir() or tagger.name == EXPERIMENT_PLACEHOLDER_NAME:
             continue
 
+        output_name = (output / f"{tagger.name}.json") if output else None
+        if output_name is not None and exists(str(output_name)):
+            print(f"Skipping {tagger.name} as it already exists")
+            continue
+
         with TemporaryDirectory() as tmpdir:
             all_sources = [
                 os.path.join(dirpath, filename)
@@ -133,10 +138,9 @@ def main(path: Path, top_k_domains: int, processes: int, debug: bool, output: Un
                 print(f"  {domain}: {count:,}")
             print('-' * 40)
 
-            if output is not None:
-                output_for_tagger = output / f"{tagger.name}.json"
-                output_for_tagger.parent.mkdir(parents=True, exist_ok=True)
-                with open(output_for_tagger, 'w') as f:
+            if output_name is not None:
+                output_name.parent.mkdir(parents=True, exist_ok=True)
+                with open(output_name, 'w') as f:
                     json.dump(
                         {
                             "tagger": tagger.name,

@@ -345,9 +345,7 @@ class BlocklistFirebogTrackersTagger(BaseDomainTagger):
 
 @TaggerRegistry.add("blocklist_hosts_adware_malware_v1")
 class BlocklistHostsAdwareMalwareTagger(BaseDomainTagger):
-    BLOCKLIST_PATHS = [
-        "https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/adware_malware.txt"
-    ]
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/adware_malware.txt"]
 
 
 @TaggerRegistry.add("blocklist_hosts_fakenews_v1")
