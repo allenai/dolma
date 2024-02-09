@@ -57,7 +57,7 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
     BLOCKLIST_PATHS: List[str]
     URL_METADATA_KEY = "url"
     MAYBE_IP_REGEX = r"([0-9a-f\.\:]+)"
-    LOCALHOST_IP_REGEX = r"(127\.0\.0\.1|0\.0\.0\.0|::1)"
+    IGNORE_IP_REGEX = r"(127\.0\.0\.1|0\.0\.0\.0|::1)"
     URL_REGEX = r"(([a-z0-9\-_]+\.?){2,}|localhost|localdomain)"
 
     def __init__(self) -> None:
@@ -89,23 +89,24 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
             if not check_ipv6(maybe_ipv6_or_ipv4) and not check_ipv4(maybe_ipv6_or_ipv4):
                 raise UrlNotParsedError(f"Invalid IP: {maybe_ipv6_or_ipv4}")
 
-            if not re.match(f"^{self.LOCALHOST_IP_REGEX}$", maybe_ipv6_or_ipv4):
+            if not re.match(f"^{self.IGNORE_IP_REGEX}$", maybe_ipv6_or_ipv4):
                 # do not yield the IP if it a localhost
                 yield maybe_ipv6_or_ipv4
 
             if url != "localhost" and url != "localdomain":
                 # do not yield the URL if it is a localhost
-                yield from self.do_url_cleanup(url)
+                yield from self.clean_url(url)
         elif expr := re.match(f"^{self.URL_REGEX}", ln):
             # the line contains only a URL; we yield it
-            yield from self.do_url_cleanup(ln)
+            yield from self.clean_url(ln)
         elif expr := re.match(f"\\|+{self.URL_REGEX}\\^", ln):
             # this is in case we need to deal with data with ADP format
             yield expr.group(1)
         else:
             raise UrlNotParsedError(f"Invalid line: {ln}")
 
-    def do_url_cleanup(self, url: str) -> Generator[str, None, None]:
+    @classmethod
+    def clean_url(cls, url: str) -> Generator[str, None, None]:
         """Remove query parameters and protocol from a URL."""
         parsed = urllib3.util.parse_url(url)
         yield f"{parsed.host}{(f':{parsed.port}') if parsed.port else ''}{parsed.path or ''}".rstrip("/").lower()
@@ -117,7 +118,7 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
         url = doc.metadata.get(self.URL_METADATA_KEY) or ""
 
         spans = []
-        for cleaned_url in self.do_url_cleanup(url):
+        for cleaned_url in self.clean_url(url):
             if self.check_url(cleaned_url):
                 spans = [Span(start=0, end=len(doc.text), type=self.URL_METADATA_KEY, score=1.0)]
                 break
@@ -126,8 +127,9 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
 
 
 class BaseDomainTagger(BaseUrlTagger):
-    def do_url_cleanup(self, url: str) -> Generator[str, None, None]:
-        for url in super().do_url_cleanup(url):
+    @classmethod
+    def clean_url(cls, url: str) -> Generator[str, None, None]:
+        for url in super().clean_url(url):
             hostname = urllib3.util.parse_url(url).host
             if not hostname:
                 return
@@ -339,3 +341,30 @@ class BlocklistFirebogTrackersTagger(BaseDomainTagger):
         "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/green/Prigent-Ads.txt",
         "https://dolma-artifacts.org/blocklist_firebog/blocklist_firebog-20240208/trackers/green/spy.txt",
     ]
+
+
+@TaggerRegistry.add("blocklist_hosts_adware_malware_v1")
+class BlocklistHostsAdwareMalwareTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/adware_malware.txt.gz"
+    ]
+
+
+@TaggerRegistry.add("blocklist_hosts_fakenews_v1")
+class BlocklistHostsFakenewsTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/fakenews.txt.gz"]
+
+
+@TaggerRegistry.add("blocklist_hosts_gambling_v1")
+class BlocklistHostsGamblingTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/gambling.txt.gz"]
+
+
+@TaggerRegistry.add("blocklist_hosts_porn_v1")
+class BlocklistHostsPornTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/porn.txt.gz"]
+
+
+@TaggerRegistry.add("blocklist_hosts_social_v1")
+class BlocklistHostsSocialTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/social.txt.gz"]

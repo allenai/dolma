@@ -1,5 +1,5 @@
-from contextlib import ExitStack
 import tempfile
+from contextlib import ExitStack
 from pathlib import Path
 from unittest import TestCase
 
