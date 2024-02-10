@@ -1,3 +1,4 @@
+import json
 import re
 import socket
 from typing import Generator, List, Set
@@ -133,7 +134,7 @@ class BaseDomainTagger(BaseUrlTagger):
             hostname = urllib3.util.parse_url(url).host
             if not hostname:
                 return
-            yield hostname
+            yield (hostname := hostname.lstrip("www."))
             yield f"www.{hostname}"
 
 
@@ -366,3 +367,114 @@ class BlocklistHostsPornTagger(BaseDomainTagger):
 @TaggerRegistry.add("blocklist_hosts_social_v1")
 class BlocklistHostsSocialTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_hosts/blocklist_hosts-20240208/social.txt"]
+
+
+@TaggerRegistry.add("allowlist_wikidata_v1")
+class AllowlistWikidataTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = [
+        "https://dolma-artifacts.org/wikidata/wikidata-20220208/periodical-Q1002697/response.json",
+        "https://dolma-artifacts.org/wikidata/wikidata-20220208/website-Q35127/response.json",
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @classmethod
+    def get_base_domain(cls, url: str) -> str:
+        if url.count(".") > 2:
+            _, *domain_components = url.rsplit(".", 2)
+            return ".".join(domain_components)
+        return url
+
+    @classmethod
+    def clean_url(cls, url: str) -> Generator[str, None, None]:
+        cleaned_urls = super().clean_url(url)
+        for cleaned_url in cleaned_urls:
+            yield cleaned_url
+            yield cls.get_base_domain(cleaned_url)
+
+    def is_valid_row(self, row: dict) -> bool:
+        return True
+
+    def parse_line(self, ln: str) -> Generator[str, None, None]:
+        data = json.loads(ln)
+        for row in data:
+            try:
+                for url in self.clean_url(row["url"]):
+                    yield from super().parse_line(url)
+            except Exception:
+                pass
+
+    def check_url(self, url: str) -> bool:
+        for cleaned_url in self.clean_url(url):
+            if cleaned_url in self.blocklist:
+                return True
+        return False
+
+
+@TaggerRegistry.add("allowlist_wikidata_cleaned_v1")
+class AllowlistWikidataCleanedTagger(AllowlistWikidataTagger):
+    NSFW_WIKI_WORDS_DESC = [
+        "sex",
+        "adult",
+        "satire",
+        "adult",
+        "gossip",
+        "tabloid",
+        "tracker",
+        "dating",
+        "image",
+        "humor",
+        "joke",
+        "comedy",
+        "porn",
+        "social media",
+        "freemium",
+        "betting",
+        "casino",
+        "gambling",
+        "celebrity",
+        "4chan",
+        "camming",
+        "escort",
+        "hentai",
+        "imageboard",
+        "image hosting",
+        "crowdfunding",
+        "nudity",
+        "comic",
+        "camming",
+        "online database",
+    ]
+    NSFW_WIKI_TLDS = [
+        ".xxx",
+        ".adult",
+        ".sex",
+        ".porn",
+        ".sexy",
+        ".dating",
+        ".cam",
+        ".tube",
+        ".chat",
+    ]
+    INCOMPLETE_WIKI_DESC = [
+        "company",
+        "website",
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.incomplete_wiki_desc = set(self.INCOMPLETE_WIKI_DESC)
+        self.nsfw_wiki_words_desc = set(self.NSFW_WIKI_WORDS_DESC)
+        self.nsfw_wiki_tlds = set(self.NSFW_WIKI_TLDS)
+
+    def is_valid_row(self, row: dict) -> bool:
+        if row["description"] is None:
+            return False
+        if any(word in row["description"].lower() for word in self.nsfw_wiki_words_desc):
+            return False
+        if any(tld in row["url"] for tld in self.nsfw_wiki_tlds):
+            return False
+        if any(word in row["description"].lower() for word in self.incomplete_wiki_desc):
+            return False
+        return True
