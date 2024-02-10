@@ -2,17 +2,8 @@ import random
 import re
 from contextlib import ExitStack
 from io import TextIOWrapper
-from typing import (
-    Callable,
-    Dict,
-    Generator,
-    List,
-    Optional,
-    Tuple,
-    TypeVar,
-    Union,
-    overload,
-)
+from itertools import chain
+from typing import Callable, Dict, Generator, List, Optional, Union
 
 import msgspec
 import smart_open
@@ -20,7 +11,7 @@ import tqdm
 
 from ..core.data_types import InputSpecWithMetadata
 from ..core.loggers import get_logger
-from ..core.paths import join_path, mkdir_p, split_path
+from ..core.paths import glob_path, join_path, mkdir_p, split_path
 
 LOGGER = get_logger(__name__)
 
@@ -80,7 +71,7 @@ def _make_fasttext_data_from_dict(
 
     for label, label_paths in paths.items():
         label_formatted = " ".join([f"__label__{lb}" for lb in label.split(",")])
-        for path in label_paths:
+        for path in chain.from_iterable(glob_path(p) for p in label_paths):
             with smart_open.open(path, "rt") as f:
                 cnt = 0
                 for line in f:
@@ -111,9 +102,8 @@ def _make_fasttext_data_from_label(
     text_fn = _make_selector(text_selector)
     label_fn = _make_selector(label_selector)
 
-    for path in paths:
+    for path in chain.from_iterable(glob_path(p) for p in paths):
         cnt = 0
-
         with smart_open.open(path, "rt") as f:
             for line in f:
                 data = decoder.decode(line)
@@ -132,8 +122,8 @@ class _PartitionedFileWriter:
 
     def __init__(self, path: str, max_size: Optional[int] = None, mode="wt", encoding="utf-8", **open_kwargs):
         self.prot, (*self.parts, fn) = split_path(path)
-        self.base_fn, _exts = fn.split(".")
-        self.ext = ".".join(_exts)
+        self.base_fn, *_exts = fn.split(".")
+        self.ext = ("." + ".".join(_exts)) if _exts else ""
         self.max_size = max_size
         self.file_ = None
         self.file_cnt = 0
@@ -144,7 +134,7 @@ class _PartitionedFileWriter:
             LOGGER.info(f"Closing file {self.file_.name}")
             self.file_.close()
 
-        new_path = join_path(self.prot, *self.parts, f"{self.base_fn}-{self.file_cnt:05d}.{self.ext}")
+        new_path = join_path(self.prot, *self.parts, f"{self.base_fn}-{self.file_cnt:05d}{self.ext}")
         self.file_ = smart_open.open(new_path, **self.open_kwargs)
         LOGGER.info(f"Created {self.file_.name}")
         self.file_cnt += 1
@@ -275,23 +265,4 @@ def make_fasttext_data(
         test_sample=test_sample,
         max_size=max_size,
         seed=seed,
-    )
-
-
-if __name__ == "__main__":
-    # d = {'a': [{'b': 1}, {'c': [2, {'d': 3}], 'e': 4}, {'f': 5}], 'g': 6}
-
-    # assert selector("$.a")(d) == d['a']
-    # assert selector("$.a[1].c")(d) == d['a'][1]['c']
-    # assert selector("$.a[1].c[1]")(d) == d['a'][1]['c'][1]
-    # assert selector("$.a[1].c[1].d")(d) == d['a'][1]['c'][1]['d']
-    # assert selector("$.a[1].e")(d) == d['a'][1]['e']
-    # assert selector("$.g")(d) == d['g']
-
-    make_fasttext_data_from_dict(
-        paths={
-            "positive": ["tests/data/multiple_files/cc_en_head-0091.jsonl.gz"],
-            "negative": ["tests/data/multiple_files/cc_en_head-0174.jsonl.gz"],
-        },
-        # destination="/tmp/fasttext.txt",
     )
