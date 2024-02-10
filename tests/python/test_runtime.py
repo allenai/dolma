@@ -269,3 +269,50 @@ class TestRuntimeUtilities(TestCase):
                 self.assertEqual(parts_with_exp[2], parts_without_exp[2])
                 self.assertEqual(parts_with_exp[0], "test")
                 self.assertEqual(parts_without_exp[0], "c4_v1")
+
+    def test_multiple_files(self):
+        documents = ["cc_en_head-0091.jsonl.gz", "cc_en_head-0174.jsonl.gz"]
+        taggers = ["char_length_v1"]
+
+        with TemporaryDirectory() as temp_dir:
+            documents_base_path = os.path.join(temp_dir, "documents")
+            shutil.copytree(f"{LOCAL_DATA}/multiple_files", documents_base_path)
+            create_and_run_tagger(
+                documents=[f"{documents_base_path}/{f}" for f in documents],
+                taggers=taggers,
+                debug=True,
+            )
+
+            # check that the attributes directory was created
+            self.assertTrue(os.path.exists(f"{temp_dir}/attributes"))
+
+            # check that no other directories beside what we need for attributes are created
+            self.assertEqual(len(os.listdir(f"{temp_dir}/attributes")), len(taggers))
+
+            for tagger in taggers:
+                # check that the tagger directory was created
+                self.assertTrue(os.path.exists(f"{temp_dir}/attributes/{tagger}"))
+                self.assertTrue(os.path.isdir(f"{temp_dir}/attributes/{tagger}"))
+
+                # check that the number of files in the tagger directory is the same as the number of documents
+                self.assertEqual(len(os.listdir(f"{temp_dir}/attributes/{tagger}")), len(documents))
+
+                for document in documents:
+                    # check that each document has a corresponding file in the tagger directory
+                    self.assertTrue(os.path.exists(f"{temp_dir}/attributes/{tagger}/{document}"))
+                    self.assertTrue(os.path.isfile(f"{temp_dir}/attributes/{tagger}/{document}"))
+
+                    # open files, check if they are valid json
+                    with smart_open.open(f"{temp_dir}/attributes/{tagger}/{document}", "rt") as f:
+                        attributes = [json.loads(ln) for ln in f]
+
+                    # open corresponding documents
+                    with smart_open.open(f"{documents_base_path}/{document}", "rt") as f:
+                        documents = [json.loads(ln) for ln in f]
+
+                    # check if the number of documents and attributes is the same
+                    self.assertEqual(len(documents), len(attributes))
+
+                    for attr, doc in zip(attributes, documents):
+                        # check if the id of the document and the attribute is the same
+                        self.assertEqual(attr["id"], doc["id"])

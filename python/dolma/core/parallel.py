@@ -2,7 +2,6 @@ import inspect
 import itertools
 import logging
 import multiprocessing
-import os
 import pickle
 import random
 import re
@@ -26,6 +25,7 @@ from .paths import (
     join_path,
     make_relative,
     mkdir_p,
+    parent,
     split_path,
     sub_prefix,
 )
@@ -175,6 +175,10 @@ class BaseParallelProcessor:
     ):
         """A wrapper around process single that saves a metadata file if processing is successful."""
 
+        # make destination directory if it doesn't exist for the destination and metadata paths
+        mkdir_p(parent(destination_path))
+        mkdir_p(parent(metadata_path))
+
         kwargs = pickle.loads(serialized_kwargs)
         retries_on_error = kwargs.get("retries_on_error", 0) + 1
         while True:
@@ -188,6 +192,7 @@ class BaseParallelProcessor:
                 if retries_on_error == 0:
                     raise DolmaError from exception
 
+        # write the metadata file
         with smart_open.open(metadata_path, "wt") as f:
             f.write(datetime.now().isoformat())
 
@@ -367,13 +372,6 @@ class BaseParallelProcessor:
 
                 if not self._valid_path(path):
                     continue
-
-                # get relative path from source prefix
-                rel_dir, _ = os.path.split(path)
-
-                # make sure destination/metadata directories exists
-                mkdir_p(os.path.join(dst_prefix, rel_dir))
-                mkdir_p(os.path.join(meta_prefix, rel_dir))
 
                 # create new paths to pass to taggers
                 all_source_paths.append(add_suffix(prefix, path))

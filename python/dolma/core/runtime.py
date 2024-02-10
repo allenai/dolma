@@ -49,8 +49,13 @@ def _make_paths_from_substitution(paths: List[str], find: str, replace: str) -> 
     """
     new_paths: List[str] = []
     for curr in paths:
-        curr_pre_glob, _ = split_glob(curr)
+        curr_pre_glob, post_glob = split_glob(curr)
         curr_prot, curr_parts = split_path(curr_pre_glob)
+
+        if not post_glob.strip():
+            # nothing past the glob pattern: then we wanna go back up one level in the directory structure
+            curr_parts = curr_parts[:-1]
+
         find_dir_index = curr_parts.index(find)
 
         if not curr_pre_glob.strip():
@@ -97,8 +102,14 @@ def _make_paths_from_prefix(paths: List[str], prefix: str) -> List[str]:
     _, relative_paths = make_relative(paths)
 
     for curr_path in relative_paths:
-        base_curr_path, _ = split_glob(curr_path)
-        new_paths.append(join_path(prefix_prot, prefix_path, base_curr_path))
+        curr_pre_glob, post_glob = split_glob(curr_path)
+        _, curr_parts = split_path(curr_pre_glob)
+
+        if not post_glob.strip():
+            # nothing past the glob pattern: then we wanna go back up one level in the directory structure
+            curr_parts = curr_parts[:-1]
+
+        new_paths.append(join_path(prefix_prot, prefix_path, *curr_parts))
 
     return new_paths
 
@@ -352,6 +363,17 @@ def profiler(
         ps.print_stats(lines)
 
 
+@contextmanager
+def delete_placeholder_attributes(tagger_destinations: List[str]) -> Generator[None, None, None]:
+    try:
+        yield
+    finally:
+        for path in tagger_destinations:
+            # remove any placeholder directories after computation is done
+            if any(part == EXPERIMENT_PLACEHOLDER_NAME for part in split_path(path)[1]):
+                delete_dir(path, ignore_missing=True)
+
+
 def create_and_run_tagger(
     documents: List[str],
     taggers: List[str],
@@ -403,6 +425,13 @@ def create_and_run_tagger(
         profile_sort_key (str, optional): Sort key for the profiling output. Defaults to 'tottime'.
     """
 
+    for tagger_name in taggers:
+        # instantiate the taggers here to make sure they are all valid + download any necessary resources
+        tagger = TaggerRegistry.get(tagger_name)
+
+        # delete the tagger after we are done with it so that we don't keep it in memory
+        del tagger
+
     # use placeholder experiment name if none is provided; raise an error if the placeholder name is used
     if experiment == EXPERIMENT_PLACEHOLDER_NAME:
         raise RuntimeError(f"Experiment name cannot be {EXPERIMENT_PLACEHOLDER_NAME}; reserved for internal use.")
@@ -427,7 +456,7 @@ def create_and_run_tagger(
         except Exception as exp:
             raise RuntimeError(f"Could not make metadata paths from prefix {metadata}") from exp
 
-        tagger = TaggerProcessor(
+        tagger_processor = TaggerProcessor(
             source_prefix=documents,
             destination_prefix=destination,
             metadata_prefix=metadata,
@@ -445,15 +474,12 @@ def create_and_run_tagger(
                     profiler(output=profile_output, sort_key=profile_sort_key, lines=profile_lines)
                 )
 
-            tagger(
+            stack.enter_context(delete_placeholder_attributes(tagger_destinations=destination))
+
+            tagger_processor(
                 experiment_name=experiment,
                 taggers_names=taggers,
                 taggers_modules=taggers_modules,
                 skip_on_failure=skip_on_failure,
                 steps=profile_steps,
             )
-
-        for path in destination:
-            # remove any placeholder directories after computation is done
-            if path.endswith(EXPERIMENT_PLACEHOLDER_NAME):
-                delete_dir(path, ignore_missing=True)

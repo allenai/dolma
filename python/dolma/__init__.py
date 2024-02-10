@@ -24,6 +24,16 @@ add_tagger = TaggerRegistry.add
 
 
 def deduper(config: dict):
+    """
+    Run the deduper with the given configuration.
+
+    Args:
+        config (dict): The configuration for the deduper.
+
+    Raises:
+        DolmaRustPipelineError: If there is an error running the deduper.
+
+    """
     try:
         _dolma.deduper_entrypoint(json.dumps(config))
     except RuntimeError as e:
@@ -31,6 +41,15 @@ def deduper(config: dict):
 
 
 def mixer(config: dict):
+    """
+    Run the mixer with the given configuration.
+
+    Args:
+        config (dict): A dictionary containing the configuration parameters for the mixer.
+
+    Raises:
+        DolmaRustPipelineError: If an error occurs while running the mixer.
+    """
     try:
         _dolma.mixer_entrypoint(json.dumps(config))
     except RuntimeError as e:

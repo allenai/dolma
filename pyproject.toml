@@ -19,6 +19,7 @@ dependencies = [
     "LTpycld2==0.42",     # fork of pycld2 that works on Apple Silicon
     # "pycld2==0.41",
     # "pycld3==0.22",       # does not install correctly
+    "platformdirs>=4.2.0",
     "pyyaml",
     "requests",
     "rich",
