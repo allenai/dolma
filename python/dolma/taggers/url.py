@@ -109,6 +109,9 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
     @classmethod
     def clean_url(cls, url: str) -> Generator[str, None, None]:
         """Remove query parameters and protocol from a URL."""
+        if url is None or not url.strip():
+            return
+
         parsed = urllib3.util.parse_url(url)
         yield f"{parsed.host}{(f':{parsed.port}') if parsed.port else ''}{parsed.path or ''}".rstrip("/").lower()
 
@@ -117,7 +120,6 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
 
     def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
         url = doc.metadata.get(self.URL_METADATA_KEY) or ""
-
         spans = []
         for cleaned_url in self.clean_url(url):
             if self.check_url(cleaned_url):
@@ -130,6 +132,9 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
 class BaseDomainTagger(BaseUrlTagger):
     @classmethod
     def clean_url(cls, url: str) -> Generator[str, None, None]:
+        if url is None or not url.strip():
+            return
+
         for url in super().clean_url(url):
             hostname = urllib3.util.parse_url(url).host
             if not hostname:
