@@ -14,7 +14,7 @@ from dolma.core.data_types import InputSpecWithMetadata
 from dolma.models.data import (
     FastTextDataFromDict,
     FastTextDataWithSelector,
-    _make_selector,
+    make_selector,
 )
 
 DATA_DIR = Path(__file__).parent.parent / "data"
@@ -23,24 +23,24 @@ DATA_DIR = Path(__file__).parent.parent / "data"
 class TestSelector(TestCase):
     def test_selector(self):
         d = {"a": [{"b": 1}, {"c": [2, {"d": 3}], "e": 4}, {"f": 5}], "g": 6}
-        self.assertEqual(_make_selector("$.a")(d), d["a"])
-        self.assertEqual(_make_selector("$.a[1].c")(d), d["a"][1]["c"])
-        self.assertEqual(_make_selector("$.a[1].c[1]")(d), d["a"][1]["c"][1])
-        self.assertEqual(_make_selector("$.a[1].c[1].d")(d), d["a"][1]["c"][1]["d"])
-        self.assertEqual(_make_selector("$.a[1].e")(d), d["a"][1]["e"])
-        self.assertEqual(_make_selector("$.g")(d), d["g"])
+        self.assertEqual(make_selector("$.a")(d), d["a"])
+        self.assertEqual(make_selector("$.a[1].c")(d), d["a"][1]["c"])
+        self.assertEqual(make_selector("$.a[1].c[1]")(d), d["a"][1]["c"][1])
+        self.assertEqual(make_selector("$.a[1].c[1].d")(d), d["a"][1]["c"][1]["d"])
+        self.assertEqual(make_selector("$.a[1].e")(d), d["a"][1]["e"])
+        self.assertEqual(make_selector("$.g")(d), d["g"])
 
         with self.assertRaises(TypeError):
-            _make_selector("$.a[1].c[1].d[0]")(d)
+            make_selector("$.a[1].c[1].d[0]")(d)
 
         with self.assertRaises(KeyError):
-            _make_selector("$.z")(d)
+            make_selector("$.z")(d)
 
 
 class TestFasttextData(TestCase):
     def test_label_formatting(self):
         d = InputSpecWithMetadata(source="", text="", id="")  # noqa: E731
-        fn = lambda x: FastTextDataFromDict._make_label_fn({"label_selector": x})  # noqa: E731
+        fn = lambda x: FastTextDataFromDict._make_label_fn(label_selector=x)  # noqa: E731
         self.assertEqual(fn("pos")(d), "__label__pos ")
         self.assertEqual(fn("pos,neg")(d), "__label__pos __label__neg ")
         self.assertEqual(fn("pos, neg")(d), "__label__pos __label__neg ")
@@ -48,7 +48,7 @@ class TestFasttextData(TestCase):
 
     def test_label_formatting_with_selector(self):
         d = lambda x: InputSpecWithMetadata(source=x, text="", id="")  # noqa: E731
-        fn = lambda x: FastTextDataWithSelector._make_label_fn({"label_selector": x})  # noqa: E731
+        fn = lambda x: FastTextDataWithSelector._make_label_fn(label_selector=x)  # noqa: E731
         self.assertEqual(fn("$.source")(d("pos")), "__label__pos ")
         self.assertEqual(fn("$.source")(d("pos/neg")), "__label__pos_neg ")
         self.assertEqual(fn("$.source")(d("POS,NEG")), "__label__pos __label__neg ")
@@ -57,7 +57,7 @@ class TestFasttextData(TestCase):
     def test_text_formatting(self):
         for cls_ in (FastTextDataFromDict, FastTextDataWithSelector):
             d = lambda x: InputSpecWithMetadata(source="", text=x, id="")  # noqa: E731
-            fn = lambda x: cls_._make_text_fn({"lowercase": x})  # noqa: E731
+            fn = lambda x: cls_._make_text_fn(lowercase=x)  # noqa: E731
             self.assertEqual(fn(False)(d("hello world")), "hello world")
             self.assertEqual(fn(False)(d("Hello, World")), "Hello, World")
             self.assertEqual(fn(True)(d("Hello, World")), "hello, world")
