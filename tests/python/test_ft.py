@@ -1,11 +1,21 @@
+import glob
+import json
 import os
+import re
+from itertools import chain
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import List, Optional, Tuple
 from unittest import TestCase
 
 import smart_open
 
-from dolma.models.data import _make_selector, _PartitionedFileWriter, make_fasttext_data
+from dolma.core.data_types import InputSpecWithMetadata
+from dolma.models.data import (
+    FastTextDataFromDict,
+    FastTextDataWithSelector,
+    _make_selector,
+)
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -27,76 +37,120 @@ class TestSelector(TestCase):
             _make_selector("$.z")(d)
 
 
-class PartitionedFileWriterTest(TestCase):
-    num_rows = 100
-    max_size = 100
-
-    def test_single_file_written(self):
-        with TemporaryDirectory() as tmpdir:
-            # this will create a single file
-            with _PartitionedFileWriter(path=f"{tmpdir}/file.txt.gz") as writer:
-                for i in range(self.num_rows):
-                    writer.write(f"{i}\n")
-
-            # we check if the file name is as expected
-            self.assertEqual(os.listdir(tmpdir), ["file-00000.txt.gz"])
-
-            # we read the file and check if the content is as expected
-            with smart_open.open(f"{tmpdir}/file-00000.txt.gz", "r") as f:
-                self.assertEqual(f.read(), "".join(f"{i}\n" for i in range(self.num_rows)))
-
-    def test_multiple_file_written(self):
-        with TemporaryDirectory() as tmpdir:
-            # this will create multiple files (should be 3 files in total)
-            with _PartitionedFileWriter(path=f"{tmpdir}/file.txt.gz", max_size=self.max_size) as writer:
-                bytes_written = 0
-                for i in range(self.num_rows):
-                    s = f"{i}\n"
-                    writer.write(s)
-                    bytes_written += len(s)
-
-            # we first check if the number of files and their names are as expected
-            expected_files = [f"file-{i:05d}.txt.gz" for i, _ in enumerate(range(0, bytes_written, self.max_size))]
-            self.assertEqual(sorted(os.listdir(tmpdir)), expected_files)
-
-            # we read everything in the files and check if the content is as expected
-            all_read = ""
-            for fn in expected_files:
-                with smart_open.open(f"{tmpdir}/{fn}", "r") as f:
-                    all_read += f.read()
-            self.assertEqual(all_read, "".join(f"{i}\n" for i in range(self.num_rows)))
-
-    def test_extension_options(self):
-        with TemporaryDirectory() as tmpdir:
-            # this will create a single file with one extension part
-            with _PartitionedFileWriter(path=f"{tmpdir}/file.txt") as writer:
-                for i in range(self.num_rows):
-                    writer.write(f"{i}\n")
-
-            # we check if the file name is as expected
-            self.assertEqual(os.listdir(tmpdir), ["file-00000.txt"])
-
-        with TemporaryDirectory() as tmpdir:
-            # this will create a single file with no extension part
-            with _PartitionedFileWriter(path=f"{tmpdir}/file") as writer:
-                for i in range(self.num_rows):
-                    writer.write(f"{i}\n")
-
-            # we check if the file name is as expected
-            self.assertEqual(os.listdir(tmpdir), ["file-00000"])
-
-
 class TestFasttextData(TestCase):
-    def test_make_fasttext_data_from_dict(self):
-        paths = {"pos": [str(DATA_DIR / "mutiple_files")], "neg": [str(DATA_DIR / "provided/documents")]}
+    def test_label_formatting(self):
+        d = InputSpecWithMetadata(source="", text="", id="")  # noqa: E731
+        fn = lambda x: FastTextDataFromDict._make_label_fn({"label_selector": x})  # noqa: E731
+        self.assertEqual(fn("pos")(d), "__label__pos ")
+        self.assertEqual(fn("pos,neg")(d), "__label__pos __label__neg ")
+        self.assertEqual(fn("pos, neg")(d), "__label__pos __label__neg ")
+        self.assertEqual(fn("POS__,NEG")(d), "__label__pos __label__neg ")
+
+    def test_label_formatting_with_selector(self):
+        d = lambda x: InputSpecWithMetadata(source=x, text="", id="")  # noqa: E731
+        fn = lambda x: FastTextDataWithSelector._make_label_fn({"label_selector": x})  # noqa: E731
+        self.assertEqual(fn("$.source")(d("pos")), "__label__pos ")
+        self.assertEqual(fn("$.source")(d("pos/neg")), "__label__pos_neg ")
+        self.assertEqual(fn("$.source")(d("POS,NEG")), "__label__pos __label__neg ")
+        self.assertEqual(fn("$.source")(d("___pos___")), "__label__pos ")
+
+    def test_text_formatting(self):
+        for cls_ in (FastTextDataFromDict, FastTextDataWithSelector):
+            d = lambda x: InputSpecWithMetadata(source="", text=x, id="")  # noqa: E731
+            fn = lambda x: cls_._make_text_fn({"lowercase": x})  # noqa: E731
+            self.assertEqual(fn(False)(d("hello world")), "hello world")
+            self.assertEqual(fn(False)(d("Hello, World")), "Hello, World")
+            self.assertEqual(fn(True)(d("Hello, World")), "hello, world")
+            self.assertEqual(fn(False)(d("hello\nworld")), "hello world")
+            self.assertEqual(fn(False)(d("hello\n\n\t world")), "hello world")
+
+    def _load_expected(self, *paths: str, lowercase: bool = False) -> Tuple[List[str], List[str]]:
+        expected_text = []
+        expected_labels = []
+        for path in paths:
+            for fn in glob.glob(f"{path}/*"):
+                with smart_open.open(fn) as f:
+                    for ln in f:
+                        data = json.loads(ln)
+                        label = "__label__" + data["source"].lower().replace("-", "_")
+                        text = re.sub(r"\s+", " ", data["text"]).strip()
+                        if lowercase:
+                            text = text.lower()
+                        expected_labels.append(label)
+                        expected_text.append(text)
+
+        return expected_text, expected_labels
+
+    def _load_output(self, dest: str, splits: Optional[Tuple[str, ...]] = None) -> Tuple[List[str], List[str]]:
+        got_text: List[str] = []
+        got_labels: List[str] = []
+        splits = splits or ("train", "dev", "test")
+        for split in splits:
+            with open(os.path.join(dest, f"{split}.txt")) as f:
+                for ln in f:
+                    label, text = ln.strip().split(" ", 1)
+                    got_text.append(text)
+                    got_labels.append(label)
+        return got_text, got_labels
+
+    def test_fasttext_data_with_selector(self):
+        # paths = {"pos": [str(DATA_DIR / "mutiple_files")], "neg": [str(DATA_DIR / "provided/documents")]}
+        source_paths = str(DATA_DIR / "multiple_files")
+        expected_text, _ = self._load_expected(source_paths, lowercase=False)
 
         with TemporaryDirectory() as tmpdir:
-            make_fasttext_data(
+            FastTextDataWithSelector.make(paths=[source_paths], dest=tmpdir, debug=True, lowercase=False)
+
+            texts, _ = self._load_output(tmpdir, splits=("train",))
+            self.assertEqual(sorted(texts), sorted(expected_text))
+
+            texts, _ = self._load_output(tmpdir, splits=("dev",))
+            self.assertEqual(len(texts), 0)
+
+            texts, _ = self._load_output(tmpdir, splits=("test",))
+            self.assertEqual(len(texts), 0)
+
+    def test_fasttext_data_with_selector_split(self):
+        source_paths = str(DATA_DIR / "multiple_files")
+        expected_text, expected_labels = self._load_expected(source_paths, lowercase=True)
+
+        with TemporaryDirectory() as tmpdir:
+            FastTextDataWithSelector.make(
+                paths=[source_paths],
+                dest=tmpdir,
+                train_sample=0.5,
+                dev_sample=0.2,
+                test_sample=0.3,
+                lowercase=True,
+                debug=True,
+            )
+            got_text, got_labels = self._load_output(tmpdir)
+
+            for i, (got, exp) in enumerate(zip(sorted(got_text), sorted(expected_text))):
+                self.assertEqual(got, exp, f"got: {got[:40]}, expected: {exp[:40]}, index: {i}")
+            for i, (got, exp) in enumerate(zip(sorted(got_labels), sorted(expected_labels))):
+                self.assertEqual(got, exp, f"got: {got}, expected: {exp}, index: {i}")
+
+    def test_fasttext_data_with_dict_split(self):
+        paths = {
+            "pos": [str(DATA_DIR / "multiple_files"), str(DATA_DIR / "provided/documents")],
+            "neg": [str(DATA_DIR / "provided/documents")],
+        }
+        expected_text, _ = self._load_expected(*chain.from_iterable(paths.values()), lowercase=True)
+
+        with TemporaryDirectory() as tmpdir:
+            FastTextDataFromDict.make(
                 paths=paths,
                 dest=tmpdir,
                 train_sample=0.5,
-                dev_sample=0.3,
-                test_sample=0.2,
+                dev_sample=0.2,
+                test_sample=0.3,
+                lowercase=True,
+                num_processes=2,
             )
-            print(tmpdir)
-            breakpoint()
+
+            got_text, got_labels = self._load_output(tmpdir)
+            for i, (got, exp) in enumerate(zip(sorted(got_text), sorted(expected_text))):
+                self.assertEqual(got, exp, f"got: {got[:40]}, expected: {exp[:40]}, index: {i}")
+
+            self.assertEqual(set(got_labels), {"__label__pos", "__label__neg"})

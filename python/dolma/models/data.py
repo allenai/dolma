@@ -1,17 +1,25 @@
+import multiprocessing
 import random
 import re
 from contextlib import ExitStack
-from io import TextIOWrapper
 from itertools import chain
-from typing import Callable, Dict, Generator, List, Optional, Union
+from tempfile import TemporaryDirectory
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import msgspec
 import smart_open
-import tqdm
 
 from ..core.data_types import InputSpecWithMetadata
 from ..core.loggers import get_logger
-from ..core.paths import glob_path, join_path, mkdir_p, split_path
+from ..core.parallel import BaseParallelProcessor, QueueType
+from ..core.paths import (
+    glob_path,
+    join_path,
+    make_relative,
+    mkdir_p,
+    parent,
+    split_path,
+)
 
 LOGGER = get_logger(__name__)
 
@@ -51,218 +59,192 @@ def _make_selector(jsonpath: str) -> Callable:
     raise ValueError(f"Invalid JSONPath: {jsonpath}")
 
 
-def _make_fasttext_data_from_dict(
-    paths: Dict[str, List[str]],
-    text_selector: str,
-) -> Generator[str, None, None]:
-    """
-    Generate fastText data from a dictionary of paths.
-
-    Args:
-        paths (Dict[str, List[str]]): A dictionary mapping labels to lists of file paths.
-        text_selector (str, optional): JSONPath expression to select the text from the data. Defaults to "$.text".
-
-    Yields:
-        str: A string representing a single data instance in fastText format.
-
-    """
-    decoder = msgspec.json.Decoder(InputSpecWithMetadata)
-    fn = _make_selector(text_selector)
-
-    for label, label_paths in paths.items():
-        label_formatted = " ".join([f"__label__{lb}" for lb in label.split(",")])
-        for path in chain.from_iterable(glob_path(p) for p in label_paths):
-            with smart_open.open(path, "rt") as f:
-                cnt = 0
-                for line in f:
-                    data = decoder.decode(line)
-                    text = fn(data)
-                    yield f"{label_formatted} {text}"
-                    cnt += 1
-            LOGGER.info(f"Processed {cnt} lines from {path} with label {label}")
+def _get_path_and_extension(path: str) -> Tuple[str, str]:
+    prot, (*parts, filename) = split_path(path)
+    base, *ext_parts = filename.split(".")
+    ext = ("." + ".".join(ext_parts)) if ext_parts else ""
+    return join_path(prot, *parts, base), ext
 
 
-def _make_fasttext_data_from_label(
-    paths: List[str],
-    label_selector: str,
-    text_selector: str,
-) -> Generator[str, None, None]:
-    """
-    Generate formatted data from labeled input files.
+class FastTextDataWithSelector(BaseParallelProcessor):
+    @classmethod
+    def increment_progressbar(  # type: ignore
+        cls,
+        queue: QueueType,
+        /,
+        train: int = 0,
+        dev: int = 0,
+        test: int = 0,
+    ) -> Dict[str, int]:
+        return super().increment_progressbar(queue, train=train, dev=dev, test=test)
 
-    Args:
-        paths (List[str]): List of file paths to read the labeled data from.
-        label_selector (str, optional): JSONPath expression to select the label from the data. Defaults to "$.source".
-        text_selector (str, optional): JSONPath expression to select the text from the data. Defaults to "$.text".
+    @classmethod
+    def _make_text_fn(cls, kwargs) -> Callable[[InputSpecWithMetadata], str]:
+        _text_fn = _make_selector(kwargs.get("text_selector") or "$.text")
+        _lowercase = kwargs.get("lowercase", False)
 
-    Yields:
-        str: Formatted data generated from the labeled input files.
-    """
-    decoder = msgspec.json.Decoder(InputSpecWithMetadata)
-    text_fn = _make_selector(text_selector)
-    label_fn = _make_selector(label_selector)
+        def preprocess_text(
+            doc: InputSpecWithMetadata, text_fn: Callable = _text_fn, lowercase: bool = _lowercase
+        ) -> str:
+            # fasttext expects just whitespace separated words, so we replace all
+            # non-whitespace characters with whitespace. Read more at
+            # https://github.com/facebookresearch/fastText/blob/main/python/README.md
+            # under "IMPORTANT: Preprocessing data / encoding conventions"
+            text = re.sub(r"\s+", " ", text_fn(doc)).strip()
+            if lowercase:
+                return text.lower()
+            return text
 
-    for path in chain.from_iterable(glob_path(p) for p in paths):
-        cnt = 0
-        with smart_open.open(path, "rt") as f:
-            for line in f:
+        return preprocess_text
+
+    @classmethod
+    def _make_label_fn(cls, kwargs) -> Callable[[InputSpecWithMetadata], str]:
+        label_fn = _make_selector(kwargs.get("label_selector") or "$.source")
+
+        def _preprocess_label(doc: InputSpecWithMetadata, label_fn: Callable = label_fn) -> str:
+            # we need to normalize labels to lowercase and replace non-alpha characters
+            label = label_fn(doc)
+            label = re.sub(r"[^a-z,]+", "_", label.lower())
+            return " ".join([f"__label__{lb.strip('_')}" for lb in label.split(",")]) + " "
+
+        return _preprocess_label
+
+    @classmethod
+    def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
+        train_sample = kwargs.get("train_sample", 1.0)
+        dev_sample = train_sample + kwargs.get("dev_sample", 0.0)
+        test_sample = dev_sample + kwargs.get("test_sample", 0.0)
+
+        # check if the sample sizes are valid
+        assert 0 <= train_sample <= 1, "train_sample must be between 0 and 1"
+        assert train_sample <= dev_sample <= 1, "dev_sample must be between 0 and 1"
+        assert dev_sample <= test_sample <= 1, "test_sample must be between 0 and 1"
+
+        text_fn = cls._make_text_fn(kwargs)
+        label_fn = cls._make_label_fn(kwargs)
+
+        decoder = msgspec.json.Decoder(InputSpecWithMetadata)
+        train_cnt = dev_cnt = test_cnt = 0
+        base_name, ext = _get_path_and_extension(destination_path)
+        update_interval = 1
+
+        with ExitStack() as stack:
+            readfile = stack.enter_context(smart_open.open(source_path, "rt"))
+            train_writefile = stack.enter_context(smart_open.open(f"{base_name}-train{ext}", "wt"))
+            dev_writefile = stack.enter_context(smart_open.open(f"{base_name}-dev{ext}", "wt"))
+            test_writefile = stack.enter_context(smart_open.open(f"{base_name}-test{ext}", "wt"))
+
+            for i, line in enumerate(readfile):
+                if (p := random.random()) > test_sample:
+                    continue
+
                 data = decoder.decode(line)
                 text = text_fn(data)
                 label = label_fn(data)
-                label_formatted = " ".join([f"__label__{lb}" for lb in label.split(",")])
-                yield f"{label_formatted} {text}"
-                cnt += 1
 
-        LOGGER.info(f"Processed {cnt} lines from {path} with label from {label_selector}")
+                if p <= train_sample:
+                    train_writefile.write(label + text + "\n")
+                    train_cnt += 1
+                elif p <= dev_sample:
+                    dev_writefile.write(label + text + "\n")
+                    dev_cnt += 1
+                else:
+                    test_writefile.write(label + text + "\n")
+                    test_cnt += 1
 
+                if i % update_interval == 0:
+                    # update the progress bar every 1000 documents to prevent
+                    # buffering
+                    cls.increment_progressbar(queue, train=train_cnt, dev=dev_cnt, test=test_cnt)
+                    train_cnt = dev_cnt = test_cnt = 0
 
-class _PartitionedFileWriter:
-    file_: Optional[TextIOWrapper]
-    MAX_COUNT = 100000
+                    if queue.qsize() >= multiprocessing.cpu_count():
+                        # double the update interval if the queue is full
+                        update_interval *= 2
 
-    def __init__(self, path: str, max_size: Optional[int] = None, mode="wt", encoding="utf-8", **open_kwargs):
-        self.prot, (*self.parts, fn) = split_path(path)
-        self.base_fn, *_exts = fn.split(".")
-        self.ext = ("." + ".".join(_exts)) if _exts else ""
-        self.max_size = max_size
-        self.file_ = None
-        self.file_cnt = 0
-        self.open_kwargs = {**open_kwargs, "mode": mode, "encoding": encoding}
+    @classmethod
+    def combine_splits(cls, sources: List[str], destination: str):
+        for split in ("train", "dev", "test"):
+            with smart_open.open(join_path("", destination, f"{split}.txt"), "wt") as wf:
+                for path in chain.from_iterable(glob_path(f"{d}/*{split}*") for d in set(sources)):
+                    with smart_open.open(path, "rt") as rf:
+                        wf.write(rf.read())
 
-    def _new_file(self):
-        if self.file_:
-            LOGGER.info(f"Closing file {self.file_.name}")
-            self.file_.close()
+    @classmethod
+    def make(
+        cls,
+        paths: List[str],
+        dest: str,
+        text_selector: Optional[str] = None,
+        label_selector: Optional[str] = None,
+        train_sample: float = 1.0,
+        dev_sample: float = 0.0,
+        test_sample: float = 0.0,
+        num_processes: int = 1,
+        lowercase: bool = False,
+        debug: bool = False,
+    ):
+        with TemporaryDirectory() as tmpdir:
+            all_paths = [p for p in chain.from_iterable(glob_path(p) for p in paths)]
+            _, rel_paths = make_relative(all_paths)
+            dest_paths = [parent(join_path("", tmpdir, "destination", p)) for p in rel_paths]
+            meta_paths = [parent(join_path("", tmpdir, "metadata", p)) for p in rel_paths]
+            for p in dest_paths + meta_paths:
+                mkdir_p(parent(p))
 
-        new_path = join_path(self.prot, *self.parts, f"{self.base_fn}-{self.file_cnt:05d}{self.ext}")
-        self.file_ = smart_open.open(new_path, **self.open_kwargs)
-        LOGGER.info(f"Created {self.file_.name}")
-        self.file_cnt += 1
-
-    def __enter__(self):
-        self._new_file()
-        return self
-
-    def __exit__(self, exc_type, exc_value, traceback):
-        self.file_ and self.file_.close()  # pyright: ignore
-        self.file_ = None
-
-    def write(self, line: str) -> bool:
-        if self.file_ is None:
-            raise RuntimeError("File is not open")
-
-        if self.max_size and self.file_.tell() >= self.max_size:
-            self._new_file()
-
-        self.file_.write(line)
-        return True
-
-
-def _write_data(
-    data_it: Generator[str, None, None],
-    dest: str,
-    train_sample: float = 1.0,
-    dev_sample: float = 0.0,
-    test_sample: float = 0.0,
-    max_size: Optional[int] = None,
-    seed: int = 0,
-):
-    # setup: set the seed for future random calls and create the destination directory
-    random.seed(seed)
-    mkdir_p(dest)
-
-    # Check if all sample rates are valid
-    sample_sum = 0.0
-    for sample in [train_sample, dev_sample, test_sample]:
-        if sample < 0 or sample > 1:
-            raise ValueError("Sample sizes must be between 0 and 1")
-        sample_sum += sample
-    if sample_sum == 0:
-        raise ValueError("At least one sample size must be greater than 0")
-    elif sample_sum > 1:
-        raise ValueError("The sum of sample sizes must be less than or equal to 1")
-
-    with ExitStack() as stack:
-        train_file = (
-            stack.enter_context(
-                _PartitionedFileWriter(path=f"{dest}/train.txt", max_size=max_size, mode="wt", encoding="utf-8")
+            cls(
+                source_prefix=all_paths,
+                destination_prefix=dest_paths,
+                metadata_prefix=meta_paths,
+                num_processes=min(num_processes, len(all_paths)),
+                debug=debug,
+            )(
+                text_selector=text_selector,
+                label_selector=label_selector,
+                train_sample=train_sample,
+                dev_sample=dev_sample,
+                test_sample=test_sample,
+                lowercase=lowercase,
             )
-            if train_sample > 0
-            else None
-        )
-        dev_file = (
-            stack.enter_context(
-                _PartitionedFileWriter(path=f"{dest}/dev.txt", max_size=max_size, mode="wt", encoding="utf-8")
-            )
-            if dev_sample > 0
-            else None
-        )
-        test_file = (
-            stack.enter_context(
-                _PartitionedFileWriter(path=f"{dest}/test.txt", max_size=max_size, mode="wt", encoding="utf-8")
-            )
-            if test_sample > 0
-            else None
-        )
-
-        # keep a bunch of progress bars to track the progress of the data writing
-        train_pbar = stack.enter_context(tqdm.tqdm(desc="Train data", unit=" samples", unit_scale=True))
-        dev_pbar = stack.enter_context(tqdm.tqdm(desc="Dev data", unit=" samples", unit_scale=True))
-        test_pbar = stack.enter_context(tqdm.tqdm(desc="Test data", unit=" samples", unit_scale=True))
-
-        # when writing to the files, we need to check if the writer exists before writing
-        for line in data_it:
-            if ((r := random.random()) < train_sample) and train_file and train_file.write(line):
-                train_pbar.update(1)
-            elif (r < train_sample + dev_sample) and dev_file and dev_file.write(line):
-                dev_pbar.update(1)
-            elif test_file and test_file.write(line):
-                test_pbar.update(1)
+            mkdir_p(dest)
+            cls.combine_splits(sources=dest_paths, destination=dest)
 
 
-def make_fasttext_data(
-    paths: Union[List[str], Dict[str, List[str]]],
-    dest: str,
-    text_selector: Optional[str] = None,
-    label_selector: Optional[str] = None,
-    train_sample: float = 1.0,
-    dev_sample: float = 0.0,
-    test_sample: float = 0.0,
-    max_size: Optional[int] = None,
-    seed: int = 0,
-):
-    """
-    Generate fastText data from labeled input files or a dictionary of paths.
+class FastTextDataFromDict(FastTextDataWithSelector):
+    @classmethod
+    def _make_label_fn(cls, kwargs) -> Callable[[InputSpecWithMetadata], str]:
+        label = kwargs.get("label_selector")
+        assert label is not None, "label_selector must be provided"
 
-    Args:
-        paths (Union[List[str], Dict[str, List[str]]]): Either a list of file paths to read the labeled data from, or a dictionary mapping labels to lists of file paths.
-        dest (str): The destination directory to write the generated data to.
-        text_selector (str, optional): JSONPath expression to select the text from the data. Defaults to "$.text".
-        label_selector (str, optional): JSONPath expression to select the label from the data. Defaults to "$.source".
-        train_sample (float, optional): The proportion of the data to use for training. Defaults to 1.0.
-        dev_sample (float, optional): The proportion of the data to use for development. Defaults to 0.0.
-        test_sample (float, optional): The proportion of the data to use for testing. Defaults to 0.0.
-        max_size (int, optional): The maximum size of each partitioned file. Defaults to None.
-        seed (int, optional): The seed for the random number generator. Defaults to 0.
+        label = re.sub(r"[^a-z,]+", "_", label.lower())
+        label = " ".join([f"__label__{lb.strip('_')}" for lb in label.split(",")]) + " "
+        return lambda _: label  # type: ignore  # noqa: E731
 
-    """
-    # Create the data iterator; depending on the type of `paths`, this will be a different function
-    if isinstance(paths, dict):
-        text_selector = text_selector or "$.text"
-        data_it = _make_fasttext_data_from_dict(paths=paths, text_selector=text_selector)
-    elif isinstance(paths, list):
-        label_selector = label_selector or "$.source"
-        text_selector = text_selector or "$.text"
-        data_it = _make_fasttext_data_from_label(paths, label_selector=label_selector, text_selector=text_selector)
-    else:
-        raise TypeError("`paths` must be a List[str] or a Dict[str, List[str]]")
-
-    _write_data(
-        data_it,
-        dest,
-        train_sample=train_sample,
-        dev_sample=dev_sample,
-        test_sample=test_sample,
-        max_size=max_size,
-        seed=seed,
-    )
+    @classmethod
+    def make(  # type: ignore
+        cls,
+        paths: Dict[str, List[str]],
+        dest: str,
+        train_sample: float = 1.0,
+        dev_sample: float = 0.0,
+        test_sample: float = 0.0,
+        text_selector: Optional[str] = None,
+        lowercase: bool = False,
+        num_processes: int = 1,
+        debug: bool = False,
+    ):
+        with TemporaryDirectory() as tmpdir:
+            for label, source_paths in paths.items():
+                super().make(
+                    paths=source_paths,
+                    dest=f"{tmpdir}/{label}",
+                    train_sample=train_sample,
+                    dev_sample=dev_sample,
+                    test_sample=test_sample,
+                    text_selector=text_selector,
+                    label_selector=label,
+                    lowercase=lowercase,
+                    num_processes=num_processes,
+                    debug=debug,
+                )
+            cls.combine_splits(sources=[f"{tmpdir}/{label}" for label in paths], destination=dest)
