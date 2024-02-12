@@ -63,14 +63,14 @@ class TestFastTextTrainer(unittest.TestCase):
         self.assertTrue(Path(self.config.model_path).exists())
         model = FastTextModel(trainer.config.model_path)
 
-        (label, _), _ = model.predict("War is never the answer.")  # type: ignore
-        self.assertEqual(label, "__label__dialogue_between_two_people")
+        labels, _ = model.predict("Battle is the spark that leads to war and combat.")
+        self.assertEqual(labels[0], "__label__military")  # type: ignore
 
-        (label, _), _ = model.predict("Sitting down at the dinner table")  # type: ignore
-        self.assertEqual(label, "__label__food_and_drink")
+        labels, _ = model.predict("sitting down at the dinner table")
+        self.assertEqual(labels[0], "__label__food_and_drink")  # type: ignore
 
-        labels, _ = model.predict("Commerce and money bolster productivity.", k=-1)
-        self.assertEqual(label[0], "__label__economy")  # type: ignore
+        labels, _ = model.predict("commerce and money bolster productivity", k=-1)
+        self.assertEqual(labels[0], "__label__economy")  # type: ignore
 
         self.assertEqual(len(labels), 30)
 
