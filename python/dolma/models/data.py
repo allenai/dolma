@@ -278,6 +278,21 @@ class FastTextDataConverter(BaseDataConverter):
         return _label_fn
 
 
+class FastTextUnsupervisedDataConverter(FastTextDataConverter):
+    """Converts Dolma-style JSONL files to fasttext-compatible data for unsupervised learning.
+    Ignores labels and writes only the text to a single file."""
+
+    @classmethod
+    def _make_label_fn(
+        cls, label_selector: Optional[str] = None, **kwargs
+    ) -> Callable[[InputSpecWithMetadata], str]:
+        """
+        No-op since KenLM does not require labels.
+        """
+        label_fn = lambda _: ""  # type: ignore # noqa: E731
+        return label_fn
+
+
 class KenLMDataConverter(BaseDataConverter):
     @classmethod
     def _make_text_fn(

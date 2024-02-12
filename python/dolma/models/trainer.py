@@ -88,7 +88,7 @@ class BaseTrainer(Generic[T]):
                 stream_test_data = stack.enter_context(smart_open.open(f"{tmpdir}/test.txt", "rt"))
                 current_test_data.write(stream_test_data.read())
 
-    def fit(self, data_path: str, save_path: str):
+    def fit(self, data_path: str, save_path: str, validation_path: Optional[str] = None):
         raise NotImplementedError("train method must be implemented in a subclass")
 
     def predict(self, data_path: str, load_path: str):
@@ -101,6 +101,11 @@ class BaseTrainer(Generic[T]):
         if not exists(self.config.data.train):
             raise ValueError(f"data.train {self.config.data.train} does not exist")
 
+        if self.config.data.dev is not None and not exists(self.config.data.dev):
+            validation_path = cached_path(self.config.data.dev)
+        else:
+            validation_path = None
+
         save_path = None
         try:
             if is_local(self.config.model_path):
@@ -108,7 +113,9 @@ class BaseTrainer(Generic[T]):
             else:
                 save_path = (f := NamedTemporaryFile("w", delete=False)).name
                 f.close()
-            fit = self.fit(data_path=cached_path(self.config.data.train), save_path=save_path)
+            fit = self.fit(
+                data_path=cached_path(self.config.data.train), save_path=save_path, validation_path=validation_path
+            )
         finally:
             if not is_local(self.config.model_path) and save_path and exists(save_path):
                 # remote!

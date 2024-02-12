@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING, Generator, List, Optional, Tuple
 import smart_open
 from necessary import necessary
 
-from ..data import FastTextDataConverter
+from ...core.paths import cached_path
+from ..data import FastTextDataConverter, FastTextUnsupervisedDataConverter
 from ..trainer import BaseTrainer
-from .config import FastTextTrainerConfig
+from .config import FastTextSupervisedTrainerConfig, FastTextUnsupervisedTrainerConfig
 
 with necessary(("fasttext", "0.9.2"), soft=True) as FASTTEXT_AVAILABLE:
     if TYPE_CHECKING or FASTTEXT_AVAILABLE:
@@ -20,7 +21,7 @@ with necessary("sklearn", soft=True) as SKLEARN_AVAILABLE:
 
 
 class FastTextTrainer(BaseTrainer):
-    def __init__(self, config: FastTextTrainerConfig, cache_dir: Optional[str] = None):
+    def __init__(self, config: FastTextSupervisedTrainerConfig, cache_dir: Optional[str] = None):
         if not FASTTEXT_AVAILABLE:
             raise ImportError("fasttext is not available. Install it using `pip install fasttext-wheel`")
 
@@ -33,7 +34,16 @@ class FastTextTrainer(BaseTrainer):
     def data_factory_cls(self):
         return FastTextDataConverter
 
-    def fit(self, data_path: str, save_path: str):
+    def fit(self, data_path: str, save_path: str, validation_path: Optional[str] = None):
+        pretrained_vectors = (
+            cached_path(self.config.model.pretrained_vectors)
+            if self.config.model.pretrained_vectors is not None
+            else ""
+        )
+        autotune_on_validation = (
+            validation_path if self.config.model.autotune and validation_path is not None else ""
+        )
+
         model = fasttext.train_supervised(
             input=data_path,
             lr=self.config.model.learning_rate,
@@ -53,7 +63,8 @@ class FastTextTrainer(BaseTrainer):
             t=self.config.model.sampling_threshold,
             label="__label__",
             verbose=2 if self.config.debug else 1,
-            pretrainedVectors=self.config.model.pretrained_vectors or "",
+            pretrainedVectors=pretrained_vectors,
+            autotuneValidationFile=autotune_on_validation,
         )
         model.save_model(save_path)
         return model
@@ -93,3 +104,35 @@ class FastTextTrainer(BaseTrainer):
         print(report)
 
         return y_true, y_pred
+
+
+class FastTextUnsupervisedTrainer(FastTextTrainer):
+    def __init__(self, config: FastTextUnsupervisedTrainerConfig, cache_dir: Optional[str] = None):
+        super().__init__(config=config, cache_dir=cache_dir)  # type: ignore[arg-type]
+
+    @property
+    def data_factory_cls(self):
+        return FastTextUnsupervisedDataConverter
+
+    def fit(self, data_path: str, save_path: str, validation_path: Optional[str] = None):
+        model = fasttext.train_unsupervised(
+            input=data_path,
+            model=self.config.model.algorithm,
+            lr=self.config.model.learning_rate,
+            dim=self.config.model.word_vector_size,
+            ws=self.config.model.context_window_size,
+            epoch=self.config.model.epochs,
+            minCount=self.config.model.min_word_occurrences,
+            minn=self.config.model.min_char_ngram_length,
+            maxn=self.config.model.max_char_ngram_length,
+            neg=self.config.model.negatives_samples,
+            wordNgrams=self.config.model.max_word_ngram_length,
+            loss=self.config.model.loss_function,
+            bucket=self.config.model.number_of_buckets,
+            thread=1 if self.config.debug else self.config.num_processes,
+            lrUpdateRate=self.config.model.learning_rate_update_rate,
+            t=self.config.model.sampling_threshold,
+            verbose=2 if self.config.debug else 1,
+        )
+        model.save_model(save_path)
+        return model

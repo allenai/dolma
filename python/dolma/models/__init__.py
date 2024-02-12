@@ -1,17 +1,21 @@
 from argparse import ArgumentParser, Namespace
 from dataclasses import dataclass
-from typing import Any, Optional, TypeVar
+from typing import Optional, TypeVar
 
 from ..cli import BaseCli
-from .ft import FastTextCli
+from .ft import FastTextSupervisedCli, FastTextUnsupervisedCli
 
 A = TypeVar("A", bound="ArgumentParser")
 
-MODELS = {"fasttext": FastTextCli}
+MODELS = {
+    "fasttext": FastTextSupervisedCli,
+    "ft-unsupervised": FastTextUnsupervisedCli,
+}
 
 
 @dataclass
 class ModelsConfig:
+    """This CLI has no options, the downstream CLIs will have their own options."""
     pass
 
 
@@ -28,11 +32,12 @@ class ModelsCli(BaseCli):
         subparsers.choices = MODELS.keys()  # type: ignore
         for command, cli in MODELS.items():
             cli.make_parser(subparsers.add_parser(command, help=cli.DESCRIPTION))
+
         return parser
 
     @classmethod
-    def run_from_args(cls, args: Namespace, config: Optional[dict] = None, rest: Optional[list] = None):
+    def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         # get the cli for the command and run it with the config we just loaded + the args
         command = args.__dict__.pop("model")
         cli = MODELS[command]
-        return cli.run_from_args(args=args, config=config, rest=rest)
+        return cli.run_from_args(args=args, config=config)

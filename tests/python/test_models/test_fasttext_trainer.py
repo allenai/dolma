@@ -8,7 +8,7 @@ from typing import cast
 from fasttext.FastText import _FastText as FastTextModel
 from omegaconf import OmegaConf as om
 
-from dolma.models.ft.config import FastTextTrainerConfig
+from dolma.models.ft.config import FastTextSupervisedTrainerConfig
 from dolma.models.ft.trainer import FastTextTrainer
 
 WORKDIR_PATH = Path(__file__).parent.parent.parent
@@ -35,7 +35,9 @@ CONFIG = {
 
 class TestFastTextTrainer(unittest.TestCase):
     def setUp(self) -> None:
-        self.config = cast(FastTextTrainerConfig, om.merge(om.structured(FastTextTrainerConfig), CONFIG))
+        self.config = cast(
+            FastTextSupervisedTrainerConfig, om.merge(om.structured(FastTextSupervisedTrainerConfig), CONFIG)
+        )
         self.stack = ExitStack()
         self.cache_dir = self.stack.enter_context(TemporaryDirectory())
         super().setUp()
