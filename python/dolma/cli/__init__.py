@@ -183,11 +183,19 @@ class BaseCli(Generic[D]):
         return make_parser(parser, cls.CONFIG)
 
     @classmethod
-    def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
+    def run_from_args(cls, args: Namespace, config: Optional[dict] = None, rest: Optional[list] = None) -> Any:
+        """
+        Prepare to run the CLI command from parsed arguments by creating an OmegaConf config.
+
+        Args:
+            args: The parsed argparse namespace; based on the parser returned by `make_parser`
+            config: An optional configuration dictionary to merge with the parsed args
+            rest: Optional list of additional arguments that were not parsed by the parser
+        """
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
         parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)
         try:
-            return cls.run(parsed_config)
+            return cls.run(parsed_config=parsed_config)
         except OmegaConfBaseException as ex:
             raise DolmaConfigError(
                 f"Invalid error while parsing key `{ex.full_key}` of `{ex.object_type_str}`: "
@@ -196,4 +204,10 @@ class BaseCli(Generic[D]):
 
     @classmethod
     def run(cls, parsed_config: D):
+        """
+        Run the program using the parsed configuration.
+
+        Args:
+            parsed_config (D): The parsed configuration object
+        """
         raise NotImplementedError("Abstract method; must be implemented in subclass")

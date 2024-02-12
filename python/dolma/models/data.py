@@ -105,7 +105,7 @@ class BaseDataConverter(BaseParallelProcessor):
         """Script to perform extraction on a single file"""
 
         # get the probabilities for each split
-        train_sample_rate = float(kwargs.get("train_sample_rate", 1.0))
+        train_sample_rate = float(kwargs.get("train_sample_rate", 0.0))
         dev_sample_rate = train_sample_rate + float(kwargs.get("dev_sample_rate", 0.0))
         test_sample_rate = dev_sample_rate + float(kwargs.get("test_sample_rate", 0.0))
 
@@ -167,7 +167,7 @@ class BaseDataConverter(BaseParallelProcessor):
         output: str,
         text_selector: Optional[str] = None,
         label_selector: Optional[str] = None,
-        train_sample_rate: float = 1.0,
+        train_sample_rate: float = 0.0,
         dev_sample_rate: float = 0.0,
         test_sample_rate: float = 0.0,
         num_processes: int = 1,
@@ -181,8 +181,17 @@ class BaseDataConverter(BaseParallelProcessor):
             # we make temporary directories for the destination and metadata files;
             # we will combine data from the temporary directories into the final destination
             # after processing.
-            dest_paths = [parent(join_path("", tmpdir, "destination", p)) for p in rel_paths]
-            meta_paths = [parent(join_path("", tmpdir, "metadata", p)) for p in rel_paths]
+            dest_paths = [
+                parent(join_path("", tmpdir, "destination", p))
+                if p != "."
+                else join_path("", tmpdir, "destination")
+                for p in rel_paths
+            ]
+            meta_paths = [
+                parent(join_path("", tmpdir, "metadata", p)) if p != "." else join_path("", tmpdir, "metadata")
+                for p in rel_paths
+            ]
+
             for p in dest_paths + meta_paths:
                 mkdir_p(parent(p))
 

@@ -7,6 +7,7 @@ import smart_open
 from yaml import safe_load
 
 from ..core.paths import exists
+from ..models import ModelsCli
 from .analyzer import AnalyzerCli
 from .deduper import DeduperCli
 from .mixer import MixerCli
@@ -23,6 +24,7 @@ AVAILABLE_COMMANDS = {
     "list": ListTaggerCli,
     "stat": AnalyzerCli,
     "tokens": TokenizerCli,
+    "models": ModelsCli,
     # following functionality is not yet implemented
     # "train-ft": None,
     # "train-lm": None,
@@ -73,7 +75,7 @@ def main(argv: Optional[List[str]] = None):
         cli.make_parser(subparsers.add_parser(command, help=cli.DESCRIPTION))
 
     # parse the arguments
-    args = parser.parse_args(argv)
+    args, rest = parser.parse_known_args(argv)
 
     # first, get the command and config path to run
     command = args.__dict__.pop("command")
@@ -88,4 +90,4 @@ def main(argv: Optional[List[str]] = None):
 
     # get the cli for the command and run it with the config we just loaded + the args
     cli = AVAILABLE_COMMANDS[command]
-    return cli.run_from_args(args=args, config=config)
+    return cli.run_from_args(args=args, config=config, rest=rest)

@@ -80,9 +80,6 @@ class MemMapParallelWriter(BaseParallelProcessor):
         update_interval = 1
         mm_cnt = 0
 
-        # def test(**kwargs):
-        #     breakpoint()
-
         # create the tokenizer from file if it exists, otherwise from pretrained
         if os.path.exists(tokenizer_name_or_path) and os.path.isfile(tokenizer_name_or_path):
             tokenizer = Tokenizer.from_file(tokenizer_name_or_path, **tokenizer_kwargs)

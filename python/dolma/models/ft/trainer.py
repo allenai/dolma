@@ -1,12 +1,12 @@
 import re
-from typing import TYPE_CHECKING, Generator, List, Tuple
+from typing import TYPE_CHECKING, Generator, List, Optional, Tuple
 
 import smart_open
 from necessary import necessary
 
+from ..data import FastTextDataConverter
+from ..trainer import BaseTrainer
 from .config import FastTextTrainerConfig
-from .data import FastTextDataConverter
-from .trainer import BaseTrainer
 
 with necessary(("fasttext", "0.9.2"), soft=True) as FASTTEXT_AVAILABLE:
     if TYPE_CHECKING or FASTTEXT_AVAILABLE:
@@ -20,14 +20,14 @@ with necessary("sklearn", soft=True) as SKLEARN_AVAILABLE:
 
 
 class FastTextTrainer(BaseTrainer):
-    def __init__(self, config: FastTextTrainerConfig):
+    def __init__(self, config: FastTextTrainerConfig, cache_dir: Optional[str] = None):
         if not FASTTEXT_AVAILABLE:
             raise ImportError("fasttext is not available. Install it using `pip install fasttext-wheel`")
 
         if not SKLEARN_AVAILABLE:
             raise ImportError("scikit-learn is not available. Install it using `pip install scikit-learn")
 
-        super().__init__(config)
+        super().__init__(config=config, cache_dir=cache_dir)
 
     @property
     def data_factory_cls(self):
@@ -55,7 +55,8 @@ class FastTextTrainer(BaseTrainer):
             verbose=2 if self.config.debug else 1,
             pretrainedVectors=self.config.model.pretrained_vectors or "",
         )
-        return model.save_model(save_path)
+        model.save_model(save_path)
+        return model
 
     def get_labels_and_text(self, path: str) -> Generator[Tuple[List[str], str], None, None]:
         with smart_open.open(path, "rt") as f:
@@ -90,3 +91,5 @@ class FastTextTrainer(BaseTrainer):
         # calculate metrics, and print the report
         report = classification_report(y_true=y_true, y_pred=y_pred, target_names=binarizer.classes_)
         print(report)
+
+        return y_true, y_pred
