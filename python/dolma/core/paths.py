@@ -1,16 +1,16 @@
 import glob
-import pickle
 import re
 from functools import partial
 from hashlib import sha256
 from itertools import chain
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Tuple, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 import platformdirs
 import smart_open
 from fsspec import AbstractFileSystem, get_filesystem_class
+from smart_open.compression import get_supported_extensions
 
 from .loggers import get_logger
 
@@ -153,12 +153,6 @@ def delete_dir(path: str, ignore_missing: bool = False) -> bool:
         deleted = False
 
     return deleted
-
-
-def cache_location(key: Any) -> Tuple[str, bool]:
-    key_hash = sha256(pickle.dumps(key)).hexdigest()
-    path = f"{get_cache_dir()}/{key_hash}"
-    return path, exists(path)
 
 
 def partition_path(path: str) -> Tuple[str, Tuple[str, ...], Tuple[str, ...]]:
@@ -374,23 +368,16 @@ def get_cache_dir() -> str:
     return loc
 
 
-def resource_to_filename(resource: str) -> str:
+def resource_to_filename(resource: Union[str, bytes]) -> str:
     """
-    Convert a ``resource`` into a hashed filename in a repeatable way.
-    If ``etag`` is specified, append its hash to the resources', delimited
-    by a period.
-
-    THis is essentially the inverse of :func:`filename_to_url()`.
+    Convert a ``resource`` into a hashed filename in a repeatable way. Preserves the file extensions.
     """
     _, (*_, orig_filename) = split_path(remove_params(str(resource)))
+    _, extensions = split_basename_and_extension(orig_filename)
 
     resource_bytes = str(resource).encode("utf-8")
     resource_hash = sha256(resource_bytes)
-    hash_filename = resource_hash.hexdigest()
-
-    if "." in orig_filename:
-        _, extension = orig_filename.split(".", 1)
-        hash_filename += f".{extension}"
+    hash_filename = resource_hash.hexdigest() + extensions
 
     return hash_filename
 
@@ -423,3 +410,65 @@ def cached_path(path: str) -> str:
         dest.write(src.read())
 
     return destination
+
+
+def split_basename_and_extension(path: str) -> Tuple[str, str]:
+    """
+    Get the path and extension from a given file path. If a file has multiple
+    extensions, they will be joined with a period, e.g. "foo/bar/baz.tar.gz"
+    will return ("foo/bar/baz", ".tar.gz"). If the file has no extension, the
+    second element of the tuple will be an empty string. Works with both local
+    and remote (e.g. s3://) paths.
+
+    Args:
+        path (str): The file path.
+
+    Returns:
+        Tuple[str, str]: A tuple containing the path and extension.
+    """
+    prot, (*parts, filename) = split_path(path)
+    base, *ext_parts = filename.split(".")
+    ext = ("." + ".".join(ext_parts)) if ext_parts else ""
+    return join_path(prot, *parts, base), ext
+
+
+def decompress_path(path: str, dest: Optional[str] = None) -> str:
+    """
+    Decompresses a file at the given path and returns the path to the decompressed file.
+
+    Args:
+        path (str): The path to the file to be decompressed.
+        dest (str, optional): The destination path for the decompressed file.
+            If not provided, a destination path will be computed based on the original
+            file name and the cache directory.
+
+    Returns:
+        str: The path to the decompressed file. If the file cannot be decompressed,
+            the original path will be returned.
+    """
+    for supported_ext in get_supported_extensions():
+        # not the supported extension
+        if not path.endswith(supported_ext):
+            continue
+
+        if dest is None:
+            # compute the name for the decompressed file; to do this, we first hash for
+            # resource and then remove the extension.
+            base_fn, ext = split_basename_and_extension(resource_to_filename(path))
+
+            # to get the decompressed file name, we remove the bit of the extension that
+            # indicates the compression type.
+            decompressed_fn = base_fn + ext.replace(supported_ext, "")
+
+            # finally, we get cache directory and join the decompressed file name to it
+            dest = join_path("", get_cache_dir(), decompressed_fn)
+
+        # here we do the actual decompression
+        with smart_open.open(path, "rb") as fr, smart_open.open(dest, "wb") as fw:
+            fw.write(fr.read())
+
+        # return the path to the decompressed file
+        return dest
+
+    # already decompressed or can't be decompressed
+    return path

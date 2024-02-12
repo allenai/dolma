@@ -18,7 +18,7 @@ from ..core.paths import (
     make_relative,
     mkdir_p,
     parent,
-    split_path,
+    split_basename_and_extension,
 )
 
 LOGGER = get_logger(__name__)
@@ -58,32 +58,25 @@ def make_selector(jsonpath: str) -> Callable:
     raise ValueError(f"Invalid JSONPath: {jsonpath}")
 
 
-def split_basename_and_extension(path: str) -> Tuple[str, str]:
-    """
-    Get the path and extension from a given file path. If a file has multiple
-    extensions, they will be joined with a period, e.g. "foo/bar/baz.tar.gz"
-    will return ("foo/bar/baz", ".tar.gz"). If the file has no extension, the
-    second element of the tuple will be an empty string. Works with both local
-    and remote (e.g. s3://) paths.
+def combine_splits(sources: List[str], destination: str, splits: Optional[Tuple[str, ...]] = None):
+    """Combine the splits generated for each source path into a single file for each split."""
 
-    Args:
-        path (str): The file path.
+    # if no splits are provided, we default to the standard train/dev/test splits
+    splits = splits or ("train", "dev", "test")
 
-    Returns:
-        Tuple[str, str]: A tuple containing the path and extension.
-    """
-    prot, (*parts, filename) = split_path(path)
-    base, *ext_parts = filename.split(".")
-    ext = ("." + ".".join(ext_parts)) if ext_parts else ""
-    return join_path(prot, *parts, base), ext
+    # we need to unique the sources because they are directories, not files.
+    unique_sources = set(sources)
+
+    for split in splits:
+        with smart_open.open(join_path("", destination, f"{split}.txt"), "wt") as wf:
+            # the paths are obtained by globbing the source directories for files containing the
+            # name of the split.
+            for path in chain.from_iterable(glob_path(f"{d}/*{split}*") for d in unique_sources):
+                with smart_open.open(path, "rt") as rf:
+                    wf.write(rf.read())
 
 
-class FastTextDataWithSelector(BaseParallelProcessor):
-    """Generate fasttext-compatible data from Dolma-style JSONL files. Uses functions to
-    select which fields to use as text and labels. The text and labels are then preprocessed
-    and written to separate files for training, development, and testing. The files are
-    written with format `__label__<label> <text>`."""
-
+class BaseDataConverter(BaseParallelProcessor):
     @classmethod
     def increment_progressbar(  # type: ignore
         cls,
@@ -96,73 +89,37 @@ class FastTextDataWithSelector(BaseParallelProcessor):
         return super().increment_progressbar(queue, train=train, dev=dev, test=test)
 
     @classmethod
-    def _make_text_fn(
-        cls,
-        text_selector: Optional[str] = None,
-        lowercase: Optional[bool] = None,
-    ) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_text_fn(cls, **kwargs: Any) -> Callable[[InputSpecWithMetadata], str]:
         """
-        Create a text preprocessing function based on the given parameters.
-
-        Args:
-            text_selector (Optional[str]): The selector to extract the text from the input document.
-                If not provided, the default selector is `$.text`.
-            lowercase (Optional[bool]): Whether to convert the text to lowercase. If not provided,
-                the text is not converted to lowercase.
-
-        Returns:
-            Callable[[InputSpecWithMetadata], str]: The text preprocessing function.
+        Returns a function that extracts the text from the input document and preprocesses it.
         """
-        _sel_fn = make_selector(text_selector or "$.text")
-        _lowercase = lowercase or False
-
-        # Create a text preprocessing function
-        def text_fn(doc: InputSpecWithMetadata, sel_fn: Callable = _sel_fn, lowercase: bool = _lowercase) -> str:
-            text = re.sub(r"\s+", " ", sel_fn(doc)).strip()
-            if lowercase:
-                return text.lower()
-            return text
-
-        return text_fn
+        raise NotImplementedError("This method must be implemented by a subclass.")
 
     @classmethod
-    def _make_label_fn(cls, label_selector: Optional[str] = None) -> Callable[[InputSpecWithMetadata], str]:
-        """
-        Creates a label function that extracts labels from the input document and normalizes them.
-
-        Args:
-            label_selector (Optional[str]): The JSONPath expression used to select the label from the
-                input document. If not provided, the default selector "$.source" will be used.
-
-        Returns:
-            Callable[[InputSpecWithMetadata], str]: The label function that takes an input document
-                and returns the normalized labels.
-        """
-        _sel_fn = make_selector(label_selector or "$.source")
-
-        def _label_fn(doc: InputSpecWithMetadata, sel_fn: Callable = _sel_fn) -> str:
-            # we need to normalize labels to lowercase and replace non-alpha characters
-            label = sel_fn(doc)
-            label = re.sub(r"[^a-z,]+", "_", label.lower())
-            return " ".join([f"__label__{lb.strip('_')}" for lb in label.split(",")]) + " "
-
-        return _label_fn
+    def _make_label_fn(cls, **kwargs) -> Callable[[InputSpecWithMetadata], str]:
+        """Create a function that extracts the label from the input document."""
+        raise NotImplementedError("This method must be implemented by a subclass.")
 
     @classmethod
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
         """Script to perform extraction on a single file"""
 
-        train_sample = kwargs.get("train_sample", 1.0)
-        dev_sample = train_sample + kwargs.get("dev_sample", 0.0)
-        test_sample = dev_sample + kwargs.get("test_sample", 0.0)
+        # get the probabilities for each split
+        train_sample_rate = float(kwargs.get("train_sample_rate", 1.0))
+        dev_sample_rate = train_sample_rate + float(kwargs.get("dev_sample_rate", 0.0))
+        test_sample_rate = dev_sample_rate + float(kwargs.get("test_sample_rate", 0.0))
 
         # check if the sample sizes are valid
-        assert 0 <= train_sample <= 1, "train_sample must be between 0 and 1"
-        assert train_sample <= dev_sample <= 1, "dev_sample must be between 0 and 1"
-        assert dev_sample <= test_sample <= 1, "test_sample must be between 0 and 1"
+        if not 0 <= train_sample_rate <= 1:
+            raise ValueError(f"train_sample_rate must be between 0 and 1, not {train_sample_rate}")
+        if not train_sample_rate <= dev_sample_rate <= 1:
+            raise ValueError(f"dev_sample_rate must be between 0 and 1, not {dev_sample_rate - train_sample_rate}")
+        if not dev_sample_rate <= test_sample_rate <= 1:
+            raise ValueError(f"test_sample_rate must be between 0 and 1, not {test_sample_rate - dev_sample_rate}")
 
-        text_fn = cls._make_text_fn(text_selector=kwargs.get("text_selector"), lowercase=kwargs.get("lowercase"))
-        label_fn = cls._make_label_fn(label_selector=kwargs.get("label_selector"))
+        # these two functions are used to extract the text and label from each document
+        text_fn = cls._make_text_fn(**kwargs)
+        label_fn = cls._make_label_fn(**kwargs)
 
         decoder = msgspec.json.Decoder(InputSpecWithMetadata)
         train_cnt = dev_cnt = test_cnt = 0
@@ -176,17 +133,17 @@ class FastTextDataWithSelector(BaseParallelProcessor):
             test_writefile = stack.enter_context(smart_open.open(f"{base_name}-test{ext}", "wt"))
 
             for i, line in enumerate(readfile):
-                if (p := random.random()) > test_sample:
+                if (p := random.random()) > test_sample_rate:
                     continue
 
                 data = decoder.decode(line)
                 text = text_fn(data)
                 label = label_fn(data)
 
-                if p <= train_sample:
+                if p <= train_sample_rate:
                     train_writefile.write(label + text + "\n")
                     train_cnt += 1
-                elif p <= dev_sample:
+                elif p <= dev_sample_rate:
                     dev_writefile.write(label + text + "\n")
                     dev_cnt += 1
                 else:
@@ -204,35 +161,21 @@ class FastTextDataWithSelector(BaseParallelProcessor):
                         update_interval *= 2
 
     @classmethod
-    def combine_splits(cls, sources: List[str], destination: str):
-        """Combine the splits generated for each source path into a single file for each split."""
-        # we need to unique the sources because they are directories, not files.
-        unique_sources = set(sources)
-
-        for split in ("train", "dev", "test"):
-            with smart_open.open(join_path("", destination, f"{split}.txt"), "wt") as wf:
-                # the paths are obtained by globbing the source directories for files containing the
-                # name of the split.
-                for path in chain.from_iterable(glob_path(f"{d}/*{split}*") for d in unique_sources):
-                    with smart_open.open(path, "rt") as rf:
-                        wf.write(rf.read())
-
-    @classmethod
-    def make(
+    def make_stream(
         cls,
-        paths: List[str],
-        dest: str,
+        documents: List[str],
+        output: str,
         text_selector: Optional[str] = None,
         label_selector: Optional[str] = None,
-        train_sample: float = 1.0,
-        dev_sample: float = 0.0,
-        test_sample: float = 0.0,
+        train_sample_rate: float = 1.0,
+        dev_sample_rate: float = 0.0,
+        test_sample_rate: float = 0.0,
         num_processes: int = 1,
-        lowercase: bool = False,
         debug: bool = False,
+        **kwargs: Any,
     ):
         with TemporaryDirectory() as tmpdir:
-            all_paths = [p for p in chain.from_iterable(glob_path(p) for p in paths)]
+            all_paths = [p for p in chain.from_iterable(glob_path(p) for p in documents)]
             _, rel_paths = make_relative(all_paths)
 
             # we make temporary directories for the destination and metadata files;
@@ -255,50 +198,98 @@ class FastTextDataWithSelector(BaseParallelProcessor):
             )(
                 text_selector=text_selector,
                 label_selector=label_selector,
-                train_sample=train_sample,
-                dev_sample=dev_sample,
-                test_sample=test_sample,
-                lowercase=lowercase,
+                train_sample_rate=train_sample_rate,
+                dev_sample_rate=dev_sample_rate,
+                test_sample_rate=test_sample_rate,
+                **kwargs,
             )
 
             # this is where we combine the splits into a single file for each split
-            mkdir_p(dest)
-            cls.combine_splits(sources=dest_paths, destination=dest)
+            mkdir_p(output)
+            combine_splits(sources=dest_paths, destination=output)
 
 
-class FastTextDataFromDict(FastTextDataWithSelector):
-    @classmethod
-    def _make_label_fn(cls, label_selector: Optional[str] = None) -> Callable[[InputSpecWithMetadata], str]:
-        assert label_selector is not None, "label_selector must be provided"
-        label = re.sub(r"[^a-z,]+", "_", label_selector.lower())
-        label = " ".join([f"__label__{lb.strip('_')}" for lb in label.split(",")]) + " "
-        return lambda _: label  # type: ignore  # noqa: E731
+class FastTextDataConverter(BaseDataConverter):
+    """Generate fasttext-compatible data from Dolma-style JSONL files. Uses functions to
+    select which fields to use as text and labels. The text and labels are then preprocessed
+    and written to separate files for training, development, and testing. The files are
+    written with format `__label__<label> <text>`."""
 
     @classmethod
-    def make(  # type: ignore
-        cls,
-        paths: Dict[str, List[str]],
-        dest: str,
-        train_sample: float = 1.0,
-        dev_sample: float = 0.0,
-        test_sample: float = 0.0,
-        text_selector: Optional[str] = None,
-        lowercase: bool = False,
-        num_processes: int = 1,
-        debug: bool = False,
-    ):
-        with TemporaryDirectory() as tmpdir:
-            for label, source_paths in paths.items():
-                super().make(
-                    paths=source_paths,
-                    dest=f"{tmpdir}/{label}",
-                    train_sample=train_sample,
-                    dev_sample=dev_sample,
-                    test_sample=test_sample,
-                    text_selector=text_selector,
-                    label_selector=label,
-                    lowercase=lowercase,
-                    num_processes=num_processes,
-                    debug=debug,
-                )
-            cls.combine_splits(sources=[f"{tmpdir}/{label}" for label in paths], destination=dest)
+    def _make_text_fn(
+        cls, text_selector: Optional[str] = None, lowercase: Optional[bool] = None, **kwargs
+    ) -> Callable[[InputSpecWithMetadata], str]:
+        """
+        Create a function that extracts text from the input document and preprocesses it (replace all
+        whitespace with a single space and strip leading/trailing whitespace; optionally lowercase).
+        """
+        _sel_fn = make_selector(text_selector or "$.text")
+        _lowercase = lowercase or False
+
+        # Create a text preprocessing function
+        def text_fn(doc: InputSpecWithMetadata, sel_fn: Callable = _sel_fn, lowercase: bool = _lowercase) -> str:
+            text = re.sub(r"\s+", " ", sel_fn(doc)).strip()
+            if lowercase:
+                return text.lower()
+            return text
+
+        return text_fn
+
+    @classmethod
+    def _make_label_fn(
+        cls, label_selector: Optional[str] = None, **kwargs
+    ) -> Callable[[InputSpecWithMetadata], str]:
+        """
+        Creates a label function that extracts labels from the input document and normalizes them
+        to be fasttext-compatible. The labels are then written to a file with format `__label__<label_1>
+        __label__<label_2> `.
+        """
+
+        # create a function to format the labels
+        def _format_fn(raw_label: str) -> str:
+            normalized_label = re.sub(r"[^a-z,]+", "_", raw_label.lower())
+            return " ".join([f"__label__{lb.strip('_')}" for lb in normalized_label.split(",")]) + " "
+
+        # if the label is provided directly, we just use it as-is
+        if label_selector is not None and not label_selector.startswith("$"):
+            # really just a closure to return the formatted label
+            formatted_label = _format_fn(label_selector)
+            return lambda _: formatted_label
+
+        # otherwise, we have to use a selector to extract the label from each document
+        _sel_fn = make_selector(label_selector or "$.source")
+
+        # this is the label function that will be returned by this factory to select each label
+        def _label_fn(
+            doc: InputSpecWithMetadata, sel_fn: Callable = _sel_fn, format_fn: Callable = _format_fn
+        ) -> str:
+            raw_label = sel_fn(doc)
+            return format_fn(raw_label)
+
+        return _label_fn
+
+
+class KenLMDataConverter(BaseDataConverter):
+    @classmethod
+    def _make_text_fn(
+        cls, text_selector: Optional[str] = None, **kwargs
+    ) -> Callable[[InputSpecWithMetadata], str]:
+        """
+        Create a function that extracts text from the input document;
+        KenLM does not require any preprocessing of the text.
+        """
+        _sel_fn = make_selector(text_selector or "$.text")
+
+        # Create a text preprocessing function
+        def text_fn(doc: InputSpecWithMetadata, sel_fn: Callable = _sel_fn) -> str:
+            return sel_fn(doc)
+
+        return text_fn
+
+    @classmethod
+    def _make_label_fn(cls, **kwargs) -> Callable[[InputSpecWithMetadata], str]:
+        """
+        No-op since KenLM does not require labels.
+        """
+        label_fn = lambda _: ""  # type: ignore # noqa: E731
+        return label_fn

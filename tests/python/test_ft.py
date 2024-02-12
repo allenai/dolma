@@ -2,7 +2,6 @@ import glob
 import json
 import os
 import re
-from itertools import chain
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import List, Optional, Tuple
@@ -11,11 +10,7 @@ from unittest import TestCase
 import smart_open
 
 from dolma.core.data_types import InputSpecWithMetadata
-from dolma.models.data import (
-    FastTextDataFromDict,
-    FastTextDataWithSelector,
-    make_selector,
-)
+from dolma.models.data import FastTextDataConverter, make_selector
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 
@@ -40,7 +35,7 @@ class TestSelector(TestCase):
 class TestFasttextData(TestCase):
     def test_label_formatting(self):
         d = InputSpecWithMetadata(source="", text="", id="")  # noqa: E731
-        fn = lambda x: FastTextDataFromDict._make_label_fn(label_selector=x)  # noqa: E731
+        fn = lambda x: FastTextDataConverter._make_label_fn(label_selector=x)  # noqa: E731
         self.assertEqual(fn("pos")(d), "__label__pos ")
         self.assertEqual(fn("pos,neg")(d), "__label__pos __label__neg ")
         self.assertEqual(fn("pos, neg")(d), "__label__pos __label__neg ")
@@ -48,21 +43,20 @@ class TestFasttextData(TestCase):
 
     def test_label_formatting_with_selector(self):
         d = lambda x: InputSpecWithMetadata(source=x, text="", id="")  # noqa: E731
-        fn = lambda x: FastTextDataWithSelector._make_label_fn(label_selector=x)  # noqa: E731
+        fn = lambda x: FastTextDataConverter._make_label_fn(label_selector=x)  # noqa: E731
         self.assertEqual(fn("$.source")(d("pos")), "__label__pos ")
         self.assertEqual(fn("$.source")(d("pos/neg")), "__label__pos_neg ")
         self.assertEqual(fn("$.source")(d("POS,NEG")), "__label__pos __label__neg ")
         self.assertEqual(fn("$.source")(d("___pos___")), "__label__pos ")
 
     def test_text_formatting(self):
-        for cls_ in (FastTextDataFromDict, FastTextDataWithSelector):
-            d = lambda x: InputSpecWithMetadata(source="", text=x, id="")  # noqa: E731
-            fn = lambda x: cls_._make_text_fn(lowercase=x)  # noqa: E731
-            self.assertEqual(fn(False)(d("hello world")), "hello world")
-            self.assertEqual(fn(False)(d("Hello, World")), "Hello, World")
-            self.assertEqual(fn(True)(d("Hello, World")), "hello, world")
-            self.assertEqual(fn(False)(d("hello\nworld")), "hello world")
-            self.assertEqual(fn(False)(d("hello\n\n\t world")), "hello world")
+        d = lambda x: InputSpecWithMetadata(source="", text=x, id="")  # noqa: E731
+        fn = lambda x: FastTextDataConverter._make_text_fn(lowercase=x)  # noqa: E731
+        self.assertEqual(fn(False)(d("hello world")), "hello world")
+        self.assertEqual(fn(False)(d("Hello, World")), "Hello, World")
+        self.assertEqual(fn(True)(d("Hello, World")), "hello, world")
+        self.assertEqual(fn(False)(d("hello\nworld")), "hello world")
+        self.assertEqual(fn(False)(d("hello\n\n\t world")), "hello world")
 
     def _load_expected(self, *paths: str, lowercase: bool = False) -> Tuple[List[str], List[str]]:
         expected_text = []
@@ -99,7 +93,7 @@ class TestFasttextData(TestCase):
         expected_text, _ = self._load_expected(source_paths, lowercase=False)
 
         with TemporaryDirectory() as tmpdir:
-            FastTextDataWithSelector.make(paths=[source_paths], dest=tmpdir, debug=True, lowercase=False)
+            FastTextDataConverter.make_stream(documents=[source_paths], output=tmpdir, debug=True, lowercase=False)
 
             texts, _ = self._load_output(tmpdir, splits=("train",))
             self.assertEqual(sorted(texts), sorted(expected_text))
@@ -115,9 +109,9 @@ class TestFasttextData(TestCase):
         expected_text, expected_labels = self._load_expected(source_paths, lowercase=True)
 
         with TemporaryDirectory() as tmpdir:
-            FastTextDataWithSelector.make(
-                paths=[source_paths],
-                dest=tmpdir,
+            FastTextDataConverter.make_stream(
+                documents=[source_paths],
+                output=tmpdir,
                 train_sample=0.5,
                 dev_sample=0.2,
                 test_sample=0.3,
@@ -132,16 +126,14 @@ class TestFasttextData(TestCase):
                 self.assertEqual(got, exp, f"got: {got}, expected: {exp}, index: {i}")
 
     def test_fasttext_data_with_dict_split(self):
-        paths = {
-            "pos": [str(DATA_DIR / "multiple_files"), str(DATA_DIR / "provided/documents")],
-            "neg": [str(DATA_DIR / "provided/documents")],
-        }
-        expected_text, _ = self._load_expected(*chain.from_iterable(paths.values()), lowercase=True)
+        documents = [str(DATA_DIR / "multiple_files"), str(DATA_DIR / "provided/documents")]
+        expected_text, _ = self._load_expected(*documents, lowercase=True)
 
         with TemporaryDirectory() as tmpdir:
-            FastTextDataFromDict.make(
-                paths=paths,
-                dest=tmpdir,
+            FastTextDataConverter.make_stream(
+                documents=documents,
+                output=tmpdir,
+                label_selector="pos",
                 train_sample=0.5,
                 dev_sample=0.2,
                 test_sample=0.3,
@@ -152,5 +144,4 @@ class TestFasttextData(TestCase):
             got_text, got_labels = self._load_output(tmpdir)
             for i, (got, exp) in enumerate(zip(sorted(got_text), sorted(expected_text))):
                 self.assertEqual(got, exp, f"got: {got[:40]}, expected: {exp[:40]}, index: {i}")
-
-            self.assertEqual(set(got_labels), {"__label__pos", "__label__neg"})
+            self.assertEqual(set(got_labels), {"__label__pos"})
