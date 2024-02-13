@@ -7,9 +7,14 @@
     "output": "tests/work/temp/dedupe-para/output"
   },
   "dedupe": {
-    "name": "dedupe_paragraphs",
+    "name": "dedupe_paragraph_ngrams",
     "paragraphs": {
-      "attribute_name": "bff_duplicate_paragraph_spans"
+      "attribute_name": "bff_duplicate_paragraph_spans",
+      "by_ngram": {
+        "ngram_length": 6,
+        "stride": 3,
+        "overlap_threshold": 0.5
+      }
     }
   },
   "bloom_filter": {
