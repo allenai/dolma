@@ -1,9 +1,10 @@
-from contextlib import ExitStack
 import re
-from typing import Generator, List, Tuple, Union, Dict, overload, Callable, TypeVar
-import msgspec
+from contextlib import ExitStack
+from typing import Callable, Dict, Generator, List, Tuple, TypeVar, Union, overload
 
+import msgspec
 import smart_open
+
 from ..core.data_types import InputSpecWithMetadata
 
 
@@ -28,13 +29,13 @@ def selector(jsonpath: str) -> Callable:
     if m := re.match(r"^\[([0-9]+)\]", jsonpath):
         # This is an array index
         index = int(m.group(1))
-        prev = selector(jsonpath[m.end():])
+        prev = selector(jsonpath[m.end() :])
         return lambda x: prev(x[index])
 
     elif m := re.match(r"^\.([a-zA-Z_][a-zA-Z0-9_]*)", jsonpath):
         # This is a key
         key = m.group(1)
-        prev = selector(jsonpath[m.end():])
+        prev = selector(jsonpath[m.end() :])
         return lambda x: prev(x[key] if isinstance(x, dict) else getattr(x, key))
     elif not jsonpath.strip():
         return lambda x: x
@@ -63,7 +64,6 @@ def make_ft_data_from_dict(
     for label, label_paths in paths.items():
         label_formatted = " ".join([f"__label__{lb}" for lb in label.split(",")])
         for path in label_paths:
-
             with smart_open.open(path, "rt") as f:
                 for line in f:
                     data = decoder.decode(line)
