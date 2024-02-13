@@ -1,0 +1,29 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/books/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/c4/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_head/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_middle/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_tail/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/pes2o/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/reddit/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/stack/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/wiki/*.gz
+  # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/books/*.gz
+  # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki/*.gz
+
+
+dedupe:
+  name: paloma_paragraphs
+  paragraphs:
+    attribute_name: paloma_paragraphs_bff_duplicates
+  skip_empty: true
+
+bloom_filter:
+  read_only: true
+  estimated_doc_count: 2336120
+  # size_in_bytes: 104857600  # 100 MB; smaller causes too many FPs
+  desired_false_positive_rate: 1e-15
+  # file: s3://ai2-llm/bloom-filters/perplexity-suite-v3_option2.bin
+  file: ${oc.env:HOME}/perplexity/filters/paloma_paragraphs.bin
+
+processes: 94
