@@ -65,12 +65,12 @@ class BaseTrainer(Generic[T]):
             self.data_factory_cls.make_stream(
                 output=tmpdir,
                 documents=stream_config.documents,
+                word_tokenizer=self.config.word_tokenizer,
                 text_selector=stream_config.text,
                 label_selector=stream_config.label,
                 train_sample_rate=stream_config.sample.train,
                 dev_sample_rate=stream_config.sample.dev,
                 test_sample_rate=stream_config.sample.test,
-                lowercase=stream_config.lowercase,
                 debug=self.config.debug,
                 num_processes=self.config.num_processes,
             )

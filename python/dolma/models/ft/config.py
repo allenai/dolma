@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from ...cli import field
 from ..config import BaseModelConfig, BaseTrainerConfig
+from ..word_tokenizers import TokenizerRegistry
 
 
 @dataclass
@@ -29,6 +30,9 @@ class FastTextSupervisedTrainerConfig(BaseTrainerConfig):
     model: FastTextSupervisedModelConfig = field(
         help="Model configuration", default=FastTextSupervisedModelConfig()
     )
+    word_tokenizer: str = field(
+        help=f"Tokenizer used to extract words; must be one of {TokenizerRegistry.s()}", default="punct"
+    )
 
 
 @dataclass
@@ -53,4 +57,7 @@ class FastTextUnsupervisedModelConfig(BaseModelConfig):
 class FastTextUnsupervisedTrainerConfig(BaseTrainerConfig):
     model: FastTextUnsupervisedModelConfig = field(
         help="Model configuration", default=FastTextUnsupervisedModelConfig()
+    )
+    word_tokenizer: str = field(
+        help=f"Tokenizer used to extract words; must be one of {TokenizerRegistry.s()}", default="punct"
     )

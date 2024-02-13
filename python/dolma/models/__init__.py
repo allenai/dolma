@@ -16,6 +16,7 @@ MODELS = {
 @dataclass
 class ModelsConfig:
     """This CLI has no options, the downstream CLIs will have their own options."""
+
     pass
 
 

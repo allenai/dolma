@@ -10,11 +10,12 @@ from omegaconf import OmegaConf as om
 
 from dolma.models.ft.config import FastTextSupervisedTrainerConfig
 from dolma.models.ft.trainer import FastTextTrainer
+from dolma.models.word_tokenizers import TokenizerRegistry
 
 WORKDIR_PATH = Path(__file__).parent.parent.parent
 
-CONFIG = {
-    "model_path": str(WORKDIR_PATH / "work/ft.model"),
+SUPERVISED_CONFIG = {
+    "model_path": str(WORKDIR_PATH / "work/supervised_ft.model"),
     "num_processes": 1,
     "debug": True,
     "model": {"epochs": 50, "learning_rate": 0.2},
@@ -32,11 +33,16 @@ CONFIG = {
     ],
 }
 
+UNSUPERVISED_CONFIG = (
+    {**SUPERVISED_CONFIG, "model": {"epochs": 10, "algorithm": "skipgram", "learning_rate": 0.1}},
+)
+
 
 class TestFastTextTrainer(unittest.TestCase):
     def setUp(self) -> None:
         self.config = cast(
-            FastTextSupervisedTrainerConfig, om.merge(om.structured(FastTextSupervisedTrainerConfig), CONFIG)
+            FastTextSupervisedTrainerConfig,
+            om.merge(om.structured(FastTextSupervisedTrainerConfig), SUPERVISED_CONFIG),
         )
         self.stack = ExitStack()
         self.cache_dir = self.stack.enter_context(TemporaryDirectory())
@@ -48,31 +54,33 @@ class TestFastTextTrainer(unittest.TestCase):
         self.stack.close()
 
     def test_config(self):
-        self.assertEqual(self.config.model_path, str(WORKDIR_PATH / "work/ft.model"))
+        self.assertEqual(self.config.model_path, str(WORKDIR_PATH / "work/supervised_ft.model"))
         self.assertEqual(self.config.num_processes, 1)
         self.assertTrue(self.config.debug)
-        self.assertEqual(self.config.model.learning_rate, CONFIG["model"]["learning_rate"])
-        self.assertEqual(self.config.model.epochs, CONFIG["model"]["epochs"])
+        self.assertEqual(self.config.model.learning_rate, SUPERVISED_CONFIG["model"]["learning_rate"])
+        self.assertEqual(self.config.model.epochs, SUPERVISED_CONFIG["model"]["epochs"])
         self.assertEqual(self.config.model.loss_function, "softmax")
         self.assertEqual(len(self.config.streams), 3)
         self.assertEqual(
             self.config.streams[0].documents[0], str(WORKDIR_PATH / "data/topic_classification/train.jsonl*")
         )
+        self.assertEqual(self.config.word_tokenizer, "punct")
 
     def test_train(self):
         trainer = FastTextTrainer(self.config, cache_dir=self.cache_dir)
         trainer.do_train()
         self.assertTrue(Path(self.config.model_path).exists())
         model = FastTextModel(trainer.config.model_path)
+        tokenizer = TokenizerRegistry.get(trainer.config.word_tokenizer)()
 
-        labels, _ = model.predict("Battle is the spark that leads to war and combat.")
+        labels, _ = model.predict(tokenizer("Battle is the spark that leads to war and combat."))
         self.assertEqual(labels[0], "__label__military")  # type: ignore
 
-        labels, _ = model.predict("sitting down at the dinner table")
+        labels, _ = model.predict(tokenizer("sitting down at the dinner table"))
         self.assertEqual(labels[0], "__label__food_and_drink")  # type: ignore
 
-        labels, _ = model.predict("commerce and money bolster productivity", k=-1)
-        self.assertEqual(labels[0], "__label__economy")  # type: ignore
+        labels, _ = model.predict(tokenizer("commerce and money bolster productivity"), k=-1)
+        self.assertEqual(labels[0], "__label__business")  # type: ignore
 
         self.assertEqual(len(labels), 30)
 
@@ -94,3 +102,28 @@ class TestFastTextTrainer(unittest.TestCase):
 
         trainer.do_test()
         self.assertTrue(Path(self.config.model_path).exists())
+
+
+# class TestFastTextUnsupervisedTrainer(unittest.TestCase):
+#     def setUp(self) -> None:
+#         self.config = cast(
+#             FastTextSupervisedTrainerConfig,
+#             om.merge(om.structured(FastTextSupervisedTrainerConfig), SUPERVISED_CONFIG),
+#         )
+#         self.stack = ExitStack()
+#         self.cache_dir = self.stack.enter_context(TemporaryDirectory())
+#         super().setUp()
+
+#     def tearDown(self) -> None:
+#         if os.path.exists(self.config.model_path):
+#             os.remove(self.config.model_path)
+#         self.stack.close()
+
+#     def test_train(self):
+#         trainer = FastTextTrainer(self.config, cache_dir=self.cache_dir)
+#         trainer.do_train()
+#         self.assertTrue(Path(self.config.model_path).exists())
+#         model = FastTextModel(trainer.config.model_path)
+
+#         # TODO: finish this test
+#         self.assertTrue(False)

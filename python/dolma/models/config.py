@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from ..cli import field
+from .word_tokenizers import TokenizerRegistry
 
 
 @dataclass
@@ -25,7 +26,6 @@ class StreamConfig:
         help="Text for this stream. Must, e.g. $.<value>, to derive the text from the document", default="$.text"
     )
     sample: SamplingConfig = field(help="Sampling configuration for this stream", default=SamplingConfig())
-    lowercase: bool = field(help="Lowercase the text before training the model", default=False)
 
 
 @dataclass
@@ -44,6 +44,9 @@ class BaseModelConfig:
 class BaseTrainerConfig:
     model_path: str = field(help="Path to location where to save&load the model")
     model: BaseModelConfig = field(help="Model configuration", default=BaseModelConfig())
+    word_tokenizer: str = field(
+        help=f"Tokenizer used to extract words; must be one of {TokenizerRegistry.s()}", default="noop"
+    )
     streams: List[StreamConfig] = field(help="List of stream configurations", default=[])
     data: Optional[DataConfig] = field(help="Data configuration", default=None)
     num_processes: int = field(help="Number of processes to use for training", default=1)

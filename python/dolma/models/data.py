@@ -4,7 +4,7 @@ import re
 from contextlib import ExitStack
 from itertools import chain
 from tempfile import TemporaryDirectory
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import msgspec
 import smart_open
@@ -20,6 +20,7 @@ from ..core.paths import (
     parent,
     split_basename_and_extension,
 )
+from .word_tokenizers import TokenizerRegistry
 
 LOGGER = get_logger(__name__)
 
@@ -89,14 +90,14 @@ class BaseDataConverter(BaseParallelProcessor):
         return super().increment_progressbar(queue, train=train, dev=dev, test=test)
 
     @classmethod
-    def _make_text_fn(cls, **kwargs: Any) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_text_fn(cls, text_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
         """
         Returns a function that extracts the text from the input document and preprocesses it.
         """
         raise NotImplementedError("This method must be implemented by a subclass.")
 
     @classmethod
-    def _make_label_fn(cls, **kwargs) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_label_fn(cls, label_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
         """Create a function that extracts the label from the input document."""
         raise NotImplementedError("This method must be implemented by a subclass.")
 
@@ -118,8 +119,11 @@ class BaseDataConverter(BaseParallelProcessor):
             raise ValueError(f"test_sample_rate must be between 0 and 1, not {test_sample_rate - dev_sample_rate}")
 
         # these two functions are used to extract the text and label from each document
-        text_fn = cls._make_text_fn(**kwargs)
-        label_fn = cls._make_label_fn(**kwargs)
+        text_fn = cls._make_text_fn(text_selector=kwargs.get("text_selector"))
+        label_fn = cls._make_label_fn(label_selector=kwargs.get("label_selector"))
+
+        # we create the tokenizer that is used to preprocess the text
+        word_tokenizer = TokenizerRegistry.get(kwargs.get("tokenizer_name") or "noop")()
 
         decoder = msgspec.json.Decoder(InputSpecWithMetadata)
         train_cnt = dev_cnt = test_cnt = 0
@@ -137,7 +141,7 @@ class BaseDataConverter(BaseParallelProcessor):
                     continue
 
                 data = decoder.decode(line)
-                text = text_fn(data)
+                text = word_tokenizer(text_fn(data))
                 label = label_fn(data)
 
                 if p <= train_sample_rate:
@@ -167,6 +171,7 @@ class BaseDataConverter(BaseParallelProcessor):
         output: str,
         text_selector: Optional[str] = None,
         label_selector: Optional[str] = None,
+        word_tokenizer: str = "noop",
         train_sample_rate: float = 0.0,
         dev_sample_rate: float = 0.0,
         test_sample_rate: float = 0.0,
@@ -174,6 +179,9 @@ class BaseDataConverter(BaseParallelProcessor):
         debug: bool = False,
         **kwargs: Any,
     ):
+        # duck-typing to ensure that the tokenizer is valid; raises a KeyError if it is not
+        TokenizerRegistry.get(word_tokenizer)
+
         with TemporaryDirectory() as tmpdir:
             all_paths = [p for p in chain.from_iterable(glob_path(p) for p in documents)]
             _, rel_paths = make_relative(all_paths)
@@ -210,6 +218,7 @@ class BaseDataConverter(BaseParallelProcessor):
                 train_sample_rate=train_sample_rate,
                 dev_sample_rate=dev_sample_rate,
                 test_sample_rate=test_sample_rate,
+                tokenizer_name=word_tokenizer,
                 **kwargs,
             )
 
@@ -225,29 +234,15 @@ class FastTextDataConverter(BaseDataConverter):
     written with format `__label__<label> <text>`."""
 
     @classmethod
-    def _make_text_fn(
-        cls, text_selector: Optional[str] = None, lowercase: Optional[bool] = None, **kwargs
-    ) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_text_fn(cls, text_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
         """
         Create a function that extracts text from the input document and preprocesses it (replace all
         whitespace with a single space and strip leading/trailing whitespace; optionally lowercase).
         """
-        _sel_fn = make_selector(text_selector or "$.text")
-        _lowercase = lowercase or False
-
-        # Create a text preprocessing function
-        def text_fn(doc: InputSpecWithMetadata, sel_fn: Callable = _sel_fn, lowercase: bool = _lowercase) -> str:
-            text = re.sub(r"\s+", " ", sel_fn(doc)).strip()
-            if lowercase:
-                return text.lower()
-            return text
-
-        return text_fn
+        return make_selector(text_selector or "$.text")
 
     @classmethod
-    def _make_label_fn(
-        cls, label_selector: Optional[str] = None, **kwargs
-    ) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_label_fn(cls, label_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
         """
         Creates a label function that extracts labels from the input document and normalizes them
         to be fasttext-compatible. The labels are then written to a file with format `__label__<label_1>
@@ -283,9 +278,7 @@ class FastTextUnsupervisedDataConverter(FastTextDataConverter):
     Ignores labels and writes only the text to a single file."""
 
     @classmethod
-    def _make_label_fn(
-        cls, label_selector: Optional[str] = None, **kwargs
-    ) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_label_fn(cls, label_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
         """
         No-op since KenLM does not require labels.
         """
@@ -295,23 +288,15 @@ class FastTextUnsupervisedDataConverter(FastTextDataConverter):
 
 class KenLMDataConverter(BaseDataConverter):
     @classmethod
-    def _make_text_fn(
-        cls, text_selector: Optional[str] = None, **kwargs
-    ) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_text_fn(cls, text_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
         """
         Create a function that extracts text from the input document;
         KenLM does not require any preprocessing of the text.
         """
-        _sel_fn = make_selector(text_selector or "$.text")
-
-        # Create a text preprocessing function
-        def text_fn(doc: InputSpecWithMetadata, sel_fn: Callable = _sel_fn) -> str:
-            return sel_fn(doc)
-
-        return text_fn
+        return make_selector(text_selector or "$.text")
 
     @classmethod
-    def _make_label_fn(cls, **kwargs) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_label_fn(cls, label_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
         """
         No-op since KenLM does not require labels.
         """
