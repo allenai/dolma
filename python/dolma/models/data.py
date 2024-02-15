@@ -88,8 +88,9 @@ class BaseDataConverter(BaseParallelProcessor):
         train: int = 0,
         dev: int = 0,
         test: int = 0,
+        files: int = 0,
     ) -> Dict[str, int]:
-        return super().increment_progressbar(queue, train=train, dev=dev, test=test)
+        return super().increment_progressbar(queue, train=train, dev=dev, test=test, files=files)
 
     @classmethod
     def _make_text_fn(cls, text_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:
@@ -165,6 +166,8 @@ class BaseDataConverter(BaseParallelProcessor):
                     if queue.qsize() >= multiprocessing.cpu_count():
                         # double the update interval if the queue is full
                         update_interval *= 2
+
+            cls.increment_progressbar(queue, train=train_cnt, dev=dev_cnt, test=test_cnt, files=1)
 
     def cleanup(self):
         """Remove all staging directories that might have been created during data processing"""
