@@ -72,6 +72,7 @@ class BaseTrainer(Generic[T]):
             # this is where the stream will be stored.
             stream_dir = join_path("", base_data_dir, single_stream_fingerprint)
             stream_output_dirs.append(stream_dir)
+
             if already_processed(DataConfig.from_dir(stream_dir), override=self.config.reprocess_streams):
                 continue
 

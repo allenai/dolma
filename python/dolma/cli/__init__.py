@@ -11,6 +11,7 @@ from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
 from hashlib import sha256
+from itertools import chain
 from logging import warning
 from typing import (
     Any,
@@ -171,9 +172,9 @@ def make_fingerprint(*args, **kwargs) -> str:
     h = sha256()
 
     # we sort the kwargs to make sure the fingerprint is always the same
-    _, sorted_kwargs = zip(*sorted(kwargs.items()))
+    _, sorted_kwargs = zip(*sorted(kwargs.items())) if len(kwargs) else ([], [])
 
-    for elem in args + sorted_kwargs:
+    for elem in chain(args, sorted_kwargs):
         # we try to use omegaconf to create a yaml representation of the object;
         # if it fails, we resort to string representation (e.g. for int, float, etc.)
         try:
