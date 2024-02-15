@@ -240,13 +240,18 @@ class BaseDataConverter(BaseParallelProcessor):
     def __call__(self, **process_single_kwargs: Any):
         super().__call__(**process_single_kwargs)
 
+        # group the files that have to be merged together in the same output directory
         grouped_by_output_dir: Dict[str, List[str]] = {}
         for psw in self.process_single_kwargs:
             grouped_by_output_dir.setdefault(psw["output_dir"], []).append(psw["staging_path"])
 
+        # actually do the merging!
         for output, dest_paths in grouped_by_output_dir.items():
             mkdir_p(output)
             combine_splits(sources=dest_paths, destination=output)
+
+        # remove all staging directories
+        self.cleanup()
 
 
 class FastTextDataConverter(BaseDataConverter):
