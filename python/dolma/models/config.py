@@ -14,6 +14,7 @@ class SamplingConfig:
 
 @dataclass
 class StreamConfig:
+    name: Optional[str] = field(help="Name of the stream", default=None)
     documents: List[str] = field(help="List of documents to use for this stream", default_factory=list)
     label: str = field(
         help=(

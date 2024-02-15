@@ -62,7 +62,7 @@ class FastTextTrainer(BaseTrainer):
             lrUpdateRate=self.config.model.learning_rate_update_rate,
             t=self.config.model.sampling_threshold,
             label="__label__",
-            verbose=2 if self.config.debug else 1,
+            verbose=2,
             pretrainedVectors=pretrained_vectors,
             autotuneValidationFile=autotune_on_validation,
         )
@@ -132,7 +132,7 @@ class FastTextUnsupervisedTrainer(FastTextTrainer):
             thread=1 if self.config.debug else self.config.num_processes,
             lrUpdateRate=self.config.model.learning_rate_update_rate,
             t=self.config.model.sampling_threshold,
-            verbose=2 if self.config.debug else 1,
+            verbose=2,
         )
         model.save_model(save_path)
         return model

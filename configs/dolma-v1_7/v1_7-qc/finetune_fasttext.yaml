@@ -2,7 +2,7 @@
 model_path: ${oc.env:HOME}/fasttext_models/cc_wiki_wikiref_owt2_pes2o.bin
 cache_dir: ${oc.env:HOME}/fasttext_data
 word_tokenizer: "no_punct_lower"
-num_processes: 64
+num_processes: 128
 
 
 model:
@@ -11,77 +11,92 @@ model:
   loss_function: "softmax"
 
 streams:
-  - documents:
+  - name: wikipedia_train
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/dolma_wiki/*.gz
     label: "wikipedia"
     sample:
       train: 1.0
-  - documents:
+  - name: wikipedia_dev
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/dolma_wiki/*.gz
     label: "wikipedia"
     sample:
       dev: 1.0
-  - documents:
+  - name: wikipedia_test
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/dolma_wiki/*.gz
     label: "wikipedia"
     sample:
       test: 1.0
-  - documents:
+  - name: wikiref_train
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/megawika/*.gz
     label: "wikiref"
     sample:
       train: 1.0
-  - documents:
+  - name: wikiref_dev
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/megawika/*.gz
     label: "wikiref"
     sample:
       dev: 1.0
-  - documents:
+  - name: wikiref_test
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/megawika/*.gz
     label: "wikiref"
     sample:
       test: 1.0
-  - documents:
+  - name: openwebtext2_train
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/openwebtext2/*.gz
     label: "openwebtext2"
     sample:
       train: 1.0
-  - documents:
+  - name: openwebtext2_dev
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/openwebtext2/*.gz
     label: "openwebtext2"
     sample:
       dev: 1.0
-  - documents:
+  - name: openwebtext2_test
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/openwebtext2/*.gz
     label: "openwebtext2"
     sample:
       test: 1.0
-  - documents:
+  - name: commoncrawl_train
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/cc/*.gz
     label: "commoncrawl"
     sample:
       train: 1.0
-  - documents:
+  - name: commoncrawl_dev
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/cc/*.gz
     label: "commoncrawl"
     sample:
       dev: 1.0
-  - documents:
+  - name: commoncrawl_test
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/cc/*.gz
     label: "commoncrawl"
     sample:
       test: 1.0
-  - documents:
+  - name: academic_train
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/dolma_pes2o/*.gz
     label: "academic"
     sample:
       train: 1.0
-  - documents:
+  - name: academic_dev
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/dolma_pes2o/*.gz
     label: "academic"
     sample:
       dev: 1.0
-  - documents:
+  - name: academic_test
+    documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/dolma_pes2o/*.gz
     label: "academic"
     sample:
