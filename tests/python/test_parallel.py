@@ -2,6 +2,7 @@
 
 import json
 import os
+from contextlib import ExitStack
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -164,6 +165,44 @@ class TestParallel(TestCase):
             dest = [p for p in os.listdir(f"{d}/destination")]
             self.assertEqual(sorted(src), sorted(meta))
             self.assertEqual(sorted(src), sorted(dest))
+
+    def test_sum_parallel(self):
+        with TemporaryDirectory() as d:
+            path1 = LOCAL_DATA / "expected" / "mixer.json.gz"
+            path2 = LOCAL_DATA / "expected" / "remove-paragraphs.json.gz"
+
+            proc1 = MockProcessor(
+                source_prefix=str(path1),
+                destination_prefix=f"{d}/destination",
+                metadata_prefix=f"{d}/metadata",
+                ignore_existing=False,
+                num_processes=2,
+            )
+            proc2 = MockProcessor(
+                source_prefix=str(path2),
+                destination_prefix=f"{d}/destination",
+                metadata_prefix=f"{d}/metadata",
+                ignore_existing=False,
+                num_processes=1,
+                seed=30,
+            )
+            proc_combined = proc1 + proc2
+            self.assertEqual(proc_combined.src_prefixes, [str(path1), str(path2)])
+            self.assertEqual(proc_combined.dst_prefixes, [f"{d}/destination"] * 2)
+            self.assertEqual(proc_combined.meta_prefixes, [f"{d}/metadata"] * 2)
+            self.assertEqual(proc_combined.num_processes, 2)
+            self.assertEqual(proc_combined.ignore_existing, False)
+            self.assertEqual(proc_combined.seed, 0)
+
+            proc_combined()
+
+            with ExitStack() as stack:
+                input_data_1 = stack.enter_context(smart_open.open(path1, "rb")).read()
+                output_data_1 = stack.enter_context(smart_open.open(f"{d}/destination/{path1.name}", "rb")).read()
+                input_data_2 = stack.enter_context(smart_open.open(path2, "rb")).read()
+                output_data_2 = stack.enter_context(smart_open.open(f"{d}/destination/{path2.name}", "rb")).read()
+                self.assertEqual(input_data_1, output_data_1)
+                self.assertEqual(input_data_2, output_data_2)
 
     def test_base_parallel_processor_kwargs_file_kwargs_debug(self):
         self.test_base_parallel_processor_kwargs_file_kwargs(debug=True)

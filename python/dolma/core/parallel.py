@@ -328,6 +328,23 @@ class BaseParallelProcessor:
         if not type(self) is type(other):
             raise TypeError(f"Cannot add {type(self)} and {type(other)}")
 
+        # we try combining the two list of include paths; if they are both None, then set the combo back to none
+        include_paths: Union[List[str], None] = [*(self.include_paths or []), *(other.include_paths or [])]
+        include_paths = sorted(set(include_paths or [])) if len(include_paths or []) else None
+
+        # do the same for exclude paths
+        exclude_paths: Union[List[str], None] = [*(self.exclude_paths or []), *(other.exclude_paths or [])]
+        exclude_paths = sorted(set(exclude_paths or [])) if len(exclude_paths or []) else None
+
+        # for the regex, do a simple or if both are set
+        regex_pattern: Union[str, None] = None
+        if self.files_regex_pattern and other.files_regex_pattern:
+            regex_pattern = "(" + self.files_regex_pattern.pattern + "|" + other.files_regex_pattern.pattern + ")"
+        elif self.files_regex_pattern:
+            regex_pattern = self.files_regex_pattern.pattern
+        elif other.files_regex_pattern:
+            regex_pattern = other.files_regex_pattern.pattern
+
         return type(self)(
             source_prefix=[*self.src_prefixes, *other.src_prefixes],
             destination_prefix=[*self.dst_prefixes, *other.dst_prefixes],
@@ -337,13 +354,9 @@ class BaseParallelProcessor:
             seed=self.seed,
             pbar_timeout=max(self.pbar_timeout, other.pbar_timeout),
             ignore_existing=self.ignore_existing or other.ignore_existing,
-            include_paths=sorted(set([*(self.include_paths or []), *(other.include_paths or [])])),
-            exclude_paths=sorted(set([*(self.exclude_paths or []), *(other.exclude_paths or [])])),
-            files_regex_pattern=(
-                # we don't support combining regex patterns, so we just take the first one we find
-                (self.files_regex_pattern.pattern if self.files_regex_pattern else None)
-                or (other.files_regex_pattern.pattern if other.files_regex_pattern else None)
-            ),
+            include_paths=include_paths,
+            exclude_paths=exclude_paths,
+            files_regex_pattern=regex_pattern,
             retries_on_error=max(self.retries_on_error, other.retries_on_error),
             process_single_kwargs=[*self.process_single_kwargs, *other.process_single_kwargs],
         )
@@ -474,6 +487,7 @@ class BaseParallelProcessor:
 
     def __call__(self, **process_single_kwargs: Any):
         """Run the processor."""
+
         random.seed(self.seed)
 
         # in case the user wants to override the default kwargs for retries
