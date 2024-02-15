@@ -54,4 +54,6 @@ class BaseTrainerConfig:
     streams: List[StreamConfig] = field(help="List of stream configurations", default=[])
     data: Optional[DataConfig] = field(help="Data configuration", default=None)
     num_processes: int = field(help="Number of processes to use for training", default=1)
+    cache_dir: Optional[str] = field(help="Cache directory", default=None)
     debug: bool = field(help="Enable debug mode", default=False)
+    reprocess_streams: bool = field(help="Reprocess streams", default=False)

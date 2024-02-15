@@ -5,7 +5,14 @@ from typing import Generic, List, Optional, Type, TypeVar, Union
 
 import smart_open
 
-from ..core.paths import cached_path, exists, get_cache_dir, is_local, mkdir_p
+from ..core.paths import (
+    cached_path,
+    exists,
+    get_cache_dir,
+    is_local,
+    join_path,
+    mkdir_p,
+)
 from ..core.utils import make_fingerprint
 from .config import BaseTrainerConfig, DataConfig
 from .data import BaseDataConverter, combine_splits
@@ -13,8 +20,15 @@ from .data import BaseDataConverter, combine_splits
 T = TypeVar("T", bound=BaseTrainerConfig)
 
 
+def already_processed(data: DataConfig, override: bool = False) -> bool:
+    """Check if the data has already been processed."""
+    if override:
+        return False
+    return all(fp is not None and exists(fp) for fp in (data.train, data.dev, data.test))
+
+
 class BaseTrainer(Generic[T]):
-    def __init__(self, config: T, cache_dir: Optional[str] = None):
+    def __init__(self, config: T):
         self.config = config
 
         if self.config.data is None:
@@ -24,24 +38,28 @@ class BaseTrainer(Generic[T]):
 
             # the fingerprint of the streams is used to create a unique cache directory
             streams_fingerprint = make_fingerprint(self.config.streams, self.config.word_tokenizer)
-            data_dir = cache_dir or f"{get_cache_dir()}/{streams_fingerprint}"
-            self.config.data = DataConfig.from_dir(data_dir)
+            base_data_dir = self.config.cache_dir or join_path("", get_cache_dir(), streams_fingerprint)
+
+            # we create the data configuration from the cache directory
+
+            self.config.data = DataConfig.from_dir(combined_dir := join_path("", base_data_dir, "__combined__"))
 
             # let's check if the cache directory exists and if the files are there; if
             # so, we return immediately bc we don't need to create the files again
-            if all(
-                fp is not None and exists(fp)
-                for fp in (self.config.data.train, self.config.data.dev, self.config.data.test)
-            ):
+            if already_processed(self.config.data, override=self.config.reprocess_streams):
                 return
 
             processor: Union[None, BaseDataConverter] = None
             stream_output_dirs: List[str] = []
             for stream_config in self.config.streams:
                 single_stream_fingerprint = make_fingerprint(stream_config, self.config.word_tokenizer)
-                stream_output_dirs.append(output_dir := f"{get_cache_dir()}/{single_stream_fingerprint}")
+                stream_dir = join_path("", base_data_dir, single_stream_fingerprint)
+                stream_output_dirs.append(stream_dir)
+                if already_processed(DataConfig.from_dir(stream_dir), override=self.config.reprocess_streams):
+                    continue
+
                 stream_processor = self.data_factory_cls.make(
-                    output=output_dir,
+                    output=stream_dir,
                     documents=stream_config.documents,
                     word_tokenizer=self.config.word_tokenizer,
                     text_selector=stream_config.text,
@@ -54,12 +72,13 @@ class BaseTrainer(Generic[T]):
                 )
                 processor = (processor + stream_processor) if processor is not None else stream_processor
 
-            if processor is None:
-                raise ValueError("No streams provided!")
+            if processor is not None:
+                # some splits have to be processed
+                processor()
 
-            processor()
-            mkdir_p(data_dir)
-            combine_splits(sources=stream_output_dirs, destination=data_dir)
+            # merge the splits into a single directory
+            mkdir_p(combined_dir)
+            combine_splits(sources=stream_output_dirs, destination=combined_dir)
 
     @property
     def data_factory_cls(self) -> Type[BaseDataConverter]:

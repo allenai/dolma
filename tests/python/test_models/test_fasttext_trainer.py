@@ -45,7 +45,7 @@ class TestFastTextTrainer(unittest.TestCase):
             om.merge(om.structured(FastTextSupervisedTrainerConfig), SUPERVISED_CONFIG),
         )
         self.stack = ExitStack()
-        self.cache_dir = self.stack.enter_context(TemporaryDirectory())
+        self.config.cache_dir = self.stack.enter_context(TemporaryDirectory())
         super().setUp()
 
     def tearDown(self) -> None:
@@ -67,7 +67,7 @@ class TestFastTextTrainer(unittest.TestCase):
         self.assertEqual(self.config.word_tokenizer, "punct")
 
     def test_train(self):
-        trainer = FastTextTrainer(self.config, cache_dir=self.cache_dir)
+        trainer = FastTextTrainer(self.config)
         trainer.do_train()
         self.assertTrue(Path(self.config.model_path).exists())
         model = FastTextModel(trainer.config.model_path)
@@ -85,7 +85,7 @@ class TestFastTextTrainer(unittest.TestCase):
         self.assertEqual(len(labels), 30)
 
     def test_valid(self):
-        trainer = FastTextTrainer(self.config, cache_dir=self.cache_dir)
+        trainer = FastTextTrainer(self.config)
 
         # must train first
         if not os.path.exists(self.config.model_path):
@@ -94,7 +94,7 @@ class TestFastTextTrainer(unittest.TestCase):
         self.assertTrue(Path(self.config.model_path).exists())
 
     def test_predict(self):
-        trainer = FastTextTrainer(self.config, cache_dir=self.cache_dir)
+        trainer = FastTextTrainer(self.config)
 
         # must train first
         if not os.path.exists(self.config.model_path):
@@ -120,7 +120,7 @@ class TestFastTextTrainer(unittest.TestCase):
 #         self.stack.close()
 
 #     def test_train(self):
-#         trainer = FastTextTrainer(self.config, cache_dir=self.cache_dir)
+#         trainer = FastTextTrainer(self.config)
 #         trainer.do_train()
 #         self.assertTrue(Path(self.config.model_path).exists())
 #         model = FastTextModel(trainer.config.model_path)

@@ -21,14 +21,14 @@ with necessary("sklearn", soft=True) as SKLEARN_AVAILABLE:
 
 
 class FastTextTrainer(BaseTrainer):
-    def __init__(self, config: FastTextSupervisedTrainerConfig, cache_dir: Optional[str] = None):
+    def __init__(self, config: FastTextSupervisedTrainerConfig):
         if not FASTTEXT_AVAILABLE:
             raise ImportError("fasttext is not available. Install it using `pip install fasttext-wheel`")
 
         if not SKLEARN_AVAILABLE:
             raise ImportError("scikit-learn is not available. Install it using `pip install scikit-learn")
 
-        super().__init__(config=config, cache_dir=cache_dir)
+        super().__init__(config=config)
 
     @property
     def data_factory_cls(self):
@@ -108,7 +108,7 @@ class FastTextTrainer(BaseTrainer):
 
 class FastTextUnsupervisedTrainer(FastTextTrainer):
     def __init__(self, config: FastTextUnsupervisedTrainerConfig, cache_dir: Optional[str] = None):
-        super().__init__(config=config, cache_dir=cache_dir)  # type: ignore[arg-type]
+        super().__init__(config=config)  # type: ignore[arg-type]
 
     @property
     def data_factory_cls(self):
