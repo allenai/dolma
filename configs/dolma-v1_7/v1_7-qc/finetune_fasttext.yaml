@@ -1,13 +1,14 @@
 
 model_path: ${oc.env:HOME}/fasttext_models/cc_wiki_wikiref_owt2_pes2o.bin
 cache_dir: ${oc.env:HOME}/fasttext_data
-word_tokenizer: "no_punct_lower"
+word_tokenizer: "ws_lower"
 num_processes: 128
 
 
 model:
-  learning_rate: 0.1
-  epochs: 5
+  learning_rate: 0.2
+  epochs: 10
+  # autotune: true
   loss_function: "softmax"
 
 streams:
@@ -99,5 +100,23 @@ streams:
     documents:
       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/dolma_pes2o/*.gz
     label: "academic"
+    sample:
+      test: 1.0
+  - name: books_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/books/*.gz
+    label: "books"
+    sample:
+      train: 1.0
+  - name: books_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/books/*.gz
+    label: "books"
+    sample:
+      dev: 1.0
+  - name: books_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/books/*.gz
+    label: "books"
     sample:
       test: 1.0
