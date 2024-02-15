@@ -87,13 +87,13 @@ class TestFasttextData(TestCase):
         expected_text, _ = self._load_expected(source_paths, lowercase=False)
 
         with TemporaryDirectory() as tmpdir:
-            FastTextDataConverter.make_stream(
+            FastTextDataConverter.make(
                 documents=[source_paths],
                 output=tmpdir,
                 debug=True,
                 word_tokenizer="ws",
                 train_sample_rate=1,
-            )
+            )()
 
             texts, _ = self._load_output(tmpdir, splits=("train",))
             self.assertEqual(sorted(texts), sorted(expected_text))
@@ -109,16 +109,15 @@ class TestFasttextData(TestCase):
         expected_text, expected_labels = self._load_expected(source_paths, lowercase=True)
 
         with TemporaryDirectory() as tmpdir:
-            FastTextDataConverter.make_stream(
+            FastTextDataConverter.make(
                 documents=[source_paths],
                 output=tmpdir,
                 word_tokenizer="ws_lower",
                 train_sample_rate=0.5,
                 dev_sample_rate=0.2,
                 test_sample_rate=0.3,
-                lowercase=True,
                 debug=True,
-            )
+            )()
             got_text, got_labels = self._load_output(tmpdir)
 
             for i, (got, exp) in enumerate(zip(sorted(got_text), sorted(expected_text))):
@@ -131,7 +130,7 @@ class TestFasttextData(TestCase):
         expected_text, _ = self._load_expected(*documents, lowercase=True)
 
         with TemporaryDirectory() as tmpdir:
-            FastTextDataConverter.make_stream(
+            FastTextDataConverter.make(
                 documents=documents,
                 output=tmpdir,
                 label_selector="pos",
@@ -140,7 +139,7 @@ class TestFasttextData(TestCase):
                 dev_sample_rate=0.2,
                 test_sample_rate=0.3,
                 num_processes=2,
-            )
+            )()
 
             got_text, got_labels = self._load_output(tmpdir)
             for i, (got, exp) in enumerate(zip(sorted(got_text), sorted(expected_text))):

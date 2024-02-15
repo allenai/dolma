@@ -3,16 +3,18 @@ import random
 import re
 from contextlib import ExitStack
 from itertools import chain
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import msgspec
 import smart_open
+from genericpath import exists
 
 from ..core.data_types import InputSpecWithMetadata
 from ..core.loggers import get_logger
 from ..core.parallel import BaseParallelProcessor, QueueType
 from ..core.paths import (
+    delete_dir,
     glob_path,
     join_path,
     make_relative,
@@ -164,11 +166,21 @@ class BaseDataConverter(BaseParallelProcessor):
                         # double the update interval if the queue is full
                         update_interval *= 2
 
+    def cleanup(self):
+        """Remove all staging directories that might have been created during data processing"""
+        for staging_dir in (kw.pop("staging_dir", None) for kw in (self.process_single_kwargs or [])):
+            if staging_dir is not None and exists(staging_dir):
+                delete_dir(staging_dir)
+
+    def __exit__(self):
+        return self.cleanup()
+
     @classmethod
-    def make_stream(
+    def make(
         cls,
         documents: List[str],
         output: str,
+        staging_dir: Optional[str] = None,
         text_selector: Optional[str] = None,
         label_selector: Optional[str] = None,
         word_tokenizer: str = "noop",
@@ -177,52 +189,62 @@ class BaseDataConverter(BaseParallelProcessor):
         test_sample_rate: float = 0.0,
         num_processes: int = 1,
         debug: bool = False,
-        **kwargs: Any,
     ):
+        # create staging directory if not provided; use the staging directory to make locations
+        # where temporary processing files are put (as well as the metadata)
+        staging_dir = staging_dir or mkdtemp()
+        destination_dir = join_path("", staging_dir, "destination")
+        metadata_dir = join_path("", staging_dir, "metadata")
+
         # duck-typing to ensure that the tokenizer is valid; raises a KeyError if it is not
         TokenizerRegistry.get(word_tokenizer)
 
-        with TemporaryDirectory() as tmpdir:
-            all_paths = [p for p in chain.from_iterable(glob_path(p) for p in documents)]
-            _, rel_paths = make_relative(all_paths)
+        # with TemporaryDirectory() as tmpdir:
+        all_paths = [p for p in chain.from_iterable(glob_path(p) for p in documents)]
+        _, rel_paths = make_relative(all_paths)
 
-            # we make temporary directories for the destination and metadata files;
-            # we will combine data from the temporary directories into the final destination
-            # after processing.
-            dest_paths = [
-                parent(join_path("", tmpdir, "destination", p))
-                if p != "."
-                else join_path("", tmpdir, "destination")
-                for p in rel_paths
-            ]
-            meta_paths = [
-                parent(join_path("", tmpdir, "metadata", p)) if p != "." else join_path("", tmpdir, "metadata")
-                for p in rel_paths
-            ]
+        # we make temporary directories for the destination and metadata files;
+        # we will combine data from the temporary directories into the final destination after processing.
+        dest_paths = [(join_path("", destination_dir, p) if p != "." else destination_dir) for p in rel_paths]
+        meta_paths = [(join_path("", metadata_dir, p) if p != "." else metadata_dir) for p in rel_paths]
 
-            for p in dest_paths + meta_paths:
-                mkdir_p(parent(p))
+        for p in dest_paths + meta_paths:
+            mkdir_p(parent(p))
 
-            # make the parallel processor here and immediately call it with the the options
-            # for selecting text/labels, sample sizes, etc.
-            # note that the number of processes used is capped at the number of files to process.
-            cls(
-                source_prefix=all_paths,
-                destination_prefix=dest_paths,
-                metadata_prefix=meta_paths,
-                num_processes=min(num_processes, len(all_paths)),
-                debug=debug,
-            )(
-                text_selector=text_selector,
-                label_selector=label_selector,
-                train_sample_rate=train_sample_rate,
-                dev_sample_rate=dev_sample_rate,
-                test_sample_rate=test_sample_rate,
-                tokenizer_name=word_tokenizer,
-                **kwargs,
-            )
+        # we combine all kwargs here; useful in case multiple streams are added
+        process_kwargs = [
+            {
+                "text_selector": text_selector,
+                "label_selector": label_selector,
+                "train_sample_rate": train_sample_rate,
+                "dev_sample_rate": dev_sample_rate,
+                "test_sample_rate": test_sample_rate,
+                "tokenizer_name": word_tokenizer,
+                "staging_path": staging_path,
+                "output_dir": output,
+            }
+            for staging_path in dest_paths
+        ]
+        # make the parallel processor here and immediately call it with the the options
+        # for selecting text/labels, sample sizes, etc.
+        # note that the number of processes used is capped at the number of files to process.
+        return cls(
+            source_prefix=all_paths,
+            destination_prefix=dest_paths,
+            metadata_prefix=meta_paths,
+            num_processes=min(num_processes, len(all_paths)),
+            debug=debug,
+            process_single_kwargs=process_kwargs,
+        )
 
-            # this is where we combine the splits into a single file for each split
+    def __call__(self, **process_single_kwargs: Any):
+        super().__call__(**process_single_kwargs)
+
+        grouped_by_output_dir: Dict[str, List[str]] = {}
+        for psw in self.process_single_kwargs:
+            grouped_by_output_dir.setdefault(psw["output_dir"], []).append(psw["staging_path"])
+
+        for output, dest_paths in grouped_by_output_dir.items():
             mkdir_p(output)
             combine_splits(sources=dest_paths, destination=output)
 

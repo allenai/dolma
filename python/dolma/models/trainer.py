@@ -62,7 +62,7 @@ class BaseTrainer(Generic[T]):
             # we use the data factory transform the stream into the format expected by the model.
             # note that the new stream is created in a temporary directory, to be merged with the
             # current data files later.
-            self.data_factory_cls.make_stream(
+            self.data_factory_cls.make(
                 output=tmpdir,
                 documents=stream_config.documents,
                 word_tokenizer=self.config.word_tokenizer,
