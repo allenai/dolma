@@ -5,6 +5,7 @@ from typing import Generic, List, Optional, Type, TypeVar, Union
 
 import smart_open
 
+from ..cli import make_fingerprint
 from ..core.paths import (
     cached_path,
     exists,
@@ -14,7 +15,6 @@ from ..core.paths import (
     mkdir_p,
     parent,
 )
-from ..core.utils import make_fingerprint
 from .config import BaseTrainerConfig, DataConfig
 from .data import BaseDataConverter, combine_splits
 

@@ -1,10 +1,8 @@
 import importlib
 import os
-import pickle
 import re
 import string
 import sys
-from hashlib import sha256
 from typing import List, Union, cast
 
 try:
@@ -150,8 +148,3 @@ def dataclass_to_dict(dataclass_instance) -> dict:
 
     # force typecasting because a dataclass instance will always be a dict
     return cast(dict, om.to_object(om.structured(dataclass_instance)))
-
-
-def make_fingerprint(*args, **kwargs) -> str:
-    """Create a unique fingerprint for the given arguments."""
-    return sha256(pickle.dumps((args, frozenset(kwargs.items())))).hexdigest()

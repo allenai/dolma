@@ -10,6 +10,7 @@ from copy import deepcopy
 from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
+from hashlib import sha256
 from logging import warning
 from typing import (
     Any,
@@ -27,6 +28,7 @@ from typing import (
 
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
+from omegaconf import ValidationError
 from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
@@ -160,6 +162,18 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
         raise DolmaConfigError(f"Invalid error while parsing key `{ex.full_key}`: {type(ex).__name__}") from ex
 
     return merged_config  # pyright: ignore
+
+
+def make_fingerprint(*args, **kwargs) -> str:
+    """Create a unique fingerprint for the given arguments."""
+    h = sha256()
+    for elem in (*((None, arg) for arg in args), *sorted(kwargs.items())):
+        try:
+            obj = om.to_yaml(om.structured(elem))
+        except ValidationError:
+            obj = str(elem)
+        h.update(obj.encode("utf-8"))
+    return h.hexdigest()
 
 
 def print_config(config: Any, console: Optional[Console] = None) -> None:
