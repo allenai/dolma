@@ -166,13 +166,22 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
 
 def make_fingerprint(*args, **kwargs) -> str:
     """Create a unique fingerprint for the given arguments."""
+
+    # will accumulate the hash of all the arguments here
     h = sha256()
-    for elem in (*((None, arg) for arg in args), *sorted(kwargs.items())):
+
+    # we sort the kwargs to make sure the fingerprint is always the same
+    _, sorted_kwargs = zip(*sorted(kwargs.items()))
+
+    for elem in args + sorted_kwargs:
+        # we try to use omegaconf to create a yaml representation of the object;
+        # if it fails, we resort to string representation (e.g. for int, float, etc.)
         try:
-            obj = om.to_yaml(om.structured(elem))
+            obj = om.to_yaml(om.create(elem))
         except ValidationError:
             obj = str(elem)
         h.update(obj.encode("utf-8"))
+
     return h.hexdigest()
 
 
