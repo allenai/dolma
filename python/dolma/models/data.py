@@ -66,6 +66,9 @@ def make_selector(jsonpath: str) -> Callable:
 def combine_splits(sources: List[str], destination: str, splits: Optional[Tuple[str, ...]] = None):
     """Combine the splits generated for each source path into a single file for each split."""
 
+    # make sure the destination directory exists
+    mkdir_p(destination)
+
     # if no splits are provided, we default to the standard train/dev/test splits
     splits = splits or ("train", "dev", "test")
 

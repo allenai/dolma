@@ -20,7 +20,7 @@ from .data import BaseDataConverter, combine_splits
 
 T = TypeVar("T", bound=BaseTrainerConfig)
 
-COMBINED_STREAM_NAME = "__COMBINED_STREAMS"
+COMBINED_STREAMS = "_COMBINED_STREAMS"
 HASH_CHARS = 12
 
 
@@ -49,7 +49,7 @@ class BaseTrainer(Generic[T]):
 
         # we create the data configuration from the cache directory
         self.config.data = DataConfig.from_dir(
-            join_path("", base_data_dir, f"__{COMBINED_STREAM_NAME}_{streams_fingerprint[:HASH_CHARS]}")
+            combined_dir := join_path("", base_data_dir, f"{COMBINED_STREAMS}_{streams_fingerprint[:HASH_CHARS]}")
         )
 
         # let's check if the cache directory exists and if the files are there; if
@@ -60,7 +60,7 @@ class BaseTrainer(Generic[T]):
         processor: Union[None, BaseDataConverter] = None
         stream_output_dirs: List[str] = []
         for stream_config in self.config.streams:
-            assert stream_config.name != COMBINED_STREAM_NAME, f"stream name {COMBINED_STREAM_NAME} is reserved"
+            assert stream_config.name != COMBINED_STREAMS, f"stream name {COMBINED_STREAMS} is reserved"
 
             # this is the name of the directory where data from this stream will be stored
             # we combine the fingerprint of the stream with an optional name field if the name
@@ -94,7 +94,7 @@ class BaseTrainer(Generic[T]):
             processor()
 
         # merge the splits into a single directory
-        combine_splits(sources=stream_output_dirs, destination=base_data_dir)
+        combine_splits(sources=stream_output_dirs, destination=combined_dir)
 
     @property
     def data_factory_cls(self) -> Type[BaseDataConverter]:
