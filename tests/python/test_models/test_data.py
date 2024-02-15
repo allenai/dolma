@@ -83,12 +83,17 @@ class TestFasttextData(TestCase):
         return got_text, got_labels
 
     def test_fasttext_data_with_selector(self):
-        # paths = {"pos": [str(DATA_DIR / "mutiple_files")], "neg": [str(DATA_DIR / "provided/documents")]}
         source_paths = str(DATA_DIR / "multiple_files")
         expected_text, _ = self._load_expected(source_paths, lowercase=False)
 
         with TemporaryDirectory() as tmpdir:
-            FastTextDataConverter.make_stream(documents=[source_paths], output=tmpdir, debug=True, lowercase=False)
+            FastTextDataConverter.make_stream(
+                documents=[source_paths],
+                output=tmpdir,
+                debug=True,
+                word_tokenizer="ws",
+                train_sample_rate=1,
+            )
 
             texts, _ = self._load_output(tmpdir, splits=("train",))
             self.assertEqual(sorted(texts), sorted(expected_text))
@@ -107,9 +112,10 @@ class TestFasttextData(TestCase):
             FastTextDataConverter.make_stream(
                 documents=[source_paths],
                 output=tmpdir,
-                train_sample=0.5,
-                dev_sample=0.2,
-                test_sample=0.3,
+                word_tokenizer="ws_lower",
+                train_sample_rate=0.5,
+                dev_sample_rate=0.2,
+                test_sample_rate=0.3,
                 lowercase=True,
                 debug=True,
             )
@@ -129,14 +135,14 @@ class TestFasttextData(TestCase):
                 documents=documents,
                 output=tmpdir,
                 label_selector="pos",
-                train_sample=0.5,
-                dev_sample=0.2,
-                test_sample=0.3,
+                word_tokenizer="ws_lower",
+                train_sample_rate=0.5,
+                dev_sample_rate=0.2,
+                test_sample_rate=0.3,
                 num_processes=2,
             )
 
             got_text, got_labels = self._load_output(tmpdir)
             for i, (got, exp) in enumerate(zip(sorted(got_text), sorted(expected_text))):
                 self.assertEqual(got, exp, f"got: {got[:40]}, expected: {exp[:40]}, index: {i}")
-            breakpoint()
             self.assertEqual(set(got_labels), {"__label__pos"})

@@ -105,8 +105,6 @@ class BaseDataConverter(BaseParallelProcessor):
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
         """Script to perform extraction on a single file"""
 
-        breakpoint()
-
         # get the probabilities for each split
         train_sample_rate = float(kwargs.get("train_sample_rate", 0.0))
         dev_sample_rate = train_sample_rate + float(kwargs.get("dev_sample_rate", 0.0))
