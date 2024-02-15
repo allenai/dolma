@@ -1,7 +1,9 @@
 
 model_path: ${oc.env:HOME}/fasttext_models/cc_wiki_wikiref_owt2_pes2o.bin
+cache_dir: ${oc.env:HOME}/fasttext_data
 word_tokenizer: "no_punct_lower"
 num_processes: 64
+
 
 model:
   learning_rate: 0.1
