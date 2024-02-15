@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import msgspec
 import smart_open
 from genericpath import exists
+from tqdm import tqdm
 
 from ..core.data_types import InputSpecWithMetadata
 from ..core.loggers import get_logger
@@ -21,6 +22,7 @@ from ..core.paths import (
     mkdir_p,
     parent,
     split_basename_and_extension,
+    split_path,
 )
 from .word_tokenizers import TokenizerRegistry
 
@@ -249,9 +251,15 @@ class BaseDataConverter(BaseParallelProcessor):
             grouped_by_output_dir.setdefault(psw["output_dir"], []).append(psw["staging_path"])
 
         # actually do the merging!
-        for output, dest_paths in grouped_by_output_dir.items():
-            mkdir_p(output)
-            combine_splits(sources=dest_paths, destination=output)
+        with tqdm(unit=" files", total=len(grouped_by_output_dir)) as pbar:
+            for output, dest_paths in grouped_by_output_dir.items():
+                _, (*_, fn) = split_path(output)
+                pbar.set_description(
+                    f"Combining {len(dest_paths):,} files into {fn[:20] + '...' if len(fn) > 20 else fn}"
+                )
+                mkdir_p(output)
+                combine_splits(sources=dest_paths, destination=output)
+                pbar.update(1)
 
         # remove all staging directories
         self.cleanup()

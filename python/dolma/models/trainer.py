@@ -20,6 +20,9 @@ from .data import BaseDataConverter, combine_splits
 
 T = TypeVar("T", bound=BaseTrainerConfig)
 
+COMBINED_STREAM_NAME = "__COMBINED_STREAMS"
+HASH_CHARS = 12
+
 
 def already_processed(data: DataConfig, override: bool = False) -> bool:
     """Check if the data has already been processed."""
@@ -45,7 +48,9 @@ class BaseTrainer(Generic[T]):
         mkdir_p(base_data_dir)
 
         # we create the data configuration from the cache directory
-        self.config.data = DataConfig.from_dir(base_data_dir)
+        self.config.data = DataConfig.from_dir(
+            join_path("", base_data_dir, f"__{COMBINED_STREAM_NAME}_{streams_fingerprint[:HASH_CHARS]}")
+        )
 
         # let's check if the cache directory exists and if the files are there; if
         # so, we return immediately bc we don't need to create the files again
@@ -55,12 +60,14 @@ class BaseTrainer(Generic[T]):
         processor: Union[None, BaseDataConverter] = None
         stream_output_dirs: List[str] = []
         for stream_config in self.config.streams:
+            assert stream_config.name != COMBINED_STREAM_NAME, f"stream name {COMBINED_STREAM_NAME} is reserved"
+
             # this is the name of the directory where data from this stream will be stored
             # we combine the fingerprint of the stream with an optional name field if the name
             # field is provided.
             single_stream_fingerprint = make_fingerprint(stream_config, self.config.word_tokenizer)
             if stream_config.name is not None:
-                single_stream_fingerprint = f"{stream_config.name}_{single_stream_fingerprint}"
+                single_stream_fingerprint = f"{stream_config.name}_{single_stream_fingerprint[:HASH_CHARS]}"
 
             # this is where the stream will be stored.
             stream_dir = join_path("", base_data_dir, single_stream_fingerprint)

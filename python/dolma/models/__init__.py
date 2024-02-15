@@ -28,7 +28,11 @@ class ModelsCli(BaseCli):
     def make_parser(cls, parser: A) -> A:
         # parser.add_argument("model", choices=MODELS.keys(), help=MODEL_DESCRIPTION)
         # return parser
-        subparsers = parser.add_subparsers(dest="model")
+        subparsers = parser.add_subparsers(
+            dest="model",
+            title="dolma model",
+            description="Command line interface for training and evaluating models for Dolma filtering.",
+        )
         subparsers.required = True
         subparsers.choices = MODELS.keys()  # type: ignore
         for command, cli in MODELS.items():
