@@ -189,7 +189,7 @@ class BaseDataConverter(BaseParallelProcessor):
         test_sample_rate: float = 0.0,
         num_processes: int = 1,
         debug: bool = False,
-    ):
+    ) -> "BaseDataConverter":
         # create staging directory if not provided; use the staging directory to make locations
         # where temporary processing files are put (as well as the metadata)
         staging_dir = staging_dir or mkdtemp()
@@ -309,7 +309,7 @@ class FastTextUnsupervisedDataConverter(FastTextDataConverter):
         """
         No-op since KenLM does not require labels.
         """
-        label_fn = lambda _: ""  # type: ignore # noqa: E731
+        label_fn = lambda _: ""  # noqa: E731
         return label_fn
 
 
@@ -327,5 +327,5 @@ class KenLMDataConverter(BaseDataConverter):
         """
         No-op since KenLM does not require labels.
         """
-        label_fn = lambda _: ""  # type: ignore # noqa: E731
+        label_fn = lambda _: ""  # noqa: E731
         return label_fn

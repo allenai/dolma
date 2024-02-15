@@ -11,7 +11,7 @@ from datetime import datetime
 from functools import partial
 from queue import Queue
 from threading import Thread
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, TypeVar, Union
 
 import smart_open
 import tqdm
@@ -35,6 +35,7 @@ METADATA_SUFFIX = ".done.txt"
 # we need to quote the type alias because we want to support Python 3.8
 QueueType: TypeAlias = "Queue[Union[None, Tuple[int, ...]]]"
 KwargsType: TypeAlias = Dict[str, Any]
+BPP = TypeVar("BPP", bound="BaseParallelProcessor")
 
 
 class AllPathsTuple(NamedTuple):
@@ -323,7 +324,7 @@ class BaseParallelProcessor:
         pbar_queue.put(None)
         thread.join()
 
-    def __add__(self, other: "BaseParallelProcessor") -> "BaseParallelProcessor":
+    def __add__(self: BPP, other: BPP) -> BPP:
         """Combine two parallel processors into one."""
         if not type(self) is type(other):
             raise TypeError(f"Cannot add {type(self)} and {type(other)}")
@@ -361,7 +362,7 @@ class BaseParallelProcessor:
             process_single_kwargs=[*self.process_single_kwargs, *other.process_single_kwargs],
         )
 
-    def __radd__(self, other: "BaseParallelProcessor") -> "BaseParallelProcessor":
+    def __radd__(self: BPP, other: BPP) -> BPP:
         """Combine two parallel processors into one."""
         return other.__add__(self)
 

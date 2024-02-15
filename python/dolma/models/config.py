@@ -34,6 +34,10 @@ class DataConfig:
     dev: Optional[str] = field(help="Path to the development data", default=None)
     test: Optional[str] = field(help="Path to the testing data", default=None)
 
+    @classmethod
+    def from_dir(cls, path: str) -> "DataConfig":
+        return cls(train=f"{path}/train.txt", dev=f"{path}/dev.txt", test=f"{path}/test.txt")
+
 
 @dataclass
 class BaseModelConfig:

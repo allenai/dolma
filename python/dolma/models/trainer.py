@@ -1,15 +1,14 @@
 import os
-import pickle
 from contextlib import ExitStack
-from hashlib import sha256
-from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import Generic, Optional, Type, TypeVar
+from tempfile import NamedTemporaryFile
+from typing import Generic, List, Optional, Type, TypeVar, Union
 
 import smart_open
 
 from ..core.paths import cached_path, exists, get_cache_dir, is_local, mkdir_p
-from .config import BaseTrainerConfig, DataConfig, StreamConfig
-from .data import BaseDataConverter
+from ..core.utils import make_fingerprint
+from .config import BaseTrainerConfig, DataConfig
+from .data import BaseDataConverter, combine_splits
 
 T = TypeVar("T", bound=BaseTrainerConfig)
 
@@ -24,13 +23,9 @@ class BaseTrainer(Generic[T]):
             assert self.config.streams is not None, "streams must be provided if data is not provided"
 
             # the fingerprint of the streams is used to create a unique cache directory
-            streams_fingerprint = sha256(pickle.dumps(self.config.streams)).hexdigest()
-            cache_dir = cache_dir or f"{get_cache_dir()}/{streams_fingerprint}"
-            self.config.data = DataConfig(
-                train=f"{cache_dir}/train.txt",
-                dev=f"{cache_dir}/dev.txt",
-                test=f"{cache_dir}/test.txt",
-            )
+            streams_fingerprint = make_fingerprint(self.config.streams, self.config.word_tokenizer)
+            data_dir = cache_dir or f"{get_cache_dir()}/{streams_fingerprint}"
+            self.config.data = DataConfig.from_dir(data_dir)
 
             # let's check if the cache directory exists and if the files are there; if
             # so, we return immediately bc we don't need to create the files again
@@ -40,10 +35,31 @@ class BaseTrainer(Generic[T]):
             ):
                 return
 
-            # they do not exist, so we create them by adding the streams one by one.
-            mkdir_p(cache_dir)
+            processor: Union[None, BaseDataConverter] = None
+            stream_output_dirs: List[str] = []
             for stream_config in self.config.streams:
-                self.add_stream(stream_config)
+                single_stream_fingerprint = make_fingerprint(stream_config, self.config.word_tokenizer)
+                stream_output_dirs.append(output_dir := f"{get_cache_dir()}/{single_stream_fingerprint}")
+                stream_processor = self.data_factory_cls.make(
+                    output=output_dir,
+                    documents=stream_config.documents,
+                    word_tokenizer=self.config.word_tokenizer,
+                    text_selector=stream_config.text,
+                    label_selector=stream_config.label,
+                    train_sample_rate=stream_config.sample.train,
+                    dev_sample_rate=stream_config.sample.dev,
+                    test_sample_rate=stream_config.sample.test,
+                    debug=self.config.debug,
+                    num_processes=self.config.num_processes,
+                )
+                processor = (processor + stream_processor) if processor is not None else stream_processor
+
+            if processor is None:
+                raise ValueError("No streams provided!")
+
+            processor()
+            mkdir_p(data_dir)
+            combine_splits(sources=stream_output_dirs, destination=data_dir)
 
     @property
     def data_factory_cls(self) -> Type[BaseDataConverter]:
@@ -51,42 +67,6 @@ class BaseTrainer(Generic[T]):
         streams into the format expected by the model. It must be implemented in a
         subclass."""
         raise NotImplementedError("data_factory_cls must be implemented in a subclass")
-
-    def add_stream(self, stream_config: StreamConfig):
-        """Create data files from a stream, and merge them with the current data files."""
-
-        with TemporaryDirectory() as tmpdir:
-            # we need to make sure that the data is not None, otherwise we cannot merge the streams
-            assert self.config.data is not None
-
-            # we use the data factory transform the stream into the format expected by the model.
-            # note that the new stream is created in a temporary directory, to be merged with the
-            # current data files later.
-            self.data_factory_cls.make(
-                output=tmpdir,
-                documents=stream_config.documents,
-                word_tokenizer=self.config.word_tokenizer,
-                text_selector=stream_config.text,
-                label_selector=stream_config.label,
-                train_sample_rate=stream_config.sample.train,
-                dev_sample_rate=stream_config.sample.dev,
-                test_sample_rate=stream_config.sample.test,
-                debug=self.config.debug,
-                num_processes=self.config.num_processes,
-            )
-            # this is where we merge the streams with the current data files
-            with ExitStack() as stack:
-                current_train_data = stack.enter_context(smart_open.open(self.config.data.train, "at"))
-                stream_train_data = stack.enter_context(smart_open.open(f"{tmpdir}/train.txt", "rt"))
-                current_train_data.write(stream_train_data.read())
-
-                current_dev_data = stack.enter_context(smart_open.open(self.config.data.dev, "at"))
-                stream_dev_data = stack.enter_context(smart_open.open(f"{tmpdir}/dev.txt", "rt"))
-                current_dev_data.write(stream_dev_data.read())
-
-                current_test_data = stack.enter_context(smart_open.open(self.config.data.test, "at"))
-                stream_test_data = stack.enter_context(smart_open.open(f"{tmpdir}/test.txt", "rt"))
-                current_test_data.write(stream_test_data.read())
 
     def fit(self, data_path: str, save_path: str, validation_path: Optional[str] = None):
         raise NotImplementedError("train method must be implemented in a subclass")
