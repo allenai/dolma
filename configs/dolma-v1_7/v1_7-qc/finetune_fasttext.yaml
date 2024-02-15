@@ -1,7 +1,7 @@
 
-model_path: ${oc.env:HOME}/fasttext_models/cc_wiki_wikiref.bin
+model_path: ${oc.env:HOME}/fasttext_models/cc_wiki_wikiref_owt2_pes2o.bin
 word_tokenizer: "no_punct_lower"
-num_processes: 16
+num_processes: 64
 
 model:
   learning_rate: 0.1
@@ -10,62 +10,77 @@ model:
 
 streams:
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/Wikipedia/train.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/dolma_wiki/*.gz
     label: "wikipedia"
     sample:
       train: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/Wikipedia/dev.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/dolma_wiki/*.gz
     label: "wikipedia"
     sample:
       dev: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/Wikipedia/test.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/dolma_wiki/*.gz
     label: "wikipedia"
     sample:
       test: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/WikiRef/train.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/megawika/*.gz
     label: "wikiref"
     sample:
       train: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/WikiRef/dev.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/megawika/*.gz
     label: "wikiref"
     sample:
       dev: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/WikiRef/test.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/megawika/*.gz
     label: "wikiref"
     sample:
       test: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/OpenWebText2/train.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/openwebtext2/*.gz
     label: "openwebtext2"
     sample:
       train: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/OpenWebText2/dev.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/openwebtext2/*.gz
     label: "openwebtext2"
     sample:
       dev: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/OpenWebText2/test.mini.jsonl
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/openwebtext2/*.gz
     label: "openwebtext2"
     sample:
       test: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/Random_CC/train.mini.jsonl
-    label: "random_cc"
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/cc/*.gz
+    label: "commoncrawl"
     sample:
       train: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/Random_CC/dev.mini.jsonl
-    label: "random_cc"
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/cc/*.gz
+    label: "commoncrawl"
     sample:
       dev: 1.0
   - documents:
-      - ${oc.env:HOME}/lucyl_filter_data/split/Random_CC/test.mini.jsonl
-    label: "random_cc"
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/cc/*.gz
+    label: "commoncrawl"
+    sample:
+      test: 1.0
+  - documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/dolma_pes2o/*.gz
+    label: "academic"
+    sample:
+      train: 1.0
+  - documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/dolma_pes2o/*.gz
+    label: "academic"
+    sample:
+      dev: 1.0
+  - documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/dolma_pes2o/*.gz
+    label: "academic"
     sample:
       test: 1.0

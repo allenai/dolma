@@ -14,6 +14,7 @@ from .trainer import FastTextTrainer
 @dataclass
 class _FastTextCliConfig(BaseTrainerConfig):
     """Base CLI configuration to derive both supervised and unsupervised configurations."""
+
     action: List[str] = field(default=[], help="Action to perform (train/valid/test)")
 
 
@@ -21,6 +22,7 @@ class _FastTextCliConfig(BaseTrainerConfig):
 class FastTextSupervisedCliConfig(FastTextSupervisedTrainerConfig, _FastTextCliConfig):
     """Configuration for the supervised fasttext CLI; most options come
     from FastTextSupervisedTrainerConfig."""
+
     pass
 
 
@@ -28,6 +30,7 @@ class FastTextSupervisedCliConfig(FastTextSupervisedTrainerConfig, _FastTextCliC
 class FastTextUnsupervisedCliConfig(FastTextUnsupervisedTrainerConfig, _FastTextCliConfig):
     """Configuration for the unsupervised fasttext CLI; most options come
     from FastTextUnsupervisedTrainerConfig."""
+
     pass
 
 

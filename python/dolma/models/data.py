@@ -90,20 +90,22 @@ class BaseDataConverter(BaseParallelProcessor):
         return super().increment_progressbar(queue, train=train, dev=dev, test=test)
 
     @classmethod
-    def _make_text_fn(cls, text_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_text_fn(cls, text_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:
         """
         Returns a function that extracts the text from the input document and preprocesses it.
         """
         raise NotImplementedError("This method must be implemented by a subclass.")
 
     @classmethod
-    def _make_label_fn(cls, label_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_label_fn(cls, label_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:
         """Create a function that extracts the label from the input document."""
         raise NotImplementedError("This method must be implemented by a subclass.")
 
     @classmethod
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
         """Script to perform extraction on a single file"""
+
+        breakpoint()
 
         # get the probabilities for each split
         train_sample_rate = float(kwargs.get("train_sample_rate", 0.0))
@@ -234,7 +236,7 @@ class FastTextDataConverter(BaseDataConverter):
     written with format `__label__<label> <text>`."""
 
     @classmethod
-    def _make_text_fn(cls, text_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_text_fn(cls, text_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:
         """
         Create a function that extracts text from the input document and preprocesses it (replace all
         whitespace with a single space and strip leading/trailing whitespace; optionally lowercase).
@@ -242,7 +244,7 @@ class FastTextDataConverter(BaseDataConverter):
         return make_selector(text_selector or "$.text")
 
     @classmethod
-    def _make_label_fn(cls, label_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_label_fn(cls, label_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:
         """
         Creates a label function that extracts labels from the input document and normalizes them
         to be fasttext-compatible. The labels are then written to a file with format `__label__<label_1>
@@ -278,7 +280,7 @@ class FastTextUnsupervisedDataConverter(FastTextDataConverter):
     Ignores labels and writes only the text to a single file."""
 
     @classmethod
-    def _make_label_fn(cls, label_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_label_fn(cls, label_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:
         """
         No-op since KenLM does not require labels.
         """
@@ -288,7 +290,7 @@ class FastTextUnsupervisedDataConverter(FastTextDataConverter):
 
 class KenLMDataConverter(BaseDataConverter):
     @classmethod
-    def _make_text_fn(cls, text_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_text_fn(cls, text_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:
         """
         Create a function that extracts text from the input document;
         KenLM does not require any preprocessing of the text.
@@ -296,7 +298,7 @@ class KenLMDataConverter(BaseDataConverter):
         return make_selector(text_selector or "$.text")
 
     @classmethod
-    def _make_label_fn(cls, label_selector: Union[str, None]) -> Callable[[InputSpecWithMetadata], str]:
+    def _make_label_fn(cls, label_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:
         """
         No-op since KenLM does not require labels.
         """

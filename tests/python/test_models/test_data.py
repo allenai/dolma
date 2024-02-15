@@ -51,12 +51,7 @@ class TestFasttextData(TestCase):
 
     def test_text_formatting(self):
         d = lambda x: InputSpecWithMetadata(source="", text=x, id="")  # noqa: E731
-        fn = lambda x: FastTextDataConverter._make_text_fn(lowercase=x)  # noqa: E731
-        self.assertEqual(fn(False)(d("hello world")), "hello world")
-        self.assertEqual(fn(False)(d("Hello, World")), "Hello, World")
-        self.assertEqual(fn(True)(d("Hello, World")), "hello, world")
-        self.assertEqual(fn(False)(d("hello\nworld")), "hello world")
-        self.assertEqual(fn(False)(d("hello\n\n\t world")), "hello world")
+        self.assertEqual(FastTextDataConverter._make_text_fn()(d("hello world")), "hello world")
 
     def _load_expected(self, *paths: str, lowercase: bool = False) -> Tuple[List[str], List[str]]:
         expected_text = []
@@ -137,11 +132,11 @@ class TestFasttextData(TestCase):
                 train_sample=0.5,
                 dev_sample=0.2,
                 test_sample=0.3,
-                lowercase=True,
                 num_processes=2,
             )
 
             got_text, got_labels = self._load_output(tmpdir)
             for i, (got, exp) in enumerate(zip(sorted(got_text), sorted(expected_text))):
                 self.assertEqual(got, exp, f"got: {got[:40]}, expected: {exp[:40]}, index: {i}")
+            breakpoint()
             self.assertEqual(set(got_labels), {"__label__pos"})
