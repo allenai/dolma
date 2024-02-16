@@ -33,7 +33,7 @@ authors:
     affiliation: Allen Institute For AI
   - family-names: Authur
     given-names: Russell
-    email: russella@allenai.org
+    email: russell.authur@gmail.com
     affiliation: Allen Institute For AI
   - family-names: Bogin
     given-names: Ben
@@ -49,7 +49,7 @@ authors:
     affiliation: Allen Institute For AI
   - family-names: Elazar
     given-names: Yanai
-    email: elazary@allenai.org
+    email: yanaiela@gmail.com
     affiliation: 'Allen Institute For AI, University of Washington'
   - family-names: Hofmann
     given-names: Valentin
@@ -82,7 +82,7 @@ authors:
     affiliation: Allen Institute For AI
   - family-names: Morrison
     given-names: Jacob
-    email: jacomm@allenai.org
+    email: jacobm@allenai.org
     affiliation: Allen Institute For AI
   - family-names: Muennighoff
     given-names: Niklas
@@ -98,9 +98,10 @@ authors:
   - family-names: Peters
     given-names: Matthew E
     affiliation: Spiffy AI
+    email: matt@spiffy.ai
   - family-names: Ravichander
     given-names: Abhilasha
-    email: abhilasha@allenai.org
+    email: abhilashar@allenai.org
     affiliation: Allen Institute For AI
   - family-names: Richardson
     given-names: Kyle
@@ -121,7 +122,7 @@ authors:
     affiliation: 'Carnegie Mellon University, Allen Institute For AI'
   - family-names: Tafjord
     given-names: Oyvind
-    email: oyvind@allenai.org
+    email: oyvindt@allenai.org
     affiliation: Allen Institute For AI
   - family-names: Walsh
     given-names: Pete
