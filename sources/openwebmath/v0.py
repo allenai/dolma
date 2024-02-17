@@ -86,9 +86,9 @@ class OpenWebMath(BaseParallelProcessor):
 
         random.shuffle(raw_paths := list(glob_path(self.src_prefixes[0])))
         for path in raw_paths:
-            if not(grouped_source_path) or len(grouped_source_path[-1]) >= 3:
+            if not(grouped_source_path) or len(grouped_source_path[-1]) >= 5:
                 grouped_source_path.append([])
-                grouped_dest_path.append(f"{self.dst_prefixes[0]}/{len(grouped_dest_path)}.jsonl.gz")
+                grouped_dest_path.append(f"{self.dst_prefixes[0]}/{len(grouped_dest_path):03d}.jsonl.gz")
                 grouped_meta_path.append(f"{self.meta_prefixes[0]}/{len(grouped_meta_path)}")
             grouped_source_path[-1].append(path)
 
