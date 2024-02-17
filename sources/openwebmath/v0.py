@@ -2,7 +2,6 @@ from calendar import c
 import datetime
 import multiprocessing
 import os
-import random
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
@@ -29,7 +28,6 @@ def parse_timestamp(date_str):
         print(f"Error parsing date: {e}")
         return None
 
-
 class OpenWebMath(BaseParallelProcessor):
 
     @classmethod
@@ -53,9 +51,8 @@ class OpenWebMath(BaseParallelProcessor):
             for path in process_paths:
                 _, (*_, fn) = split_path(path)
                 name, *_ = fn.split(".")
-                coll = ParquetFile(path).to_pandas()
-
-                for i, doc in coll.sample(frac=1).iterrows():
+                coll = ParquetFile(path)
+                for i, doc in coll.to_pandas().iterrows():
                     metadata = parser.decode(doc.metadata)
                     output = {
                         "id": f"openwebmath-{name}-{i}",
@@ -84,9 +81,8 @@ class OpenWebMath(BaseParallelProcessor):
         grouped_dest_path: List[str] = []
         grouped_meta_path: List[str] = []
 
-        random.shuffle(raw_paths := list(glob_path(self.src_prefixes[0])))
-        for path in raw_paths:
-            if not(grouped_source_path) or len(grouped_source_path[-1]) >= 5:
+        for path in glob_path(self.src_prefixes[0]):
+            if not(grouped_source_path) or len(grouped_source_path[-1]) >= 4:
                 grouped_source_path.append([])
                 grouped_dest_path.append(f"{self.dst_prefixes[0]}/{len(grouped_dest_path):03d}.jsonl.gz")
                 grouped_meta_path.append(f"{self.meta_prefixes[0]}/{len(grouped_meta_path)}")
