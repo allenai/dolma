@@ -425,6 +425,10 @@ def create_and_run_tagger(
         profile_sort_key (str, optional): Sort key for the profiling output. Defaults to 'tottime'.
     """
 
+    # before pre-caching taggers, import any taggers modules
+    if taggers_modules is not None:
+        import_modules(taggers_modules)
+
     for tagger_name in taggers:
         # instantiate the taggers here to make sure they are all valid + download any necessary resources
         tagger = TaggerRegistry.get(tagger_name)
