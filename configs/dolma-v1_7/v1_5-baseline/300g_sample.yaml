@@ -1,0 +1,97 @@
+
+streams:
+  - name: books
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/books/*.gz
+    attributes: &attributes
+      - paloma_paragraphs
+      - paloma_documents
+      - random_number_v1
+    output: &output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/books
+      max_size_in_bytes: 4294967296
+      discard_fields:
+        - attributes
+    filter: &filter
+      include:
+          - "$.attributes[?(@.random_number_v1__random_number_v1__random[0][2] < 0.10)]"
+      exclude:
+        - "$@.attributes[?(@.paloma_documents_bff_duplicates && @.paloma_documents_bff_duplicates[0] && @.paloma_documents_bff_duplicates[0][2] >= 1.0)]"
+        - "$@.attributes[?(@.paloma_paragraphs_bff_duplicates && @.paloma_paragraphs_bff_duplicates[0] && @.paloma_paragraphs_bff_duplicates[0][2] >= 1.0)]"
+
+  - name: c4
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/c4/*.gz
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/c4
+    filter: *filter
+
+  - name: cc_en_head
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_head/*.gz
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/cc_en_head
+    filter: *filter
+
+  - name: cc_en_middle
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_middle/*.gz
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/cc_en_middle
+    filter: *filter
+
+  - name: cc_en_tail
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_tail/*.gz
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/cc_en_tail
+    filter: *filter
+
+  - name: pes2o
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/pes2o/*.gz
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/pes2o
+    filter: *filter
+
+  - name: reddit
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/reddit/*.gz
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/reddit
+    filter: *filter
+
+  - name: stack
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/stack/*.gz
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/stack
+    filter: *filter
+
+  - name: wiki
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/wiki/*.gz
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5-300G-decon/documents/wiki
+    filter: *filter
+
+work_dir:
+  input: "/tmp/olmo-mix-v1_5/input"
+  output: "/tmp/olmo-mix-v1_5/output"
+processes: 188

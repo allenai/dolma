@@ -1,12 +1,18 @@
 import glob
+import pickle
 import re
 from functools import partial
+from hashlib import sha256
 from itertools import chain
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Tuple, Union
 from urllib.parse import urlparse
 
+import platformdirs
+import smart_open
 from fsspec import AbstractFileSystem, get_filesystem_class
+
+from .loggers import get_logger
 
 __all__ = [
     "glob_path",
@@ -36,6 +42,9 @@ RE_GLOB_CLOSE_ESCAPE = re.compile(r"(?<!\\)\]")
 ESCAPE_SYMBOLS_MAP = {"*": "\u2581", "?": "\u2582", "[": "\u2583", "]": "\u2584"}
 REVERSE_ESCAPE_SYMBOLS_MAP = {v: k for k, v in ESCAPE_SYMBOLS_MAP.items()}
 PATCHED_GLOB = False
+
+
+LOGGER = get_logger(__name__)
 
 
 def _get_fs(path: Union[Path, str]) -> AbstractFileSystem:
@@ -100,6 +109,14 @@ def _unpathify(protocol: str, path: Path) -> str:
     return path_str
 
 
+def remove_params(path: str) -> str:
+    """
+    Remove parameters from a path.
+    """
+    parsed = urlparse(path)
+    return (f"{parsed.scheme}://" if parsed.scheme else "") + f"{parsed.netloc}{parsed.path}"
+
+
 def is_local(path: str) -> bool:
     """
     Check if a path is local.
@@ -136,6 +153,12 @@ def delete_dir(path: str, ignore_missing: bool = False) -> bool:
         deleted = False
 
     return deleted
+
+
+def cache_location(key: Any) -> Tuple[str, bool]:
+    key_hash = sha256(pickle.dumps(key)).hexdigest()
+    path = f"{get_cache_dir()}/{key_hash}"
+    return path, exists(path)
 
 
 def partition_path(path: str) -> Tuple[str, Tuple[str, ...], Tuple[str, ...]]:
@@ -259,6 +282,15 @@ def exists(path: str) -> bool:
     return fs.exists(path)
 
 
+def parent(path: str) -> str:
+    """Get the parent directory of a path; if the parent is the root, return the root."""
+
+    prot, parts = split_path(path)
+    if len(parts) == 1:
+        return path
+    return join_path(prot, *parts[:-1])
+
+
 def mkdir_p(path: str) -> None:
     """
     Create a directory if it does not exist.
@@ -320,6 +352,74 @@ def split_glob(path: str) -> Tuple[str, str]:
 
     i = min(i for i, c in enumerate(parts) if is_glob(c))
 
+    if i == 0:
+        # no path, so it's all glob
+        return protocol, join_path("", *parts)
+
     path = join_path(protocol, *parts[:i])
     rest = join_path("", *parts[i:])
     return path, rest
+
+
+def get_cache_dir() -> str:
+    """
+    Returns the path to the cache directory for the Dolma toolkit.
+    If the directory does not exist, it will be created.
+
+    Returns:
+        str: The path to the cache directory.
+    """
+    loc = platformdirs.user_cache_dir("dolma")
+    mkdir_p(loc)
+    return loc
+
+
+def resource_to_filename(resource: str) -> str:
+    """
+    Convert a ``resource`` into a hashed filename in a repeatable way.
+    If ``etag`` is specified, append its hash to the resources', delimited
+    by a period.
+
+    THis is essentially the inverse of :func:`filename_to_url()`.
+    """
+    _, (*_, orig_filename) = split_path(remove_params(str(resource)))
+
+    resource_bytes = str(resource).encode("utf-8")
+    resource_hash = sha256(resource_bytes)
+    hash_filename = resource_hash.hexdigest()
+
+    if "." in orig_filename:
+        _, extension = orig_filename.split(".", 1)
+        hash_filename += f".{extension}"
+
+    return hash_filename
+
+
+def cached_path(path: str) -> str:
+    """
+    Returns the cached path for a given resource.
+
+    If the resource is already available locally, the function returns the path as is.
+    Otherwise, it downloads the resource from the specified path and saves it in the cache directory.
+
+    Args:
+        path (str): The path to the resource.
+
+    Returns:
+        str: The cached path of the resource.
+    """
+    if is_local(path):
+        # Implementation goes here
+        pass
+        return path
+
+    destination = f"{get_cache_dir()}/{resource_to_filename(path)}"
+    if exists(destination):
+        LOGGER.info(f"Using cached file {destination} for {path}")
+        return destination
+
+    LOGGER.info(f"Downloading {path} to {destination}")
+    with smart_open.open(path, "rb") as src, smart_open.open(destination, "wb") as dest:
+        dest.write(src.read())
+
+    return destination
