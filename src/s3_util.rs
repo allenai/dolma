@@ -402,11 +402,11 @@ mod test {
             .unwrap();
         let s3_client = new_client(None)?;
 
-        let key = "pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
-        let resp = rt.block_on(object_size(&s3_client, "ai2-llm", key));
+        let key = "pretraining-data/sources/openstax_paragraphs/raw/openstax_books.jsonl";
+        let resp = rt.block_on(object_size(&s3_client, "dolma-tests", key));
 
         let size = resp.unwrap();
-        assert_eq!(size, 25985);
+        assert_eq!(size, 14582478);
         Ok(())
     }
 
