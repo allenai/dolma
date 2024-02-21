@@ -15,8 +15,23 @@ from dolma.core.paths import glob_path, is_local
 
 
 @dataclass
+class NgramDedupeConfig:
+    ngram_length: int = field(default=0, help="Number of Uniseg segmented words per ngram")
+    stride: int = field(
+        default=0, help="Number of words to skip between ngrams. By default, consider all possible ngrams."
+    )
+    overlap_threshold: float = field(
+        default=1.0,
+        help="Fraction of ngrams that must be seen before a paragraph is considered a duplicate. By default, only full overlap is considered.",
+    )
+
+
+@dataclass
 class ParagraphDedupeConfig:
     attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
+    by_ngram: Optional[NgramDedupeConfig] = field(
+        default=None, help="Configuration for deduping paragraphs by ngram overlap"
+    )
 
 
 @dataclass
