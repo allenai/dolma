@@ -1,7 +1,7 @@
 import json
 import re
 import socket
-from typing import Generator, List, Set
+from typing import Dict, Generator, List, Set, Tuple
 
 import smart_open
 import urllib3.util
@@ -62,22 +62,22 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
     URL_REGEX = r"(([a-z0-9\-_]+\.?){2,}|localhost|localdomain)"
 
     def __init__(self) -> None:
-        self.blocklist: Set[str] = set()
+        self.blocklist: Dict[str, float] = {}
 
         # doing the loading here
         for blocklist_path in self.BLOCKLIST_PATHS:
             with smart_open.open(cached_path(blocklist_path)) as blocklist_file:
                 for i, ln in enumerate(blocklist_file):
                     try:
-                        for url in self.parse_line(ln):
-                            self.blocklist.add(url)
+                        for url, score in self.parse_line(ln):
+                            self.blocklist[url] = score
                     except UrlNotParsedError:
                         message = f"Invalid line {i} in {blocklist_path}: '{ln}'"
                         LOGGER.info(message)
 
         assert len(self.blocklist) > 0, f"Blocklist is empty for {self.__class__.__name__} tagger"
 
-    def parse_line(self, ln: str) -> Generator[str, None, None]:
+    def parse_line(self, ln: str) -> Generator[Tuple[str, float], None, None]:
         if not (ln := ln.strip().lower()) or ln.startswith("#") or ln.startswith(";") or ln.startswith("!"):
             # either empty or a comment
             return
@@ -92,17 +92,17 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
 
             if not re.match(f"^{self.IGNORE_IP_REGEX}$", maybe_ipv6_or_ipv4):
                 # do not yield the IP if it a localhost
-                yield maybe_ipv6_or_ipv4
+                yield maybe_ipv6_or_ipv4, 1.0
 
             if url != "localhost" and url != "localdomain":
                 # do not yield the URL if it is a localhost
-                yield from self.clean_url(url)
+                yield from ((url, 1.0) for url in self.clean_url(url))
         elif expr := re.match(f"^{self.URL_REGEX}", ln):
             # the line contains only a URL; we yield it
-            yield from self.clean_url(ln)
+            yield from ((url, 1.0) for url in self.clean_url(ln))
         elif expr := re.match(f"\\|+{self.URL_REGEX}\\^", ln):
             # this is in case we need to deal with data with ADP format
-            yield expr.group(1)
+            yield expr.group(1), 1.0
         else:
             raise UrlNotParsedError(f"Invalid line: {ln}")
 
@@ -115,15 +115,15 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
         parsed = urllib3.util.parse_url(url)
         yield f"{parsed.host}{(f':{parsed.port}') if parsed.port else ''}{parsed.path or ''}".rstrip("/").lower()
 
-    def check_url(self, url: str) -> bool:
-        return url in self.blocklist
+    def check_url(self, url: str) -> float:
+        return self.blocklist.get(url, 0.0)
 
     def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
         url = doc.metadata.get(self.URL_METADATA_KEY) or ""
         spans = []
         for cleaned_url in self.clean_url(url):
-            if self.check_url(cleaned_url):
-                spans = [Span(start=0, end=len(doc.text), type=self.URL_METADATA_KEY, score=1.0)]
+            if score := self.check_url(cleaned_url):
+                spans = [Span(start=0, end=len(doc.text), type=self.URL_METADATA_KEY, score=score)]
                 break
 
         return DocResult(doc=doc, spans=spans)
@@ -154,10 +154,10 @@ class LinkBlocklistPhishingTagger(BaseUrlTagger):
         "https://dolma-artifacts.org/blocklist_phishing_db/blocklist_phishing_db-20240205/domains.txt.gz"
     ]
 
-    def parse_line(self, ln: str) -> Generator[str, None, None]:
+    def parse_line(self, ln: str) -> Generator[Tuple[str, float], None, None]:
         if (ln := ln.strip().lower()).startswith("#"):
             return
-        yield ln
+        yield (ln, 1.0)
 
 
 @TaggerRegistry.add("domain_blocklist_phishing_v1")
@@ -172,8 +172,8 @@ class AdbUrlTagger(BaseUrlTagger):
         # from dolma import UrlBlocker
         self.engine = UrlBlocker.from_adb_paths(*[cached_path(p) for p in self.BLOCKLIST_PATHS])
 
-    def check_url(self, url: str) -> bool:
-        return self.engine.check_network_urls(url)
+    def check_url(self, url: str) -> float:
+        return 1.0 if self.engine.check_network_urls(url) else 0.0
 
 
 @TaggerRegistry.add("oisd_small_abp_v1")
@@ -401,7 +401,7 @@ class AllowlistWikidataTagger(BaseDomainTagger):
     def is_valid_row(self, row: dict) -> bool:
         return True
 
-    def parse_line(self, ln: str) -> Generator[str, None, None]:
+    def parse_line(self, ln: str) -> Generator[Tuple[str, float], None, None]:
         data = json.loads(ln)
         for row in data:
             try:
@@ -410,11 +410,11 @@ class AllowlistWikidataTagger(BaseDomainTagger):
             except Exception:
                 pass
 
-    def check_url(self, url: str) -> bool:
+    def check_url(self, url: str) -> float:
         for cleaned_url in self.clean_url(url):
-            if cleaned_url in self.blocklist:
-                return True
-        return False
+            if (score := self.blocklist.get(cleaned_url)) is not None:
+                return score
+        return 0.0
 
 
 @TaggerRegistry.add("allowlist_wikidata_cleaned_v1")
@@ -483,3 +483,12 @@ class AllowlistWikidataCleanedTagger(AllowlistWikidataTagger):
         if any(word in row["description"].lower() for word in self.incomplete_wiki_desc):
             return False
         return True
+
+
+@TaggerRegistry.add("cloudflare_rank_v1")
+class CloudflareRankTagger(AllowlistWikidataTagger):
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/cloudflare_ranking_buckets_merged/merged_20240205.jsonl.gz"]
+
+    def parse_line(self, ln: str) -> Generator[Tuple[str, float], None, None]:
+        data = json.loads(ln)
+        yield data["url"], data["score"]

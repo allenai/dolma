@@ -276,6 +276,22 @@ def exists(path: str) -> bool:
     return fs.exists(path)
 
 
+def is_dir(path: str) -> bool:
+    """Check if a path is a directory."""
+    if exists(path):
+        fs = _get_fs(path)
+        return fs.isdir(path)
+    return False
+
+
+def is_file(path: str) -> bool:
+    """Check if a path is a file."""
+    if exists(path):
+        fs = _get_fs(path)
+        return fs.isfile(path)
+    return False
+
+
 def parent(path: str) -> str:
     """Get the parent directory of a path; if the parent is the root, return the root."""
 

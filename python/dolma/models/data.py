@@ -148,19 +148,22 @@ class BaseDataConverter(BaseParallelProcessor):
                 if (p := random.random()) > test_sample_rate:
                     continue
 
+                # we decide to sample this document, so let's decode it!
                 data = decoder.decode(line)
-                text = word_tokenizer(text_fn(data))
                 label = label_fn(data)
+                text = text_fn(data)
 
-                if p <= train_sample_rate:
-                    train_writefile.write(label + text + "\n")
-                    train_cnt += 1
-                elif p <= dev_sample_rate:
-                    dev_writefile.write(label + text + "\n")
-                    dev_cnt += 1
-                else:
-                    test_writefile.write(label + text + "\n")
-                    test_cnt += 1
+                for text_unit in word_tokenizer(text):
+                    # we want all text units from the same document to be in the same split
+                    if p <= train_sample_rate:
+                        train_writefile.write(label + text_unit + "\n")
+                        train_cnt += 1
+                    elif p <= dev_sample_rate:
+                        dev_writefile.write(label + text_unit + "\n")
+                        dev_cnt += 1
+                    else:
+                        test_writefile.write(label + text_unit + "\n")
+                        test_cnt += 1
 
                 if i % update_interval == 0:
                     # update the progress bar every 1000 documents to prevent
@@ -180,7 +183,7 @@ class BaseDataConverter(BaseParallelProcessor):
             if staging_dir is not None and exists(staging_dir):
                 delete_dir(staging_dir)
 
-    def __exit__(self):
+    def __exit__(self, *args: Any) -> None:
         return self.cleanup()
 
     @classmethod
