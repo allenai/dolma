@@ -1,8 +1,12 @@
 import re
+from contextlib import ExitStack
 from typing import TYPE_CHECKING, Generator, List, Optional, Tuple
 
 import smart_open
 from necessary import necessary
+from tqdm import tqdm
+
+from dolma.core.loggers import get_logger
 
 from ...core.paths import cached_path
 from ..data import FastTextDataConverter, FastTextUnsupervisedDataConverter
@@ -18,6 +22,9 @@ with necessary("sklearn", soft=True) as SKLEARN_AVAILABLE:
     if TYPE_CHECKING or SKLEARN_AVAILABLE:
         from sklearn.metrics import classification_report
         from sklearn.preprocessing import MultiLabelBinarizer
+
+
+LOGGER = get_logger(__name__)
 
 
 class FastTextTrainer(BaseTrainer):
@@ -70,7 +77,15 @@ class FastTextTrainer(BaseTrainer):
         return model
 
     def get_labels_and_text(self, path: str) -> Generator[Tuple[List[str], str], None, None]:
-        with smart_open.open(path, "rt") as f:
+        with ExitStack() as stack:
+            # handy progress bar
+            path_short = path if len(path) < 30 else f"{path[:10]}...{path[-10:]}"
+            pbar = stack.enter_context(tqdm(desc=f"Reading {path_short}", unit="lines", unit_scale=True))
+
+            # this is the file I'm reading from
+            f = stack.enter_context(smart_open.open(path, "rt"))
+
+            # iterate over the lines
             for ln in f:
                 # because we might have more than one label, we need to find the end of the labels
                 # and then split the labels and the text
@@ -82,9 +97,11 @@ class FastTextTrainer(BaseTrainer):
                 labels = labels_match.group(0).strip().split(" ")
                 text = ln[labels_match.end() :].strip()
                 yield labels, text
+                pbar.update(1)
 
     def predict(self, data_path: str, load_path: str):
         # load the model
+        LOGGER.info(f"Loading model from {load_path}")
         model = FastTextModel(load_path)
 
         # run the models
