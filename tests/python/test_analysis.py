@@ -104,3 +104,11 @@ class TestEqualCountHist(TestCase):
         self.assertEqual(len(arr), counts.sum())
         np.testing.assert_array_equal(counts, [1])
         np.testing.assert_array_equal(bins, [1, 1])
+
+    def test_no_natural_splits(self):
+        array = np.array([1, 2, 3, 4, 5, 6, 7])
+        weights = np.array([1000, 1, 1, 1000, 1, 1, 1000])
+        counts, bins = equal_count_hist(a=array, bins=4, weights=weights)
+        self.assertEqual(weights.sum(), counts.sum())
+        np.testing.assert_array_equal(counts, [1000, 1, 1001, 1002])
+        np.testing.assert_array_equal(bins, [1, 1.5, 2.5, 4.5, 7])

@@ -52,11 +52,7 @@ def equal_count_hist(
     current_n = bins - 1
     bin_end_pos: List[int] = []
 
-    # i = 0
     while current_n > 0:
-        # if i > 100:
-        #     import ipdb; ipdb.set_trace()
-        # i += 1
 
         # this is the number of elements we want in each bin
         elements_per_bin = (iterative_counts * (iterative_counts > 0).astype(int)).sum() // current_n
@@ -77,9 +73,14 @@ def equal_count_hist(
             # rounded to the nearest integer
             rounded_bin_multiples = np.round(cumsum_iterative_counts / elements_per_bin).astype(int)
 
-            # we check for cases where the rounded multiples are larger than the previous rounded
-            # multiples, which indicates that we have a new bin!
-            new_bins_locs = rounded_bin_multiples - np.roll(rounded_bin_multiples, 1) > 0
+            if rounded_bin_multiples.sum() > 0:
+                # we check for cases where the rounded multiples are larger than the previous rounded
+                # multiples, which indicates that we have a new bin!
+                new_bins_locs = rounded_bin_multiples - np.roll(rounded_bin_multiples, 1) > 0
+            else:
+                # this happened because the existing bins cause the partial cumulative sums to be less
+                # than the elements_per_bin; in this case, we pick a split on the largest bin in the array
+                new_bins_locs[np.argmax(iterative_counts)] = True
 
         # if the last position gets selected as a bin, then we need to increase
         # the number of bins by one.
