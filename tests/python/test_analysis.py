@@ -60,3 +60,47 @@ class TestEqualCountHist(TestCase):
         self.assertEqual(len(arr), counts.sum())
         np.testing.assert_array_equal(counts, [3, 3, 3])
         np.testing.assert_array_equal(bins, [1.0, 3.5, 6.5, 9])
+
+    def test_very_large_bins(self):
+        arr = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        weights = np.array([1, 1000, 1, 1, 1, 1000, 1, 1, 1])
+        counts, bins = equal_count_hist(a=arr, bins=3, weights=weights)
+        self.assertEqual(weights.sum(), counts.sum())
+        np.testing.assert_array_equal(counts, [1001, 1003, 3])
+        np.testing.assert_array_equal(bins, [1.0, 2.5, 6.5, 9])
+
+    def test_large_end_bin(self):
+        arr = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        weights = np.array([1, 1, 1, 1, 1, 1, 1, 1, 1000])
+        counts, bins = equal_count_hist(a=arr, bins=3, weights=weights)
+        self.assertEqual(weights.sum(), counts.sum())
+        np.testing.assert_array_equal(counts, [3, 3, 1002])
+        np.testing.assert_array_equal(bins, [1.0, 3.5, 6.5, 9])
+
+    def test_zero_bins(self):
+        arr = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9])
+        weights = np.array([1, 0, 0, 0, 0, 0, 0, 0, 1000])
+        counts, bins = equal_count_hist(a=arr, bins=3, weights=weights)
+        self.assertEqual(weights.sum(), counts.sum())
+        np.testing.assert_array_equal(counts, [1, 0, 1000])
+        np.testing.assert_array_equal(bins, [1.0, 1.5, 5.5, 9])
+
+    def test_short_array(self):
+        arr = np.array([0, 1])
+        counts, bins = equal_count_hist(a=arr, bins=3)
+        self.assertEqual(len(arr), counts.sum())
+        np.testing.assert_array_equal(counts, [1, 1])
+        np.testing.assert_array_equal(bins, [0, 0.5, 1])
+
+    def test_empty_array(self):
+        arr = np.array([])
+        counts, bins = equal_count_hist(a=arr, bins=3)
+        np.testing.assert_array_equal(counts, [])
+        np.testing.assert_array_equal(bins, [])
+
+    def test_single_array(self):
+        arr = np.array([1])
+        counts, bins = equal_count_hist(a=arr, bins=3)
+        self.assertEqual(len(arr), counts.sum())
+        np.testing.assert_array_equal(counts, [1])
+        np.testing.assert_array_equal(bins, [1, 1])

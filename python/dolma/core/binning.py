@@ -42,6 +42,9 @@ def equal_count_hist(
     if not isinstance(a, np.ndarray):
         a = np.array(a)
 
+    if a.size == 0:
+        return np.array([]), np.array([])
+
     # can't have more bins than elements
     bins = min(bins, a.size)
 
@@ -49,15 +52,18 @@ def equal_count_hist(
     current_n = bins - 1
     bin_end_pos: List[int] = []
 
+    # i = 0
     while current_n > 0:
-        elements_per_bin = cumsum_with_reset(iterative_counts, -1)[-1] // current_n
+        # if i > 100:
+        #     import ipdb; ipdb.set_trace()
+        # i += 1
+
+        # this is the number of elements we want in each bin
+        elements_per_bin = (iterative_counts * (iterative_counts > 0).astype(int)).sum() // current_n
 
         # whether there are individual bins that are above the size of each bin;
         # therefore, we need to isolate them before we can split the rest
         new_bins_locs = iterative_counts >= elements_per_bin
-
-        # the last position in the new_bins_locs is always False
-        new_bins_locs[-1] = False
 
         if not new_bins_locs.any():
             # bins are all of proper size, so we have to use the cumulative sum to find the
@@ -75,8 +81,10 @@ def equal_count_hist(
             # multiples, which indicates that we have a new bin!
             new_bins_locs = rounded_bin_multiples - np.roll(rounded_bin_multiples, 1) > 0
 
-        # the last position in the new_bins_locs is always False
-        new_bins_locs[-1] = False
+        # if the last position gets selected as a bin, then we need to increase
+        # the number of bins by one.
+        if new_bins_locs[-1]:
+            current_n += 1
 
         # using the new locations, we can find the indices of the new bins
         new_bins, *_ = np.where(new_bins_locs)
@@ -93,7 +101,7 @@ def equal_count_hist(
         current_n -= len(new_bins)
 
     # sort the location of bins, add the last position as the end of the array
-    bin_end_pos = sorted(bin_end_pos) + [len(a) - 1]
+    bin_end_pos = sorted(set(bin_end_pos + [len(a) - 1]))
 
     # bins are easy to get; we just take the values of a at the positions we found
     final_bins = np.concatenate(

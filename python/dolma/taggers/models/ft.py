@@ -42,7 +42,7 @@ class FastTextTagger(BaseTagger):
 
         # we use this private attribute to avoid a warning from the fasttext library. See this comment:
         # https://github.com/facebookresearch/fastText/issues/1056#issuecomment-1278058705
-        self.classifier = _FastText(str(cached_path(path)))
+        self.classifier = _FastText(str(cached_path(path)), verbose=1)
         self.mode = FastTextMode(mode)
 
     def predict(self, doc: Document) -> DocResult:
