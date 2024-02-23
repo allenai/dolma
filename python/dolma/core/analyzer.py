@@ -4,7 +4,7 @@ import re
 import shutil
 from contextlib import ExitStack
 from tempfile import TemporaryDirectory
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 import msgspec
 import smart_open
