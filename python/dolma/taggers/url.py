@@ -1,7 +1,7 @@
 import json
 import re
 import socket
-from typing import Dict, Generator, List, Set, Tuple
+from typing import Dict, Generator, List, Tuple
 
 import smart_open
 import urllib3.util
