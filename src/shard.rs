@@ -33,6 +33,175 @@ pub struct DocumentPaths {
     pub attribute_paths: Vec<String>,
 }
 
+pub mod filters {
+    use std::io;
+
+    use crate::shard::shard_config::FilterConfig;
+    use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter, Val};
+    use jaq_std;
+    use serde_json::Value;
+
+    pub struct DocFilters {
+        pub include: Vec<Filter>,
+        pub exclude: Vec<Filter>,
+    }
+
+    impl DocFilters {
+        fn parse_filters(filter_strs: Vec<String>) -> Result<Vec<Filter>, io::Error> {
+            let mut defs = ParseCtx::new(Vec::new());
+            defs.insert_natives(jaq_core::core());
+            defs.insert_defs(jaq_std::std());
+            assert!(defs.errs.is_empty());
+
+            let mut filters: Vec<Filter> = Vec::new();
+            for filter_str in filter_strs {
+                let (filter, errs) = jaq_parse::parse(&filter_str, jaq_parse::main());
+                if !errs.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Error parsing '{:?}' into filter: {:?}", filter_str, errs),
+                    ));
+                }
+                match filter {
+                    Some(filter) => {
+                        let filter: jaq_interpret::Filter = defs.compile(filter);
+                        filters.push(filter);
+                    }
+                    None => {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("Parsing '{:?}' resulted in no filter", filter_str),
+                        ));
+                    }
+                }
+            }
+            Ok(filters)
+        }
+
+        pub fn new(filter_config: &FilterConfig) -> Result<DocFilters, io::Error> {
+            let include_filters = DocFilters::parse_filters(filter_config.include.clone())?;
+            let exclude_filters = DocFilters::parse_filters(filter_config.exclude.clone())?;
+            Ok(DocFilters {
+                include: include_filters,
+                exclude: exclude_filters,
+            })
+        }
+
+        fn evaluate_match(&self, result: &Result<Val, jaq_interpret::Error>) -> bool {
+            match result {
+                Ok(jaq_interpret::Val::Bool(b)) => *b,
+                Ok(jaq_interpret::Val::Null) => false,
+                Ok(jaq_interpret::Val::Int(i)) => *i != 0,
+                Ok(jaq_interpret::Val::Float(f)) => *f != 0.0,
+                Ok(jaq_interpret::Val::Str(s)) => !s.is_empty(),
+                Ok(jaq_interpret::Val::Arr(a)) => !a.is_empty(),
+                Ok(jaq_interpret::Val::Obj(d)) => !d.is_empty(),
+                _ => true,
+            }
+        }
+
+        pub fn should_keep(&self, json: &Value) -> Result<bool, String> {
+            let mut keep = self.include.is_empty();
+            let inputs: RcIter<std::iter::Empty<_>> = RcIter::new(core::iter::empty());
+            for filter in self.include.iter() {
+                // exit early if keep is already true
+                if keep {
+                    break;
+                }
+
+                let out: Vec<Result<jaq_interpret::Val, jaq_interpret::Error>> = filter
+                    .run((Ctx::new(Vec::new(), &inputs), Val::from(json.clone())))
+                    .collect();
+                // if out is not empty and all its elements are true, then keep is true
+                keep = !out.is_empty() && out.iter().all(|x| self.evaluate_match(x));
+            }
+
+            for filter in self.exclude.iter() {
+                if !keep {
+                    break;
+                }
+                let out: Vec<_> = filter
+                    .run((Ctx::new(Vec::new(), &inputs), Val::from(json.clone())))
+                    .collect();
+                keep = out.is_empty() || !out.iter().all(|x| self.evaluate_match(x));
+            }
+            Ok(keep)
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use serde_json::json;
+
+        #[test]
+        fn test_should_keep() {
+            let filter_config = FilterConfig {
+                include: vec![".attributes.foo".to_string()],
+                exclude: vec![r#".attributes.baz == "quac""#.to_string()],
+            };
+            let filters = DocFilters::new(&filter_config).unwrap();
+            let doc = json!({
+                "attributes": {
+                    "foo": "bar",
+                    "baz": "qux"
+                }
+            });
+            assert_eq!(filters.should_keep(&doc).unwrap(), true);
+        }
+
+        #[test]
+        fn test_should_remove() {
+            let filter_config = FilterConfig {
+                include: vec![".attributes.foo".to_string()],
+                exclude: vec![r#".attributes.baz == "qux""#.to_string()],
+            };
+            let filters = DocFilters::new(&filter_config).unwrap();
+            let doc = json!({
+                "attributes": {
+                    "foo": "bar",
+                    "baz": "qux"
+                }
+            });
+            assert_eq!(filters.should_keep(&doc).unwrap(), false);
+
+        }
+
+        #[test]
+        fn test_aggregate_filters() {
+            let filter_config = FilterConfig {
+                include: vec![".attributes.foo | length >= 3".to_string()],
+                exclude: vec![],
+            };
+            let filters = DocFilters::new(&filter_config).unwrap();
+            let doc = json!({
+                "attributes": {
+                    "foo": [1.0, 2.0, 3.0],
+                    "baz": [4.0, 5.0]
+                }
+            });
+            assert_eq!(filters.should_keep(&doc).unwrap(), true);
+        }
+
+        #[test]
+        fn test_sum_filters() {
+            let filter_config = FilterConfig {
+                include: vec![".attributes.foo | sum >= 6".to_string()],
+                exclude: vec![],
+            };
+            let filters = DocFilters::new(&filter_config).unwrap();
+            let doc = json!({
+                "attributes": {
+                    "foo": [1.0, 2.0, 3.0],
+                    "baz": [4.0, 5.0]
+                }
+            });
+            assert_eq!(filters.should_keep(&doc).unwrap(), true);
+
+        }
+    }
+}
+
 impl Shard {
     // Partition the input files of a stream into a set of shards.
     // Try to respect the max_size_in_bytes in the configuration, but this is approximate
