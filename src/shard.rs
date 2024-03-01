@@ -11,6 +11,7 @@ use glob::glob;
 use rayon::prelude::*;
 use serde_json::Value;
 
+use crate::filters::DocFilter;
 use crate::s3_util;
 use crate::shard::shard_config::*;
 
@@ -173,6 +174,9 @@ impl Shard {
 
                 let mut line_number = 0;
                 let mut lines_written = 0;
+
+                let filter_tool = DocFilter::new(self.filter.as_ref())?;
+
                 for line in reader.lines() {
                     match line {
                         Ok(_) => {}
@@ -264,16 +268,10 @@ impl Shard {
                         }
                     }
 
-                    let mut should_write = true;
-                    for f in self.filter.iter() {
-                        if !f
-                            .should_keep(&data)
-                            .map_err(|s| io::Error::new(io::ErrorKind::Other, s))?
-                        {
-                            should_write = false;
-                            break;
-                        }
-                    }
+                    let should_write = filter_tool
+                        .should_keep(&data)
+                        .map_err(|s| io::Error::new(io::ErrorKind::Other, s))?;
+
                     if should_write {
                         if self.span_replacements.is_some() {
                             let mut replacements = self
@@ -445,6 +443,7 @@ pub mod shard_config {
     pub struct FilterConfig {
         pub include: Vec<String>,
         pub exclude: Vec<String>,
+        pub syntax: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
@@ -497,6 +496,7 @@ pub mod shard_config {
         }
     }
 
+    // TODO: remove this since it's not used (we use what's in filters.rs instead)
     impl FilterConfig {
         // Check the json for the existence of any element matching the configured include/exclude patterns
         // Determine whether to keep the document based on the include/exclude matches
