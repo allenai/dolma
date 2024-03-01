@@ -268,16 +268,6 @@ impl Shard {
                         }
                     }
 
-                    // let mut should_write = true;
-                    // for f in self.filter.iter() {
-                    //     if !f
-                    //         .should_keep(&data)
-                    //         .map_err(|s| io::Error::new(io::ErrorKind::Other, s))?
-                    //     {
-                    //         should_write = false;
-                    //         break;
-                    //     }
-                    // }
                     let should_write = filter_tool
                         .should_keep(&data)
                         .map_err(|s| io::Error::new(io::ErrorKind::Other, s))?;
