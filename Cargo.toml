@@ -44,6 +44,10 @@ tokio-util = "0.7.7"
 unicode-segmentation = "1.7"
 openssl = { version = "0.10.63", features = ["vendored"] }
 adblock = { version = "0.8.6", features = ["content-blocking"] }
+jaq-core = "1.2.1"
+jaq-std = "1.2.1"
+jaq-parse = "1.0.2"
+jaq-interpret = { version = "1.2.1", features = ["serde_json"] }
 
 # [target.'cfg(target_arch = "aarch64")'.dependencies]
 # openssl = { version = "0.10.63", features = ["vendored"] }
