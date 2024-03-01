@@ -23,6 +23,10 @@ class StreamOutputConfig:
 class FilterConfig:
     include: List[str] = field(default=[], help="JSONPath expressions to include documents")
     exclude: List[str] = field(default=[], help="JSONPath expressions to exclude documents")
+    syntax: str = field(
+        default="jsonpath",
+        help="Syntax to use for filter expressions. Can be either JSONPath or jq. Defaults to JSONPath.",
+    )
 
 
 @dataclass
@@ -30,6 +34,10 @@ class SpanReplacementConfig:
     span: str = field(help="JSONPath expression for the span to replace")
     min_score: float = field(default=0.5, help="Minimum score for the span to be replaced")
     replacement: str = field(default="", help="Replacement for the span")
+    syntax: str = field(
+        default="jsonpath",
+        help="Syntax to use for filter expressions. Currently only JSONPath is supported. Defaults to JSONPath.",
+    )
 
 
 @dataclass
@@ -79,12 +87,20 @@ class MixerCli(BaseCli):
                     if not stream_config.filter.include and not stream_config.filter.exclude:
                         raise DolmaConfigError("Either `include` or `exclude` must be specified for filter")
 
+                    if stream_config.filter.syntax not in ["jsonpath", "jq"]:
+                        raise DolmaConfigError("Invalid filter syntax; must be either 'jsonpath' or 'jq'")
+
                     stream_config_dict["filter"] = {
                         "include": [str(i) for i in stream_config.filter.include],
                         "exclude": [str(i) for i in stream_config.filter.exclude],
+                        "syntax": stream_config.filter.syntax,
                     }
 
                 for span_replacement in stream_config.span_replacement:
+                    if span_replacement.syntax not in ["jsonpath"]:
+                        raise DolmaConfigError("Invalid span_replacement syntax; must be 'jsonpath'")
+
+                    # TODO: note that we are not using the syntax here yet; adding it later
                     stream_config_dict.setdefault("span_replacement", []).append(
                         {
                             "span": str(span_replacement.span),
