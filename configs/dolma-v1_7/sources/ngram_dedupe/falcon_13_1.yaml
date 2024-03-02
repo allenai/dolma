@@ -19,7 +19,7 @@ bloom_filter:
   estimated_doc_count: 561_403_831_170
   desired_false_positive_rate: 0.1
 
-processes: 188
+processes: 128
 work_dir:
   input: /tmp/falcon_dedupe_para_ngrams_13_1/input
   output: /tmp/falcon_dedupe_para_ngrams_13_1/output
