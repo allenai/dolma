@@ -157,7 +157,7 @@ impl DocFilter {
     pub fn new(filter_config: Option<&FilterConfig>) -> Result<DocFilter, io::Error> {
         match filter_config {
             Some(filter_config) => match filter_config.syntax.as_deref() {
-                Some("jaq") => Ok(DocFilter::JqDocFilter(JqDocFilter::new(filter_config)?)),
+                Some("jq") => Ok(DocFilter::JqDocFilter(JqDocFilter::new(filter_config)?)),
                 Some("jsonpath") | None => Ok(DocFilter::JsonPathFilter(JsonPathFilter::new(
                     filter_config,
                 )?)),
@@ -188,7 +188,7 @@ mod tests {
         let filter_config = FilterConfig {
             include: vec![".attributes.foo".to_string()],
             exclude: vec![r#".attributes.baz == "quac""#.to_string()],
-            syntax: Some("jaq".to_string()),
+            syntax: Some("jq".to_string()),
         };
         let filters = DocFilter::new(Some(&filter_config)).unwrap();
         let doc = json!({
@@ -205,7 +205,7 @@ mod tests {
         let filter_config = FilterConfig {
             include: vec![".attributes.foo".to_string()],
             exclude: vec![r#".attributes.baz == "qux""#.to_string()],
-            syntax: Some("jaq".to_string()),
+            syntax: Some("jq".to_string()),
         };
         let filters = DocFilter::new(Some(&filter_config)).unwrap();
         let doc = json!({
@@ -222,7 +222,7 @@ mod tests {
         let filter_config = FilterConfig {
             include: vec![".attributes.foo | length >= 3".to_string()],
             exclude: vec![],
-            syntax: Some("jaq".to_string()),
+            syntax: Some("jq".to_string()),
         };
         let filters = DocFilter::new(Some(&filter_config)).unwrap();
         let doc = json!({
@@ -293,7 +293,7 @@ mod tests {
         let filter_config = FilterConfig {
             include: vec![".attributes.foo | add >= 6".to_string()],
             exclude: vec![],
-            syntax: Some("jaq".to_string()),
+            syntax: Some("jq".to_string()),
         };
         let filters = DocFilter::new(Some(&filter_config)).unwrap();
         let doc = json!({
@@ -318,7 +318,7 @@ mod tests {
         let filter_config = FilterConfig {
             include: vec![".x | sum".to_string()],
             exclude: vec![],
-            syntax: Some("jaq".to_string()),
+            syntax: Some("jq".to_string()),
         };
 
         let result = DocFilter::new(Some(&filter_config));
