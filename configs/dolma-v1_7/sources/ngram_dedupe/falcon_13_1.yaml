@@ -1,5 +1,5 @@
 documents:
-  - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/*.gz
+  - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/*
 
 dedupe:
   name: dedupe_para_ngrams_13_1
@@ -12,14 +12,14 @@ dedupe:
   skip_empty: true
 
 bloom_filter:
-  file: ${oc.env:HOME}/c4_dedupe_para_ngrams_13_1.bin
+  file: ${oc.env:HOME}/falcon_dedupe_para_ngrams_13_1.bin
   read_only: false
   # estimated doc count is obtained by counting number of words in paragraphs
   # then dividing by 13 (ngram_length) and multiplying by 2 (for each ngram)
-  estimated_doc_count: 359_916_731_334
+  estimated_doc_count: 561_403_831_170
   desired_false_positive_rate: 0.1
 
 processes: 188
 work_dir:
-  input: /tmp/c4_dedupe_para_ngrams_13_1/input
-  output: /tmp/c4_dedupe_para_ngrams_13_1/output
+  input: /tmp/falcon_dedupe_para_ngrams_13_1/input
+  output: /tmp/falcon_dedupe_para_ngrams_13_1/output
