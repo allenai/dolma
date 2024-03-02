@@ -17,8 +17,9 @@ bloom_filter:
   file: ${oc.env:HOME}/cc_en_para_ngrams_13_1.bin
   read_only: false
   # set to of words
-  estimated_doc_count: 1_950_000_000_000
+  estimated_doc_count: 2_089_187_516_474
   desired_false_positive_rate: 0.1
+  size_in_bytes: 1_950_000_000_000
 
 processes: 128
 work_dir:
