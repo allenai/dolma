@@ -6,7 +6,7 @@ streams:
       - dedupe_para_ngrams_13_1
     output:
       max_size_in_bytes: 38949672960
-      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_doc_30/documents/cc_en_head
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_doc_050/documents/cc_en_head
       # discard_fields:
       #   - attributes
       #   - metadata
@@ -14,7 +14,7 @@ streams:
       include:
         - >-
           (.attributes.dedupe_para_ngrams_13_1 | length > 0) and
-          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) > 0.3)
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) >= 0.5)
       syntax: jq
 
 
@@ -25,7 +25,7 @@ streams:
       - dedupe_para_ngrams_13_1
     output:
       max_size_in_bytes: 38949672960
-      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_doc_30/documents/cc_en_middle
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_doc_050/documents/cc_en_middle
       # discard_fields:
       #   - attributes
       #   - metadata
@@ -33,7 +33,7 @@ streams:
       include:
         - >-
           (.attributes.dedupe_para_ngrams_13_1 | length > 0) and
-          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) > 0.3)
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) >= 0.5)
       syntax: jq
 
 
@@ -44,7 +44,7 @@ streams:
       - dedupe_para_ngrams_13_1
     output:
       max_size_in_bytes: 38949672960
-      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_doc_30/documents/cc_en_tail
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_doc_050/documents/cc_en_tail
       # discard_fields:
       #   - attributes
       #   - metadata
@@ -52,7 +52,7 @@ streams:
       include:
         - >-
           (.attributes.dedupe_para_ngrams_13_1 | length > 0) and
-          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) > 0.3)
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) >= 0.5)
       syntax: jq
 
 processes: 128
