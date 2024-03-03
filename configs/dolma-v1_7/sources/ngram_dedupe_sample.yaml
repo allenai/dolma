@@ -73,8 +73,4 @@ streams:
           ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) > 0.1)
       syntax: jq
 
-
-work_dir:
-  input: "/tmp/c4_mix/input"
-  output: "/tmp/c4_mix/output"
 processes: 188
