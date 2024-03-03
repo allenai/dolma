@@ -1,7 +1,7 @@
 streams:
   - name: cc_en_head
     documents:
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-0091.json.gz
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/*
     attributes:
       - dedupe_para_ngrams_13_1
     output:
@@ -20,7 +20,7 @@ streams:
 
   - name: cc_en_middle
     documents:
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-0091.json.gz
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/*
     attributes:
       - dedupe_para_ngrams_13_1
     output:
@@ -39,7 +39,7 @@ streams:
 
   - name: cc_en_tail
     documents:
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-0091.json.gz
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/*
     attributes:
       - dedupe_para_ngrams_13_1
     output:
