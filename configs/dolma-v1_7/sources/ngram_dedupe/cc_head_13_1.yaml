@@ -2,9 +2,9 @@ documents:
   - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/*.gz
 
 dedupe:
-  name: dedupe_para_ngrams_13_1_t2
+  name: dedupe_para_ngrams_13_1
   paragraphs:
-    attribute_name: dedupe_para_ngrams_13_1_t2
+    attribute_name: dedupe_para_ngrams_13_1
     by_ngram:
       ngram_length: 13
       stride: 1

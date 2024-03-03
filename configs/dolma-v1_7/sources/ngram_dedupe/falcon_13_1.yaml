@@ -14,8 +14,7 @@ dedupe:
 bloom_filter:
   file: ${oc.env:HOME}/falcon_dedupe_para_ngrams_13_1.bin
   read_only: false
-  # estimated doc count is obtained by counting number of words in paragraphs
-  # then dividing by 13 (ngram_length) and multiplying by 2 (for each ngram)
+  # set to of words
   estimated_doc_count: 561_403_831_170
   desired_false_positive_rate: 0.1
 
