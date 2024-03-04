@@ -53,7 +53,6 @@ def equal_count_hist(
     bin_end_pos: List[int] = []
 
     while current_n > 0:
-
         # this is the number of elements we want in each bin
         elements_per_bin = (iterative_counts * (iterative_counts > 0).astype(int)).sum() // current_n
 
