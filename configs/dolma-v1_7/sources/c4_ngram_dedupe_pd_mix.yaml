@@ -6,7 +6,7 @@ streams:
       - dedupe_para_ngrams_13_1
     output:
       max_size_in_bytes: 1_073_741_824
-      path: s3://ai2-llm/pretraining-data/sources/c4/v1_dd_ngram_docpara_le030/documents
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/c4/v1_dd_ngram_docpara_le030/documents
       min_text_length: 25   # matches wikipedia
       # discard_fields:
       #   - attributes
