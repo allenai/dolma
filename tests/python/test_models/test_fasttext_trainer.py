@@ -73,13 +73,13 @@ class TestFastTextTrainer(unittest.TestCase):
         model = FastTextModel(trainer.config.model_path)
         tokenizer = TokenizerRegistry.get(trainer.config.word_tokenizer)()
 
-        labels, _ = model.predict(tokenizer("Battle is the spark that leads to war and combat."))
+        labels, _ = model.predict(next(tokenizer("Battle is the spark that leads to war and combat.")))
         self.assertEqual(labels[0], "__label__military")  # pyright: ignore
 
-        labels, _ = model.predict(tokenizer("sitting down at the dinner table"))
+        labels, _ = model.predict(next(tokenizer("sitting down at the dinner table")))
         self.assertEqual(labels[0], "__label__food_and_drink")  # pyright: ignore
 
-        labels, _ = model.predict(tokenizer("commerce and money bolster productivity"), k=-1)
+        labels, _ = model.predict(next(tokenizer("commerce and money bolster productivity")), k=-1)
         self.assertEqual(labels[0], "__label__business")  # pyright: ignore
 
         self.assertEqual(len(labels), 30)
