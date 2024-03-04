@@ -58,6 +58,7 @@ streams:
           ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
       syntax: jq
 
+
 work_dir:
   input: "/tmp/cc_ngram_dedupe_mix/input"
   output: "/tmp/cc_ngram_dedupe_mix/output"
