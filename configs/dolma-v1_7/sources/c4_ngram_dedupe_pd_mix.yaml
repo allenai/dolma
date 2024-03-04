@@ -23,7 +23,7 @@ streams:
         replacement: ''
 
 work_dir:
-  input: "/tmp/c4_ngram_dedupe_mix/input"
-  output: "/tmp/c4_ngram_dedupe_mix/output"
+  input: "/tmp/c4_ngram_dedupe_pd_mix/input"
+  output: "/tmp/c4_ngram_dedupe_pd_mix/output"
 
 processes: 188
