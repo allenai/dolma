@@ -449,7 +449,8 @@ pub mod shard_config {
     #[derive(Serialize, Deserialize, Clone)]
     pub struct SpanReplacementConfig {
         pub span: String,
-        pub min_score: f64,
+        pub min_score: Option<f64>,
+        pub max_score: Option<f64>,
         pub replacement: String,
     }
 
@@ -480,7 +481,9 @@ pub mod shard_config {
                     let start = span[0].as_u64().unwrap();
                     let end = span[1].as_u64().unwrap();
                     let score = span[2].as_f64().unwrap();
-                    if score >= self.min_score {
+                    if score >= self.min_score.unwrap_or(0.0)
+                        && score < self.max_score.unwrap_or(1.0)
+                    {
                         let replacement = SpanReplacement {
                             start: start as usize,
                             end: end as usize,
