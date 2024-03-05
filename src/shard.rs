@@ -175,7 +175,18 @@ impl Shard {
                 let mut line_number = 0;
                 let mut lines_written = 0;
 
-                let filter_tool = DocFilter::new(self.filter.as_ref())?;
+                // using the doc filters later to determine if we should keep the document
+                let doc_filters = DocFilter::new(self.filter.as_ref())?;
+
+                // we have to create list of span replaces, potentially dealing with the fact
+                // there might not be any span replacements
+                let span_replacers = self
+                    .span_replacements
+                    .as_ref()
+                    .unwrap_or(&Vec::new())
+                    .iter()
+                    .map(|cfg| SpanReplacer::new(cfg))
+                    .collect::<Vec<SpanReplacer>>();
 
                 for line in reader.lines() {
                     match line {
@@ -268,86 +279,93 @@ impl Shard {
                         }
                     }
 
-                    let should_write = filter_tool
+                    let should_write = doc_filters
                         .should_keep(&data)
                         .map_err(|s| io::Error::new(io::ErrorKind::Other, s))?;
 
                     if should_write {
-                        if self.span_replacements.is_some() {
-                            let mut replacements = self
-                                .span_replacements
-                                .as_ref()
-                                .unwrap()
-                                .iter()
-                                .flat_map(|r| r.find_spans_to_replace(&data).unwrap())
-                                .collect::<Vec<SpanReplacement>>();
-                            if !replacements.is_empty() {
-                                replacements.sort_by(|a, b| a.start.cmp(&b.start));
+                        // if self.span_replacements.is_some() {
+                        // let mut replacements = self
+                        //     .span_replacements
+                        //     .as_ref()
+                        //     .unwrap()
+                        //     .iter()
+                        //     .flat_map(|r| r.find_spans_to_replace(&data).unwrap())
+                        //     .collect::<Vec<SpanReplacement>>();
 
-                                let mut new_text = String::new();
-                                let old_text = data["text"].as_str().unwrap().to_owned();
-                                let mut span_index = 0;
-                                let mut i = 0;
-                                let mut span_start_byte_index = 0;
-                                let mut chars = old_text.char_indices();
-                                let mut byte_index_with_char = chars.next();
-                                while byte_index_with_char.is_some() {
-                                    let (byte_index, c) = byte_index_with_char.unwrap();
-                                    if span_index < replacements.len() {
-                                        let is_inside_span = i >= replacements[span_index].start
-                                            && i < replacements[span_index].end;
-                                        if i == replacements[span_index].start {
-                                            span_start_byte_index = byte_index;
-                                        }
-                                        if !is_inside_span {
-                                            if i == replacements[span_index].end {
-                                                if !replacements[span_index].replacement.is_empty()
-                                                {
-                                                    let replacement_text = replacements[span_index]
-                                                        .replacement
-                                                        .to_owned()
-                                                        .replace(
-                                                            "{}",
-                                                            old_text
-                                                                [span_start_byte_index..byte_index]
-                                                                .to_owned()
-                                                                .as_str(),
-                                                        );
-                                                    new_text.push_str(&replacement_text);
-                                                }
-                                                while span_index < replacements.len()
-                                                    && replacements[span_index].start < i
-                                                {
-                                                    span_index += 1;
-                                                }
-                                            }
-                                            if span_index < replacements.len()
-                                                && replacements[span_index].start == i
-                                            {
-                                                span_start_byte_index = byte_index;
-                                            } else {
-                                                new_text.push(c);
-                                            }
-                                        }
-                                    } else {
-                                        new_text.push(c);
+                        let mut replacements = span_replacers
+                            .iter()
+                            .map(|replacer| replacer.find_spans_to_replace(&data))
+                            .collect::<Result<Vec<Vec<SpanReplacement>>, io::Error>>()?
+                            .into_iter()
+                            .flatten()
+                            .collect::<Vec<SpanReplacement>>();
+
+                        if !replacements.is_empty() {
+                            replacements.sort_by(|a, b| a.start.cmp(&b.start));
+
+                            let mut new_text = String::new();
+                            let old_text = data["text"].as_str().unwrap().to_owned();
+                            let mut span_index = 0;
+                            let mut i = 0;
+                            let mut span_start_byte_index = 0;
+                            let mut chars = old_text.char_indices();
+                            let mut byte_index_with_char = chars.next();
+                            while byte_index_with_char.is_some() {
+                                let (byte_index, c) = byte_index_with_char.unwrap();
+                                if span_index < replacements.len() {
+                                    let is_inside_span = i >= replacements[span_index].start
+                                        && i < replacements[span_index].end;
+                                    if i == replacements[span_index].start {
+                                        span_start_byte_index = byte_index;
                                     }
-                                    i += 1;
-                                    byte_index_with_char = chars.next();
+                                    if !is_inside_span {
+                                        if i == replacements[span_index].end {
+                                            if !replacements[span_index].replacement.is_empty() {
+                                                let replacement_text = replacements[span_index]
+                                                    .replacement
+                                                    .to_owned()
+                                                    .replace(
+                                                        "{}",
+                                                        old_text[span_start_byte_index..byte_index]
+                                                            .to_owned()
+                                                            .as_str(),
+                                                    );
+                                                new_text.push_str(&replacement_text);
+                                            }
+                                            while span_index < replacements.len()
+                                                && replacements[span_index].start < i
+                                            {
+                                                span_index += 1;
+                                            }
+                                        }
+                                        if span_index < replacements.len()
+                                            && replacements[span_index].start == i
+                                        {
+                                            span_start_byte_index = byte_index;
+                                        } else {
+                                            new_text.push(c);
+                                        }
+                                    }
+                                } else {
+                                    new_text.push(c);
                                 }
-                                if span_index < replacements.len()
-                                    && !replacements[span_index].replacement.is_empty()
-                                {
-                                    let replacement_text =
-                                        replacements[span_index].replacement.to_owned().replace(
-                                            "{}",
-                                            old_text[span_start_byte_index..].to_owned().as_str(),
-                                        );
-                                    new_text.push_str(&replacement_text);
-                                }
-                                data["text"] = Value::String(new_text);
+                                i += 1;
+                                byte_index_with_char = chars.next();
                             }
+                            if span_index < replacements.len()
+                                && !replacements[span_index].replacement.is_empty()
+                            {
+                                let replacement_text =
+                                    replacements[span_index].replacement.to_owned().replace(
+                                        "{}",
+                                        old_text[span_start_byte_index..].to_owned().as_str(),
+                                    );
+                                new_text.push_str(&replacement_text);
+                            }
+                            data["text"] = Value::String(new_text);
                         }
+                        // }
                         for f in self.discard_fields.iter().flatten() {
                             data.as_object_mut().unwrap().remove(f);
                         }
@@ -407,9 +425,11 @@ impl Shard {
 }
 
 pub mod shard_config {
+    use crate::filters::Selector;
     use jsonpath_rust::JsonPathFinder;
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
+    use std::io;
 
     #[derive(Serialize, Deserialize, Clone)]
     pub struct StreamConfig {
@@ -452,6 +472,7 @@ pub mod shard_config {
         pub min_score: Option<f64>,
         pub max_score: Option<f64>,
         pub replacement: String,
+        pub syntax: Option<String>,
     }
 
     pub struct SpanReplacement {
@@ -460,42 +481,63 @@ pub mod shard_config {
         pub replacement: String,
     }
 
-    impl SpanReplacementConfig {
+    pub struct SpanReplacer {
+        selector: Selector,
+        min_score: f64,
+        max_score: f64,
+        replacement: String,
+    }
+
+    impl SpanReplacer {
+        // Create a new SpanReplacer from a SpanReplacementConfig
+        pub fn new(config: &SpanReplacementConfig) -> SpanReplacer {
+            SpanReplacer {
+                selector: Selector::new(&config).unwrap(),
+                min_score: config.min_score.unwrap_or(f64::NEG_INFINITY),
+                max_score: config.max_score.unwrap_or(f64::INFINITY),
+                replacement: config.replacement.clone(),
+            }
+        }
+
         // Search for the configured attribute name in the given json
         // Attribute must contains a list of [start, end, score] spans.
         // Return a list of spans to be replaced.
-        pub fn find_spans_to_replace(&self, json: &Value) -> Result<Vec<SpanReplacement>, String> {
-            let mut finder = JsonPathFinder::from_str("{}", &self.span)?;
-            finder.set_json(Box::new(json.clone()));
-            let spans = finder.find();
-            if spans == Value::Null {
-                return Ok(Vec::new());
+        pub fn find_spans_to_replace(
+            &self,
+            json: &Value,
+        ) -> Result<Vec<SpanReplacement>, io::Error> {
+            match self.selector.select(json) {
+                // we found an array of spans; we process them one by one
+                Ok(Value::Array(spans)) => {
+                    let replacements: Vec<SpanReplacement> = spans
+                        .iter()
+                        .filter_map(|span| {
+                            let span = span.as_array().unwrap();
+                            let start = span[0].as_u64().unwrap();
+                            let end = span[1].as_u64().unwrap();
+                            let score = span[2].as_f64().unwrap();
+                            if score >= self.min_score && score < self.max_score {
+                                let replacement = SpanReplacement {
+                                    start: start as usize,
+                                    end: end as usize,
+                                    replacement: self.replacement.clone(),
+                                };
+                                Some(replacement)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<SpanReplacement>>();
+                    Ok(replacements)
+                }
+                // we found no spans, so it's okay to return empty array
+                Ok(Value::Null) => Ok(Vec::new()),
+                Err(e) => Err(e),
+                Ok(spans) => Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Invalid span type: {}; expected array or null.", spans),
+                )),
             }
-            let replacements: Vec<SpanReplacement> = spans
-                .as_array()
-                .unwrap()
-                .iter()
-                .flat_map(|span| span.as_array().unwrap().iter())
-                .filter_map(|span| {
-                    let span = span.as_array().unwrap();
-                    let start = span[0].as_u64().unwrap();
-                    let end = span[1].as_u64().unwrap();
-                    let score = span[2].as_f64().unwrap();
-                    if score >= self.min_score.unwrap_or(0.0)
-                        && score < self.max_score.unwrap_or(1.0)
-                    {
-                        let replacement = SpanReplacement {
-                            start: start as usize,
-                            end: end as usize,
-                            replacement: self.replacement.clone(),
-                        };
-                        Some(replacement)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<SpanReplacement>>();
-            Ok(replacements)
         }
     }
 

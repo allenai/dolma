@@ -32,7 +32,14 @@ class FilterConfig:
 @dataclass
 class SpanReplacementConfig:
     span: str = field(help="JSONPath expression for the span to replace")
-    min_score: float = field(default=0.5, help="Minimum score for the span to be replaced")
+    min_score: Optional[float] = field(
+        default=None,
+        help="Minimum score for the span to be replaced. Either min_score or max_score must be specified.",
+    )
+    max_score: Optional[float] = field(
+        default=None,
+        help="Maximum score for the span to be replaced. Either min_score or max_score must be specified.",
+    )
     replacement: str = field(default="", help="Replacement for the span")
     syntax: str = field(
         default="jsonpath",
@@ -97,15 +104,30 @@ class MixerCli(BaseCli):
                     }
 
                 for span_replacement in stream_config.span_replacement:
-                    if span_replacement.syntax not in ["jsonpath"]:
-                        raise DolmaConfigError("Invalid span_replacement syntax; must be 'jsonpath'")
+                    if span_replacement.syntax not in ["jsonpath", "jq"]:
+                        raise DolmaConfigError("Invalid span_replacement syntax; must be 'jsonpath' or 'jq'")
+
+                    if span_replacement.min_score is None and span_replacement.max_score is None:
+                        raise DolmaConfigError(
+                            "Either min_score or max_score must be specified for span_replacement"
+                        )
+
+                    # add min_score and max_score to the config if they are specified
+                    min_score_config = (
+                        {"min_score": span_replacement.min_score} if span_replacement.min_score is not None else {}
+                    )
+                    max_score_config = (
+                        {"max_score": span_replacement.max_score} if span_replacement.max_score is not None else {}
+                    )
 
                     # TODO: note that we are not using the syntax here yet; adding it later
                     stream_config_dict.setdefault("span_replacement", []).append(
                         {
                             "span": str(span_replacement.span),
-                            "min_score": float(span_replacement.min_score),
                             "replacement": str(span_replacement.replacement),
+                            "syntax": span_replacement.syntax,
+                            **min_score_config,
+                            **max_score_config,
                         }
                     )
 
