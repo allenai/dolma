@@ -72,6 +72,7 @@ impl JqSelector {
                 }
             }
         }
+
         match result.len() {
             0 => Ok(Value::Null),
             1 => Ok(Value::from(result[0].clone())),
@@ -212,6 +213,24 @@ pub mod selector_tests {
         assert_eq!(jq_selector.select(&doc).unwrap(), expected);
 
         let jsonpath_selector = JsonPathSelector::new("$.attributes.foo").unwrap();
+        assert_eq!(jsonpath_selector.select(&doc).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_nested_select_null() {
+        let doc = json!({
+            "attributes": {
+                "not_foo": {
+                    "baz": "qux"
+                }
+            }
+        });
+        let expected = json!(null);
+
+        let jq_selector = JqSelector::new(".attributes?.foo?.baz?").unwrap();
+        assert_eq!(jq_selector.select(&doc).unwrap(), expected);
+
+        let jsonpath_selector = JsonPathSelector::new("$.attributes.foo.baz").unwrap();
         assert_eq!(jsonpath_selector.select(&doc).unwrap(), expected);
     }
 

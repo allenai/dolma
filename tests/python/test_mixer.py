@@ -17,6 +17,7 @@ from .utils import (
 )
 
 EMAIL_SPANS = Path(__file__).parent.parent / "config/email-spans.json"
+EMAIL_SPANS_JQ = Path(__file__).parent.parent / "config/email-spans-jq.yaml"
 FILTER_BY_SPANS = Path(__file__).parent.parent / "config/filter-by-spans.json"
 MIXER = Path(__file__).parent.parent / "config/mixer.json"
 PARAGRAPH_SPANS = Path(__file__).parent.parent / "config/paragraph-spans.json"
@@ -57,6 +58,14 @@ class TestMixer(TestCase):
 
         expected = load_jsonl("tests/data/expected/email-spans.json.gz")
         provided = load_jsonl("tests/work/output/email-spans/email-spans-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)
+
+    def test_email_span_jq(self):
+        main(argv=["-c", str(EMAIL_SPANS_JQ), "mix"])
+
+        expected = load_jsonl("tests/data/expected/email-spans-jq.json.gz")
+        provided = load_jsonl("tests/work/output/email-spans-jq/email-spans-jq-0000.json.gz")
         provided = self.checkAndRemoveProvenance(provided)
         self.assertEqual(expected, provided)
 
