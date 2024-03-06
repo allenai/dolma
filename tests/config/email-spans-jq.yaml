@@ -1,0 +1,27 @@
+streams:
+ - name: email-spans-jq
+   documents:
+     - tests/data/provided/documents/*.json.gz
+   output:
+     max_size_in_bytes: 100000
+     path: tests/work/output/email-spans-jq
+   attributes:
+     - pii
+   span_replacement:
+     - min_score: 0.5
+       max_score: 0.9
+       replacement: '[B-EMAIL]{}[E-EMAIL]'
+       span: .attributes?.pii?.email?
+       syntax: jq
+     - min_score: 0.5
+       max_score: 0.9
+       replacement: ''
+       span: .attributes?.pii?.company_name?
+       syntax: jq
+
+work_dir:
+  input: tests/work/temp/email-spans-jq/input
+  output: tests/work/temp/email-spans-jq/output
+
+
+processes: 1
