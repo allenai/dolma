@@ -1,10 +1,251 @@
 use std::io;
 
-use crate::shard::shard_config::FilterConfig;
+use crate::shard::shard_config::{FilterConfig, SpanReplacementConfig};
 use jaq_interpret::{Ctx, Filter, FilterT, ParseCtx, RcIter, Val};
 use jaq_std;
 use jsonpath_rust::JsonPathFinder;
 use serde_json::Value;
+
+pub struct JqSelector {
+    pub selector: Filter,
+}
+
+impl JqSelector {
+    pub fn new(selector_string: &str) -> Result<JqSelector, io::Error> {
+        let mut defs = ParseCtx::new(Vec::new());
+        defs.insert_natives(jaq_core::core());
+        defs.insert_defs(jaq_std::std());
+        assert!(defs.errs.is_empty());
+
+        let (selector, errs) = jaq_parse::parse(selector_string, jaq_parse::main());
+        if !errs.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!(
+                    "Error parsing '{:?}' into filter: {:?}",
+                    selector_string, errs
+                ),
+            ));
+        }
+        match selector {
+            Some(selector) => {
+                let selector: jaq_interpret::Filter = defs.compile(selector);
+                if !defs.errs.is_empty() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Error compiling '{:?}' into filter.", selector_string),
+                    ));
+                }
+
+                Ok(JqSelector { selector: selector })
+            }
+            None => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Parsing '{:?}' resulted in no filter", selector_string),
+                ));
+            }
+        }
+    }
+
+    // select returns array of results if the filter matches multiple elements,
+    // or a single result if the filter matches a single element.
+    // in case of no match, it returns null
+    pub fn select(&self, json: &Value) -> Result<Value, io::Error> {
+        let inputs: RcIter<std::iter::Empty<_>> = RcIter::new(core::iter::empty());
+        let out: Vec<Result<jaq_interpret::Val, jaq_interpret::Error>> = self
+            .selector
+            .run((Ctx::new(Vec::new(), &inputs), Val::from(json.clone())))
+            .collect();
+        if out.is_empty() {
+            return Ok(Value::Null);
+        }
+        let mut result = Vec::new();
+        for resp in out {
+            match resp {
+                Ok(val) => result.push(val),
+                Err(e) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Error evaluating filter: {:?}", e),
+                    ))
+                }
+            }
+        }
+
+        match result.len() {
+            0 => Ok(Value::Null),
+            1 => Ok(Value::from(result[0].clone())),
+            _ => Ok(Value::from(result)),
+        }
+    }
+}
+
+pub struct JsonPathSelector {
+    pub path: String,
+}
+
+impl JsonPathSelector {
+    pub fn new(path: &str) -> Result<JsonPathSelector, io::Error> {
+        Ok(JsonPathSelector {
+            path: path.to_string(),
+        })
+    }
+
+    pub fn select(&self, json: &Value) -> Result<Value, io::Error> {
+        match JsonPathFinder::from_str("{}", &self.path) {
+            Ok(mut finder) => {
+                finder.set_json(Box::new(json.clone()));
+                match finder.find() {
+                    Value::Array(arr) => match arr.len() {
+                        0 => Ok(Value::Null),
+                        1 => Ok(arr[0].clone()),
+                        _ => Ok(Value::from(arr)),
+                    },
+                    Value::Null => Ok(Value::Null),
+                    _ => Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        format!("Error evaluating filter: {:?}", self.path),
+                    )),
+                }
+            }
+            Err(e) => Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Error evaluating filter: {:?}", e),
+            )),
+        }
+    }
+}
+
+pub enum Selector {
+    JqSelector(JqSelector),
+    JsonPathSelector(JsonPathSelector),
+}
+
+impl Selector {
+    pub fn new(selector_config: &SpanReplacementConfig) -> Result<Selector, io::Error> {
+        match selector_config.syntax.as_deref() {
+            Some("jq") => Ok(Selector::JqSelector(JqSelector::new(
+                &selector_config.span,
+            )?)),
+            Some("jsonpath") | None => Ok(Selector::JsonPathSelector(JsonPathSelector::new(
+                &selector_config.span,
+            )?)),
+            _ => Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("Unknown selector syntax: {:?}", selector_config.syntax),
+            )),
+        }
+    }
+
+    pub fn select(&self, json: &Value) -> Result<Value, io::Error> {
+        match self {
+            Selector::JqSelector(selector) => selector.select(json),
+            Selector::JsonPathSelector(selector) => selector.select(json),
+        }
+    }
+}
+
+#[cfg(test)]
+pub mod selector_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_select() {
+        let doc = json!({
+            "attributes": {
+                "foo": "bar",
+                "baz": "qux"
+            }
+        });
+        let expected = json!("bar");
+
+        let jq_selector = JqSelector::new(".attributes.foo").unwrap();
+        assert_eq!(jq_selector.select(&doc).unwrap(), expected);
+
+        let jsonpath_selector = JsonPathSelector::new("$.attributes.foo").unwrap();
+        assert_eq!(jsonpath_selector.select(&doc).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_select_array() {
+        let doc = json!({
+            "attributes": {
+                "foo": [1, 2, 3],
+                "baz": "qux"
+            }
+        });
+        let expected = json!([1, 2, 3]);
+
+        let jq_selector = JqSelector::new(".attributes.foo").unwrap();
+        assert_eq!(jq_selector.select(&doc).unwrap(), expected);
+
+        let jsonpath_selector = JsonPathSelector::new("$.attributes.foo").unwrap();
+        assert_eq!(jsonpath_selector.select(&doc).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_select_object() {
+        let jq_selector = JqSelector::new(".attributes").unwrap();
+        let doc = json!({
+            "attributes": {
+                "foo": "bar",
+                "baz": "qux"
+            }
+        });
+        assert_eq!(
+            jq_selector.select(&doc).unwrap(),
+            json!({"foo": "bar", "baz": "qux"})
+        );
+    }
+
+    #[test]
+    fn test_select_null() {
+        let doc = json!({
+            "attributes": {
+                "baz": "qux"
+            }
+        });
+        let expected = json!(null);
+
+        let jq_selector = JqSelector::new(".attributes.foo").unwrap();
+        assert_eq!(jq_selector.select(&doc).unwrap(), expected);
+
+        let jsonpath_selector = JsonPathSelector::new("$.attributes.foo").unwrap();
+        assert_eq!(jsonpath_selector.select(&doc).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_nested_select_null() {
+        let doc = json!({
+            "attributes": {
+                "not_foo": {
+                    "baz": "qux"
+                }
+            }
+        });
+        let expected = json!(null);
+
+        let jq_selector = JqSelector::new(".attributes?.foo?.baz?").unwrap();
+        assert_eq!(jq_selector.select(&doc).unwrap(), expected);
+
+        let jsonpath_selector = JsonPathSelector::new("$.attributes.foo.baz").unwrap();
+        assert_eq!(jsonpath_selector.select(&doc).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_select_error() {
+        let doc = json!({
+            "attributes": {
+                "foo": ["water", " & ", "bread"],
+            }
+        });
+
+        let jq_selector = JqSelector::new(".attributes.foo | add").unwrap();
+        assert_eq!(jq_selector.select(&doc).unwrap(), json!("water & bread"));
+    }
+}
 
 pub struct JqDocFilter {
     pub include: Vec<Filter>,
@@ -179,7 +420,7 @@ impl DocFilter {
 }
 
 #[cfg(test)]
-mod tests {
+mod filter_tests {
     use super::*;
     use serde_json::json;
 
