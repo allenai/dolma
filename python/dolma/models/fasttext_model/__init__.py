@@ -7,8 +7,8 @@ from ...cli import BaseCli, field
 from ...core.errors import DolmaConfigError
 from ..config import BaseTrainerConfig
 from ..trainer import BaseTrainer
-from .config import FastTextSupervisedTrainerConfig, FastTextUnsupervisedTrainerConfig
-from .trainer import FastTextTrainer
+from .config import FastTextSupervisedTrainerConfig, FastTextUnsupervisedTrainerConfig, FastTextQuantizerTrainerConfig
+from .trainer import FastTextTrainer, FastTextUnsupervisedTrainer, FastTextQuantizerTrainer
 
 
 @dataclass
@@ -28,6 +28,14 @@ class FastTextSupervisedCliConfig(FastTextSupervisedTrainerConfig, _FastTextCliC
 
 @dataclass
 class FastTextUnsupervisedCliConfig(FastTextUnsupervisedTrainerConfig, _FastTextCliConfig):
+    """Configuration for the unsupervised fasttext CLI; most options come
+    from FastTextUnsupervisedTrainerConfig."""
+
+    pass
+
+
+@dataclass
+class FastTexQuantizerCliConfig(FastTextQuantizerTrainerConfig, _FastTextCliConfig):
     """Configuration for the unsupervised fasttext CLI; most options come
     from FastTextUnsupervisedTrainerConfig."""
 
@@ -67,5 +75,11 @@ class FastTextSupervisedCli(_FastTextCli):
 
 class FastTextUnsupervisedCli(_FastTextCli):
     CONFIG = FastTextUnsupervisedCliConfig
-    TRAINER = FastTextTrainer
+    TRAINER = FastTextUnsupervisedTrainer
     DESCRIPTION = "Subcommand for training and evaluating unsupervised fasttext-based taggers."
+
+
+class FastTextQuantizeCli(_FastTextCli):
+    CONFIG = FastTexQuantizerCliConfig
+    TRAINER = FastTextQuantizerTrainer
+    DESCRIPTION = "Subcommand for quantizing fasttext models."

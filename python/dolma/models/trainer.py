@@ -117,7 +117,7 @@ class BaseTrainer(Generic[T]):
         if not exists(self.config.data.train):
             raise ValueError(f"data.train {self.config.data.train} does not exist")
 
-        if self.config.data.dev is not None and not exists(self.config.data.dev):
+        if self.config.data.dev is not None and exists(self.config.data.dev):
             validation_path = cached_path(self.config.data.dev)
         else:
             validation_path = None

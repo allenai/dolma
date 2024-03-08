@@ -1,8 +1,31 @@
 from dataclasses import dataclass
+from typing import Optional
 
 from ...cli import field
 from ..config import BaseModelConfig, BaseTrainerConfig
 from ..word_tokenizers import TokenizerRegistry
+
+
+@dataclass
+class FastTextQuantizerConfig(BaseModelConfig):
+    features_cutoff: int = field(help="Number of words and ngrams (features) to retain.", default=0)
+    retrain: bool = field(help="Whether to finetune embeddings if a cutoff is applied.", default=True)
+    epochs: int = field(help="Number of epochs", default=1)
+    learning_rate: float = field(help="Learning rate", default=0.1)
+    word_vector_size: float = field(help="Learning rate", default=0.05)
+    subvector_size: int = field(help="Size of each sub-vector", default=2)
+    quantize_norm: bool = field(help="Whether to quantize norm separately", default=True)
+    quantize_classifier: bool = field(help="Whether to quantize classifier", default=False)
+    model_path: Optional[str] = field(help="Path to paths to quantize vectors", default=None)
+
+
+@dataclass
+class FastTextAutotuneConfig:
+    validation_file: str = field(help="Path to validation file", default="")
+    metric: str = field(help="Metric to use for autotuning", default="f1")
+    number_predictions: int = field(help="Number of prediction to autotune for", default=1)
+    duration: int = field(help="Duration of autotuning in seconds", default=300)
+    model_size: str = field(help="Constrained size to use for autotuning", default="")
 
 
 @dataclass
@@ -22,7 +45,7 @@ class FastTextSupervisedModelConfig(BaseModelConfig):
     learning_rate_update_rate: int = field(help="Learning rate update rate", default=100)
     sampling_threshold: float = field(help="Sampling threshold", default=0.0001)
     pretrained_vectors: str = field(help="Path to pretrained vectors", default="")
-    autotune: bool = field(help="Wether to auto-tune using validation data", default=False)
+    autotune: FastTextAutotuneConfig = field(help="Autotune configuration", default=FastTextAutotuneConfig())
 
 
 @dataclass
@@ -58,6 +81,14 @@ class FastTextUnsupervisedTrainerConfig(BaseTrainerConfig):
     model: FastTextUnsupervisedModelConfig = field(
         help="Model configuration", default=FastTextUnsupervisedModelConfig()
     )
+    word_tokenizer: str = field(
+        help=f"Tokenizer used to extract words; must be one of {TokenizerRegistry.s()}", default="punct"
+    )
+
+
+@dataclass
+class FastTextQuantizerTrainerConfig(BaseTrainerConfig):
+    model: FastTextQuantizerConfig = field(help="Model configuration", default=FastTextQuantizerConfig())
     word_tokenizer: str = field(
         help=f"Tokenizer used to extract words; must be one of {TokenizerRegistry.s()}", default="punct"
     )
