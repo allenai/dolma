@@ -11,7 +11,7 @@ from dolma.core.loggers import get_logger
 from ...core.paths import cached_path
 from ..data import FastTextDataConverter, FastTextUnsupervisedDataConverter
 from ..trainer import BaseTrainer
-from .config import FastTextSupervisedTrainerConfig, FastTextUnsupervisedTrainerConfig
+from .config import FastTextSupervisedTrainerConfig, FastTextUnsupervisedTrainerConfig, FastTextQuantizerTrainerConfig
 
 with necessary(("fasttext", "0.9.2"), soft=True) as FASTTEXT_AVAILABLE:
     if TYPE_CHECKING or FASTTEXT_AVAILABLE:
@@ -47,9 +47,12 @@ class FastTextTrainer(BaseTrainer):
             if self.config.model.pretrained_vectors is not None
             else ""
         )
-        autotune_on_validation = (
-            validation_path if self.config.model.autotune and validation_path is not None else ""
-        )
+
+        breakpoint()
+        # autotune_on_validation = (
+        #     validation_path if self.config.model.autotune and validation_path is not None else ""
+        # )
+        # if
 
         model = fasttext.train_supervised(
             input=data_path,
@@ -124,7 +127,7 @@ class FastTextTrainer(BaseTrainer):
 
 
 class FastTextUnsupervisedTrainer(FastTextTrainer):
-    def __init__(self, config: FastTextUnsupervisedTrainerConfig, cache_dir: Optional[str] = None):
+    def __init__(self, config: FastTextUnsupervisedTrainerConfig):
         super().__init__(config=config)  # type: ignore[arg-type]
 
     @property
@@ -150,6 +153,34 @@ class FastTextUnsupervisedTrainer(FastTextTrainer):
             lrUpdateRate=self.config.model.learning_rate_update_rate,
             t=self.config.model.sampling_threshold,
             verbose=2,
+        )
+        model.save_model(save_path)
+        return model
+
+
+class FastTextQuantizerTrainer(FastTextTrainer):
+    def __init__(self, config: FastTextQuantizerTrainerConfig):
+        super().__init__(config=config)  # type: ignore[arg-type]
+
+    @property
+    def data_factory_cls(self):
+        return FastTextDataConverter
+
+    def fit(self, data_path: str, save_path: str, validation_path: Optional[str] = None):
+        if self.config.model.model_path is None:
+            LOGGER.warning("model_path is not provided, using save_path")
+        model_path = self.config.model.model_path or save_path
+        model = FastTextModel(model_path)
+        model.quantize(
+            input=data_path,
+            cutoff=self.config.model.features_cutoff,
+            retrain=self.config.model.retrain,
+            epoch=self.config.model.epochs,
+            lr=self.config.model.learning_rate,
+            thread=1 if self.config.debug else self.config.num_processes,
+            verbose=2,
+            dsub=self.config.model.subvector_size,
+            qnorm=self.config.model.quantize_norm,
         )
         model.save_model(save_path)
         return model

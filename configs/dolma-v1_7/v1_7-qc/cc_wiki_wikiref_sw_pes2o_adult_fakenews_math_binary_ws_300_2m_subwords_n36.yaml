@@ -1,0 +1,195 @@
+
+model_path: ${oc.env:HOME}/fasttext_models/cc_wiki_wikiref_sw_pes2o_adult_fakenews_math_binary_ws_300_2m_subwords_n36.bin
+cache_dir: ${oc.env:HOME}/fasttext_data
+word_tokenizer: "ws"
+num_processes: 128
+
+
+model:
+  learning_rate: 0.5
+  epochs: 5
+  # autotune: true
+  # loss_function: "softmax"
+  min_char_ngram_length: 3
+  max_char_ngram_length: 6
+  max_word_ngram_length: 5
+  word_vector_size: 300
+
+
+streams:
+  - name: wikipedia_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/dolma_wiki/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: wikipedia_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/dolma_wiki/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: wikipedia_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/dolma_wiki/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: wikiref_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/megawika/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: wikiref_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/megawika/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: wikiref_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/megawika/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: smallweb_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/smallweb/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: smallweb_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/smallweb/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: smallweb_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/smallweb/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: commoncrawl_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/cc/*.gz
+    label: "lq"
+    sample:
+      train: 1.0
+  - name: commoncrawl_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/cc/*.gz
+    label: "lq"
+    sample:
+      dev: 1.0
+  - name: commoncrawl_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/cc/*.gz
+    label: "lq"
+    sample:
+      test: 1.0
+
+
+  - name: academic_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/dolma_pes2o/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: academic_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/dolma_pes2o/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: academic_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/dolma_pes2o/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: books_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/books/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: books_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/books/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: books_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/books/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+  - name: fakenews_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/fakenews/*.gz
+    label: "lq"
+    sample:
+      train: 1.0
+  - name: fakenews_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/fakenews/*.gz
+    label: "lq"
+    sample:
+      dev: 1.0
+  - name: fakenews_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/fakenews/*.gz
+    label: "lq"
+    sample:
+      test: 1.0
+
+
+  - name: adult_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/adult/*.gz
+    label: "lq"
+    sample:
+      train: 1.0
+  - name: adult_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/adult/*.gz
+    label: "lq"
+    sample:
+      dev: 1.0
+  - name: adult_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/adult/*.gz
+    label: "lq"
+    sample:
+      test: 1.0
+
+  - name: open-web-math_train
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/open-web-math/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: open-web-math_dev
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/open-web-math/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: open-web-math_test
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/open-web-math/*.gz
+    label: "hq"
+    sample:
+      test: 1.0

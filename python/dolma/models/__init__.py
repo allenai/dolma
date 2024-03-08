@@ -3,13 +3,14 @@ from dataclasses import dataclass
 from typing import Optional, TypeVar
 
 from ..cli import BaseCli
-from .ft import FastTextSupervisedCli, FastTextUnsupervisedCli
+from .fasttext_model import FastTextSupervisedCli, FastTextUnsupervisedCli, FastTextQuantizeCli
 
 A = TypeVar("A", bound="ArgumentParser")
 
 MODELS = {
     "fasttext": FastTextSupervisedCli,
     "ft-unsupervised": FastTextUnsupervisedCli,
+    "ft-quantize": FastTextQuantizeCli,
 }
 
 

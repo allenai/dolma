@@ -8,8 +8,8 @@ from typing import cast
 from fasttext.FastText import _FastText as FastTextModel
 from omegaconf import OmegaConf as om
 
-from dolma.models.ft.config import FastTextSupervisedTrainerConfig
-from dolma.models.ft.trainer import FastTextTrainer
+from dolma.models.fasttext_model.config import FastTextSupervisedTrainerConfig
+from dolma.models.fasttext_model.trainer import FastTextTrainer
 from dolma.models.word_tokenizers import TokenizerRegistry
 
 WORKDIR_PATH = Path(__file__).parent.parent.parent
