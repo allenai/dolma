@@ -27,7 +27,6 @@ AVAILABLE_COMMANDS = {
     "model": ModelsCli,
 }
 
-
 def read_config(path: Union[None, str]) -> Dict[str, Any]:
     """Read a configuration file if it exists"""
     if path is None:
