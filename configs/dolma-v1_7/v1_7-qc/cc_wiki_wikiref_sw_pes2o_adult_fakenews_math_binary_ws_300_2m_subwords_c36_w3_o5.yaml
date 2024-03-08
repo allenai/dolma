@@ -1,5 +1,5 @@
 
-model_path: ${oc.env:HOME}/fasttext_models/cc_wiki_wikiref_sw_pes2o_adult_fakenews_math_binary_ws_300_2m_subwords_n36.bin
+model_path: ${oc.env:HOME}/fasttext_models/cc_wiki_wikiref_sw_pes2o_adult_fakenews_math_binary_ws_300_2m_subwords_c36_w3_o5.bin
 cache_dir: ${oc.env:HOME}/fasttext_data
 word_tokenizer: "ws"
 num_processes: 128
@@ -8,12 +8,17 @@ num_processes: 128
 model:
   learning_rate: 0.5
   epochs: 5
-  # autotune: true
-  # loss_function: "softmax"
   min_char_ngram_length: 3
   max_char_ngram_length: 6
-  max_word_ngram_length: 5
+  max_word_ngram_length: 3
+  min_word_occurrences: 5
   word_vector_size: 300
+  pretrained_vectors: ${oc.env:HOME}/fasttext_models/crawl-300d-2M-subword.vec
+  autotune:
+    enabled: false
+    metric: f1:__label__hq
+    duration: 300
+    model_size: "1G"
 
 
 streams:
@@ -193,3 +198,22 @@ streams:
     label: "hq"
     sample:
       test: 1.0
+
+  # - name: refinedweb_train
+  #   documents:
+  #     - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/refinedweb/*.gz
+  #   label: "hq"
+  #   sample:
+  #     train: 1.0
+  # - name: refinedweb_dev
+  #   documents:
+  #     - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/refinedweb/*.gz
+  #   label: "hq"
+  #   sample:
+  #     dev: 1.0
+  # - name: refinedweb_test
+  #   documents:
+  #     - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/refinedweb/*.gz
+  #   label: "hq"
+  #   sample:
+  #     test: 1.0

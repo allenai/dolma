@@ -48,11 +48,15 @@ class FastTextTrainer(BaseTrainer):
             else ""
         )
 
-        breakpoint()
-        # autotune_on_validation = (
-        #     validation_path if self.config.model.autotune and validation_path is not None else ""
-        # )
-        # if
+        autotune_config = {}
+        if self.config.model.autotune.enabled and validation_path is not None:
+            autotune_config = {
+                "autotuneValidationFile": cached_path(validation_path),
+                "autotuneMetric": self.config.model.autotune.metric,
+                "autotunePredictions": self.config.model.autotune.number_predictions,
+                "autotuneDuration": self.config.model.autotune.duration,
+                "autotuneModelSize": self.config.model.autotune.model_size,
+            }
 
         model = fasttext.train_supervised(
             input=data_path,
@@ -74,7 +78,7 @@ class FastTextTrainer(BaseTrainer):
             label="__label__",
             verbose=2,
             pretrainedVectors=pretrained_vectors,
-            autotuneValidationFile=autotune_on_validation,
+            **autotune_config,
         )
         model.save_model(save_path)
         return model

@@ -32,6 +32,8 @@ def already_processed(data: DataConfig, override: bool = False) -> bool:
 
 
 class BaseTrainer(Generic[T]):
+    config: T
+
     def __init__(self, config: T):
         self.config = config
 

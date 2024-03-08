@@ -21,7 +21,7 @@ class FastTextQuantizerConfig(BaseModelConfig):
 
 @dataclass
 class FastTextAutotuneConfig:
-    validation_file: str = field(help="Path to validation file", default="")
+    enabled: bool = field(help="Whether to autotune. Off by default.", default=False)
     metric: str = field(help="Metric to use for autotuning", default="f1")
     number_predictions: int = field(help="Number of prediction to autotune for", default=1)
     duration: int = field(help="Duration of autotuning in seconds", default=300)
