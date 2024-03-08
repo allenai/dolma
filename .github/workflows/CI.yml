@@ -25,6 +25,7 @@ env:
 
 jobs:
   info:
+    name: Run info
     runs-on: ubuntu-latest
     steps:
       - name: Echo environment variables
@@ -39,8 +40,38 @@ jobs:
           echo "PR base repo:  ${{ github.event.pull_request.base.repo.full_name }}/tree/${{ github.event.pull_request.base.ref }}"
           echo "PR head repo:  ${{ github.event.pull_request.head.repo.full_name }}/tree/${{ github.event.pull_request.head.ref }}"
 
+
+  should_build:
+    name: "Check if build"
+    runs-on: ubuntu-latest
+    steps:
+    - name: checkout
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        ref: ${{ github.ref }}
+    - name: List branches and tags
+      run: |
+        git branch -a
+        git tag -l
+        git log | head -n 1000
+    - id: check_version
+      run: |
+        set +e
+        has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -E 'pyproject.toml|Cargo.toml')
+        is_main_or_release='${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}'
+        if [[ -n "${has_updated}" ]] || [[ "${is_main_or_release}" == 'true' ]]; then
+          echo "should_build=true" >> $GITHUB_OUTPUT
+        else
+          echo "should_build=false" >> $GITHUB_OUTPUT
+        fi
+      shell: bash
+    outputs:
+      should_build: ${{ steps.check_version.outputs.should_build }}
+
   prepare-venv:
     runs-on: ubuntu-latest
+    name: "Prepare Virtual Env"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -59,7 +90,7 @@ jobs:
         if: steps.cache-venv.outputs.cache-hit != 'true'
         run:  |
           sudo apt-get update
-          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
+          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
 
       - name: Install Rust toolchain
         if: steps.cache-venv.outputs.cache-hit != 'true'
@@ -98,31 +129,32 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+    name: "${{ matrix.task.name }}"
     strategy:
       fail-fast: true
       matrix:
         task:
           - name: Check Python style
             run: |
-              isort --check tests/python/ && isort --check python/
-              black --check tests/python/ && black --check python/
+              set -e
+              isort --check .
+              black --check .
 
           - name: Check Rust style
             run: |
               rustfmt --edition 2021 src/*.rs --check
 
-          - name: Lint
+          - name: Lint Python
             run: |
               flake8 tests/python/ && flake8 python/
 
-          - name: Type check
+          - name: Types Python
             run: |
               mypy tests/python/ && mypy python/
 
-          - name: Test
+          - name: Run Python tests
             run: |
               pytest -vs --color=yes tests/python/
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -142,36 +174,36 @@ jobs:
           source .venv/bin/activate
           ${{ matrix.task.run }}
 
-
   build-linux:
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    needs: should_build
+    if: ${{ needs.should_build.outputs.should_build == 'true' }}
     runs-on: ubuntu-latest
-    env:
-      CC:   gcc-11
-      CXX:  g++-11
     strategy:
       matrix:
-        target: [x86_64, x86, aarch64, armv7]
+        # fails to build on x86, so removing for now; low use anyway.
+        # target: [x86_64, x86, aarch64, armv7]
+        target: [x86_64, aarch64, armv7]
+    name: "Build Linux (${{ matrix.target }})"
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - name: Setup environment
-        run:  |
-          sudo apt-get update
-          sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source
       - name: Install 32bit version of libc
-        if: ${{ matrix.target == 'x86' }}
+        if: ${{ matrix.target == 'x86' || contains(matrix.target, 'i686') }}
         run: |
+          sudo apt-get update
           sudo apt-get install --yes --upgrade libc6-dev-i386
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
-          sccache: ${{ matrix.target == 'x86' && 'false' || 'true' }}
-          manylinux: ${{ matrix.target == 'x86' && 'auto' || '2_28' }}
+          manylinux: manylinux_2_28
+          container: "ghcr.io/rust-cross/manylinux_2_28-cross:${{ matrix.target }}"
+          before-script-linux: |
+            sudo apt-get update
+            sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -179,8 +211,10 @@ jobs:
           path: dist
 
   build-windows:
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    needs: should_build
+    if: ${{ needs.should_build.outputs.should_build == 'true' }}
     runs-on: windows-latest
+    name: "Build Windows (${{ matrix.target }})"
     strategy:
       matrix:
         target: [x64, x86]
@@ -195,7 +229,6 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
-          sccache: true
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -203,8 +236,10 @@ jobs:
           path: dist
 
   build-macos:
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    needs: should_build
+    if: ${{ needs.should_build.outputs.should_build == 'true' }}
     runs-on: macos-latest
+    name: "Build macOS (${{ matrix.target }})"
     strategy:
       matrix:
         target: [x86_64, aarch64]
@@ -218,7 +253,6 @@ jobs:
         with:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
-          sccache: true
       - name: Upload wheels
         uses: actions/upload-artifact@v3
         with:
@@ -227,7 +261,8 @@ jobs:
 
   sdist:
     runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}
+    needs: should_build
+    if: ${{ needs.should_build.outputs.should_build == 'true' }}
     steps:
       - uses: actions/checkout@v3
       - name: Build sdist
