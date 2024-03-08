@@ -3,24 +3,24 @@
 Dolma is two things:
 
 1. **Dolma Dataset**: an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
-2. **Dolma Toolkit**: a high-performance toolkit for curating datasets for language modeling.
+2. **Dolma Toolkit**: a high-performance toolkit for curating datasets for language modeling -- this repo contains the source code for the Dolma Toolkit.
 
 ## Dolma Dataset
 
 Dolma is an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
 It was created as a training corpus for [OLMo](https://allenai.org/olmo), a language model from the [Allen Institute for AI](https://allenai.org) (AI2).
 
-Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr). Once agreed you can follow the instructions [here](https://huggingface.co/datasets/allenai/dolma#download) to download it.
+Dolma is available for download on the HuggingFace 🤗 Hub: [`huggingface.co/datasets/allenai/dolma`](https://huggingface.co/datasets/allenai/dolma). To access Dolma, users must agree to the terms of [AI2 ImpACT License for Medium Risk Artifacts](https://allenai.org/licenses/impact-mr) on the [HuggingFace 🤗 Hub](https://huggingface.co/datasets/allenai/dolma). Once agreed you can follow the instructions [here](https://huggingface.co/datasets/allenai/dolma#download) to download the dataset.
 
-You can also read more about Dolma in [our announcement](https://blog.allenai.org/dolma-3-trillion-tokens-open-llm-corpus-9a0ff4b8da64), as well as by consulting its [data sheet](docs/assets/dolma-datasheet-v0.1.pdf).
+You can also read more about Dolma in [our announcement](https://blog.allenai.org/dolma-3-trillion-tokens-open-llm-corpus-9a0ff4b8da64), as well as by consulting its [data sheet](docs/assets/dolma-v0_1-20230819.pdf).
 
 
 ## Dolma Toolkit
 
-Dolma is a toolkit to curate large datasets for (pre)-training ML models. Its key features are:
+This repository houses the Dolma Toolkit, which enables curation of large datasets for (pre)-training ML models. Its key features are:
 
 1. **High Performance** ⚡: Can process billions of documents concurrently thanks to built-in parallelism.
-2. **Portabilty** 🧳: Works on a single machine, a cluster, or cloud environment.
+2. **Portability** 🧳: Works on a single machine, a cluster, or cloud environment.
 3. **Built-In Taggers** 🏷: Includes ready-to-use taggers commonly used to curate datasets such as [Gopher](https://arxiv.org/abs/2112.11446), [C4](https://arxiv.org/abs/1910.10683), and [OpenWebText](https://openwebtext2.readthedocs.io/en/latest/).
 4. **Fast Deduplication** 🗑: Speedy document deduplication using a Rust Bloom filter.
 5. **Extensibility** 🧩 & **Cloud Support** ☁: Supports custom taggers and AWS S3-compatible locations.
@@ -35,23 +35,12 @@ If you use the Dolma dataset or toolkit, please cite the following items:
 
 <!-- {% raw %} -->
 ```bibtex
-@techreport{DolmaDataset,
-    author = {Soldaini, Luca and Kinney, Rodney and Bhagia, Akshita and Schwenk, Dustin and Atkinson, David and Authur, Russell and Chandu, Khyathi and Dumas, Jennifer and Lucy, Li and Lyu, Xinxi and Magnusson, Ian and Naik, Aakanksha and Nam , Crystal and  Peters, Matthew E.  and Ravichander, Abhilasha and Shen, Zejiang and Strubell, Emma and Subramani, Nishant and Tafjord, Oyvind and Walsh, Evan Pete and Hajishirzi, Hannaneh and Smith, Noah A. and Zettlemoyer, Luke and Beltagy, Iz and Groeneveld, Dirk and Dodge, Jesse and Lo, Kyle},
-    title = {{Dolma: An Open Corpus of 3 Trillion Tokens for Language Model Pretraining Research}},
-    institution = {{Allen Institute for AI}},
-    year = {2023},
-    note = {Released under ImpACT License as Medium Risk artifact, \url{https://github.com/allenai/dolma}}
-}
-```
-<!-- {% endraw %} -->
-
-<!-- {% raw %} -->
-```bibtex
-@software{DolmaToolkit,
-    author = {{Soldaini, Luca and Lo, Kyle and Kinney, Rodney and Naik, Aakanksha and Ravichander, Abhilasha and Bhagia, Akshita and Groeneveld, Dirk and Schwenk, Dustin and Magnusson, Ian and Chandu, Khyathi}},
-    title = {{The Dolma Toolkit}},
-    year = {2023},
-    note = {{Apache 2.0 License, Version \texttt{0.9.0}, \url{https://github.com/allenai/dolma}}}
+@article{dolma,
+  title = {{Dolma: An Open Corpus of Three Trillion Tokens for Language Model Pretraining Research}},
+  author={Luca Soldaini and Rodney Kinney and Akshita Bhagia and Dustin Schwenk and David Atkinson and Russell Authur and Ben Bogin and Khyathi Chandu and Jennifer Dumas and Yanai Elazar and Valentin Hofmann and Ananya Harsh Jha and Sachin Kumar and Li Lucy and Xinxi Lyu and Nathan Lambert and Ian Magnusson and Jacob Morrison and Niklas Muennighoff and Aakanksha Naik and Crystal Nam and Matthew E. Peters and Abhilasha Ravichander and Kyle Richardson and Zejiang Shen and Emma Strubell and Nishant Subramani and Oyvind Tafjord and Pete Walsh and Luke Zettlemoyer and Noah A. Smith and Hannaneh Hajishirzi and Iz Beltagy and Dirk Groeneveld and Jesse Dodge and Kyle Lo},
+  year={2024},
+  journal={arXiv preprint},
+  url={https://arxiv.org/abs/2402.00159}
 }
 ```
 <!-- {% endraw %} -->

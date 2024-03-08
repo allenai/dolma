@@ -5,6 +5,7 @@ Filters.
 @kylel, @soldni
 
 """
+
 from abc import abstractmethod
 from typing import List
 

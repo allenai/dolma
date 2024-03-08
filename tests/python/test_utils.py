@@ -6,7 +6,6 @@ Tests for the utils module.
 
 """
 
-
 from unittest import TestCase
 
 from dolma.core.data_types import TextSlice

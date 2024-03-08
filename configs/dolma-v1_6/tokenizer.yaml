@@ -1,0 +1,7 @@
+destination: s3://ai2-llm/preprocessed/olmo-mix/v1_5r2/gpt-neox-olmo-dolma-v1_5
+documents:
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/*/*.json.gz
+processes: 188
+seed: 3920
+max_size: 20_000_000_000
+tokenizer_name_or_path: allenai/gpt-neox-olmo-dolma-v1_5

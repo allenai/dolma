@@ -1,6 +1,6 @@
 {
   "documents": [
-    "tests/data/provided/doc*/000.json.gz"
+    "tests/data/provided/deduper/doc*/000.json.gz"
   ],
   "work_dir": {
     "input": "tests/work/temp/dedupe-para/input",

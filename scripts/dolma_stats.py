@@ -1,11 +1,12 @@
 import argparse
 import bisect
 import copy
+import gzip
 import hashlib
 import json
 import multiprocessing
 import os
-from collections import Counter, defaultdict
+from collections import defaultdict
 from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -20,10 +21,10 @@ import numpy as np
 import smart_open
 import tldextract
 import tqdm
-
 from dolma.core.data_types import InputSpec, OutputSpec
 from dolma.core.parallel import BaseParallelProcessor
-from dolma.core.paths import glob_path
+from dolma.core.paths import glob_path, make_relative, split_path
+from dolma.tokenizer import Tokenizer
 
 T = TypeVar("T", bound=Type["BaseStatsProcessor"])
 
@@ -206,6 +207,7 @@ class Registry:
 class BaseStatsProcessor(BaseParallelProcessor):
     documents: Union[str, List[str]]
     stats: str
+    skip_parallel: bool = False
 
     @classmethod
     def increment_progressbar(
@@ -244,7 +246,19 @@ class BaseStatsProcessor(BaseParallelProcessor):
                 num_processes=num_workers,
                 debug=debug,
             )
-            processor(**process_single_kwargs)
+            if not cls.skip_parallel:
+                processor(**process_single_kwargs)
+
+    @staticmethod
+    def _group_by_subset(paths: List[str]) -> Dict[str, List[str]]:
+        shared, _ = make_relative(paths)
+        shared = shared.rstrip("/") + "/"
+
+        grouped_paths: Dict[str, List[str]] = {}
+        for path in sorted(paths):
+            _, parts = split_path(path.replace(shared, ""))
+            grouped_paths.setdefault("/".join(parts[:-1]), []).append(path)
+        return grouped_paths
 
     @classmethod
     def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
@@ -258,17 +272,31 @@ class BaseStatsProcessor(BaseParallelProcessor):
         )
 
         paths = list(glob_path(cls.stats))
-        counts: dict = {}
+        grouped_paths = cls._group_by_subset(paths)
 
-        with multiprocessing.Pool(num_workers) as pool:
-            data = (cls._read_json(path) for path in paths) if debug else pool.imap(cls._read_json, paths)
+        grouped_counts: Dict[str, dict] = defaultdict(dict)
 
-            for content in tqdm.tqdm(data, desc=f"Merging {cls.__name__} stats", unit=" files", total=len(paths)):
-                counts = cls._merge_dicts(counts, content)
+        with tqdm.tqdm(desc=f"Merging {cls.__name__} stats", unit=" files", total=len(paths)) as pbar:
+            for subset, sub_paths in grouped_paths.items():
+                with multiprocessing.Pool(num_workers) as pool:
+                    if debug:
+                        data = (cls._read_json(path) for path in sub_paths)
+                    else:
+                        data = (e for e in pool.imap(cls._read_json, sub_paths))
+
+                    for content in data:
+                        pbar.update(1)
+                        grouped_counts[subset] = cls._merge_dicts(grouped_counts[subset], content)
+
+        global_counts: dict = {}
+        for subset_count in grouped_counts.values():
+            for k, v in cls._merge_dicts(global_counts, subset_count).items():
+                global_counts[k] = v
+        grouped_counts["__GLOBAL__"] = global_counts
 
         summary_dest = f"{stats_root}/summary.json"
         with smart_open.open(summary_dest, "wt") as destination_file:
-            destination_file.write(json.dumps(counts, indent=2, sort_keys=True))
+            destination_file.write(json.dumps(grouped_counts, indent=2, sort_keys=True))
 
 
 @Registry.add
@@ -412,10 +440,108 @@ class just_cc_dedup(BaseStatsProcessor):
 
 
 @Registry.add
+class dolma_v15r2_counts(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/dolma-v1_5r2/counts/*/*.gz"
+    skip_parallel = True
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        # for the data sheet, what statistics you think we should include? I could
+        # do # of docs, # tokens, distribution of URLs, pronouns, s2 FOS, stack
+        # languages?
+        decoder = msgspec.json.Decoder(InputSpec)
+        documents = words = 0
+        olmo_tokens = llama_tokens = 0
+        interval = 10_000
+
+        olmo_tokenizer = Tokenizer.from_pretrained("allenai/gpt-neox-olmo-dolma-v1_5")
+        llama_tokenizer = Tokenizer.from_pretrained("NousResearch/Llama-2-7b-hf")
+
+        with smart_open.open(source_path, "rb") as source_file:
+            for line in source_file:
+                document = decoder.decode(line)
+                documents += 1
+                words += len(blingfire.text_to_words(document.text).split())
+                olmo_tokens += len(olmo_tokenizer.encode(document.text, add_special_tokens=False))
+                llama_tokens += len(llama_tokenizer.encode(document.text, add_special_tokens=False))
+
+                if documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=documents % interval)
+
+        counters = {
+            "documents": documents,
+            "words": words,
+            "olmo_tokens": olmo_tokens,
+            "llama_tokens": llama_tokens,
+        }
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counters, indent=2, sort_keys=True))
+
+
+@Registry.add
+class dolma_v15r2_olmo(BaseStatsProcessor):
+    documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/dolma-v1_5r2/counts_with_bytes/*/*.gz"
+    skip_parallel = False
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+        decoder = msgspec.json.Decoder(InputSpec)
+        documents = words = 0
+        olmo_tokens = 0
+        utf8_length = 0
+        bytes_length = 0
+        gzip_bytes_length = 0
+        interval = 10_000
+
+        olmo_tokenizer = Tokenizer.from_pretrained("allenai/gpt-neox-olmo-dolma-v1_5")
+
+        with smart_open.open(source_path, "rb") as source_file:
+            for line in source_file:
+                document = decoder.decode(line)
+                documents += 1
+                words += len(blingfire.text_to_words(document.text).split())
+                olmo_tokens += len(olmo_tokenizer.encode(document.text, add_special_tokens=False))
+                bytes_length += len(d := document.text.encode("utf-8"))
+                utf8_length += len(d.decode("utf-8"))
+                gzip_bytes_length += gzip.compress(document.text.encode("utf-8")).__sizeof__()
+
+                if documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=documents % interval)
+
+        counters = {
+            "documents": documents,
+            "words": words,
+            "olmo_tokens": olmo_tokens,
+            "bytes_length": bytes_length,
+            "gzip_bytes_length": gzip_bytes_length,
+            "utf8_length": utf8_length,
+        }
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(counters, indent=2, sort_keys=True))
+
+
+@Registry.add
 class cc_v1_c4_cleaned(BaseStatsProcessor):
     documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
     stats = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1_c4_cleaned/**/*.gz"
     decontamination_key: str = "decontamination"
+    repetitions_threshold = 100
 
     @classmethod
     def gopher_rules(cls, attrs: Dict[str, List[Tuple[int, int, float]]]) -> List[Tuple[int, int, float]]:
@@ -527,6 +653,8 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
             source_path.replace("/documents/", "/attributes/hatespeech_nsfw_cc_v3/"),
             source_path.replace("/documents/", "/attributes/pii_detection/"),
             source_path.replace("/documents/", "/attributes/dedupe_paragraphs/"),
+            source_path.replace("/documents/", "/attributes/dedupe_docs_v2/"),
+            source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v2r2/"),
         ]
 
         doc_decoder = msgspec.json.Decoder(InputSpec)
@@ -543,6 +671,12 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
             "dedupe_paragraphs_count": 0,
             "dedupe_paragraphs_length": 0,
             "dedupe_paragraphs_matches": 0,
+            "dedupe_docs_count": 0,
+            "dedupe_docs_length": 0,
+            "dedupe_docs_matches": 0,
+            "repetitions_count": 0,
+            "repetitions_length": 0,
+            "repetitions_matches": 0,
             "hatespeech_nsfw_count": 0,
             "hatespeech_nsfw_length": 0,
             "hatespeech_nsfw_matches": 0,
@@ -618,6 +752,27 @@ class cc_v1_c4_cleaned(BaseStatsProcessor):
                 stats["dedupe_paragraphs_length"] += sum(s[1] - s[0] for s in dups)
                 stats["dedupe_paragraphs_matches"] += 1 if dups else 0
 
+                docs_dups = [p for p in attrs.get("bff_duplicate_docs", []) if p[1] - p[0] > 0]
+                stats["dedupe_docs_count"] += len(docs_dups)
+                stats["dedupe_docs_length"] += sum(s[1] - s[0] for s in docs_dups)
+                stats["dedupe_docs_matches"] += 1 if docs_dups else 0
+
+                # Repetitions stats
+                (_, _, max_reps), *_ = attrs.get(
+                    "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition", [[0, 0, 0]]
+                )
+                if max_reps >= cls.repetitions_threshold:
+                    reps = [
+                        r
+                        for r in attrs.get(
+                            "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__repetition", []
+                        )
+                        if r[-1] >= cls.repetitions_threshold
+                    ]
+                    stats["repetitions_count"] += len(reps)
+                    stats["repetitions_length"] += len(doc.text)
+                    stats["repetitions_matches"] += 1
+
                 documents += 1
 
                 if documents % interval == 0:
@@ -634,6 +789,75 @@ class v15_cc_c4_cleaned(cc_v1_c4_cleaned):
     documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
     stats = "s3://ai2-llm/stats/olmo-mix/v15/cc/v1_c4_cleaned/**/*.gz"
     decontamination_key: str = "perplexity_suite_v3_option2"
+
+
+@Registry.add
+class v15r2_cc_c4_cleaned_dup(cc_v1_c4_cleaned):
+    documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1-c4-cleaned/documents/cc_en_*/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v15/cc/v15r2_cc_c4_cleaned_dup/**/*.gz"
+    decontamination_key: str = "perplexity_suite_v3_option2"
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        attributes = [
+            source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v2r2/"),
+            source_path.replace("/documents/", "/attributes/dedupe_paragraphs/"),
+            # source_path.replace("/documents/", "/attributes/dedupe_docs/"),
+        ]
+
+        doc_decoder = msgspec.json.Decoder(InputSpec)
+        attr_decoder = msgspec.json.Decoder(OutputSpec)
+
+        stats = {
+            "doc_length": 0,
+            "doc_count": 0,
+            "repetitions_count": defaultdict(int),
+            "repetitions_length": defaultdict(int),
+            "repetitions_period": defaultdict(int),
+        }
+        interval = 10_000
+
+        with ExitStack() as stack:
+            doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
+
+            try:
+                atts_files = [stack.enter_context(smart_open.open(path, "rb")) for path in attributes]
+            except Exception:
+                return
+
+            for doc_line, *attr_lines in zip(doc_file, *atts_files):
+                doc = doc_decoder.decode(doc_line)
+                stats["doc_length"] += len(doc.text)
+                stats["doc_count"] += 1
+
+                attrs = {}
+                for line in attr_lines:
+                    attrs.update(attr_decoder.decode(line).attributes)
+
+                repetitions = attrs.get("tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__repetition", [])
+                stats["repetitions_count"][len(repetitions)] += 1
+
+                repetition_max_length = attrs.get(
+                    "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_length_repetition",
+                    [[0, 0, 0]],
+                )[0][-1]
+                stats["repetitions_length"][repetition_max_length] += 1
+
+                repetitions_period = attrs.get(
+                    "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition",
+                    [[0, 0, 0]],
+                )[0][-1]
+                stats["repetitions_period"][repetitions_period] += 1
+
+                if stats["doc_count"] % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=stats["doc_count"] % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(stats, indent=2))
 
 
 @Registry.add
@@ -811,61 +1035,6 @@ class c4(BaseStatsProcessor):
 
 
 @Registry.add
-class dolma_v15_lines(BaseStatsProcessor):
-    @classmethod
-    def process_single(
-        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
-    ):
-        attrs_path = source_path.replace("/documents/", "/attributes/tokenizer_repetitions_v1/")
-
-        subset = source_path.split("/documents/")[1].split("/")[0].split('_')[0]
-
-        attributes_decoder = msgspec.json.Decoder(OutputSpec)
-        max_reps_per_doc: Dict[str, Dict[int, int]] = {subset: defaultdict(int)}
-        interval = 10_000
-        doc_count = 0
-
-        try:
-            with smart_open.open(attrs_path, "rb") as attrs_file:
-                for attributes_line in attrs_file:
-                    attributes = attributes_decoder.decode(attributes_line)
-
-                    cnt = attributes.attributes.get(
-                        "tokenizer_repetitions_v1__tokenizer_repetitions_v1__doc_max_repetition", [[0, 0, 0.0]]
-                    )[0][-1]
-
-                    max_reps_per_doc[subset][int(cnt)] += 1
-
-                    doc_count += 1
-                    if doc_count >= interval:
-                        cls.increment_progressbar(queue, documents=interval)
-                        doc_count = 0
-        except Exception as e:
-            print(f"Error processing {attrs_path}: {e}")
-        finally:
-            cls.increment_progressbar(queue, files=1, documents=doc_count)
-
-        with smart_open.open(destination_path, "wt") as destination_file:
-            destination_file.write(json.dumps(max_reps_per_doc, indent=2, sort_keys=True))
-
-    @classmethod
-    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
-        with TemporaryDirectory() as tempdir:
-            documents = "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/*/*.gz"
-            stats = "s3://ai2-llm/stats/olmo-mix/v1_5/repetitions"
-            metadata = os.path.join(tempdir, "olmo-mix-v1_5-repetitions")
-
-            processor = cls(
-                source_prefix=documents,
-                destination_prefix=stats,
-                metadata_prefix=metadata,
-                num_processes=num_workers,
-                debug=debug,
-            )
-            processor(**process_single_kwargs)
-
-
-@Registry.add
 class s2(BaseStatsProcessor):
     @classmethod
     def process_single(
@@ -942,6 +1111,75 @@ class s2(BaseStatsProcessor):
                 debug=debug,
             )
             processor(**process_single_kwargs)
+
+
+@Registry.add
+class reddit(BaseStatsProcessor):
+    repetitions_threshold = 100
+    documents = "s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/*.gz"
+    stats = "s3://ai2-llm/stats/olmo-mix/v1_5/forums/reddit/grouped/*.gz"
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        attrs_path = source_path.replace(
+            "/documents/",
+            "/attributes/tokenizer_repetitions_v2r2/",
+        )
+
+        documents_decoder = msgspec.json.Decoder(C4InputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+
+        interval = 10_000
+
+        stats = {
+            "length": 0,
+            "count": 0,
+            "tokens": 0,
+            "repetitions_count": 0,
+            "repetitions_length": 0,
+            "repetitions_matches": 0,
+        }
+        cnt = 0
+
+        with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, attributes_line in zip(doc_file, attrs_file):
+                cnt += 1
+
+                document = documents_decoder.decode(source_line)
+                attributes = attributes_decoder.decode(attributes_line)
+                text = document.text
+
+                if not (text := text.strip()):
+                    continue
+
+                stats["count"] += 1
+                stats["tokens"] += len(blingfire.text_to_words(text).split())
+                stats["length"] += len(text)
+
+                (_, _, max_reps), *_ = attributes.attributes.get(
+                    "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition", [[0, 0, 0]]
+                )
+                if max_reps >= cls.repetitions_threshold:
+                    reps = [
+                        r
+                        for r in attributes.attributes.get(
+                            "tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__repetition", []
+                        )
+                        if r[-1] >= cls.repetitions_threshold
+                    ]
+                    stats["repetitions_count"] += len(reps)
+                    stats["repetitions_length"] += sum(s[1] - s[0] for s in reps)
+                    stats["repetitions_matches"] += 1
+
+                if cnt % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=cnt % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(stats, indent=2))
 
 
 class StackInputSpec(InputSpec):
@@ -1189,6 +1427,92 @@ class stack_v4(stack_v2):
 
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(counts, indent=2))
+
+
+@Registry.add
+class LineStatsStack(BaseStatsProcessor):
+    # Testing
+    # documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/documents/abap/data_0000.jsonl.gz"
+    # stats = "/data/niklas/dolma/abap/data_0000.json.gz"
+    documents = "s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/documents/*/*.gz"
+    stats = "/data/niklas/dolma/stack"
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+        stats_root = cls.stats
+
+        cls._run_parallel_processor(
+            stats_root=stats_root,
+            num_workers=num_workers,
+            debug=debug,
+            **process_single_kwargs,
+        )
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        # E.g. `s3://ai2-llm/pretraining-data/sources/stack-dedup/v0/attributes/paper_analysis/abap/`
+        attr_path = source_path.replace("/documents/", "/attributes/paper_analysis/")
+
+        doc_decoder = msgspec.json.Decoder(InputSpec)
+        attr_decoder = msgspec.json.Decoder(OutputSpec)
+        documents = 0
+        interval = 10_000
+
+        with ExitStack() as stack:
+            doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
+            out_file = stack.enter_context(smart_open.open(destination_path, "wt"))
+
+            try:
+                attr_file = stack.enter_context(smart_open.open(attr_path, "rb"))
+            except Exception as e:
+                print(e)
+                return
+
+            for doc_line, attrs in zip(doc_file, attr_file):
+                doc = doc_decoder.decode(doc_line)
+                attrs = attr_decoder.decode(attrs).attributes
+                out_line = {}
+
+                ## RPJ ##
+                if (
+                    (attrs["paper_analysis__code_redpajama_taggers_v1__max_line_length_doc"][0][2] > 1000)
+                    or (attrs["paper_analysis__code_redpajama_taggers_v1__avg_line_length_doc"][0][2] > 100)
+                    or (attrs["paper_analysis__code_redpajama_taggers_v1__alnum_prop_doc"][0][2] < 0.25)
+                    or (attrs["paper_analysis__code_redpajama_taggers_v1__alpha_token_prop_doc"][0][2] < 1.5)
+                ):
+                    out_line["rpj"] = 1
+                else:
+                    out_line["rpj"] = 0
+
+                ## StarCoder ##
+                if (
+                    (attrs["paper_analysis__code_starcoder_taggers_v2__has_xml_template_doc"][0][2] > 0.0)
+                    or (attrs["paper_analysis__code_starcoder_taggers_v2__code_to_comment_ratio_doc"][0][2] > 0.8)
+                    or (
+                        attrs["paper_analysis__code_starcoder_taggers_v2__code_to_comment_ratio_doc"][0][2] <= 0.01
+                    )
+                    or (
+                        any(x in source_path for x in ["python", "java", "javascript"])
+                        and (
+                            attrs["paper_analysis__code_starcoder_taggers_v2__code_to_text_ratio_html_doc"][0][2]
+                            <= 0.1
+                        )
+                    )
+                ):
+                    out_line["starcoder"] = 1
+                else:
+                    out_line["starcoder"] = 0
+
+                documents += 1
+
+                if documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+                out_file.write(json.dumps(out_line) + "\n")
+
+        cls.increment_progressbar(queue, files=1, documents=documents % interval)
 
 
 @Registry.add

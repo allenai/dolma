@@ -1,0 +1,8 @@
+destination: s3://ai2-llm/preprocessed/olmo-mix/v1_5_cc_only/gpt-neox-20b-pii-special/
+documents:
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_head/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_middle/*.json.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5/documents/cc_en_tail/*.json.gz
+processes: 168
+seed: 3920
+tokenizer_name_or_path: allenai/eleuther-ai-gpt-neox-20b-pii-special

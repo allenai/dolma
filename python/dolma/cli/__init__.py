@@ -10,8 +10,6 @@ from copy import deepcopy
 from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
-from hashlib import sha256
-from itertools import chain
 from logging import warning
 from typing import (
     Any,
@@ -29,7 +27,6 @@ from typing import (
 
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
-from omegaconf import ValidationError
 from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
@@ -165,27 +162,6 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
     return merged_config  # pyright: ignore
 
 
-def make_fingerprint(*args, **kwargs) -> str:
-    """Create a unique fingerprint for the given arguments."""
-
-    # will accumulate the hash of all the arguments here
-    h = sha256()
-
-    # we sort the kwargs to make sure the fingerprint is always the same
-    _, sorted_kwargs = zip(*sorted(kwargs.items())) if len(kwargs) else ([], [])
-
-    for elem in chain(args, sorted_kwargs):
-        # we try to use omegaconf to create a yaml representation of the object;
-        # if it fails, we resort to string representation (e.g. for int, float, etc.)
-        try:
-            obj = om.to_yaml(om.create(elem))
-        except ValidationError:
-            obj = str(elem)
-        h.update(obj.encode("utf-8"))
-
-    return h.hexdigest()
-
-
 def print_config(config: Any, console: Optional[Console] = None) -> None:
     if not isinstance(config, (DictConfig, ListConfig)):
         config = om.create(config)
@@ -204,21 +180,14 @@ class BaseCli(Generic[D]):
     @classmethod
     def make_parser(cls, parser: A) -> A:
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        return make_parser(parser, cls.CONFIG)  # pyright: ignore
+        return make_parser(parser, cls.CONFIG)
 
     @classmethod
-    def run_from_args(cls, args: Namespace, config: Optional[dict] = None) -> Any:
-        """
-        Prepare to run the CLI command from parsed arguments by creating an OmegaConf config.
-
-        Args:
-            args: The parsed argparse namespace; based on the parser returned by `make_parser`
-            config: An optional configuration dictionary to merge with the parsed args
-        """
+    def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)  # pyright: ignore
+        parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)
         try:
-            return cls.run(parsed_config=parsed_config)
+            return cls.run(parsed_config)
         except OmegaConfBaseException as ex:
             raise DolmaConfigError(
                 f"Invalid error while parsing key `{ex.full_key}` of `{ex.object_type_str}`: "
@@ -227,10 +196,4 @@ class BaseCli(Generic[D]):
 
     @classmethod
     def run(cls, parsed_config: D):
-        """
-        Run the program using the parsed configuration.
-
-        Args:
-            parsed_config (D): The parsed configuration object
-        """
         raise NotImplementedError("Abstract method; must be implemented in subclass")

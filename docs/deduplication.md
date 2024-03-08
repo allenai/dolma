@@ -25,7 +25,12 @@ The following parameters are supported either via CLI (e.g. `dolma dedupe --para
 |`dedupe.documents.key`| Mutually exclusive with `dedupe.paragraphs.attribute_name` | Use the json-path-specified field as the key for deduping. The value of the key must be a string. |
 |`dedupe.documents.attribute_name`|Mutually exclusive with `dedupe.paragraphs.attribute_name`| Name of the attribute to set if the document is a duplicate. |
 |`dedupe.paragraphs.attribute_name`|Mutually exclusive with `dedupe.documents.key` and `dedupe.documents.attribute_name` | Name of the attribute that will contain spans of duplicate paragraphs. Paragraphs are identified by splitting the `text` field by newline characters. |
-|`dedupe.skip_empty`|No| If true, empty documents/paragraphs will be skipped. |
+|`dedupe.paragraphs.by_ngram.ngram_length`|No| If provided, segment each paragraph into [Unicode words](https://www.unicode.org/reports/tr29/) and check whether ngrams of this length are in the Bloom filter. Tagger will report the fraction of matched ngrams in each paragraph. If not provided, full paragraphs are going to be used for the bloom filter. By default, it is off. |
+|`dedupe.paragraphs.by_ngram.stride`|No| If provided, it skips `stride` step when computing ngrams. By default, all possible ngrams in a paragraph are checked for duplicates. |
+|`dedupe.paragraphs.by_ngram.threshold`|No| If provided, the paragraph is considered a duplicate if the fraction of matched ngrams is greater than or equal to this threshold. By default, it is 1.0, meaning that all ngrams have to match. |
+|`dedupe.skip_empty`|No| If true, empty documents/paragraphs will be skipped.|
+|`dedupe.min_length`|No| Minimum length of documents/paragraphs to be deduplicated. Defaults to 0.|
+|`dedupe.min_words`|No| Minimum number of uniseg word units in documents/paragraphs to be deduplicated. Defaults to 0.|
 |`bloom_filter.file`|Yes| Save the Bloom filter to this file after processing. If present at startup, the Bloom filter will be loaded from this file. |
 |`bloom_filter.size_in_bytes`| Mutually exclusive with `bloom_filter.estimated_doc_count` and `bloom_filter.desired_false_positive_rate`| Used to set the size of the Bloom filter (in bytes). |
 |`bloom_filter.read_only`|No| If true, do not write to the Bloom filter. Useful for things like deduping against a precomputed list of blocked attributes (e.g. URLs) or for decontamination against test data. |
