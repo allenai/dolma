@@ -1,15 +1,7 @@
 documents:
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/books/*.gz
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/c4/*.gz
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/*.gz
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/*.gz
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/*.gz
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/pes2o/*.gz
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/reddit/*.gz
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/stack/*.gz
-  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki/*.gz
-  # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/books/*.gz
-  # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/wiki/*.gz
+  - s3://ai2-llm/pretraining-data/sources/cc-news/v1/documents/cc_en_head/*.gz
+  - s3://ai2-llm/pretraining-data/sources/cc-news/v1/documents/cc_en_middle/*.gz
+  - s3://ai2-llm/pretraining-data/sources/cc-news/v1/documents/cc_en_tail/*.gz
 
 
 dedupe:
