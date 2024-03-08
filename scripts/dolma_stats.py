@@ -339,6 +339,12 @@ class wiki(books):
 
 
 @Registry.add
+class news(books):
+    documents = "s3://ai2-llm/pretraining-data/sources/cc-news/v1/documents/*/*.gz"
+    stats = "s3://ai2-llm/stats/cc-news/v1/*/*.gz"
+
+
+@Registry.add
 class cc_v1(BaseStatsProcessor):
     documents = "s3://ai2-llm/pretraining-data/sources/common-crawl/v1/documents/cc_en_*/*.gz"
     stats = "s3://ai2-llm/stats/olmo-mix/v1/cc/v1/**/*.gz"

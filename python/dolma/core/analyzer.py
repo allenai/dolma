@@ -1,7 +1,6 @@
 import math
 import multiprocessing
 import re
-import shutil
 from contextlib import ExitStack
 from tempfile import TemporaryDirectory
 from typing import Dict, List, Optional
@@ -151,7 +150,12 @@ def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[Summa
     decoder = Decoder(SummarySpec)
 
     # iterator with nice progress bar
-    it = tqdm.tqdm(list(glob_path(summaries_path)), desc="Aggregating summaries", unit=" files", unit_scale=True)
+    it = tqdm.tqdm(
+        list(glob_path(summaries_path, autoglob_dirs=True, recursive_dirs=True, yield_dirs=False)),
+        desc="Aggregating summaries",
+        unit=" files",
+        unit_scale=True,
+    )
 
     # load partial summaries and aggregate it
     for path in it:
@@ -262,23 +266,18 @@ def create_and_run_analyzer(
         mkdir_p(summaries_path)
         mkdir_p(metadata_path)
 
-        try:
-            analyzer = AnalyzerProcessor(
-                source_prefix=attributes,
-                destination_prefix=summaries_path,
-                metadata_prefix=metadata_path,
-                debug=debug,
-                seed=seed,
-                ignore_existing=True,
-                retries_on_error=0,
-                num_processes=num_processes,
-            )
-            analyzer(num_bins=num_bins, name_regex=name_regex)
+        analyzer = AnalyzerProcessor(
+            source_prefix=attributes,
+            destination_prefix=summaries_path,
+            metadata_prefix=metadata_path,
+            debug=debug,
+            seed=seed,
+            ignore_existing=True,
+            retries_on_error=0,
+            num_processes=num_processes,
+        )
+        analyzer(num_bins=num_bins, name_regex=name_regex)
 
-            summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=num_bins)
-            visualize_summaries(summaries=summaries)
-            write_output(summaries=summaries, report=report)
-
-        finally:
-            shutil.rmtree(summaries_path)
-            shutil.rmtree(metadata_path)
+        summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=num_bins)
+        visualize_summaries(summaries=summaries)
+        write_output(summaries=summaries, report=report)

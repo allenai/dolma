@@ -48,7 +48,9 @@ class BaseModelConfig:
 @dataclass
 class BaseTrainerConfig:
     model_path: str = field(help="Path to location where to save or load the model")
-    save_path: Optional[str] = field(help="Extra path to save the model; if not provided, model_path is used", default=None)
+    save_path: Optional[str] = field(
+        help="Extra path to save the model; if not provided, model_path is used", default=None
+    )
     model: BaseModelConfig = field(help="Model configuration", default=BaseModelConfig())
     word_tokenizer: str = field(
         help=f"Tokenizer used to extract words; must be one of {TokenizerRegistry.s()}", default="noop"

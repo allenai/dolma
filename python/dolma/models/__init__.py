@@ -3,7 +3,11 @@ from dataclasses import dataclass
 from typing import Optional, TypeVar
 
 from ..cli import BaseCli
-from .fasttext_model import FastTextSupervisedCli, FastTextUnsupervisedCli, FastTextQuantizeCli
+from .fasttext_model import (
+    FastTextQuantizeCli,
+    FastTextSupervisedCli,
+    FastTextUnsupervisedCli,
+)
 
 A = TypeVar("A", bound="ArgumentParser")
 
