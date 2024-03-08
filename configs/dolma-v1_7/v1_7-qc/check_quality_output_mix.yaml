@@ -1,0 +1,69 @@
+streams:
+  - name: c4
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-decon/documents/c4/*
+    attributes:
+      - q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms
+    output:
+      max_size_in_bytes: 3894967296
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-lq_001/documents
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - (.attributes.q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms__q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms__hq[0][-1]) <= 0.001
+      syntax: jq
+
+  - name: cc_en_head
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-decon/documents/cc_en_head/*
+    attributes:
+      - q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms
+    output:
+      max_size_in_bytes: 3894967296
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-lq_001/documents
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - (.attributes.q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms__q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms__hq[0][-1]) <= 0.001
+      syntax: jq
+
+
+  - name: cc_en_middle
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-decon/documents/cc_en_middle/*
+    attributes:
+      - q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms
+    output:
+      max_size_in_bytes: 3894967296
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-lq_001/documents
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - (.attributes.q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms__q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms__hq[0][-1]) <= 0.001
+      syntax: jq
+
+
+  - name: cc_en_tail
+    documents:
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-decon/documents/cc_en_tail/*
+    attributes:
+      - q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms
+    output:
+      max_size_in_bytes: 3894967296
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-lq_001/documents
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - (.attributes.q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms__q2_6m_cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms__hq[0][-1]) <= 0.001
+      syntax: jq
+
+
+processes: 190
