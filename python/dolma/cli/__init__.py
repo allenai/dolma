@@ -4,14 +4,15 @@ Utilities to work with a OmegaConf structured config object
 Author: Luca Soldaini (@soldni)
 """
 
-
 from argparse import ArgumentParser, Namespace
 from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
-from logging import warn
+from hashlib import sha256
+from itertools import chain
+from logging import warning
 from typing import (
     Any,
     Dict,
@@ -28,11 +29,12 @@ from typing import (
 
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
+from omegaconf import ValidationError
 from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
 
-from dolma.core.errors import DolmaConfigError
+from ..core.errors import DolmaConfigError
 
 __all__ = [
     "BaseCli",
@@ -74,14 +76,13 @@ def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None
         typ_ = config.__annotations__.get(field_name, dt_field.metadata.get("type", MISSING))
 
         if typ_ is MISSING:
-            warn(f"No type annotation for field {field_name} in {config.__name__}")
+            warning(f"No type annotation for field {field_name} in {config.__name__}")
             continue
 
         # join prefix and field name
         field_name = f"{prefix}.{field_name}" if prefix else field_name
 
-        # This section here is to handle Optional[T] types
-        # We only care for cases where T is a dataclass
+        # This section here is to handle Optional[T] types; we only care for cases where T is a dataclass
         # So we first check if type is Union since Optional[T] is just a shorthand for Union[T, None]
         # and that the union contains only one non-None type
         if get_origin(typ_) == Union:
@@ -150,8 +151,39 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
 
     base_structured_config: DictConfig = om.structured(structured)
     merged_config = om.merge(base_structured_config, untyped_config)
-    assert isinstance(merged_config, DictConfig)
+
+    # check for type
+    if not isinstance(merged_config, DictConfig):
+        raise DolmaConfigError(f"Expected a DictConfig, got {type(merged_config).__name__}")
+
+    # try resolving all cross references in the config, raise a DolmaConfigError if it fails
+    try:
+        om.resolve(merged_config)
+    except OmegaConfBaseException as ex:
+        raise DolmaConfigError(f"Invalid error while parsing key `{ex.full_key}`: {type(ex).__name__}") from ex
+
     return merged_config  # pyright: ignore
+
+
+def make_fingerprint(*args, **kwargs) -> str:
+    """Create a unique fingerprint for the given arguments."""
+
+    # will accumulate the hash of all the arguments here
+    h = sha256()
+
+    # we sort the kwargs to make sure the fingerprint is always the same
+    _, sorted_kwargs = zip(*sorted(kwargs.items())) if len(kwargs) else ([], [])
+
+    for elem in chain(args, sorted_kwargs):
+        # we try to use omegaconf to create a yaml representation of the object;
+        # if it fails, we resort to string representation (e.g. for int, float, etc.)
+        try:
+            obj = om.to_yaml(om.create(elem))
+        except ValidationError:
+            obj = str(elem)
+        h.update(obj.encode("utf-8"))
+
+    return h.hexdigest()
 
 
 def print_config(config: Any, console: Optional[Console] = None) -> None:
@@ -172,14 +204,21 @@ class BaseCli(Generic[D]):
     @classmethod
     def make_parser(cls, parser: A) -> A:
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        return make_parser(parser, cls.CONFIG)
+        return make_parser(parser, cls.CONFIG)  # pyright: ignore
 
     @classmethod
-    def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
+    def run_from_args(cls, args: Namespace, config: Optional[dict] = None) -> Any:
+        """
+        Prepare to run the CLI command from parsed arguments by creating an OmegaConf config.
+
+        Args:
+            args: The parsed argparse namespace; based on the parser returned by `make_parser`
+            config: An optional configuration dictionary to merge with the parsed args
+        """
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)
+        parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)  # pyright: ignore
         try:
-            return cls.run(parsed_config)
+            return cls.run(parsed_config=parsed_config)
         except OmegaConfBaseException as ex:
             raise DolmaConfigError(
                 f"Invalid error while parsing key `{ex.full_key}` of `{ex.object_type_str}`: "
@@ -188,4 +227,10 @@ class BaseCli(Generic[D]):
 
     @classmethod
     def run(cls, parsed_config: D):
+        """
+        Run the program using the parsed configuration.
+
+        Args:
+            parsed_config (D): The parsed configuration object
+        """
         raise NotImplementedError("Abstract method; must be implemented in subclass")

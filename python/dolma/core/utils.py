@@ -3,7 +3,7 @@ import os
 import re
 import string
 import sys
-from typing import List, Union
+from typing import List, Union, cast
 
 try:
     import blingfire
@@ -15,6 +15,7 @@ except Exception:
 import nltk
 import uniseg.wordbreak
 from nltk.tokenize.punkt import PunktSentenceTokenizer
+from omegaconf import OmegaConf as om
 
 try:
     nltk.data.find("tokenizers/punkt")
@@ -61,12 +62,16 @@ def split_paragraphs(text: str, remove_empty: bool = True) -> List[TextSlice]:
     """
     Split a string into paragraphs. A paragraph is defined as a sequence of zero or more characters, followed
     by a newline character, or a sequence of one or more characters, followed by the end of the string.
+
+    Args:
+        text (str): The text to split into paragraphs.
+        remove_empty (bool): Whether to remove empty paragraphs. Defaults to True.
     """
     text_slices = [
         TextSlice(doc=text, start=match.start(), end=match.end())
         for match in re.finditer(r"([^\n]*\n|[^\n]+$)", text)
     ]
-    if remove_empty is True:
+    if remove_empty:
         text_slices = [text_slice for text_slice in text_slices if text_slice.text.strip()]
     return text_slices
 
@@ -136,3 +141,10 @@ def import_modules(modules_path: Union[List[str], None]):
                     f"({module_name}) is not globally unique. Please rename the directory to "
                     "something unique and try again."
                 )
+
+
+def dataclass_to_dict(dataclass_instance) -> dict:
+    """Convert a dataclass instance to a dictionary through the omegaconf library."""
+
+    # force typecasting because a dataclass instance will always be a dict
+    return cast(dict, om.to_object(om.structured(dataclass_instance)))
