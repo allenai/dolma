@@ -12,7 +12,6 @@ class FastTextQuantizerConfig(BaseModelConfig):
     retrain: bool = field(help="Whether to finetune embeddings if a cutoff is applied.", default=True)
     epochs: int = field(help="Number of epochs", default=1)
     learning_rate: float = field(help="Learning rate", default=0.1)
-    word_vector_size: float = field(help="Learning rate", default=0.05)
     subvector_size: int = field(help="Size of each sub-vector", default=2)
     quantize_norm: bool = field(help="Whether to quantize norm separately", default=True)
     quantize_classifier: bool = field(help="Whether to quantize classifier", default=False)

@@ -1,4 +1,4 @@
-model_path: '${oc.env:HOME}/fasttext_models/q128_6m-cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms.bin'
+model_path: '${oc.env:HOME}/fasttext_models/q2_8m-cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms.bin'
 
 cache_dir: '${oc.env:HOME}/fasttext_data'
 word_tokenizer: "ws"
@@ -7,8 +7,8 @@ num_processes: 128
 model:
   learning_rate: 0.1
   epochs: 1
-  features_cutoff: 6_291_456
-  subvector_size: 128
+  features_cutoff: 8_388_608
+  subvector_size: 2
   model_path: '${oc.env:HOME}/fasttext_models/cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms.bin'
 
 
