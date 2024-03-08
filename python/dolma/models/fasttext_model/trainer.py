@@ -11,7 +11,11 @@ from dolma.core.loggers import get_logger
 from ...core.paths import cached_path
 from ..data import FastTextDataConverter, FastTextUnsupervisedDataConverter
 from ..trainer import BaseTrainer
-from .config import FastTextSupervisedTrainerConfig, FastTextUnsupervisedTrainerConfig, FastTextQuantizerTrainerConfig
+from .config import (
+    FastTextQuantizerTrainerConfig,
+    FastTextSupervisedTrainerConfig,
+    FastTextUnsupervisedTrainerConfig,
+)
 
 with necessary(("fasttext", "0.9.2"), soft=True) as FASTTEXT_AVAILABLE:
     if TYPE_CHECKING or FASTTEXT_AVAILABLE:

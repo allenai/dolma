@@ -198,7 +198,13 @@ def join_path(protocol: Union[str, None], *parts: Union[str, Iterable[str]]) -> 
     return _unescape_glob(path)
 
 
-def glob_path(path: Union[Path, str], hidden_files: bool = False, autoglob_dirs: bool = True) -> Iterator[str]:
+def glob_path(
+    path: Union[Path, str],
+    hidden_files: bool = False,
+    autoglob_dirs: bool = True,
+    recursive_dirs: bool = False,
+    yield_dirs: bool = True,
+) -> Iterator[str]:
     """
     Expand a glob path into a list of paths.
     """
@@ -214,7 +220,19 @@ def glob_path(path: Union[Path, str], hidden_files: bool = False, autoglob_dirs:
         if not hidden_files and Path(gl).name.startswith("."):
             continue
 
-        yield join_path(protocol, gl)
+        if fs.isdir(gl):
+            if recursive_dirs:
+                yield from glob_path(
+                    gl,
+                    hidden_files=hidden_files,
+                    autoglob_dirs=autoglob_dirs,
+                    recursive_dirs=recursive_dirs,
+                    yield_dirs=yield_dirs,
+                )
+            if yield_dirs:
+                yield join_path(protocol, gl)
+        else:
+            yield join_path(protocol, gl)
 
 
 def sub_prefix(a: str, b: str) -> str:

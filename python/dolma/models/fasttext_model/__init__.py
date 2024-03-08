@@ -7,8 +7,16 @@ from ...cli import BaseCli, field
 from ...core.errors import DolmaConfigError
 from ..config import BaseTrainerConfig
 from ..trainer import BaseTrainer
-from .config import FastTextSupervisedTrainerConfig, FastTextUnsupervisedTrainerConfig, FastTextQuantizerTrainerConfig
-from .trainer import FastTextTrainer, FastTextUnsupervisedTrainer, FastTextQuantizerTrainer
+from .config import (
+    FastTextQuantizerTrainerConfig,
+    FastTextSupervisedTrainerConfig,
+    FastTextUnsupervisedTrainerConfig,
+)
+from .trainer import (
+    FastTextQuantizerTrainer,
+    FastTextTrainer,
+    FastTextUnsupervisedTrainer,
+)
 
 
 @dataclass
