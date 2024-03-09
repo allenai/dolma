@@ -10,6 +10,7 @@ streams:
       - paloma_paragraphs
       - paloma_documents
       - blocklist_hosts_fakenews_v1
+      - pii_regex_with_counts_fast_v2
     output: &output
       max_size_in_bytes: 1_073_741_824
       path: s3://ai2-llm/pretraining-data/sources/cc-news/v2/documents/cc_en_head
@@ -21,35 +22,81 @@ streams:
         - >-
           (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
           ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
-        # At least 100 words
-        - .attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__word_count[0][2] >= 100
+        # At least 25 words
+        - .attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__word_count[0][2] >= 25
       exclude:
       # C4 Rules
-      - .attributes.c4_v2__c4_v2__has_curly_brace[0][2] > 0.5
-      - .attributes.c4_v2__c4_v2__has_lorem_ipsum[0][2] > 0.5
-      - .attributes.c4_v2__c4_v2__has_javascript[0][2] > 0.5
+      - >-
+        (.attributes.c4_v2__c4_v2__has_curly_brace != null) and
+        (.attributes.c4_v2__c4_v2__has_curly_brace[0][2] > 0.5)
+      - >-
+        (.attributes.c4_v2__c4_v2__has_lorem_ipsum != null) and
+        (.attributes.c4_v2__c4_v2__has_lorem_ipsum[0][2] > 0.5)
+      - >-
+        (.attributes.c4_v2__c4_v2__has_javascript != null) and
+        (.attributes.c4_v2__c4_v2__has_javascript[0][2] > 0.5)
 
       # Gopher Rules
-      - .attributes.gopher_v1__gopher_v1__word_count[0][2] < 50
-      - .attributes.gopher_v1__gopher_v1__word_count[0][2] > 100000
-      - .attributes.gopher_v1__gopher_v1__median_word_length[0][2] < 3
-      - .attributes.gopher_v1__gopher_v1__median_word_length[0][2] > 10
-      - .attributes.gopher_v1__gopher_v1__symbol_to_word_ratio[0][2] > 0.1
-      - .attributes.gopher_v1__gopher_v1__fraction_of_words_with_alpha_character[0][2] < 0.8
-      - .attributes.gopher_v1__gopher_v1__required_word_count[0][2] < 2
-      - .attributes.gopher_v1__gopher_v1__fraction_of_lines_starting_with_bullet_point[0][2] > 0.9
-      - .attributes.gopher_v1__gopher_v1__fraction_of_lines_ending_with_ellipsis[0][2] > 0.3
-      - .attributes.gopher_v1__gopher_v1__fraction_of_duplicate_lines[0][2] > 0.3
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_lines[0][2] > 0.3
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_2gram[0][2] > 0.2
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_3gram[0][2] > 0.18
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_4gram[0][2] > 0.16
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_5grams[0][2] > 0.15
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_6grams[0][2] > 0.14
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_7grams[0][2] > 0.13
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_8grams[0][2] > 0.12
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_9grams[0][2] > 0.11
-      - .attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_10grams[0][2] > 0.10
+      - >-
+        (.attributes.gopher_v1__gopher_v1__word_count != null) and
+        (.attributes.gopher_v1__gopher_v1__word_count[0][2] < 50)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__word_count != null) and
+        (.attributes.gopher_v1__gopher_v1__word_count[0][2] > 100000)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__median_word_length != null) and
+        (.attributes.gopher_v1__gopher_v1__median_word_length[0][2] < 3)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__median_word_length != null) and
+        (.attributes.gopher_v1__gopher_v1__median_word_length[0][2] > 10)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__symbol_to_word_ratio != null) and
+        (.attributes.gopher_v1__gopher_v1__symbol_to_word_ratio[0][2] > 0.1)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_words_with_alpha_character != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_words_with_alpha_character[0][2] < 0.8)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__required_word_count != null) and
+        (.attributes.gopher_v1__gopher_v1__required_word_count[0][2] < 2)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_lines_starting_with_bullet_point != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_lines_starting_with_bullet_point[0][2] > 0.9)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_lines_ending_with_ellipsis != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_lines_ending_with_ellipsis[0][2] > 0.3)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_duplicate_lines != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_duplicate_lines[0][2] > 0.3)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_lines != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_lines[0][2] > 0.3)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_2gram != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_2gram[0][2] > 0.2)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_3gram != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_3gram[0][2] > 0.18)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_4gram != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_4gram[0][2] > 0.16)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_5grams != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_5grams[0][2] > 0.15)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_6grams != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_6grams[0][2] > 0.14)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_7grams != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_7grams[0][2] > 0.13)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_8grams != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_8grams[0][2] > 0.12)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_9grams != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_9grams[0][2] > 0.11)
+      - >-
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_10grams != null) and
+        (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_10grams[0][2] > 0.10)
 
       # Contaminated Data from Paloma
       - ".attributes.paloma_documents_bff_duplicates != null"
@@ -61,10 +108,7 @@ streams:
       # Remove Fake News websites
       - .attributes.blocklist_hosts_fakenews_v1__blocklist_hosts_fakenews_v1__url != null
       syntax: jq
-    span_replacement: &span_replacement
-      - span: "$.attributes.dedupe_para_ngrams_13_1"
-        min_score: 0.8
-        replacement: ''
+
   - name: cc_news
     documents:
       - s3://ai2-llm/pretraining-data/sources/cc-news/v1/documents/cc_en_middle/*.gz
@@ -73,7 +117,7 @@ streams:
       << : *output
       path: s3://ai2-llm/pretraining-data/sources/cc-news/v2/documents/cc_en_middle
     filter: *filter
-    span_replacement: *span_replacement
+
   - name: cc_news
     documents:
       - s3://ai2-llm/pretraining-data/sources/cc-news/v1/documents/cc_en_tail/*.gz
@@ -82,7 +126,6 @@ streams:
       << : *output
       path: s3://ai2-llm/pretraining-data/sources/cc-news/v2/documents/cc_en_tail
     filter: *filter
-    span_replacement: *span_replacement
 
 work_dir:
   input: "/tmp/cc_news_v2/input"
