@@ -56,3 +56,10 @@ class FT5(FT1):
     MODEL_PATH = "/home/ubuntu/fasttext_models/q2_6m-cc_w_wr_sw_s2_nsfw_fake_math_bin_ws_300_2Ms.bin"
     MODEL_MODE = "document"
     TOKENIZER_MODE = "ws"
+
+
+@TaggerRegistry.add("rw_hrms_bin")
+class FT6(FT1):
+    MODEL_PATH = "/home/ubuntu/fasttext_models/rw_hrms_bin.bin"
+    MODEL_MODE = "document"
+    TOKENIZER_MODE = "ws"
