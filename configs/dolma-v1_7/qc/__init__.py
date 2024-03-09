@@ -63,3 +63,10 @@ class FT6(FT1):
     MODEL_PATH = "/home/ubuntu/fasttext_models/rw_hrms_bin.bin"
     MODEL_MODE = "document"
     TOKENIZER_MODE = "ws"
+
+
+@TaggerRegistry.add("suchin_whose_quality")
+class FT7(FT1):
+    MODEL_PATH = "/home/ubuntu/fasttext_models/suchin_whose_quality.bin"
+    MODEL_MODE = "document"
+    TOKENIZER_MODE = "ws"
