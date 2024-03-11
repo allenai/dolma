@@ -1,10 +1,12 @@
 import multiprocessing
 import random
 import re
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from itertools import chain
+from queue import Queue
 from tempfile import mkdtemp
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
 import msgspec
 import smart_open
@@ -63,6 +65,97 @@ def make_selector(jsonpath: str) -> Callable:
     raise ValueError(f"Invalid JSONPath: {jsonpath}")
 
 
+def read_with_shuffle_ring(
+    sources: List[str],
+    ring_size: int = 8,
+    page_size: int = 100,
+    buffer_size: int = 10_000,
+    seed: int = 2001,
+    mode: str = "rt",
+    encoding: str = "utf-8",
+    **smart_open_kwargs,
+) -> Iterator[str]:
+    """
+    Reads from multiple source files in parallel and provide partial shuffle of the data.
+    The data is read using `ring_size` threads, and it is shuffled every `page_size` lines.
+
+    Args:
+        sources (List[str]): A list of file paths to read from.
+        ring_size (int): The number of threads to use for reading the data.
+        page_size (int): The number of lines to read before shuffling the data.
+        buffer_size (int): The number of lines to read into memory at once.
+        seed (int): The random seed to use for shuffling the data.
+        mode (str): The mode to open the files in (e.g., 'rt' for reading text).
+        encoding (str): The encoding to use when reading the files.
+        **smart_open_kwargs: Additional keyword arguments to pass to `smart_open.open`.
+
+    Yields:
+        str: The lines of text read from the files in a shuffled order.
+    """
+
+    # check that the parameters are valid
+    assert page_size > 0, "page_size must be greater than 0"
+    assert buffer_size > 0, "buffer must be greater than 0"
+    assert ring_size > 0, "ring_size must be greater than 0"
+    assert page_size <= buffer_size, "page_size must be less than or equal to buffer"
+    assert "r" in mode, "mode must be a read mode"
+
+    # repeat the seed to ensure that the same seed is used for each source
+    random.seed(seed)
+
+    # ensure that the ring size is not greater than the number of sources
+    ring_size = min(ring_size, len(sources))
+
+    # we shuffle sources to guarantee additional randomness; note that we make
+    # a copy of the sources list to avoid modifying the original list
+    random.shuffle(sources := list(sources))
+
+    # this auxiliary function will read each file and put the lines into a queue
+    def _reader(source: str, queue: "Queue[List[str]]"):
+        with smart_open.open(source, mode, encoding=encoding, **smart_open_kwargs) as f:
+            page = []
+            for line in f:
+                # put each line into the page
+                page.append(line)
+
+                if len(page) >= page_size:
+                    # we exeeded the page size, so we put it in the queue to be processed
+                    queue.put(page)
+                    page = []
+
+            # in case queue is not empty, we put the remaining lines in the queue
+            if page:
+                queue.put(page)
+
+    with ThreadPoolExecutor(max_workers=ring_size) as pool:
+        queue: "Queue[List[str]]" = Queue()
+        futures = [pool.submit(_reader, source=source, queue=queue) for source in sources]
+
+        buffer = []
+        while len(futures) > 0:
+            # first thing to do in this loop is to check if any of the futures are done,
+            # and remove them from the list of futures if they are. This while loop will
+            # terminate when all futures are done.
+            for future in futures:
+                if future.done():
+                    futures.remove(future)
+
+            # until the queue is empty, we keep reading from it
+            while not queue.empty():
+                buffer.extend(queue.get())
+
+                # we read enough to fill the current buffer, so we shuffle it and yield
+                if len(buffer) >= buffer_size:
+                    random.shuffle(buffer)
+                    yield from buffer
+                    buffer = []
+
+        if buffer:
+            # there's still some data in the buffer, so we shuffle it and yield
+            random.shuffle(buffer)
+            yield from buffer
+
+
 def combine_splits(sources: List[str], destination: str, splits: Optional[Tuple[str, ...]] = None):
     """Combine the splits generated for each source path into a single file for each split."""
 
@@ -79,9 +172,9 @@ def combine_splits(sources: List[str], destination: str, splits: Optional[Tuple[
         with smart_open.open(join_path("", destination, f"{split}.txt"), "wt") as wf:
             # the paths are obtained by globbing the source directories for files containing the
             # name of the split.
-            for path in chain.from_iterable(glob_path(f"{d}/*{split}*") for d in unique_sources):
-                with smart_open.open(path, "rt") as rf:
-                    wf.write(rf.read())
+            paths = list(chain.from_iterable(glob_path(f"{d}/*{split}*") for d in unique_sources))
+            for line in read_with_shuffle_ring(paths):
+                wf.write(line)
 
 
 class BaseDataConverter(BaseParallelProcessor):

@@ -125,7 +125,8 @@ pii = [
 ]
 models = [
     "fasttext-wheel==0.9.2",
-    "scikit-learn"
+    "scikit-learn",
+    "floret"
 ]
 
 # # extension to parse warc files

@@ -2,15 +2,20 @@ import glob
 import json
 import os
 import re
+import shutil
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import List, Optional, Tuple
 from unittest import TestCase
 
 import smart_open
 
 from dolma.core.data_types import InputSpecWithMetadata
-from dolma.models.data import FastTextDataConverter, make_selector
+from dolma.models.data import (
+    FastTextDataConverter,
+    make_selector,
+    read_with_shuffle_ring,
+)
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data"
 
@@ -145,3 +150,30 @@ class TestFasttextData(TestCase):
             for i, (got, exp) in enumerate(zip(sorted(got_text), sorted(expected_text))):
                 self.assertEqual(got, exp, f"got: {got[:40]}, expected: {exp[:40]}, index: {i}")
             self.assertEqual(set(got_labels), {"__label__pos"})
+
+
+class TestReadRing(TestCase):
+    def setUp(self) -> None:
+        self.tmpdir = mkdtemp()
+        self.paths = []
+
+        j = 0
+        for i in range(10):
+            path = os.path.join(self.tmpdir, f"{i}.txt")
+            with open(path, mode="wt", encoding="utf-8") as f:
+                for _ in range(100):
+                    f.write(f"{j}\n")
+                    j += 1
+            self.paths.append(path)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmpdir)
+
+    def test_read_ring(self):
+        output = [
+            int(e.strip()) for e in read_with_shuffle_ring(self.paths, ring_size=5, buffer_size=100, page_size=10)
+        ]
+
+        self.assertEqual(len(output), 1000)
+        self.assertNotEqual(output, list(range(1000)))
+        self.assertEqual(sorted(output), list(range(1000)))
