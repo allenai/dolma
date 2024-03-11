@@ -171,7 +171,7 @@ class TestReadRing(TestCase):
 
     def test_read_ring(self):
         output = [
-            int(e.strip()) for e in read_with_shuffle_ring(self.paths, ring_size=5, buffer_size=100, page_size=10)
+            int(e.strip()) for e in read_with_shuffle_ring(self.paths, ring_size=5, buffer_size=100, page_size=8)
         ]
 
         self.assertEqual(len(output), 1000)

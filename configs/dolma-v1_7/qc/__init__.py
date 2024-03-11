@@ -58,15 +58,19 @@ class FT5(FT1):
     TOKENIZER_MODE = "ws"
 
 
-@TaggerRegistry.add("rw_hrms_bin")
+@TaggerRegistry.add("rw_hrms_bin_v2")
 class FT6(FT1):
     MODEL_PATH = "/home/ubuntu/fasttext_models/rw_hrms_bin.bin"
     MODEL_MODE = "document"
     TOKENIZER_MODE = "ws"
 
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[FastTextPrediction]:
+        out = super().predict_slice(text_slice)
+        return [label for label in out if label.label in {"lq", "hq"}]
 
-@TaggerRegistry.add("suchin_whose_quality")
+
+@TaggerRegistry.add("suchin_whose_quality_v2")
 class FT7(FT1):
-    MODEL_PATH = "/home/ubuntu/fasttext_models/suchin_whose_quality.bin"
+    MODEL_PATH = "/home/ubuntu/fasttext_models/suchin_whose_quality_v2.bin"
     MODEL_MODE = "document"
     TOKENIZER_MODE = "ws"

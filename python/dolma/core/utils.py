@@ -32,14 +32,14 @@ logger = get_logger(__name__)
 
 def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> str:
     # use underscores for any non-valid characters in variable name
-    name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    valid_name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
 
     if remove_multiple_underscores:
         # replace multiple underscores with a single underscore
-        name = re.sub(r"__+", "_", name)
+        valid_name = re.sub(r"__+", "_", valid_name)
 
-    if name[0] in string.digits:
-        raise ValueError(f"Invalid variable name {name}")
+    if valid_name[0] in string.digits:
+        raise ValueError(f"Invalid variable name `{valid_name}` from `{name}`")
 
     return name
 

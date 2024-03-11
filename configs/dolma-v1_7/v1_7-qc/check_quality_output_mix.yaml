@@ -1,83 +1,58 @@
 streams:
-  # - name: c4
-  #   documents:
-  #     - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/c4/c4-06*0.json.gz
-  #   attributes:
-  #     - suchin_whose_quality
-  #   output:
-  #     max_size_in_bytes: 3894967296
-  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_whose_quality/documents
-  #     # discard_fields:
-  #     #   - attributes
-  #     #   - metadata
-  #   filter:
-  #     include:
-  #       - (.attributes.suchin_whose_quality__suchin_whose_quality__hq[0][-1]) <= 0.003
-  #     syntax: jq
-
   - name: cc_en_head
     documents:
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-0600.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-0610.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-0320.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-0330.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-0150.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-0140.json.gz
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-000*
     attributes:
       - suchin_whose_quality
+      - rw_hrms_bin
+      - rw_hrms_bin_v2
     output:
       max_size_in_bytes: 3894967296
-      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_whose_quality/documents
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_fixes/documents
       # discard_fields:
       #   - attributes
       #   - metadata
     filter:
       include:
-        - (.attributes.suchin_whose_quality__suchin_whose_quality__hq[0][-1]) <= 0.003
+        - (.attributes.rw_hrms_bin_v2__rw_hrms_bin_v2__hq[0][-1]) <= 0.003
       syntax: jq
 
 
   - name: cc_en_middle
     documents:
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-0600.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-0610.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-0320.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-0330.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-0150.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-0140.json.gz
+        - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-000*
     attributes:
       - suchin_whose_quality
+      - rw_hrms_bin
+      - rw_hrms_bin_v2
     output:
       max_size_in_bytes: 3894967296
-      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_whose_quality/documents
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_fixes/documents
       # discard_fields:
       #   - attributes
       #   - metadata
     filter:
       include:
-        - (.attributes.suchin_whose_quality__suchin_whose_quality__hq[0][-1]) <= 0.003
+        - (.attributes.rw_hrms_bin_v2__rw_hrms_bin_v2__hq[0][-1]) <= 0.003
       syntax: jq
 
 
   - name: cc_en_tail
     documents:
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-0600.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-0610.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-0320.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-0330.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-0150.json.gz
-      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-0140.json.gz
+        - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-000*
     attributes:
       - suchin_whose_quality
+      - rw_hrms_bin
+      - rw_hrms_bin_v2
     output:
       max_size_in_bytes: 3894967296
-      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_whose_quality/documents
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_fixes/documents
       # discard_fields:
       #   - attributes
       #   - metadata
     filter:
       include:
-        - (.attributes.suchin_whose_quality__suchin_whose_quality__hq[0][-1]) <= 0.003
+        - (.attributes.rw_hrms_bin_v2__rw_hrms_bin_v2__hq[0][-1]) <= 0.003
       syntax: jq
 
 

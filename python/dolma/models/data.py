@@ -1,12 +1,10 @@
 import multiprocessing
 import random
 import re
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import ExitStack
 from itertools import chain
-from queue import Queue, Empty as QueueEmptyException
 from tempfile import mkdtemp
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Tuple, Union
 
 import msgspec
 import smart_open
@@ -66,7 +64,7 @@ def make_selector(jsonpath: str) -> Callable:
 
 
 def read_with_shuffle_ring(
-    sources: List[str],
+    sources: Iterable[str],
     ring_size: int = 8,
     page_size: int = 1000,
     buffer_size: int = 10_000,
@@ -74,7 +72,7 @@ def read_with_shuffle_ring(
     mode: str = "rt",
     encoding: str = "utf-8",
     **smart_open_kwargs,
-) -> Iterator[str]:
+) -> Generator[str, None, None]:
     """
     Reads from multiple source files in parallel and provide partial shuffle of the data.
     The data is read using `ring_size` threads, and it is shuffled every `page_size` lines.
@@ -103,98 +101,50 @@ def read_with_shuffle_ring(
     # repeat the seed to ensure that the same seed is used for each source
     random.seed(seed)
 
-    # ensure that the ring size is not greater than the number of sources
-    ring_size = min(ring_size, len(sources))
-
     # we shuffle sources to guarantee additional randomness; note that we make
     # a copy of the sources list to avoid modifying the original list
     random.shuffle(sources := list(sources))
 
-    # this auxiliary function will read each file and put the lines into a queue
-    def _reader(source: str, queue: "Queue[List[str]]"):
-        with smart_open.open(source, mode, encoding=encoding, **smart_open_kwargs) as f:
-            page = []
-            for line in f:
-                # put each line into the page
-                page.append(line)
+    # ensure that the ring size is not greater than the number of sources
+    ring_size = min(ring_size, len(sources))
 
-                if len(page) >= page_size:
-                    print(f"putting page of size {len(page)} into queue")
-                    # we exeeded the page size, so we put it in the queue to be processed
-                    queue.put(page, block=False)
-                    print(f"queue size: {queue.qsize()}")
-                    page = []
+    # we will place the lines read from the files into this buffer
+    current_buffer = []
 
-            # in case queue is not empty, we put the remaining lines in the queue
-            if page:
-                queue.put(page)
+    with ExitStack() as stack:
+        # this is the ring buffer that will be used to read from the sources
+        ring_reader = [
+            stack.enter_context(smart_open.open(source, mode=mode, encoding=encoding, **smart_open_kwargs))
+            for source in (sources.pop() for _ in range(ring_size))
+        ]
 
-    with ThreadPoolExecutor(max_workers=ring_size) as pool:
-        queue: "Queue[List[str]]" = Queue()
-        futures = [pool.submit(_reader, source=source, queue=queue) for source in sources]
+        while len(sources) > 0 or len(ring_reader) > 0:
+            # sample a random position in the ring to read from
+            pos = random.randint(1, len(ring_reader)) - 1
 
-        buffer = []
-        while len(futures) > 0:
-            # first thing to do in this loop is to check if any of the futures are done,
-            # and remove them from the list of futures if they are. This while loop will
-            # terminate when all futures are done.
-            for future in futures:
-                if future.done():
-                    futures.remove(future)
+            # read a page of data from the file at the sampled position
+            page = [ln for _ in range(page_size) if not ring_reader[pos].closed and (ln := ring_reader[pos].readline())]
 
-            # until the queue is empty, we keep reading from it
-            while queue.qsize() > 0:
-                try:
-                    print("getting page from queue")
-                    buffer.extend(queue.get())
-                except QueueEmptyException:
-                    break
+            if len(page) < page_size:
+                # we have reached the end of the file, so we remove it from the ring
+                ring_reader.pop(pos).close()
+                if len(sources) > 0:
+                    # more sources are available, so we add a new one to the ring
+                    ring_reader.insert(pos, stack.enter_context(smart_open.open(sources.pop(), mode=mode, encoding=encoding)))
 
-                # we read enough to fill the current buffer, so we shuffle it and yield
-                if len(buffer) >= buffer_size:
-                    random.shuffle(buffer)
-                    yield from buffer
-                    buffer = []
+            # add the lines we just read to the buffer
+            current_buffer.extend(page)
 
-        if buffer:
-            # there's still some data in the buffer, so we shuffle it and yield
-            random.shuffle(buffer)
-            yield from buffer
+            if len(current_buffer) >= buffer_size:
+                # the buffer is full, so we shuffle it, yield the lines, and clear the buffer
+                random.shuffle(current_buffer)
+                yield from current_buffer
+                current_buffer = []
 
-    # with multiprocessing.Pool(processes=ring_size) as pool:
-    #     queue: "Queue[List[str]]" = (manager := multiprocessing.Manager()).Queue()
-    #     # queue: "Queue[List[str]]" = Queue()
-    #     # futures = [pool.submit(_reader, source=source, queue=queue) for source in sources]
-
-    #     pool.apply(_reader, args=(sources[0], queue))
-
-    #     buffer = []
-    #     while len(futures) > 0:
-    #         # first thing to do in this loop is to check if any of the futures are done,
-    #         # and remove them from the list of futures if they are. This while loop will
-    #         # terminate when all futures are done.
-    #         for future in futures:
-    #             if future.done():
-    #                 futures.remove(future)
-
-    #         # until the queue is empty, we keep reading from it
-    #         while queue.qsize() > 0:
-    #             try:
-    #                 print("getting page from queue")
-    #                 buffer.extend(queue.get())
-    #             except QueueEmptyException:
-    #                 break
-
-    #             # we read enough to fill the current buffer, so we shuffle it and yield
-    #             if len(buffer) >= buffer_size:
-    #                 random.shuffle(buffer)
-    #                 yield from buffer
-    #                 buffer = []
-
-    #     if buffer:
-    #         # there's still some data in the buffer, so we shuffle it and yield
-    #         random.shuffle(buffer)
-    #         yield from buffer
+    # we have reached the end of the files, so we shuffle the remaining lines and yield them;
+    # if the buffer is empty, this will do nothing.
+    random.shuffle(current_buffer)
+    yield from current_buffer
 
 
 def combine_splits(sources: List[str], destination: str, splits: Optional[Tuple[str, ...]] = None):
@@ -417,7 +367,8 @@ class FastTextDataConverter(BaseDataConverter):
         Create a function that extracts text from the input document and preprocesses it (replace all
         whitespace with a single space and strip leading/trailing whitespace; optionally lowercase).
         """
-        return make_selector(text_selector or "$.text")
+        fn = make_selector(text_selector or "$.text")
+        return lambda doc: fn(doc).replace("__label__", "##label##")
 
     @classmethod
     def _make_label_fn(cls, label_selector: Union[str, None] = None) -> Callable[[InputSpecWithMetadata], str]:

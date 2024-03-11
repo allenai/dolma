@@ -1,5 +1,5 @@
 
-model_path: ${oc.env:HOME}/fasttext_models/suchin_whose_quality.bin
+model_path: ${oc.env:HOME}/fasttext_models/suchin_whose_quality_v2.bin
 cache_dir: ${oc.env:HOME}/fasttext_data
 word_tokenizer: "ws"
 num_processes: 128
