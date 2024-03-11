@@ -1,4 +1,5 @@
 import re
+from argparse import Namespace
 from contextlib import ExitStack
 from typing import TYPE_CHECKING, Generator, List, Optional, Tuple
 
@@ -6,8 +7,7 @@ import smart_open
 from necessary import necessary
 from tqdm import tqdm
 
-from dolma.core.loggers import get_logger
-
+from ...core.loggers import get_logger
 from ...core.paths import cached_path
 from ..data import FastTextDataConverter, FastTextUnsupervisedDataConverter
 from ..trainer import BaseTrainer
@@ -45,6 +45,16 @@ class FastTextTrainer(BaseTrainer):
     def data_factory_cls(self):
         return FastTextDataConverter
 
+    def _train_unsupervised(self, **kwargs) -> FastTextModel:
+        return fasttext.train_unsupervised(**kwargs)
+
+    def _train_supervised(self, **kwargs) -> FastTextModel:
+        return fasttext.train_supervised(**kwargs)
+
+    def _load_model(self, path: str, args: Optional[dict] = None) -> FastTextModel:
+        parsed_args = Namespace(**args) if args is not None else None
+        return FastTextModel(model_path=path, args=parsed_args)
+
     def fit(self, data_path: str, save_path: str, validation_path: Optional[str] = None):
         pretrained_vectors = (
             cached_path(self.config.model.pretrained_vectors)
@@ -62,7 +72,7 @@ class FastTextTrainer(BaseTrainer):
                 "autotuneModelSize": self.config.model.autotune.model_size,
             }
 
-        model = fasttext.train_supervised(
+        model = self._train_supervised(
             input=data_path,
             lr=self.config.model.learning_rate,
             dim=self.config.model.word_vector_size,
@@ -113,7 +123,7 @@ class FastTextTrainer(BaseTrainer):
     def predict(self, data_path: str, load_path: str):
         # load the model
         LOGGER.info(f"Loading model from {load_path}")
-        model = FastTextModel(load_path)
+        model = self._load_model(load_path)
 
         # run the models
         y_true, y_pred = [], []
@@ -143,7 +153,7 @@ class FastTextUnsupervisedTrainer(FastTextTrainer):
         return FastTextUnsupervisedDataConverter
 
     def fit(self, data_path: str, save_path: str, validation_path: Optional[str] = None):
-        model = fasttext.train_unsupervised(
+        model = self._train_unsupervised(
             input=data_path,
             model=self.config.model.algorithm,
             lr=self.config.model.learning_rate,
@@ -178,7 +188,7 @@ class FastTextQuantizerTrainer(FastTextTrainer):
         if self.config.model.model_path is None:
             LOGGER.warning("model_path is not provided, using save_path")
         model_path = self.config.model.model_path or save_path
-        model = FastTextModel(model_path)
+        model = self._load_model(model_path)
         model.quantize(
             input=data_path,
             cutoff=self.config.model.features_cutoff,
