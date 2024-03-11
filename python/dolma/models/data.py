@@ -1,10 +1,10 @@
 import multiprocessing
 import random
 import re
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from contextlib import ExitStack
 from itertools import chain
-from queue import Queue
+from queue import Queue, Empty as QueueEmptyException
 from tempfile import mkdtemp
 from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Union
 
@@ -68,7 +68,7 @@ def make_selector(jsonpath: str) -> Callable:
 def read_with_shuffle_ring(
     sources: List[str],
     ring_size: int = 8,
-    page_size: int = 100,
+    page_size: int = 1000,
     buffer_size: int = 10_000,
     seed: int = 2001,
     mode: str = "rt",
@@ -119,8 +119,10 @@ def read_with_shuffle_ring(
                 page.append(line)
 
                 if len(page) >= page_size:
+                    print(f"putting page of size {len(page)} into queue")
                     # we exeeded the page size, so we put it in the queue to be processed
-                    queue.put(page)
+                    queue.put(page, block=False)
+                    print(f"queue size: {queue.qsize()}")
                     page = []
 
             # in case queue is not empty, we put the remaining lines in the queue
@@ -141,8 +143,12 @@ def read_with_shuffle_ring(
                     futures.remove(future)
 
             # until the queue is empty, we keep reading from it
-            while not queue.empty():
-                buffer.extend(queue.get())
+            while queue.qsize() > 0:
+                try:
+                    print("getting page from queue")
+                    buffer.extend(queue.get())
+                except QueueEmptyException:
+                    break
 
                 # we read enough to fill the current buffer, so we shuffle it and yield
                 if len(buffer) >= buffer_size:
@@ -154,6 +160,41 @@ def read_with_shuffle_ring(
             # there's still some data in the buffer, so we shuffle it and yield
             random.shuffle(buffer)
             yield from buffer
+
+    # with multiprocessing.Pool(processes=ring_size) as pool:
+    #     queue: "Queue[List[str]]" = (manager := multiprocessing.Manager()).Queue()
+    #     # queue: "Queue[List[str]]" = Queue()
+    #     # futures = [pool.submit(_reader, source=source, queue=queue) for source in sources]
+
+    #     pool.apply(_reader, args=(sources[0], queue))
+
+    #     buffer = []
+    #     while len(futures) > 0:
+    #         # first thing to do in this loop is to check if any of the futures are done,
+    #         # and remove them from the list of futures if they are. This while loop will
+    #         # terminate when all futures are done.
+    #         for future in futures:
+    #             if future.done():
+    #                 futures.remove(future)
+
+    #         # until the queue is empty, we keep reading from it
+    #         while queue.qsize() > 0:
+    #             try:
+    #                 print("getting page from queue")
+    #                 buffer.extend(queue.get())
+    #             except QueueEmptyException:
+    #                 break
+
+    #             # we read enough to fill the current buffer, so we shuffle it and yield
+    #             if len(buffer) >= buffer_size:
+    #                 random.shuffle(buffer)
+    #                 yield from buffer
+    #                 buffer = []
+
+    #     if buffer:
+    #         # there's still some data in the buffer, so we shuffle it and yield
+    #         random.shuffle(buffer)
+    #         yield from buffer
 
 
 def combine_splits(sources: List[str], destination: str, splits: Optional[Tuple[str, ...]] = None):
