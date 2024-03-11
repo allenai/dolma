@@ -199,21 +199,40 @@ streams:
   #   sample:
   #     test: 1.0
 
-  - name: refinedweb_train
+  # - name: refinedweb_train
+  #   documents:
+  #     - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/refinedweb/*.gz
+  #   label: "lq"
+  #   sample:
+  #     train: 1.0
+  # - name: refinedweb_dev
+  #   documents:
+  #     - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/refinedweb/*.gz
+  #   label: "lq"
+  #   sample:
+  #     dev: 1.0
+  # - name: refinedweb_test
+  #   documents:
+  #     - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/refinedweb/*.gz
+  #   label: "lq"
+  #   sample:
+  #     test: 1.0
+
+  - name: smallweb_train
     documents:
-      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/refinedweb/*.gz
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/smallweb/*.gz
     label: "lq"
     sample:
       train: 1.0
-  - name: refinedweb_dev
+  - name: smallweb_dev
     documents:
-      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/refinedweb/*.gz
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/smallweb/*.gz
     label: "lq"
     sample:
       dev: 1.0
-  - name: refinedweb_test
+  - name: smallweb_test
     documents:
-      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/refinedweb/*.gz
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/smallweb/*.gz
     label: "lq"
     sample:
       test: 1.0
@@ -221,7 +240,7 @@ streams:
   - name: openhermes
     documents:
       - s3://ai2-llm/pretraining-data/sources/teknium_OpenHermes-2.5/v0/documents/*.gz
-    label: "hq"
+    label: "lq"
     sample:
       train: 0.8
       dev: 0.1

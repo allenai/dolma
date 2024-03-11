@@ -24,22 +24,22 @@ model:
 streams:
   - name: wikiwebooks_train
     documents:
-      - 's3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/train/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
-      - 's3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/train/Random_CC/random_cc-0000.jsonl.gz'
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/train/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/train/Random_CC/random_cc-0000.jsonl.gz'
     label: "$.metadata.label"
     sample:
       train: 1.0
   - name: wikiwebooks_valid
     documents:
-      - 's3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/valid/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
-      - 's3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/valid/Random_CC/random_cc-0000.jsonl.gz'
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/valid/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/valid/Random_CC/random_cc-0000.jsonl.gz'
     label: "$.metadata.label"
     sample:
       dev: 1.0
   - name: wikiwebooks_test
     documents:
-      - 's3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/test/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
-      - 's3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/test/Random_CC/random_cc-0000.jsonl.gz'
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/test/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/test/Random_CC/random_cc-0000.jsonl.gz'
     label: "$.metadata.label"
     sample:
       test: 1.0
