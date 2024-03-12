@@ -1,5 +1,5 @@
 
-model_path: ${oc.env:HOME}/floret_models/floret_cc_multi_bin.bin
+model_path: ${oc.env:HOME}/fasttext_models/cc_multi_bin.bin
 cache_dir: ${oc.env:HOME}/fasttext_data
 word_tokenizer: "ws"
 num_processes: 128
@@ -15,7 +15,7 @@ model:
   # max_char_ngram_length: 6
   number_of_buckets: 200_000
   loss_function: "softmax"
-  hash_count: 1
+  # hash_count: 1
 
 
 streams:
