@@ -1,5 +1,5 @@
 
-model_path: ${oc.env:HOME}/floret_models/cc_wiki_wikiref_sw_pes2o_adult_fakenews_math_binary_ws.bin
+model_path: ${oc.env:HOME}/floret_models/floret_cc_multi_bin.bin
 cache_dir: ${oc.env:HOME}/fasttext_data
 word_tokenizer: "ws"
 num_processes: 128
@@ -8,9 +8,15 @@ num_processes: 128
 model:
   learning_rate: 0.1
   epochs: 10
-  hash_count: 2
+  word_vector_size: 300
+  context_window_size: 10
+  min_word_occurrences: 10
+  # min_char_ngram_length: 5
+  # max_char_ngram_length: 6
   number_of_buckets: 200_000
   loss_function: "softmax"
+  hash_count: 1
+
 
 streams:
   - name: wikipedia_train
@@ -140,6 +146,7 @@ streams:
     sample:
       test: 1.0
 
+
   - name: fakenews_train
     documents:
       - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/fakenews/*.gz
@@ -178,6 +185,7 @@ streams:
     label: "lq"
     sample:
       test: 1.0
+
 
   - name: open-web-math_train
     documents:

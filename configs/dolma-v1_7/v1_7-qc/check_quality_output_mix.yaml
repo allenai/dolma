@@ -6,6 +6,7 @@ streams:
       - suchin_whose_quality
       - rw_hrms_bin
       - rw_hrms_bin_v2
+      - cc_multi_bin
     output:
       max_size_in_bytes: 3894967296
       path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_fixes/documents
@@ -14,7 +15,7 @@ streams:
       #   - metadata
     filter:
       include:
-        - (.attributes.rw_hrms_bin_v2__rw_hrms_bin_v2__hq[0][-1]) <= 0.003
+        - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1]) <= 0.1
       syntax: jq
 
 
@@ -25,6 +26,7 @@ streams:
       - suchin_whose_quality
       - rw_hrms_bin
       - rw_hrms_bin_v2
+      - cc_multi_bin
     output:
       max_size_in_bytes: 3894967296
       path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_fixes/documents
@@ -33,7 +35,7 @@ streams:
       #   - metadata
     filter:
       include:
-        - (.attributes.rw_hrms_bin_v2__rw_hrms_bin_v2__hq[0][-1]) <= 0.003
+        - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1]) <= 0.1
       syntax: jq
 
 
@@ -44,6 +46,7 @@ streams:
       - suchin_whose_quality
       - rw_hrms_bin
       - rw_hrms_bin_v2
+      - cc_multi_bin
     output:
       max_size_in_bytes: 3894967296
       path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/v1_5r2_fixes/documents
@@ -52,7 +55,7 @@ streams:
       #   - metadata
     filter:
       include:
-        - (.attributes.rw_hrms_bin_v2__rw_hrms_bin_v2__hq[0][-1]) <= 0.003
+        - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1]) <= 0.1
       syntax: jq
 
 

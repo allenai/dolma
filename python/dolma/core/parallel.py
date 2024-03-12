@@ -387,6 +387,8 @@ class BaseParallelProcessor:
         except RuntimeError:
             assert multiprocessing.get_start_method() == "spawn", "Multiprocessing start method must be spawn"
 
+        all_process_kwargs = all_process_kwargs or [{} for _ in all_source_paths]
+
         arguments_iterator = zip(
             # source paths
             all_source_paths,
@@ -396,10 +398,20 @@ class BaseParallelProcessor:
             all_metadata_paths,
             # additional kwargs to pass to the process_single; if not provided, we use an empty dict
             # will be merged with the process_single_kwargs
-            all_process_kwargs or [{} for _ in all_source_paths],
+            all_process_kwargs,
         )
 
-        with multiprocessing.Pool(processes=self.num_processes) as pool:
+        # no need to be wasteful with processes: we only need as many cores a the minimum of the number of
+        # source paths, destination paths, metadata paths, and process kwargs.
+        num_processes = min(
+            self.num_processes,
+            len(all_source_paths),
+            len(all_destination_paths),
+            len(all_metadata_paths),
+            len(all_process_kwargs),
+        )
+
+        with multiprocessing.Pool(processes=num_processes) as pool:
             pbar_queue: QueueType = (manager := multiprocessing.Manager()).Queue()
             thread = Thread(
                 target=self._run_threaded_progressbar, args=(pbar_queue, self.pbar_timeout), daemon=True

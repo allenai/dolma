@@ -1,10 +1,11 @@
-from typing import Iterable
+from typing import Iterable, Type
 
 from dolma.core.data_types import TextSlice
 from dolma.core.registry import TaggerRegistry
-from dolma.taggers.models.ft import FastTextPrediction, FastTextTagger
+from dolma.taggers.models.ft import FastTextPrediction, FastTextTagger, FastTextMode
 from dolma.models.word_tokenizers import TokenizerRegistry
 
+from floret.floret import _floret as FloretModel
 
 @TaggerRegistry.add("cc_wiki_wikiref_sw_pes2o_adult_fakenews_math_300dSW")
 class FT1(FastTextTagger):
@@ -72,5 +73,12 @@ class FT6(FT1):
 @TaggerRegistry.add("suchin_whose_quality_v2")
 class FT7(FT1):
     MODEL_PATH = "/home/ubuntu/fasttext_models/suchin_whose_quality_v2.bin"
+    MODEL_MODE = "document"
+    TOKENIZER_MODE = "ws"
+
+
+@TaggerRegistry.add("cc_multi_bin")
+class FT8(FT1):
+    MODEL_PATH = "/home/ubuntu/fasttext_models/cc_multi_bin.bin"
     MODEL_MODE = "document"
     TOKENIZER_MODE = "ws"

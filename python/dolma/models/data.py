@@ -287,7 +287,7 @@ class BaseDataConverter(BaseParallelProcessor):
     ) -> "BaseDataConverter":
         # create staging directory if not provided; use the staging directory to make locations
         # where temporary processing files are put (as well as the metadata)
-        staging_dir = staging_dir or mkdtemp()
+        staging_dir = staging_dir or mkdtemp(prefix="dolma-models-data-")
         destination_dir = join_path("", staging_dir, "destination")
         metadata_dir = join_path("", staging_dir, "metadata")
 
@@ -327,32 +327,33 @@ class BaseDataConverter(BaseParallelProcessor):
             source_prefix=all_paths,
             destination_prefix=dest_paths,
             metadata_prefix=meta_paths,
-            num_processes=min(num_processes, len(all_paths)),
+            num_processes=num_processes,
             debug=debug,
             process_single_kwargs=process_kwargs,
         )
 
     def __call__(self, **process_single_kwargs: Any):
-        super().__call__(**process_single_kwargs)
+        try:
+            super().__call__(**process_single_kwargs)
 
-        # group the files that have to be merged together in the same output directory
-        grouped_by_output_dir: Dict[str, List[str]] = {}
-        for psw in self.process_single_kwargs:
-            grouped_by_output_dir.setdefault(psw["output_dir"], []).append(psw["staging_path"])
+            # group the files that have to be merged together in the same output directory
+            grouped_by_output_dir: Dict[str, List[str]] = {}
+            for psw in self.process_single_kwargs:
+                grouped_by_output_dir.setdefault(psw["output_dir"], []).append(psw["staging_path"])
 
-        # actually do the merging!
-        with tqdm(unit=" files", total=len(grouped_by_output_dir)) as pbar:
-            for output, dest_paths in grouped_by_output_dir.items():
-                _, (*_, fn) = split_path(output)
-                pbar.set_description(
-                    f"Combining {len(dest_paths):,} files into {fn[:20] + '...' if len(fn) > 20 else fn}"
-                )
-                mkdir_p(output)
-                combine_splits(sources=dest_paths, destination=output)
-                pbar.update(1)
-
-        # remove all staging directories
-        self.cleanup()
+            # actually do the merging!
+            with tqdm(unit=" files", total=len(grouped_by_output_dir)) as pbar:
+                for output, dest_paths in grouped_by_output_dir.items():
+                    _, (*_, fn) = split_path(output)
+                    pbar.set_description(
+                        f"Combining {len(dest_paths):,} files into {fn[:20] + '...' if len(fn) > 20 else fn}"
+                    )
+                    mkdir_p(output)
+                    combine_splits(sources=dest_paths, destination=output)
+                    pbar.update(1)
+        finally:
+            # remove all staging directories
+            self.cleanup()
 
 
 class FastTextDataConverter(BaseDataConverter):

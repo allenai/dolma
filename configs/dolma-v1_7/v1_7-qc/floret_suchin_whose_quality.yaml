@@ -1,5 +1,5 @@
 
-model_path: ${oc.env:HOME}/fasttext_models/suchin_whose_quality_v2.bin
+model_path: ${oc.env:HOME}/fasttext_models/floret_suchin_whose_quality_v2.bin
 cache_dir: ${oc.env:HOME}/fasttext_data
 word_tokenizer: "ws"
 num_processes: 128
@@ -7,7 +7,15 @@ num_processes: 128
 
 model:
   learning_rate: 0.1
-  epochs: 20
+  epochs: 10
+  word_vector_size: 300
+  context_window_size: 10
+  min_word_occurrences: 10
+  # min_char_ngram_length: 5
+  # max_char_ngram_length: 6
+  number_of_buckets: 50_000
+  loss_function: "softmax"
+  hash_count: 1
   # min_char_ngram_length: 3
   # max_char_ngram_length: 6
   # max_word_ngram_length: 3
