@@ -65,7 +65,7 @@ def make_selector(jsonpath: str) -> Callable:
 
 def read_with_shuffle_ring(
     sources: Iterable[str],
-    ring_size: int = 8,
+    ring_size: int = 1024,
     page_size: int = 1000,
     buffer_size: int = 10_000,
     seed: int = 2001,
