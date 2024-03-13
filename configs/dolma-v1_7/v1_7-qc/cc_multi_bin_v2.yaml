@@ -214,7 +214,7 @@ streams:
     sample:
       train: 0.5
       test: 0.05
-      valid: 0.05
+      dev: 0.05
 
   - name: multi_news
     documents:
