@@ -1,5 +1,5 @@
 
-model_path: ${oc.env:HOME}/fasttext_models/cc_multi_bin_v2.bin
+model_path: ${oc.env:HOME}/fasttext_models/cc_multi_bin_v3.bin
 cache_dir: ${oc.env:HOME}/fasttext_data
 word_tokenizer: "ws"
 num_processes: 128
@@ -186,15 +186,87 @@ streams:
     sample:
       test: 1.0
 
-
-  - name: frontpage-news
+  - name: cnn_dailymail
     documents:
-      - s3://ai2-llm/pretraining-data/sources/AndyReas-frontpage-news/v2/documents/hq/*.gz
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/cnn_dailymail/train.jsonl.gz
     label: "hq"
     sample:
       train: 0.5
-      dev: 0.025
-      test: 0.025
+
+  - name: cnn_dailymail
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/cnn_dailymail/validation.jsonl.gz
+    label: "hq"
+    sample:
+      dev: 0.5
+
+  - name: cnn_dailymail
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/cnn_dailymail/test.jsonl.gz
+    label: "hq"
+    sample:
+      test: 0.5
+
+  - name: bbc_news
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/bbc_news/train/*
+    label: "hq"
+    sample:
+      train: 0.5
+      test: 0.05
+      valid: 0.05
+
+  - name: multi_news
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/multi_news/train.jsonl.gz
+    label: "hq"
+    sample:
+      train: 0.5
+
+  - name: multi_news
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/multi_news/validation.jsonl.gz
+    label: "hq"
+    sample:
+      dev: 0.5
+
+  - name: multi_news
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/multi_news/test.jsonl.gz
+    label: "hq"
+    sample:
+      test: 0.5
+
+  - name: xsum
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/xsum/train.jsonl.gz
+    label: "hq"
+    sample:
+      train: 0.5
+
+  - name: xsum
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/xsum/validation.jsonl.gz
+    label: "hq"
+    sample:
+      dev: 0.5
+
+  - name: xsum
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/xsum/test.jsonl.gz
+    label: "hq"
+    sample:
+      test: 0.5
+
+
+  # - name: frontpage-news
+  #   documents:
+  #     - s3://ai2-llm/pretraining-data/sources/AndyReas-frontpage-news/v2/documents/hq/*.gz
+  #   label: "hq"
+  #   sample:
+  #     train: 0.5
+  #     dev: 0.025
+  #     test: 0.025
 
   - name: recipes_nlg
     documents:
