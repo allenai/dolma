@@ -81,3 +81,10 @@ class FT8(FT1):
     MODEL_PATH = "/home/ubuntu/fasttext_models/cc_multi_bin_v2.bin"
     MODEL_MODE = "document"
     TOKENIZER_MODE = "ws"
+
+
+@TaggerRegistry.add("cc_multi_bin")
+class FT9(FT1):
+    MODEL_PATH = "/home/ubuntu/fasttext_models/cc_multi_bin.bin"
+    MODEL_MODE = "document"
+    TOKENIZER_MODE = "ws"
