@@ -1,0 +1,38 @@
+streams:
+  - name: c4
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/*
+    attributes:
+      - cc_multi_bin
+      - dedupe_para_ngrams_13_1
+    output:
+      max_size_in_bytes: 1_073_741_824
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/c4/v1_dd_ngram_docpara_le030/documents
+      min_text_length: 25   # matches wikipedia
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
+      exclude:
+        # Remove repetitions
+        - >-
+          (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition > 10)
+
+        # Quality filter
+        - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01
+      syntax: jq
+    span_replacement:
+      - span: "$.attributes.dedupe_para_ngrams_13_1"
+        min_score: 0.8
+        replacement: ''
+
+work_dir:
+  input: "/tmp/c4_ngram_dedupe_pd_mix/input"
+  output: "/tmp/c4_ngram_dedupe_pd_mix/output"
+
+processes: 188

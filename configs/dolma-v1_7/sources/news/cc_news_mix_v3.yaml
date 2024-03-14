@@ -11,6 +11,7 @@ streams:
       - paloma_documents
       - blocklist_hosts_fakenews_v1
       - pii_regex_with_counts_fast_v2
+      - cc_multi_bin
     output: &output
       max_size_in_bytes: 1_073_741_824
       path: s3://ai2-llm/pretraining-data/sources/cc-news/v3/documents/cc_en_head
