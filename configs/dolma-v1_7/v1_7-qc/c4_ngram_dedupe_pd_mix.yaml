@@ -8,8 +8,8 @@ streams:
       - tokenizer_repetitions_v2r2
       - pii_regex_with_counts_v2
     output:
-      max_size_in_bytes: 1_073_741_824
-      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/c4/v1_dd_ngram_docpara_le030/documents
+      max_size_in_bytes: 2_147_483_648
+      path: s3://ai2-llm/pretraining-data/sources/c4/v1_7-dd_ngram_dp_030-qc_cc_en_bin_001/documents
       min_text_length: 25   # matches wikipedia
       # discard_fields:
       #   - attributes
@@ -22,14 +22,11 @@ streams:
       exclude:
         # Remove repetitions
         - >-
-          (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
-          (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition > 10)
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition > 10)
 
         # Quality filter
         - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01
-
-        # Exclude pages with more than 5 PII regex matches
-        - .attributes.pii_regex_with_counts_v2__pii_regex_with_counts_v2__doc_count > 5
       syntax: jq
     span_replacement:
       - span: "$.attributes.dedupe_para_ngrams_13_1"
@@ -37,7 +34,7 @@ streams:
         replacement: ''
 
 work_dir:
-  input: "/tmp/c4_ngram_dedupe_pd_mix/input"
-  output: "/tmp/c4_ngram_dedupe_pd_mix/output"
+  input: "/tmp/c4_ngram_dedupe_pd_mix2/input"
+  output: "/tmp/c4_ngram_dedupe_pd_mix2/output"
 
 processes: 188
