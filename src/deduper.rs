@@ -288,19 +288,36 @@ fn write_attributes(
                                         }
                                         word_index += 1;
                                     }
-                                    if ngram_count < 2 {
+                                    if ngram_count < 2
+                                        && !by_ngram.skip_short_paragraphs.unwrap_or(false)
+                                    {
                                         // Too few ngrams to dedupe by overlap. Just compare the whole thing
                                         let dedupe_key = VecDeque::from([p]);
-                                        if bloom_filter.contains(&dedupe_key) {
+
+                                        let span_score = match bloom_filter.contains(&dedupe_key) {
+                                            // we found a match! score is 1.0
+                                            true => 1.0,
+                                            false => {
+                                                // this is a new paragraph, push to bloom filter
+                                                if !bloom_filter.read_only {
+                                                    bloom_filter.insert(&dedupe_key);
+                                                }
+                                                // score is 0.0 because it's not a duplicate
+                                                0.0
+                                            }
+                                        };
+
+                                        // we check if the score is above the threshold; note that
+                                        // users can set the threshold to 0.0 to always include the span,
+                                        // or 1.0 to only include spans that are exact duplicates.
+                                        if span_score >= by_ngram.overlap_threshold {
                                             let span = vec![
                                                 Value::Number(par_start.into()),
                                                 Value::Number(par_end.into()),
-                                                Value::from(1),
+                                                Value::from(span_score),
                                             ];
                                             // add span to duplicate_paragraph_spans
                                             duplicate_paragraph_spans.push(Value::Array(span));
-                                        } else if !bloom_filter.read_only {
-                                            bloom_filter.insert(&dedupe_key);
                                         }
                                     } else {
                                         let overlap_fraction =
@@ -388,6 +405,8 @@ pub mod deduper_config {
         pub stride: usize,
         // Treat as duplicate if more than this fraction of ngrams have been seen before
         pub overlap_threshold: f32,
+        // If true, skip checking for duplicates if the paragraph is shorter ngram_length + stride
+        pub skip_short_paragraphs: Option<bool>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]

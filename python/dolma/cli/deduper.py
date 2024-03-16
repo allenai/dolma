@@ -24,6 +24,9 @@ class NgramDedupeConfig:
         default=1.0,
         help="Fraction of ngrams that must be seen before a paragraph is considered a duplicate. By default, only full overlap is considered.",
     )
+    skip_short_paragraphs: bool = field(
+        default=False, help="If true, paragraphs shorter than (ngram_length + stride) will be skipped."
+    )
 
 
 @dataclass

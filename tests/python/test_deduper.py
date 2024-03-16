@@ -9,6 +9,7 @@ from unittest import TestCase
 from typing_extensions import TypedDict
 
 from dolma.cli.__main__ import main
+from dolma.core.utils import split_words
 
 from .utils import (
     TestCasePipeline,
@@ -97,6 +98,106 @@ class TestDeduper(TestCase):
             f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraphs/000.json.gz"
         )
         return self._compare_dedupe_output(expected, computed)  # pyright: ignore
+
+    def test_dedupe_paragraphs_change_splitter(self):
+        with open(DEDUPE_PARAGRAPHS, "r") as f:
+            config = json.load(f)
+
+        config["documents"] = [f'{self.local_temp_dir}/{config["documents"][0]}']
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        split_seq = "tt"
+
+        # separate on characters "tt" instead of "\n"
+        config["dedupe"]["paragraphs"]["paragraph_separator"] = split_seq
+
+        # this will ensure that the deduper will output something for each paragraph
+        config["dedupe"]["paragraphs"]["by_ngram"] = {"ngram_length": 1, "stride": 1, "overlap_threshold": 0.0}
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
+
+        documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
+        attributes = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraphs/000.json.gz"
+        )
+        for doc, attr in zip(documents, attributes):
+            self.assertEqual(
+                len(doc["text"].split(split_seq)), len(attr["attributes"]["bff_duplicate_paragraph_spans"])
+            )
+
+    def test_dedupe_paragraphs_stride_math(self):
+        with open(DEDUPE_PARAGRAPHS, "r") as f:
+            config = json.load(f)
+
+        config["documents"] = [f'{self.local_temp_dir}/{config["documents"][0]}']
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        # this will ensure that the deduper will output something for each paragraph
+        config["dedupe"]["paragraphs"]["by_ngram"] = {"ngram_length": 10, "stride": 5, "overlap_threshold": 0.0}
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
+
+        documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
+        attributes = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraphs/000.json.gz"
+        )
+        for doc, attr in zip(documents, attributes):
+            valid_paragraphs = []
+            i = 0
+            for para in doc["text"].split("\n"):
+                j = min(i + len(para) + 1, len(doc["text"]))
+                valid_paragraphs.append((i, j))
+                i = j
+            spans = attr["attributes"]["bff_duplicate_paragraph_spans"]
+
+            self.assertEqual(len(valid_paragraphs), len(spans))
+            for (start_para, end_para), (start_span, end_span, _) in zip(valid_paragraphs, spans):
+                self.assertEqual(doc["text"][start_para:end_para], doc["text"][start_span:end_span])
+
+    def test_dedupe_paragraphs_stride_math_skip_short(self):
+        with open(DEDUPE_PARAGRAPHS, "r") as f:
+            config = json.load(f)
+
+        config["documents"] = [f'{self.local_temp_dir}/{config["documents"][0]}']
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        # this will ensure that the deduper will output something for each paragraph
+        config["dedupe"]["paragraphs"]["by_ngram"] = (
+            ng_cfg := {"ngram_length": 20, "stride": 5, "overlap_threshold": 0.0, "skip_short_paragraphs": True}
+        )
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
+
+        documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
+        attributes = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraphs/000.json.gz"
+        )
+        for doc, attr in zip(documents, attributes):
+            valid_paragraphs = []
+            i = 0
+            for para in doc["text"].split("\n"):
+                j = min(i + len(para) + 1, len(doc["text"]))
+                if len(split_words(para)) >= ng_cfg["ngram_length"]:
+                    valid_paragraphs.append((i, j))
+                i = j
+            spans = attr["attributes"]["bff_duplicate_paragraph_spans"]
+
+            self.assertEqual(len(valid_paragraphs), len(spans))
+
+            for (start_para, end_para), (start_span, end_span, _) in zip(valid_paragraphs, spans):
+                self.assertEqual(doc["text"][start_para:end_para], doc["text"][start_span:end_span])
 
     def test_dedupe_paragraph_ngrams(self):
         with open(DEDUPE_PARAGRAPH_NGRAMS, "r") as f:
