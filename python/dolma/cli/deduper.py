@@ -24,6 +24,9 @@ class NgramDedupeConfig:
         default=1.0,
         help="Fraction of ngrams that must be seen before a paragraph is considered a duplicate. By default, only full overlap is considered.",
     )
+    skip_short_paragraphs: bool = field(
+        default=False, help="If true, paragraphs shorter than (ngram_length + stride) will be skipped."
+    )
 
 
 @dataclass
@@ -31,6 +34,10 @@ class ParagraphDedupeConfig:
     attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
     by_ngram: Optional[NgramDedupeConfig] = field(
         default=None, help="Configuration for deduping paragraphs by ngram overlap"
+    )
+    paragraph_separator: Optional[str] = field(
+        default="\n",
+        help="String to use to separate paragraphs. By default, paragraphs are separated by newlines.",
     )
 
 
