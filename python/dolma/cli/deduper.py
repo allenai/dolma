@@ -32,6 +32,10 @@ class ParagraphDedupeConfig:
     by_ngram: Optional[NgramDedupeConfig] = field(
         default=None, help="Configuration for deduping paragraphs by ngram overlap"
     )
+    paragraph_separator: Optional[str] = field(
+        default="\n",
+        help="String to use to separate paragraphs. By default, paragraphs are separated by newlines.",
+    )
 
 
 @dataclass

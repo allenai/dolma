@@ -216,7 +216,9 @@ class BaseCli(Generic[D]):
             config: An optional configuration dictionary to merge with the parsed args
         """
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)  # pyright: ignore
+        parsed_config = namespace_to_nested_omegaconf(
+            args=args, structured=cls.CONFIG, config=config  # pyright: ignore
+        )
         try:
             return cls.run(parsed_config=parsed_config)
         except OmegaConfBaseException as ex:

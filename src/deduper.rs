@@ -207,10 +207,12 @@ fn write_attributes(
                     let text = data["text"].as_str().unwrap();
                     let text_length = text.len();
                     let mut offset = 0;
-                    let paragraphs = text.split('\n');
-                    let mut duplicate_paragraph_spans = Vec::new();
 
                     if text_length > 0 {
+                        let paragraphs =
+                            text.split(cfg.paragraph_separator.as_deref().unwrap_or("\n"));
+                        let mut duplicate_paragraph_spans = Vec::new();
+
                         // skip empty documents if text_length is 0
                         for p in paragraphs {
                             let par_start = offset;
@@ -373,6 +375,9 @@ pub mod deduper_config {
         // If defined, remove paragraphs based on contained ngrams
         // Otherwise, hash the entire paragraph
         pub by_ngram: Option<NgramDedupeConfig>,
+
+        // if not defined, we use '\n' as the paragraph separator
+        pub paragraph_separator: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]

@@ -3,7 +3,7 @@
     {
       "name": "paragraph-spans-test",
       "documents": [
-        "tests/data/provided/documents/*"
+        "tests/data/provided/documents/*.gz"
       ],
       "output": {
         "path": "tests/work/output/paragraph-spans",
