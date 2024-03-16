@@ -9,6 +9,8 @@ dedupe:
       ngram_length: 13
       stride: 1
       overlap_threshold: 0.5
+      skip_short_paragraphs: true
+    paragraph_separator: '\n\n'
   skip_empty: true
 
 bloom_filter:
