@@ -9,7 +9,7 @@ streams:
       - paloma_documents
     output:
       max_size_in_bytes: 2_147_483_648
-      path: s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0_005_hc-qc_cc_multi_bin/documents
+      path: s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0_005_hc-qc_cc_multi_bin-fix/documents
       min_text_length: 25   # matches wikipedia
       # discard_fields:
       #   - attributes
@@ -24,18 +24,18 @@ streams:
         - ".attributes.paloma_documents_bff_duplicates != null"
         - "(.attributes.paloma_paragraphs_bff_duplicates | length) > 0"
 
-        # # Remove repetitions
-        # - >-
-        #   (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
-        #   (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition > 10)
+        # Remove repetitions
+        - >-
+          (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
 
         # Quality filter
         - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01
       syntax: jq
-    span_replacement:
-      - span: "$.attributes.dedupe_para_ngrams_13_1"
-        min_score: 0.8
-        replacement: ''
+    # span_replacement:
+    #   - span: "$.attributes.dedupe_para_ngrams_13_1"
+    #     min_score: 0.8
+    #     replacement: ''
 
 work_dir:
   input: "/tmp/falcon_cc_multi_bin_mix/input"

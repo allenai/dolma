@@ -78,7 +78,7 @@ class FT7(FT1):
 
 @TaggerRegistry.add("cc_multi_bin_v2")
 class FT8(FT1):
-    MODEL_PATH = "/home/ubuntu/fasttext_models/cc_multi_bin_v2.bin"
+    MODEL_PATH = "s3://ai2-llm/fasttext_models/cc_multi_bin_v3.bin"
     MODEL_MODE = "document"
     TOKENIZER_MODE = "ws"
 
