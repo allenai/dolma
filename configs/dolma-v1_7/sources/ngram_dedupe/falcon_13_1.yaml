@@ -10,7 +10,7 @@ dedupe:
       stride: 1
       overlap_threshold: 0.5
       skip_short_paragraphs: true
-    paragraph_separator: '\n\n'
+    paragraph_separator: ${d.unescape:'\n\n'}
   skip_empty: true
 
 bloom_filter:
