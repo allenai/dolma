@@ -180,12 +180,14 @@ class BaseCli(Generic[D]):
     @classmethod
     def make_parser(cls, parser: A) -> A:
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        return make_parser(parser, cls.CONFIG)
+        return make_parser(parser, cls.CONFIG)  # pyright: ignore
 
     @classmethod
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)
+        parsed_config = namespace_to_nested_omegaconf(
+            args=args, structured=cls.CONFIG, config=config  # pyright: ignore
+        )
         try:
             return cls.run(parsed_config)
         except OmegaConfBaseException as ex:
