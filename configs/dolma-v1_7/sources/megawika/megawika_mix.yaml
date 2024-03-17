@@ -38,7 +38,7 @@ streams:
       - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/xh/*
       - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/zh/*
     attributes: &attributes
-      # - dedupe_para_ngrams_13_1
+      - dedupe_para_ngrams_13_1
       - dedupe_para_ngrams_13_1_v2
       - gopher_v1
       - c4_v2
@@ -162,6 +162,11 @@ streams:
       # Too few tokens
       - .attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__length[0][-1] < 25
       syntax: jq
+
+    span_replacement:
+      - span: "$.attributes.dedupe_para_ngrams_13_1"
+        min_score: 0.8
+        replacement: ''
 
 
 work_dir:
