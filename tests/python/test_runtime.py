@@ -167,10 +167,12 @@ class TestRuntimeUtilities(TestCase):
             (temp_path / "documents").mkdir(exist_ok=True)
 
             for path in documents_dir.iterdir():
-                shutil.copy(path, temp_path / "documents" / path.name)
+                # ignore non-json files, like .DS_Store
+                if path.suffix.endswith(".gz"):
+                    shutil.copy(path, temp_path / "documents" / path.name)
 
             create_and_run_tagger(
-                documents=[os.path.join(temp_dir, "documents") + "/*"],
+                documents=[f"{temp_dir}/documents/*"],
                 taggers=taggers,
                 experiment=experiment_name,
                 debug=True,
@@ -188,7 +190,7 @@ class TestRuntimeUtilities(TestCase):
             # collect all attributes for all documents here
             attributes = []
 
-            for fn in documents_dir.iterdir():
+            for fn in (temp_path / "documents").iterdir():
                 # collect all attributes for the current document here
                 current_attrs: List[dict] = []
 

@@ -1,17 +1,122 @@
 import math
 from abc import abstractmethod, abstractproperty
-from typing import Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Dict, List, Literal, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
-
-# # # OLD IMPORT # # #
-# from sortedcontainers import SortedDict
 
 
 class SummaryTuple(NamedTuple):
     counts: List[int]
     bins: List[float]
+
+
+def cumsum_with_reset(arr: np.ndarray, reset_value: int = 0) -> np.ndarray:
+    """Compute the cumulative sum of an array, but reset the sum when a certain value is encountered."""
+    arr = np.array(arr)
+    # Cumulative sum of the array
+    cumsum = arr.cumsum()
+    # Find indices where arr is `reset_value` and set the diff at these indices to the negated cumsum
+    reset_indices, *_ = np.where(arr == reset_value)
+    # For each reset point, subtract the cumsum value up to that point from the subsequent values
+    for i in reset_indices:
+        cumsum[i:] -= cumsum[i]
+    return cumsum
+
+
+def equal_count_hist(
+    a: npt.ArrayLike,
+    bins: Union[int, npt.ArrayLike, str] = 10,
+    density: bool = False,
+    weights: Optional[npt.ArrayLike] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute bins such that each bin has approximately the same number of elements."""
+
+    if not isinstance(bins, int):
+        return np.histogram(a, bins=bins, weights=weights, density=density)
+
+    if weights is None:
+        weights = np.ones_like(a)
+    weights = np.array(weights, dtype=int)
+
+    if not isinstance(a, np.ndarray):
+        a = np.array(a)
+
+    if a.size == 0:
+        return np.array([]), np.array([])
+
+    # can't have more bins than elements
+    bins = min(bins, a.size)
+
+    iterative_counts = np.array(weights, dtype=int)
+    current_n = bins - 1
+    bin_end_pos: List[int] = []
+
+    while current_n > 0:
+        # this is the number of elements we want in each bin
+        elements_per_bin = (iterative_counts * (iterative_counts > 0).astype(int)).sum() // current_n
+
+        # whether there are individual bins that are above the size of each bin;
+        # therefore, we need to isolate them before we can split the rest
+        new_bins_locs = iterative_counts >= elements_per_bin
+
+        if not new_bins_locs.any():
+            # bins are all of proper size, so we have to use the cumulative sum to find the
+            # positions of the new bins.
+
+            # calculate the cumulative sum of the counts; note that we have to reset the sum
+            # in case we encounter a bin with size zero, which is the result of a previous split.
+            cumsum_iterative_counts = cumsum_with_reset(iterative_counts, -1)
+
+            # we calculate how many multiple of elements_per_bin we have in each cumulative sum,
+            # rounded to the nearest integer
+            rounded_bin_multiples = np.round(cumsum_iterative_counts / elements_per_bin).astype(int)
+
+            if rounded_bin_multiples.sum() > 0:
+                # we check for cases where the rounded multiples are larger than the previous rounded
+                # multiples, which indicates that we have a new bin!
+                new_bins_locs = rounded_bin_multiples - np.roll(rounded_bin_multiples, 1) > 0
+            else:
+                # this happened because the existing bins cause the partial cumulative sums to be less
+                # than the elements_per_bin; in this case, we pick a split on the largest bin in the array
+                new_bins_locs[np.argmax(iterative_counts)] = True
+
+        # if the last position gets selected as a bin, then we need to increase
+        # the number of bins by one.
+        if new_bins_locs[-1]:
+            current_n += 1
+
+        # using the new locations, we can find the indices of the new bins
+        new_bins, *_ = np.where(new_bins_locs)
+
+        # if we have more than expected new_bins_locs, we roll them so they are equally distributed
+        if new_bins.size > current_n:
+            new_bins = new_bins[0 : len(new_bins) : new_bins.size // current_n]
+
+        # add the new bins to the list of bin end positions we found so far
+        bin_end_pos.extend(new_bins)
+
+        # update the counts to reflect the positions of the bins
+        iterative_counts[new_bins_locs] = -1
+        current_n -= len(new_bins)
+
+    # sort the location of bins, add the last position as the end of the array
+    bin_end_pos = sorted(set(bin_end_pos + [len(a) - 1]))
+
+    # bins are easy to get; we just take the values of a at the positions we found
+    final_bins = np.concatenate(
+        ([a[0]], [(a[i] + a[i + 1]) / 2 if (i + 1) < len(a) else a[i] for i in bin_end_pos])
+    )
+
+    # for counts, we first compute cumsum of the weights, then we take the difference between
+    # the cumulative sum at the end of each bin and the cumulative sum at the start of each bin
+    final_counts = np.diff(np.concatenate(([0], np.cumsum(weights)[bin_end_pos])))
+
+    # if density is True, we normalize the counts
+    if density:
+        final_counts /= final_counts.sum()
+
+    return final_counts, final_bins
 
 
 def sort_and_merge_bins(
@@ -110,7 +215,7 @@ class BaseBucketApi:
             self.add(value, count)
 
     @abstractmethod
-    def summarize(self, n: int, density: bool = False) -> SummaryTuple:
+    def summarize(self, n: int, density: bool = False, mode: Literal["width", "count"] = "width") -> SummaryTuple:
         raise NotImplementedError()
 
 
@@ -216,7 +321,7 @@ class InferBucketsValTracker(BaseBucketApi):
         else:
             self._add_full(value=value, count=count)
 
-    def summarize(self, n: int, density: bool = False) -> SummaryTuple:
+    def summarize(self, n: int, density: bool = False, mode: Literal["width", "count"] = "width") -> SummaryTuple:
         """Return up to n buckets with counts of merged values"""
 
         # finalize operations
@@ -226,8 +331,13 @@ class InferBucketsValTracker(BaseBucketApi):
             # if there are fewer than n buckets, return the buckets as is
             return SummaryTuple(counts=self._counts.tolist(), bins=self._bins.tolist())
 
-        # make weighted histogram using counts
-        new_counts, new_values = np.histogram(a=self._bins, bins=n, weights=self._counts, density=density)
+        if mode == "width":
+            # make weighted histogram using counts
+            new_counts, new_values = np.histogram(a=self._bins, bins=n, weights=self._counts, density=density)
+        elif mode == "count":
+            new_counts, new_values = equal_count_hist(a=self._bins, bins=n, weights=self._counts, density=density)
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
 
         # return lists instead of numpy arrays
         return SummaryTuple(counts=new_counts.tolist(), bins=new_values.tolist())
@@ -264,7 +374,7 @@ class FixedBucketsValTracker(BaseBucketApi):
         k = math.floor(m * self.n) + 1  # Add one to obtain the next bin
         return k / self.n * 2**e
 
-    def summarize(self, n: int, density: bool = False) -> SummaryTuple:
+    def summarize(self, n: int, density: bool = False, mode: Literal["width", "count"] = "width") -> SummaryTuple:
         bins, counts = zip(*sorted((m / self.n * 2**e, c) for (m, e), c in self._bins.items()))
 
         if len(self) <= n:
@@ -273,8 +383,14 @@ class FixedBucketsValTracker(BaseBucketApi):
             upper_bin = self.get_bin_upper_bound(max(float(b) for b in bins))
             return SummaryTuple(counts=[int(c) for c in counts], bins=[float(b) for b in bins] + [upper_bin])
 
-        # computing the weighted histograms
-        new_counts, new_values = np.histogram(a=bins, bins=n, weights=counts, density=density)
+        if mode == "width":
+            # computing the weighted histograms
+            new_counts, new_values = np.histogram(a=bins, bins=n, weights=counts, density=density)
+        elif mode == "count":
+            # make a copy of the counts
+            new_counts, new_values = equal_count_hist(a=bins, bins=n, weights=counts, density=density)
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
 
         # return lists instead of numpy arrays
         return SummaryTuple(counts=new_counts.tolist(), bins=new_values.tolist())
