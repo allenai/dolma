@@ -20,6 +20,7 @@ streams:
     filter: &filter
       exclude:
       # Language Id
+      - .attributes.ft_lang_id_en_doc_v2__ft_lang_id_en_doc_v2__en[0][-1] < 0.5
 
 
       # C4 Rules
