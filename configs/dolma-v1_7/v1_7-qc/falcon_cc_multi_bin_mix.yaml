@@ -4,7 +4,7 @@ streams:
       - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/*
     attributes:
       - cc_multi_bin
-      # - dedupe_para_ngrams_13_1
+      - dedupe_para_ngrams_13_1
       - paloma_paragraphs
       - paloma_documents
     output:
@@ -15,10 +15,10 @@ streams:
       #   - attributes
       #   - metadata
     filter:
-      # include:
-      #   - >-
-      #     (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
-      #     ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
+      include:
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
       exclude:
         # Contaminated Data from Paloma
         - ".attributes.paloma_documents_bff_duplicates != null"
@@ -35,13 +35,13 @@ streams:
         # PII filter
         - .attributes.pii_regex_with_counts_v2__pii_regex_with_counts_v2__doc_count[0][-1] > 5
       syntax: jq
-    # span_replacement:
-    #   - span: "$.attributes.dedupe_para_ngrams_13_1"
-    #     min_score: 0.8
-    #     replacement: ''
+    span_replacement:
+      - span: "$.attributes.dedupe_para_ngrams_13_1"
+        min_score: 0.8
+        replacement: ''
 
 work_dir:
-  input: "/tmp/falcon_cc_multi_bin_mix/input"
-  output: "/tmp/falcon_cc_multi_bin_mix/output"
+  input: "/tmp/falcon_cc_multi_bin_mix_v2/input"
+  output: "/tmp/falcon_cc_multi_bin_mix_v2/output"
 
 processes: 188

@@ -1,7 +1,7 @@
 streams:
-  - name: cc_news
+  - name: megawika
     documents:
-      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/*/*
     attributes: &attributes
       - dedupe_para_ngrams_13_1
       - gopher_v1
@@ -9,23 +9,19 @@ streams:
       - whitespace_tokenizer_v1
       - paloma_paragraphs
       - paloma_documents
-      - blocklist_hosts_fakenews_v1
       - pii_regex_with_counts_fast_v2
       - cc_multi_bin
     output: &output
       max_size_in_bytes: 500_000_000
-      path: s3://ai2-llm/pretraining-data/sources/cc-news/v3/documents/cc_en_head
+      path: s3://ai2-llm/pretraining-data/sources/megawika/v1/documents/*
+      min_text_length: 25   # matches wikipedia
       discard_fields:
         - attributes
     filter: &filter
-      include:
-        # Dedupe filter
-        - >-
-          (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
-          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
-        # At least 25 words
-        - .attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__word_count[0][2] >= 25
       exclude:
+      # Language Id
+
+
       # C4 Rules
       - >-
         (.attributes.c4_v2__c4_v2__has_curly_brace != null) and
@@ -106,9 +102,6 @@ streams:
       # Documents with too much PII
       - .attributes.pii_regex_with_counts_fast_v2__pii_regex_with_counts_fast_v2__doc_count[0][2] > 5
 
-      # Remove Fake News websites
-      - .attributes.blocklist_hosts_fakenews_v1__blocklist_hosts_fakenews_v1__url != null
-
       # Remove repetitions
       - >-
         (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
@@ -118,26 +111,9 @@ streams:
       - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01
       syntax: jq
 
-  - name: cc_news
-    documents:
-      - s3://ai2-llm/pretraining-data/sources/cc-news/v1/documents/cc_en_middle/*.gz
-    attributes: *attributes
-    output:
-      << : *output
-      path: s3://ai2-llm/pretraining-data/sources/cc-news/v3/documents/cc_en_middle
-    filter: *filter
-
-  - name: cc_news
-    documents:
-      - s3://ai2-llm/pretraining-data/sources/cc-news/v1/documents/cc_en_tail/*.gz
-    attributes: *attributes
-    output:
-      << : *output
-      path: s3://ai2-llm/pretraining-data/sources/cc-news/v3/documents/cc_en_tail
-    filter: *filter
 
 work_dir:
-  input: "/tmp/cc_news_v2/input"
-  output: "/tmp/cc_news_v2/output"
+  input: "/tmp/megawika/input"
+  output: "/tmp/megawika/output"
 
 processes: 188
