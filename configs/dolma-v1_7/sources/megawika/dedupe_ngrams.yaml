@@ -44,7 +44,7 @@ dedupe:
       ngram_length: 13
       stride: 1
       overlap_threshold: 0.5
-      skip_short_paragraphs: true
+      skip_short_paragraphs: false
   skip_empty: true
 
 bloom_filter:
