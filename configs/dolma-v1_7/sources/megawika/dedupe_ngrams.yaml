@@ -49,7 +49,7 @@ dedupe:
   skip_empty: true
 
 bloom_filter:
-  file: ${oc.env:HOME}/cc_news_dedupe_para_ngrams_13_1.bin
+  file: ${oc.env:HOME}/mega_wika_dedupe_para_ngrams_13_1.bin
   read_only: false
   # set to of words
   estimated_doc_count: 123_589_835_382
