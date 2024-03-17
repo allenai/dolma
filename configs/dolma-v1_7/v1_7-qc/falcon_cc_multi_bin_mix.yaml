@@ -4,9 +4,11 @@ streams:
       - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/*
     attributes:
       - cc_multi_bin
-      - dedupe_para_ngrams_13_1
+      # - dedupe_para_ngrams_13_1
       - paloma_paragraphs
       - paloma_documents
+      - pii_regex_with_counts_fast_v2
+      - tokenizer_repetitions_v2r2
     output:
       max_size_in_bytes: 2_147_483_648
       path: s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0_005_hc-qc_cc_multi_bin-fix/documents
@@ -16,9 +18,9 @@ streams:
       #   - metadata
     filter:
       include:
-        - >-
-          (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
-          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
+        # - >-
+        #   (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
+        #   ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
       exclude:
         # Contaminated Data from Paloma
         - ".attributes.paloma_documents_bff_duplicates != null"
