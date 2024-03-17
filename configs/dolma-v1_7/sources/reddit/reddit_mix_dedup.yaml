@@ -1,0 +1,31 @@
+streams:
+  - name: reddit
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/*
+    attributes:
+      - dedupe_para_ngrams_13_1
+      - tokenizer_repetitions_v2r2
+      - perplexity_suite_v3_option2
+      - paloma_paragraphs
+      - paloma_documents
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v5-dedupe-pii-nsfw-toxic-fuzzydd-length/documents
+      max_size_in_bytes: 4294967296
+      min_text_length: 25
+      discard_fields:
+        - attributes
+    filter:
+      include:
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length != 0) and
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) > 0.3)
+        - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01)
+      exclude:
+          - ".attributes.paloma_documents_bff_duplicates != null"
+          - "(.attributes.paloma_paragraphs_bff_duplicates | length) > 0"
+      syntax: jq
+
+processes: 190
