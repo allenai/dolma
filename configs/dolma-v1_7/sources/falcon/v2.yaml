@@ -34,7 +34,7 @@ streams:
         - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01
 
         # PII filter
-        - .attributes.pii_regex_with_counts_v2__pii_regex_with_counts_v2__doc_count[0][-1] > 5
+        - .attributes.pii_regex_with_counts_fast_v2__pii_regex_with_counts_fast_v2__doc_count[0][-1] > 5
       syntax: jq
     span_replacement:
       - span: "$.attributes.dedupe_para_ngrams_13_1"
