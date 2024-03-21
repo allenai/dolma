@@ -3,7 +3,7 @@ import os
 import re
 import string
 import sys
-from typing import List, Union
+from typing import List, Union, cast
 
 try:
     import blingfire
@@ -15,6 +15,7 @@ except Exception:
 import nltk
 import uniseg.wordbreak
 from nltk.tokenize.punkt import PunktSentenceTokenizer
+from omegaconf import OmegaConf as om
 
 try:
     nltk.data.find("tokenizers/punkt")
@@ -140,3 +141,10 @@ def import_modules(modules_path: Union[List[str], None]):
                     f"({module_name}) is not globally unique. Please rename the directory to "
                     "something unique and try again."
                 )
+
+
+def dataclass_to_dict(dataclass_instance) -> dict:
+    """Convert a dataclass instance to a dictionary through the omegaconf library."""
+
+    # force typecasting because a dataclass instance will always be a dict
+    return cast(dict, om.to_object(om.structured(dataclass_instance)))

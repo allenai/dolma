@@ -3,9 +3,13 @@ import shutil
 from contextlib import ExitStack
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import Dict, List, Tuple, TypeVar, Union
 from unittest import TestCase
 
+from typing_extensions import TypedDict
+
 from dolma.cli.__main__ import main
+from dolma.core.utils import split_words
 
 from .utils import (
     TestCasePipeline,
@@ -19,6 +23,15 @@ from .utils import (
 
 DEDUPE_BY_URL = Path(__file__).parent.parent / "config/dedupe-by-url.json"
 DEDUPE_PARAGRAPHS = Path(__file__).parent.parent / "config/dedupe-paragraphs.json"
+DEDUPE_PARAGRAPH_NGRAMS = Path(__file__).parent.parent / "config/dedupe-paragraph-ngrams.json"
+
+
+D = TypeVar("D", bound="DedupeAttributesDict")
+
+
+class DedupeAttributesDict(TypedDict):
+    id: str
+    attributes: Dict[str, List[Tuple[int, int, Union[int, float]]]]
 
 
 class TestDeduper(TestCase):
@@ -33,13 +46,13 @@ class TestDeduper(TestCase):
 
             # upload test data
             upload_s3_prefix(
-                s3_prefix=f"{self.remote_test_prefix}", local_prefix="tests/data/provided/documents/*.gz"
+                s3_prefix=f"{self.remote_test_prefix}", local_prefix="tests/data/provided/deduper/documents/*.gz"
             )
 
         # copy provided config files to local temp dir
         shutil.copytree(
-            "tests/data/provided/documents",
-            f"{self.local_temp_dir}/tests/data/provided/documents",
+            "tests/data/provided/deduper/documents",
+            f"{self.local_temp_dir}/tests/data/provided/deduper/documents",
             dirs_exist_ok=True,
         )
 
@@ -62,8 +75,10 @@ class TestDeduper(TestCase):
             main(argv=["-c", f.name, "dedupe"])
 
         expected = load_jsonl("tests/data/expected/dedupe-by-url.json.gz")
-        computed = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/attributes/dedupe_by_url/000.json.gz")
-        self.assertEqual(expected, computed)
+        computed = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_by_url/000.json.gz"
+        )
+        return self._compare_dedupe_output(expected, computed)  # pyright: ignore
 
     def test_dedupe_paragraphs(self):
         with open(DEDUPE_PARAGRAPHS, "r") as f:
@@ -80,9 +95,140 @@ class TestDeduper(TestCase):
 
         expected = load_jsonl("tests/data/expected/dedupe-paragraphs.json.gz")
         computed = load_jsonl(
-            f"{self.local_temp_dir}/tests/data/provided/attributes/dedupe_paragraphs/000.json.gz"
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraphs/000.json.gz"
         )
-        self.assertEqual(expected, computed)
+        return self._compare_dedupe_output(expected, computed)  # pyright: ignore
+
+    def test_dedupe_paragraphs_change_splitter(self):
+        with open(DEDUPE_PARAGRAPHS, "r") as f:
+            config = json.load(f)
+
+        config["documents"] = [f'{self.local_temp_dir}/{config["documents"][0]}']
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        split_seq = "tt"
+
+        # separate on characters "tt" instead of "\n"
+        config["dedupe"]["paragraphs"]["paragraph_separator"] = split_seq
+
+        # this will ensure that the deduper will output something for each paragraph
+        config["dedupe"]["paragraphs"]["by_ngram"] = {"ngram_length": 1, "stride": 1, "overlap_threshold": 0.0}
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
+
+        documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
+        attributes = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraphs/000.json.gz"
+        )
+        for doc, attr in zip(documents, attributes):
+            self.assertEqual(
+                len(doc["text"].split(split_seq)), len(attr["attributes"]["bff_duplicate_paragraph_spans"])
+            )
+
+    def test_dedupe_paragraphs_stride_math(self):
+        with open(DEDUPE_PARAGRAPHS, "r") as f:
+            config = json.load(f)
+
+        config["documents"] = [f'{self.local_temp_dir}/{config["documents"][0]}']
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        # this will ensure that the deduper will output something for each paragraph
+        config["dedupe"]["paragraphs"]["by_ngram"] = {"ngram_length": 10, "stride": 5, "overlap_threshold": 0.0}
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
+
+        documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
+        attributes = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraphs/000.json.gz"
+        )
+        for doc, attr in zip(documents, attributes):
+            valid_paragraphs = []
+            i = 0
+            for para in doc["text"].split("\n"):
+                j = min(i + len(para) + 1, len(doc["text"]))
+                valid_paragraphs.append((i, j))
+                i = j
+            spans = attr["attributes"]["bff_duplicate_paragraph_spans"]
+
+            self.assertEqual(len(valid_paragraphs), len(spans))
+            for (start_para, end_para), (start_span, end_span, _) in zip(valid_paragraphs, spans):
+                self.assertEqual(doc["text"][start_para:end_para], doc["text"][start_span:end_span])
+
+    def test_dedupe_paragraphs_stride_math_skip_short(self):
+        with open(DEDUPE_PARAGRAPHS, "r") as f:
+            config = json.load(f)
+
+        config["documents"] = [f'{self.local_temp_dir}/{config["documents"][0]}']
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        # this will ensure that the deduper will output something for each paragraph
+        config["dedupe"]["paragraphs"]["by_ngram"] = (
+            ng_cfg := {"ngram_length": 20, "stride": 5, "overlap_threshold": 0.0, "skip_short_paragraphs": True}
+        )
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
+
+        documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
+        attributes = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraphs/000.json.gz"
+        )
+        for doc, attr in zip(documents, attributes):
+            valid_paragraphs = []
+            i = 0
+            for para in doc["text"].split("\n"):
+                j = min(i + len(para) + 1, len(doc["text"]))
+                if len(split_words(para)) >= ng_cfg["ngram_length"]:
+                    valid_paragraphs.append((i, j))
+                i = j
+            spans = attr["attributes"]["bff_duplicate_paragraph_spans"]
+
+            self.assertEqual(len(valid_paragraphs), len(spans))
+
+            for (start_para, end_para), (start_span, end_span, _) in zip(valid_paragraphs, spans):
+                self.assertEqual(doc["text"][start_para:end_para], doc["text"][start_span:end_span])
+
+    def test_dedupe_paragraph_ngrams(self):
+        with open(DEDUPE_PARAGRAPH_NGRAMS, "r") as f:
+            config = json.load(f)
+
+        config["documents"][0] = f'{self.local_temp_dir}/{config["documents"][0]}'
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
+
+        expected = load_jsonl("tests/data/expected/dedupe-paragraph-ngrams.json.gz")
+        print(
+            f"Loading data from {self.local_temp_dir}/tests/data/provided/attributes/dedupe_paragraph_ngrams/000.json.gz"
+        )
+        computed = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraph_ngrams/000.json.gz"
+        )
+        return self._compare_dedupe_output(expected, computed)  # pyright: ignore
+
+    def _compare_dedupe_output(self, expected: List[D], computed: List[D]):
+        self.assertEqual(len(expected), len(computed))
+        for exp_row, comp_row in zip(expected, computed):
+            self.assertEqual(exp_row["id"], comp_row["id"])
+            self.assertEqual(exp_row["attributes"].keys(), comp_row["attributes"].keys())
+            for attr in exp_row["attributes"].keys():
+                for exp_span, comp_span in zip(exp_row["attributes"][attr], comp_row["attributes"][attr]):
+                    self.assertEqual(exp_span, comp_span)
 
     def test_dedupe_by_url_remote_input(self):
         if self.remote_test_prefix is None:
@@ -103,8 +249,10 @@ class TestDeduper(TestCase):
         download_s3_prefix(self.remote_test_prefix, self.local_temp_dir)
 
         expected = load_jsonl("tests/data/expected/dedupe-by-url.json.gz")
-        computed = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/attributes/dedupe_by_url/000.json.gz")
-        self.assertEqual(expected, computed)
+        computed = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_by_url/000.json.gz"
+        )
+        return self._compare_dedupe_output(expected, computed)  # pyright: ignore
 
 
 class TestDeduperPipeline(TestCasePipeline):

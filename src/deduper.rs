@@ -131,7 +131,7 @@ fn write_attributes(
         );
 
         let min_content_length = dedupe_config.min_length.unwrap_or(0);
-        let min_word_length = dedupe_config.min_words.unwrap_or(0);
+        let min_word_count = dedupe_config.min_words.unwrap_or(0);
 
         for (line_number, line) in reader.lines().enumerate() {
             let line = match line {
@@ -166,11 +166,11 @@ fn write_attributes(
                         .to_string()
                 };
 
-                if min_word_length > 0 {
+                if min_word_count > 0 {
                     // Split the text into words and check the number of words.
                     let words = tokenize(&document_key);
-                    if words.count() < min_word_length {
-                        // skip documents with fewer than min_words words
+                    if words.count() < min_word_count {
+                        // skip documents with fewer than min_word_count words
                         attributes[&cfg.attribute_name] = Value::Array(Vec::new());
                     }
                 } else if document_key.len() < min_content_length {
@@ -207,10 +207,12 @@ fn write_attributes(
                     let text = data["text"].as_str().unwrap();
                     let text_length = text.len();
                     let mut offset = 0;
-                    let paragraphs = text.split('\n');
-                    let mut duplicate_paragraph_spans = Vec::new();
 
                     if text_length > 0 {
+                        let paragraphs =
+                            text.split(cfg.paragraph_separator.as_deref().unwrap_or("\n"));
+                        let mut duplicate_paragraph_spans = Vec::new();
+
                         // skip empty documents if text_length is 0
                         for p in paragraphs {
                             let par_start = offset;
@@ -224,11 +226,11 @@ fn write_attributes(
                                 // skip length 0 paragraphs
                                 continue;
                             }
-                            if min_word_length > 0 {
+                            if min_word_count > 0 {
                                 // Split the text into words and check the number of words.
                                 let words = tokenize(&p);
 
-                                if words.count() < min_word_length {
+                                if words.count() < min_word_count {
                                     // skip documents with fewer than min_words words
                                     continue;
                                 }
@@ -239,22 +241,102 @@ fn write_attributes(
                                 // and the paragraph is empty after trimming (i.e., removing whitespace)
                                 continue;
                             } else {
-                                let dedupe_key = VecDeque::from([p]);
-                                if bloom_filter.contains(&dedupe_key) {
-                                    let span = vec![
-                                        Value::Number(par_start.into()),
-                                        Value::Number(par_end.into()),
-                                        Value::from(1),
-                                    ];
-                                    // add span to duplicate_paragraph_spans
-                                    duplicate_paragraph_spans.push(Value::Array(span));
-                                } else if !bloom_filter.read_only {
-                                    bloom_filter.insert(&dedupe_key);
+                                if cfg.by_ngram.is_none()
+                                    || cfg.by_ngram.as_ref().unwrap().ngram_length == 0
+                                {
+                                    // Dedupe the entire paragraph
+                                    let dedupe_key = VecDeque::from([p]);
+                                    if bloom_filter.contains(&dedupe_key) {
+                                        let span = vec![
+                                            Value::Number(par_start.into()),
+                                            Value::Number(par_end.into()),
+                                            Value::from(1),
+                                        ];
+                                        // add span to duplicate_paragraph_spans
+                                        duplicate_paragraph_spans.push(Value::Array(span));
+                                    } else if !bloom_filter.read_only {
+                                        bloom_filter.insert(&dedupe_key);
+                                    }
+                                } else {
+                                    // Dedupe by ngram overlap
+                                    let by_ngram = cfg.clone().by_ngram.unwrap();
+                                    let ngram_length = by_ngram.ngram_length;
+                                    let stride = by_ngram.stride;
+                                    let mut ngram: VecDeque<&str> =
+                                        VecDeque::with_capacity(ngram_length);
+                                    let mut word_index = 0;
+                                    let mut last_ngram_start = 0;
+                                    let mut ngram_count = 0;
+                                    let mut duplicate_ngram_count = 0;
+                                    for token in tokenize(p) {
+                                        ngram.push_back(token);
+                                        if ngram.len() == ngram_length {
+                                            let ngram_start = word_index - (ngram_length - 1);
+                                            if last_ngram_start == 0
+                                                || ngram_start - last_ngram_start >= stride
+                                            {
+                                                last_ngram_start = ngram_start;
+                                                ngram_count += 1;
+                                                let dedupe_key = VecDeque::from(ngram.clone());
+                                                if bloom_filter.contains(&dedupe_key) {
+                                                    duplicate_ngram_count += 1;
+                                                } else if !bloom_filter.read_only {
+                                                    bloom_filter.insert(&dedupe_key);
+                                                }
+                                            }
+                                            ngram.pop_front();
+                                        }
+                                        word_index += 1;
+                                    }
+                                    if ngram_count < 2
+                                        && !by_ngram.skip_short_paragraphs.unwrap_or(false)
+                                    {
+                                        // Too few ngrams to dedupe by overlap. Just compare the whole thing
+                                        let dedupe_key = VecDeque::from([p]);
+
+                                        let span_score = match bloom_filter.contains(&dedupe_key) {
+                                            // we found a match! score is 1.0
+                                            true => 1.0,
+                                            false => {
+                                                // this is a new paragraph, push to bloom filter
+                                                if !bloom_filter.read_only {
+                                                    bloom_filter.insert(&dedupe_key);
+                                                }
+                                                // score is 0.0 because it's not a duplicate
+                                                0.0
+                                            }
+                                        };
+
+                                        // we check if the score is above the threshold; note that
+                                        // users can set the threshold to 0.0 to always include the span,
+                                        // or 1.0 to only include spans that are exact duplicates.
+                                        if span_score >= by_ngram.overlap_threshold {
+                                            let span = vec![
+                                                Value::Number(par_start.into()),
+                                                Value::Number(par_end.into()),
+                                                Value::from(span_score),
+                                            ];
+                                            // add span to duplicate_paragraph_spans
+                                            duplicate_paragraph_spans.push(Value::Array(span));
+                                        }
+                                    } else {
+                                        let overlap_fraction =
+                                            duplicate_ngram_count as f32 / ngram_count as f32;
+                                        if overlap_fraction >= by_ngram.overlap_threshold {
+                                            let span = vec![
+                                                Value::Number(par_start.into()),
+                                                Value::Number(par_end.into()),
+                                                Value::from(overlap_fraction),
+                                            ];
+                                            // add span to duplicate_paragraph_spans
+                                            duplicate_paragraph_spans.push(Value::Array(span));
+                                        }
+                                    }
                                 }
                             }
                         }
+                        attributes[&cfg.attribute_name] = Value::Array(duplicate_paragraph_spans);
                     }
-                    attributes[&cfg.attribute_name] = Value::Array(duplicate_paragraph_spans);
                 }
             }
             let mut output_object = json!({});
@@ -307,6 +389,24 @@ pub mod deduper_config {
     #[derive(Serialize, Deserialize, Clone)]
     pub struct ParagraphDedupeConfig {
         pub attribute_name: String,
+        // If defined, remove paragraphs based on contained ngrams
+        // Otherwise, hash the entire paragraph
+        pub by_ngram: Option<NgramDedupeConfig>,
+
+        // if not defined, we use '\n' as the paragraph separator
+        pub paragraph_separator: Option<String>,
+    }
+
+    #[derive(Serialize, Deserialize, Clone)]
+    pub struct NgramDedupeConfig {
+        // Number of whitespace-delimited tokens per ngram
+        pub ngram_length: usize,
+        // Number of tokens to skip between ngrams
+        pub stride: usize,
+        // Treat as duplicate if more than this fraction of ngrams have been seen before
+        pub overlap_threshold: f32,
+        // If true, skip checking for duplicates if the paragraph is shorter ngram_length + stride
+        pub skip_short_paragraphs: Option<bool>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]

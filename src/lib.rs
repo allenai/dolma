@@ -7,6 +7,7 @@ use adblock::Engine;
 
 pub mod bloom_filter;
 pub mod deduper;
+pub mod filters;
 pub mod mixer;
 pub mod s3_util;
 pub mod shard;

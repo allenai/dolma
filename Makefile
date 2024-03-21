@@ -46,3 +46,12 @@ style:
 	rustfmt --edition 2021 src/*.rs
 	isort .
 	black .
+
+check:
+	isort --check .
+	black --check .
+	mypy tests/python/
+	mypy python/
+	flake8 tests/python/
+	flake8 python/
+	rustfmt --edition 2021 src/*.rs --check
