@@ -117,40 +117,40 @@ class MemMapParallelWriter(BaseParallelProcessor):
                             path = source_paths.pop()
                             tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
 
-                    # shuffle sequence order to ensure that the sequences are well mixed
-                    random.shuffle(accumulator)
+                # shuffle sequence order to ensure that the sequences are well mixed
+                random.shuffle(accumulator)
 
-                    # try to write all the sequences, collect the ones that don't fit in remaining
-                    remaining = memwriter.write_many(outputs=accumulator, flush=documents_cnt == 0)
+                # try to write all the sequences, collect the ones that don't fit in remaining
+                remaining = memwriter.write_many(outputs=accumulator, flush=documents_cnt == 0)
 
-                    if remaining:
-                        # if we have remaining sequences, we need to close the current memwriter and open a new one
-                        mm_cnt += 1
-                        stack.pop_all().close()
-                        memwriter = stack.enter_context(
-                            MemmapWriter(
-                                path=destination_path + f"-{mm_cnt:05d}",
-                                dtype=np.dtype("uint16"),  # pyright: ignore
-                                max_tokens=max_size,
-                            )
+                if remaining:
+                    # if we have remaining sequences, we need to close the current memwriter and open a new one
+                    mm_cnt += 1
+                    stack.pop_all().close()
+                    memwriter = stack.enter_context(
+                        MemmapWriter(
+                            path=destination_path + f"-{mm_cnt:05d}",
+                            dtype=np.dtype("uint16"),  # pyright: ignore
+                            max_tokens=max_size,
                         )
-                        cls.increment_progressbar(queue, memmaps=1)
+                    )
+                    cls.increment_progressbar(queue, memmaps=1)
 
-                        # finally, write the remaining sequences
-                        memwriter.write_many(outputs=remaining, flush=True)
+                    # finally, write the remaining sequences
+                    memwriter.write_many(outputs=remaining, flush=True)
 
-                    tokens_cnt += sum(seq.end for seq in accumulator)
-                    documents_cnt += len(accumulator)
+                tokens_cnt += sum(seq.end for seq in accumulator)
+                documents_cnt += len(accumulator)
 
-                    if documents_cnt >= update_interval:
-                        cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
-                        tokens_cnt = documents_cnt = 0
+                if documents_cnt >= update_interval:
+                    cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
+                    tokens_cnt = documents_cnt = 0
 
-                        if queue.qsize() >= cpu_count:
-                            # double the update interval if the queue is full
-                            update_interval *= 2
+                    if queue.qsize() >= cpu_count:
+                        # double the update interval if the queue is full
+                        update_interval *= 2
 
-                    accumulator = []
+                accumulator = []
 
                 memwriter.flush()
 
