@@ -1,7 +1,7 @@
 import csv
 import json
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest import TestCase
 
 import numpy
@@ -9,7 +9,7 @@ import smart_open
 from tokenizers import Tokenizer as BaseTokenizer
 
 from dolma.cli.__main__ import main
-from dolma.tokenizer import Tokenizer
+from dolma.tokenizer import Tokenizer, tokenize_in_parallel
 
 TEST_DIR = Path(__file__).parent.parent.resolve()
 
@@ -216,3 +216,73 @@ class TestTokenizerCli(TestCase):
                 }
             )
             self.assertEqual(special_tokens, 1)
+
+
+class TestShufflingTokenizer(TestCase):
+    def test_shuffling(self):
+        tokenizer_id = "allenai/olmo-1b"
+        bos_token_id = None
+        eos_token_id = 50279
+        pad_token_id = 1
+
+        tokenizer = Tokenizer.from_pretrained(
+            tokenizer_id, bos_token_id=bos_token_id, eos_token_id=eos_token_id, pad_token_id=pad_token_id
+        )
+
+        with TemporaryDirectory() as tmpdir:
+            (source := Path(tmpdir) / "src").mkdir(parents=True, exist_ok=True)
+            (destination := Path(tmpdir) / "dst").mkdir(parents=True, exist_ok=True)
+
+            RING_SIZE = 4
+            LOCAL_SHUFFLE = 8
+            REPEAT = 4
+
+            for i in range(RING_SIZE):
+                with smart_open.open(source / f"{i}.jsonl.gz", "wt") as f:
+                    for j in range(LOCAL_SHUFFLE * REPEAT):
+                        f.write(json.dumps({"text": str(j), "id": f"{i}-{j}"}) + "\n")
+
+            tokenize_in_parallel(
+                sources=[f"{source}/*.gz"],
+                destination=str(destination),
+                ring_size=RING_SIZE,
+                local_shuffle=LOCAL_SHUFFLE,
+                tokenizer_name_or_path=tokenizer_id,
+                bos_token_id=bos_token_id,
+                eos_token_id=eos_token_id,
+                pad_token_id=pad_token_id,
+                seed=3920,
+                debug=False,
+                num_writers=1,
+            )
+
+            with smart_open.open(destination / "part-0-00000.csv.gz") as f:
+                reader = csv.reader(f)
+                file_ids, row_data = zip(*(map(int, row[2].split("-")) for row in reader))
+
+            memmap = numpy.memmap(
+                f"{destination}/part-0-00000.npy",
+                dtype=numpy.uint16,
+                mode="r",
+                # * 2 if because we have eos tokens
+                shape=(RING_SIZE * LOCAL_SHUFFLE * REPEAT * 2,),
+            )
+
+            # decode the numpy here. We decode one document at the time, i.e. until we see the eos token
+            all_tokens, current_tokens = [], []
+            for elem in memmap:
+                if elem == eos_token_id:
+                    all_tokens.append(int(tokenizer.decode(current_tokens)))
+                    current_tokens = []
+                else:
+                    current_tokens.append(elem)
+
+            if current_tokens:
+                all_tokens.append(tokenizer.decode(current_tokens))
+
+            # verify that the correct number of tokens have been written
+            self.assertEqual(all_tokens, list(row_data))
+            self.assertEqual(len(all_tokens), RING_SIZE * LOCAL_SHUFFLE * REPEAT)
+
+            # verify that there has bee shuffling
+            self.assertNotEqual(list(all_tokens), sorted(all_tokens))
