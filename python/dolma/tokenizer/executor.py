@@ -134,6 +134,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         # we have reached the end of one of the file; move to the next!
                         cls.increment_progressbar(queue, files=1)
                         tokenizer_ring.pop(j)
+                        tokenizer_sizes.pop(j)
 
                         if len(tokenizer_ring) == 0:
                             # break if no more files to tokenize
