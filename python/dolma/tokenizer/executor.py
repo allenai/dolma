@@ -45,15 +45,17 @@ class MemMapParallelWriter(BaseParallelProcessor):
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
         logger = get_logger(__name__)
 
-        max_size: int = kwargs.pop("max_size", 1024 * 1024 * 1024)
-        dtype: np.dtype = np.dtype(kwargs.pop("dtype", "uint16"))
-        local_shuffle: int = kwargs.pop("local_shuffle", 10_000)
-        ring_size: int = kwargs.pop("ring_size", 8)
+        max_size: int = kwargs.pop("max_size", None) or 1024 * 1024 * 1024
+        dtype: np.dtype = np.dtype(kwargs.pop("dtype", None) or "uint16")
+        local_shuffle: int = kwargs.pop("local_shuffle", None) or 10_000
+        ring_size: int = kwargs.pop("ring_size", None) or 8
         sample_ring_prop: bool = kwargs.pop("sample_ring_prop", None) or False
 
         global_source_paths = kwargs.pop("grouped_source_prefixes", None)
         if not isinstance(global_source_paths, list):
             raise RuntimeError("grouped_source_prefixes should be a list of paths")
+        elif len(global_source_paths) == 0:
+            raise RuntimeError("grouped_source_prefixes should not be empty")
         source_paths = global_source_paths[int(source_path)]
 
         tokenizer_name_or_path = kwargs.pop("tokenizer_name_or_path", None)
@@ -75,7 +77,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
             tokenizer_kwargs["pad_token_id"] = tokenizer_kwargs["eos_token_id"]
 
         # flag to control whether to segment the documents before tokenization
-        tokenizer_kwargs["segment_before_tokenization"] = kwargs.pop("segment_before_tokenization", False)
+        tokenizer_kwargs["segment_before_tokenization"] = kwargs.pop("segment_before_tokenization", None) or False
 
         # this is useful for making sure the queue does not grows too much
         cpu_count = multiprocessing.cpu_count()
@@ -119,15 +121,22 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         j = i % len(tokenizer_ring)
 
                     try:
+                        # trying to read the next sequence of tokens (might fail if end of file)
                         content = next(tokenizer_ring[j])
+
+                        # added to the accumulator, we will shuffle this later
                         accumulator.append(content)
 
+                        # count the number of tokens and documents
                         tokens_cnt += content.end - content.start
                         documents_cnt += 1
                     except StopIteration:
+                        # we have reached the end of one of the file; move to the next!
                         cls.increment_progressbar(queue, files=1)
                         tokenizer_ring.pop(j)
+
                         if len(tokenizer_ring) == 0:
+                            # break if no more files to tokenize
                             break
                         if len(source_paths) > 0:
                             path = source_paths.pop()
@@ -137,6 +146,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         # wether a file is added or not to the ring, we must re-balance probabilities
                         tokenizer_probs = sizes_to_probs(tokenizer_sizes)
 
+                    # check if it time to update the progress bar!
                     if documents_cnt >= update_interval:
                         cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
                         tokens_cnt = documents_cnt = 0
@@ -261,6 +271,7 @@ def tokenize_in_parallel(
     max_size: int = 1024 * 1024 * 1024,
     dtype: str = "uint16",
     debug: bool = False,
+    sample_ring_prop: bool = False,
 ):
     """
     Tokenizes the input sources in parallel using multiple writers and readers.
@@ -285,6 +296,8 @@ def tokenize_in_parallel(
         max_size (int, optional): Maximum size of each tokenized file. Defaults to 1024 * 1024 * 1024.
         dtype (str, optional): Data type for tokenized files. Defaults to "uint16".
         debug (bool, optional): Whether to enable debug mode. Defaults to False.
+        sample_ring_prop (bool, optional): Whether to sample from the ring buffer proportionally to the size
+            of files. Otherwise, it will go round-robin. Defaults to False.
     """
     # variables to avoid issues with parallelism
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -326,4 +339,5 @@ def tokenize_in_parallel(
         eos_token_id=eos_token_id,
         segment_before_tokenization=segment_before_tokenization,
         tokenizer_name_or_path=tokenizer_name_or_path,
+        sample_ring_prop=sample_ring_prop,
     )
