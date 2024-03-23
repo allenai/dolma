@@ -187,7 +187,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
         """Run the processor."""
 
         # get all source paths; shuffle them well
-        all_source_paths = [p for p in set([p for source in self.src_prefixes for p in glob_path(source)])]
+        all_source_paths = [p for source in self.src_prefixes for p in glob_path(source)]
         random.shuffle(all_source_paths)
 
         # TRICKY BIT: Group source paths into buckets
@@ -201,7 +201,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
         grouped_source_prefixes: List[List[str]] = []
         current_step = 0.0
         while current_step < len(all_source_paths):  # can't use range here because of the float
-            prefix_slice = all_source_paths[int(current_step) : int(current_step + step_size)]
+            prefix_slice = all_source_paths[int(round(current_step)) : int(round(current_step + step_size))]
             if prefix_slice:
                 grouped_source_prefixes.append(prefix_slice)
             current_step += step_size
@@ -218,6 +218,11 @@ class MemMapParallelWriter(BaseParallelProcessor):
         if len(all_source_paths) < len(grouped_source_prefixes):
             raise ValueError(
                 "The number of groups is greater than the number of source paths. This should not happen."
+            )
+        if sum(len(bucket) for bucket in grouped_source_prefixes) != len(all_source_paths):
+            raise ValueError(
+                "The number of files in the groups does not match the total number of files. "
+                "This should not happen."
             )
 
         # this is a bit of a hack but: we pass indices to grouped_source_prefixes to the processors
@@ -242,6 +247,12 @@ class MemMapParallelWriter(BaseParallelProcessor):
         metadata = self.meta_prefixes[0]
         mkdir_p(metadata)
         all_metadata_path = [join_path(None, metadata, f"{i}.done") for i in range(len(all_destination_paths))]
+
+        # give the user some feedback
+        print(
+            f"Tokenizing {sum(len(e) for e in grouped_source_prefixes):,} source files "
+            f"into {len(grouped_source_prefixes):,} numpy destinations."
+        )
 
         # finally run the processors
         fn = self._debug_run_all if self.debug else self._multiprocessing_run_all
