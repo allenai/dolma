@@ -6,20 +6,24 @@ import tempfile
 from contextlib import ExitStack
 from math import ceil, log10
 from queue import Queue  # pylint: disable=unused-import
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 import numpy as np
 from typing_extensions import TypeAlias
 
 from ..core.loggers import get_logger
 from ..core.parallel import BaseParallelProcessor, QueueType
-from ..core.paths import glob_path, join_path, mkdir_p
+from ..core.paths import get_size, glob_path, join_path, mkdir_p
 from .data_types import TokenizerOutput  # pylint: disable=unused-import
 from .memmap_writer import MemmapWriter
 from .tokenizer import Tokenizer, tokenize_file
 
 TokenizedSeqsQueueType: TypeAlias = "Queue[List[TokenizerOutput]]"
 PathsQueueType: TypeAlias = "Queue[str]"
+
+
+def sizes_to_probs(sizes: List[int]) -> np.ndarray:
+    return np.array(sizes) / sum(sizes)
 
 
 class MemMapParallelWriter(BaseParallelProcessor):
@@ -45,6 +49,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
         dtype: np.dtype = np.dtype(kwargs.pop("dtype", "uint16"))
         local_shuffle: int = kwargs.pop("local_shuffle", 10_000)
         ring_size: int = kwargs.pop("ring_size", 8)
+        sample_ring_prop: bool = kwargs.pop("sample_ring_prop", None) or False
 
         global_source_paths = kwargs.pop("grouped_source_prefixes", None)
         if not isinstance(global_source_paths, list):
@@ -80,19 +85,21 @@ class MemMapParallelWriter(BaseParallelProcessor):
         update_interval = 1
         mm_cnt = 0
 
-        # def test(**kwargs):
-        #     breakpoint()
-
         # create the tokenizer from file if it exists, otherwise from pretrained
         if os.path.exists(tokenizer_name_or_path) and os.path.isfile(tokenizer_name_or_path):
             tokenizer = Tokenizer.from_file(tokenizer_name_or_path, **tokenizer_kwargs)
         else:
             tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path, **tokenizer_kwargs)
 
-        tokenizer_ring = []
+        tokenizer_ring: List[Generator[TokenizerOutput, None, None]] = []
+        tokenizer_sizes: List[int] = []
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
             tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
+            tokenizer_sizes.append(get_size(path))
+
+        # this is the probabilities with which we sample from the ring buffer if sample_ring_prop is True
+        tokenizer_probs = sizes_to_probs(tokenizer_sizes)
 
         accumulator = []
 
@@ -104,10 +111,19 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
             while len(source_paths) > 0 or len(tokenizer_ring) > 0:
                 for i in range(local_shuffle):
-                    j = i % len(tokenizer_ring)
+                    if sample_ring_prop:
+                        # you are sampling proportionally to the size of files in the ring
+                        j = np.random.choice(len(tokenizer_ring), p=tokenizer_probs)
+                    else:
+                        # you are going round robin
+                        j = i % len(tokenizer_ring)
+
                     try:
                         content = next(tokenizer_ring[j])
                         accumulator.append(content)
+
+                        tokens_cnt += content.end - content.start
+                        documents_cnt += 1
                     except StopIteration:
                         cls.increment_progressbar(queue, files=1)
                         tokenizer_ring.pop(j)
@@ -116,6 +132,18 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         if len(source_paths) > 0:
                             path = source_paths.pop()
                             tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
+                            tokenizer_sizes.append(get_size(path))
+
+                        # wether a file is added or not to the ring, we must re-balance probabilities
+                        tokenizer_probs = sizes_to_probs(tokenizer_sizes)
+
+                    if documents_cnt >= update_interval:
+                        cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
+                        tokens_cnt = documents_cnt = 0
+
+                        if queue.qsize() >= cpu_count:
+                            # double the update interval if the queue is full
+                            update_interval *= 2
 
                 # shuffle sequence order to ensure that the sequences are well mixed
                 random.shuffle(accumulator)
@@ -138,17 +166,6 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
                     # finally, write the remaining sequences
                     memwriter.write_many(outputs=remaining, flush=True)
-
-                tokens_cnt += sum(seq.end for seq in accumulator)
-                documents_cnt += len(accumulator)
-
-                if documents_cnt >= update_interval:
-                    cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
-                    tokens_cnt = documents_cnt = 0
-
-                    if queue.qsize() >= cpu_count:
-                        # double the update interval if the queue is full
-                        update_interval *= 2
 
                 accumulator = []
 
