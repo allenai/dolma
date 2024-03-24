@@ -57,9 +57,13 @@ class UrlNotParsedError(ValueError):
 class BaseUrlTagger(BaseTaggerWithMetadata):
     BLOCKLIST_PATHS: List[str]
     URL_METADATA_KEY = "url"
-    MAYBE_IP_REGEX = r"([0-9a-f\.\:]+)"
-    IGNORE_IP_REGEX = r"(127\.0\.0\.1|0\.0\.0\.0|::1)"
-    URL_REGEX = r"(([a-z0-9\-_]+\.?){2,}|localhost|localdomain)"
+    MAYBE_IP_REGEX = re.compile(r"([0-9a-f\.\:]+)")
+    IGNORE_IP_REGEX = re.compile(r"(127\.0\.0\.1|0\.0\.0\.0|::1)")
+    IGNORE_IP_REGEX_START = re.compile(r"^{IGNORE_IP_REGEX.pattern}")
+    URL_REGEX = re.compile(r"(([a-z0-9\-_]+\.?){2,}|localhost|localdomain)")
+    ONLY_URL_REGEX = re.compile(f"^{URL_REGEX.pattern}")
+    ADP_FORMAT_REGEX = re.compile(f"\\|+{URL_REGEX.pattern}\\^")
+    MAYBE_IP_AND_URL_REGEX = re.compile(f"{MAYBE_IP_REGEX.pattern}\\s+{URL_REGEX.pattern}")
 
     def __init__(self) -> None:
         self.blocklist: Set[str] = set()
@@ -81,7 +85,7 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
         if not (ln := ln.strip().lower()) or ln.startswith("#") or ln.startswith(";") or ln.startswith("!"):
             # either empty or a comment
             return
-        if expr := re.match(f"{self.MAYBE_IP_REGEX}\\s+{self.URL_REGEX}", ln):
+        if expr := self.MAYBE_IP_AND_URL_REGEX.match(ln):
             # the line contains both an IP and a URL; we yield both
             maybe_ipv6_or_ipv4 = expr.group(1)
             url = expr.group(2)
@@ -90,17 +94,17 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
             if not check_ipv6(maybe_ipv6_or_ipv4) and not check_ipv4(maybe_ipv6_or_ipv4):
                 raise UrlNotParsedError(f"Invalid IP: {maybe_ipv6_or_ipv4}")
 
-            if not re.match(f"^{self.IGNORE_IP_REGEX}$", maybe_ipv6_or_ipv4):
+            if not self.IGNORE_IP_REGEX_START.match(maybe_ipv6_or_ipv4):
                 # do not yield the IP if it a localhost
                 yield maybe_ipv6_or_ipv4
 
             if url != "localhost" and url != "localdomain":
                 # do not yield the URL if it is a localhost
                 yield from self.clean_url(url)
-        elif expr := re.match(f"^{self.URL_REGEX}", ln):
+        elif expr := self.ONLY_URL_REGEX.match(ln):
             # the line contains only a URL; we yield it
             yield from self.clean_url(ln)
-        elif expr := re.match(f"\\|+{self.URL_REGEX}\\^", ln):
+        elif expr := self.ADP_FORMAT_REGEX.match(ln):
             # this is in case we need to deal with data with ADP format
             yield expr.group(1)
         else:
