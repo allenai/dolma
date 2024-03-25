@@ -140,6 +140,17 @@ def delete_file(path: str, ignore_missing: bool = False) -> bool:
     return deleted
 
 
+def get_size(path) -> int:
+    """Get the size of a file"""
+    if not exists(path):
+        raise ValueError(f"Path {path} does not exist")
+    if is_dir(path):
+        raise ValueError(f"Path {path} is a directory")
+
+    fs = _get_fs(path)
+    return fs.info(path)["size"]
+
+
 def delete_dir(path: str, ignore_missing: bool = False) -> bool:
     """Delete a directory."""
 

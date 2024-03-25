@@ -115,6 +115,10 @@ class TokenizationConfig:
         help="Number of sequences to tokenize before writing to disk.",
     )
     ring_size: int = field(default=8, help="Number of files to open in parallel for tokenization.")
+    sample_ring_prop: bool = field(
+        default=False,
+        help="Whether to sample the ring proportionally to the number of documents in each source.",
+    )
     max_size: int = field(
         default=1024 * 1024 * 1024,
         help="Maximum size of a file in bytes.",
@@ -196,4 +200,5 @@ class TokenizerCli(BaseCli):
                 metadata_dir=work_dirs.output,
                 max_size=parsed_config.max_size,
                 debug=parsed_config.debug,
+                sample_ring_prop=parsed_config.sample_ring_prop,
             )
