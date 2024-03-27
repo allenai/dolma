@@ -1,9 +1,10 @@
+import json
 import math
 import multiprocessing
 import re
 from contextlib import ExitStack
 from tempfile import TemporaryDirectory
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import msgspec
 import smart_open
@@ -88,6 +89,8 @@ class AnalyzerProcessor(BaseParallelProcessor):
 
         # running document count; gets reset every time we update the progress bar
         docs_cnt = 0
+        total_sum = 0.0
+        total_count = 0
 
         with smart_open.open(source_path) as f:
             for ln in f:
@@ -117,6 +120,9 @@ class AnalyzerProcessor(BaseParallelProcessor):
                             # attribute name contains __label__
                             score = min(score, 1.0)
 
+                        total_sum += score
+                        total_count += 1
+
                         trackers.setdefault(f"{attr_name}/score", _make_tracker()).add(score)
                         trackers.setdefault(f"{attr_name}/length", _make_tracker()).add(end - start)
 
@@ -136,13 +142,19 @@ class AnalyzerProcessor(BaseParallelProcessor):
         with smart_open.open(destination_path, "w") as f:
             for attr_name, tracker in trackers.items():
                 summary = SummarySpec.from_tracker(name=attr_name, tracker=tracker, n=num_bins)
-                f.write(msgspec.json.encode(summary).decode("utf-8") + "\n")
+                extended_summary = {
+                    'summary': json.loads(msgspec.json.encode(summary).decode("utf-8")),
+                    'total_sum': total_sum,
+                    'total_count': total_count,
+                }
+
+                f.write(msgspec.json.encode(extended_summary).decode("utf-8") + "\n")
 
         # update the progress bar one last time
         cls.increment_progressbar(queue, files=1, documents=docs_cnt)
 
 
-def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[SummarySpec]:
+def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> Tuple[List[SummarySpec], float, int]:
     # keep track of the length and score of each attribute
     trackers: Dict[str, BaseBucketApi] = {}
 
@@ -156,20 +168,25 @@ def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[Summa
         unit=" files",
         unit_scale=True,
     )
+    total_count = 0
+    total_sum = 0.0
 
     # load partial summaries and aggregate it
     for path in it:
         with smart_open.open(path, "rt") as f:
             for ln in f:
-                summary = decoder.decode(ln)
+                extended_summary = json.loads(ln)
+                summary = decoder.decode(json.dumps(extended_summary['summary']))
                 trackers.setdefault(summary.name, _make_tracker()).add_many(summary.bins, summary.counts)
+                total_count += extended_summary['total_count']
+                total_sum += extended_summary['total_sum']
 
     # convert trackers to summaries
     summaries = [
         SummarySpec.from_tracker(name=attr_name, tracker=attr_tracker, n=num_bins)
         for attr_name, attr_tracker in trackers.items()
     ]
-    return summaries
+    return summaries, total_sum, total_count
 
 
 def round_values_for_visual(values: List[float], opt_sci: bool = False, max_decimal: int = 4) -> List[str]:
@@ -190,7 +207,13 @@ def round_values_for_visual(values: List[float], opt_sci: bool = False, max_deci
         return [f"{val:.{max_decimal}f}" for val in values]
 
 
-def visualize_summaries(summaries: List[SummarySpec], max_decimal: int = 4, num_viz_bins: int = 10):
+def visualize_summaries(
+    summaries: List[SummarySpec],
+    total_count: int,
+    total_sum: float,
+    max_decimal: int = 4,
+    num_viz_bins: int = 10
+):
     console = Console()
     console.print()
 
@@ -225,6 +248,10 @@ def visualize_summaries(summaries: List[SummarySpec], max_decimal: int = 4, num_
 
         for value, dist, count in zip(ranges, counts_normed, short_summary.counts):
             table.add_row(value, dist, f"{count:,}")
+
+        # add the total count and sum
+        table.add_row("total count", "", f"{total_count:,}")
+        table.add_row("total sum", "", f"{total_sum:.4f}")
 
         console.print(table)
         console.print()
@@ -278,6 +305,6 @@ def create_and_run_analyzer(
         )
         analyzer(num_bins=num_bins, name_regex=name_regex)
 
-        summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=num_bins)
-        visualize_summaries(summaries=summaries)
+        summaries, total_sum, total_count = aggregate_summaries(summaries_path=summaries_path, num_bins=num_bins)
+        visualize_summaries(summaries=summaries, total_sum=total_sum, total_count=total_count)
         write_output(summaries=summaries, report=report)
