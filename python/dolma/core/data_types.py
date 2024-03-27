@@ -17,8 +17,8 @@ TaggerOutputDictType: TypeAlias = Dict[str, TaggerOutputType]
 
 
 class InputSpec(Struct):
-    id: str
     text: str
+    id: str = ""
     source: str = ""
     version: Optional[str] = None
 
@@ -28,8 +28,8 @@ class InputSpecWithMetadata(InputSpec):
 
 
 class OutputSpec(Struct):
-    id: str
     attributes: Dict[str, List[Tuple[int, int, float]]]
+    id: str = ""
     source: Optional[str] = None
 
 
