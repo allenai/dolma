@@ -1,0 +1,60 @@
+
+model_path: ${oc.env:HOME}/fasttext_models/suchin_whose_quality_v2.bin
+cache_dir: ${oc.env:HOME}/fasttext_data
+word_tokenizer: "ws"
+num_processes: 128
+
+
+model:
+  learning_rate: 0.1
+  epochs: 20
+  # min_char_ngram_length: 3
+  # max_char_ngram_length: 6
+  # max_word_ngram_length: 3
+  # min_word_occurrences: 3
+  # word_vector_size: 300
+  # pretrained_vectors: ${oc.env:HOME}/fasttext_models/crawl-300d-2M-subword.vec
+  # autotune:
+  #   enabled: false
+  #   metric: f1:__label__hq
+  #   duration: 300
+  #   model_size: "1G"
+
+
+streams:
+  - name: wikiwebooks_train
+    documents:
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/train/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
+    label: "$.metadata.label"
+    sample:
+      train: 1.0
+  - name: random_cc_train
+    documents:
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/train/Random_CC/random_cc-0000.jsonl.gz'
+    label: "$.metadata.label"
+    sample:
+      train: 1.0
+  - name: wikiwebooks_valid
+    documents:
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/valid/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
+    label: "$.metadata.label"
+    sample:
+      dev: 1.0
+  - name: random_cc_valid
+    documents:
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/valid/Random_CC/random_cc-0000.jsonl.gz'
+    label: "$.metadata.label"
+    sample:
+      dev: 1.0
+  - name: wikiwebooks_test
+    documents:
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/test/WikiWebBooks/wikiwebbooks-0000.jsonl.gz'
+    label: "$.metadata.label"
+    sample:
+      test: 1.0
+  - name: random_cc_test
+    documents:
+      - '${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/v2/test/Random_CC/random_cc-0000.jsonl.gz'
+    label: "$.metadata.label"
+    sample:
+      test: 1.0

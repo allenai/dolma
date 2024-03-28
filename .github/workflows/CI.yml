@@ -137,8 +137,8 @@ jobs:
           - name: Check Python style
             run: |
               set -e
-              isort --check --verbose .
-              black --check --verbose .
+              isort --check .
+              black --check .
 
           - name: Check Rust style
             run: |

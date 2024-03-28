@@ -7,6 +7,7 @@ import smart_open
 from yaml import safe_load
 
 from ..core.paths import exists
+from ..models import ModelsCli
 from .analyzer import AnalyzerCli
 from .deduper import DeduperCli
 from .mixer import MixerCli
@@ -23,9 +24,7 @@ AVAILABLE_COMMANDS = {
     "list": ListTaggerCli,
     "stat": AnalyzerCli,
     "tokens": TokenizerCli,
-    # following functionality is not yet implemented
-    # "train-ft": None,
-    # "train-lm": None,
+    "model": ModelsCli,
 }
 
 
@@ -78,10 +77,6 @@ def main(argv: Optional[List[str]] = None):
     # first, get the command and config path to run
     command = args.__dict__.pop("command")
     config_path = args.__dict__.pop("config", None) or None
-
-    # remove the other optional arguments from the top level parser
-    args.__dict__.pop("dolma_version", None)
-    args.__dict__.pop("dolma_commands", None)
 
     # read the config file if one was provided
     config = read_config(config_path)

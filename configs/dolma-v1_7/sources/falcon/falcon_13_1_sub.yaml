@@ -1,0 +1,26 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/*
+
+dedupe:
+  name: falcon_13_1_sub
+  paragraphs:
+    attribute_name: falcon_13_1_sub
+    by_ngram:
+      ngram_length: 13
+      stride: 1
+      overlap_threshold: 0.5
+      skip_short_paragraphs: false
+    # paragraph_separator: ${d.unescape:'\n\n'}
+  skip_empty: true
+
+bloom_filter:
+  file: ${oc.env:HOME}/falcon_dedupe_para_ngrams_13_1.bin
+  read_only: false
+  # set to of words
+  estimated_doc_count: 561_403_831_170
+  desired_false_positive_rate: 0.1
+
+processes: 128
+work_dir:
+  input: /tmp/falcon_dedupe_para_ngrams_13_1/input
+  output: /tmp/falcon_dedupe_para_ngrams_13_1/output

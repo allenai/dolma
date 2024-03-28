@@ -117,6 +117,7 @@ if [ ! -d "${FIGURE_1_DIR}/train" ]; then
     set -ex
 
     python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -e pdf \
         -t ai2-llm \
         -p olmo-small \
         -n $RUNS_UP_TO_150B \
@@ -136,6 +137,7 @@ if [ ! -d "${FIGURE_1_DIR}/downstream" ]; then
     set -ex
 
     python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -e pdf \
         -t ai2-llm \
         -p olmo-small \
         -n $RUNS_UP_TO_150B \
@@ -154,6 +156,7 @@ if [ ! -d "${FIGURE_1_DIR}/ppl" ]; then
     set -ex
 
     python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -e pdf \
         -t ai2-llm \
         -p olmo-small \
         -n $RUNS_UP_TO_150B \
@@ -178,6 +181,7 @@ if [ ! -d "${FIGURE_2_DIR}/train" ]; then
     set -ex
 
     python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -e pdf \
         -t ai2-llm \
         -p olmo-small \
         -n 'olmo-small-3T-lower-lr-tie_*' \
@@ -196,6 +200,7 @@ if [ ! -d "${FIGURE_2_DIR}/downstream" ]; then
     set -ex
 
     python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -e pdf \
         -t ai2-llm \
         -p olmo-small \
         -n 'olmo-small-3T-lower-lr-tie_*' \
@@ -213,6 +218,7 @@ if [ ! -d "${FIGURE_2_DIR}/ppl" ]; then
     set -ex
 
     python ${SCRIPT_DIR}/wandb_to_plot.py \
+        -e pdf \
         -t ai2-llm \
         -p olmo-small \
         -n 'olmo-small-3T-lower-lr-tie_*' \
@@ -286,6 +292,7 @@ for index in "${!ablations_names[@]}"; do
         set -ex
 
         python ${SCRIPT_DIR}/wandb_to_plot.py \
+            -e pdf \
             -t ai2-llm \
             -p c4-small \
             -n $RUNS_ABLATION \
@@ -309,6 +316,7 @@ for index in "${!ablations_names[@]}"; do
         set -ex
 
         python ${SCRIPT_DIR}/wandb_to_plot.py \
+            -e pdf \
             -t ai2-llm \
             -p c4-small \
             -n $RUNS_ABLATION \
@@ -331,6 +339,7 @@ for index in "${!ablations_names[@]}"; do
         set -ex
 
         python ${SCRIPT_DIR}/wandb_to_plot.py \
+            -e pdf \
             -t ai2-llm \
             -p c4-small \
             -n $RUNS_ABLATION \
@@ -354,6 +363,7 @@ for index in "${!ablations_names[@]}"; do
         set -ex
 
         python ${SCRIPT_DIR}/wandb_to_plot.py \
+            -e pdf \
             -t ai2-llm \
             -p c4-small \
             -n $RUNS_ABLATION \

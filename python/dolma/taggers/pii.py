@@ -290,3 +290,25 @@ class PiiRegexWithCountV2(BasePiiFilter):
         count = sum(1 for s in doc_result.spans if s.type != "doc")
         doc_result.spans.append(Span(start=0, end=len(doc.text), type="doc_count", score=count))
         return doc_result
+
+
+@TaggerRegistry.add("detect_pii_v1")
+class DetectPiiV1(BaseTagger):
+    PII_SEQUENCES = [
+        " |||EMAIL_ADDRESS||| ",
+        " |||PHONE_NUMBER||| ",
+        " |||IP_ADDRESS||| ",
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pii_sequences = {
+            seq: re.sub(r"[^a-zA-Z0-9]+", r"_", seq).strip("_").lower() for seq in self.PII_SEQUENCES
+        }
+
+    def predict(self, doc: Document) -> DocResult:
+        spans = []
+        for seq, seq_type in self.pii_sequences.items():
+            if count := doc.text.count(seq):
+                spans.append(Span(start=0, end=len(doc.text), type=seq_type, score=float(count)))
+        return DocResult(doc=doc, spans=spans)

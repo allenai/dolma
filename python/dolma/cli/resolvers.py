@@ -34,3 +34,8 @@ def glob(path: str) -> List[str]:
 @resolver
 def processes(n: int = 0) -> int:
     return max(1, multiprocessing.cpu_count() - n)
+
+
+@resolver
+def unescape(expr: str) -> str:
+    return expr.encode().decode("unicode_escape")

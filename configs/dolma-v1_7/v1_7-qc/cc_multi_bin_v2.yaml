@@ -1,0 +1,306 @@
+
+model_path: ${oc.env:HOME}/fasttext_models/cc_multi_bin_v3.bin
+cache_dir: ${oc.env:HOME}/fasttext_data
+word_tokenizer: "ws"
+num_processes: 128
+
+
+model:
+  learning_rate: 0.1
+  epochs: 10
+  word_vector_size: 300
+  context_window_size: 10
+  min_word_occurrences: 10
+  # min_char_ngram_length: 5
+  # max_char_ngram_length: 6
+  number_of_buckets: 200_000
+  loss_function: "softmax"
+  # hash_count: 1
+
+
+streams:
+  - name: wikipedia_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/dolma_wiki/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: wikipedia_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/dolma_wiki/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: wikipedia_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/dolma_wiki/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: wikiref_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/megawika/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: wikiref_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/megawika/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: wikiref_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/megawika/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: smallweb_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/smallweb/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: smallweb_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/smallweb/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: smallweb_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/smallweb/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: commoncrawl_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/more-cc/*.gz
+    label: "lq"
+    sample:
+      train: 1.0
+  - name: commoncrawl_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/more-cc/*.gz
+    label: "lq"
+    sample:
+      dev: 1.0
+  - name: commoncrawl_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/more-cc/*.gz
+    label: "lq"
+    sample:
+      test: 1.0
+
+  - name: openhermes
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/teknium_OpenHermes-2.5/v0/documents/*.gz
+    label: "hq"
+    sample:
+      train: 0.8
+      dev: 0.1
+      test: 0.1
+
+  - name: academic_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/dolma_pes2o/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: academic_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/dolma_pes2o/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: academic_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/dolma_pes2o/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: books_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/books/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: books_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/books/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: books_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/books/*.gz
+    label: "hq"
+    sample:
+      test: 1.0
+
+
+  - name: fakenews_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/fakenews/*.gz
+    label: "lq"
+    sample:
+      train: 1.0
+  - name: fakenews_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/fakenews/*.gz
+    label: "lq"
+    sample:
+      dev: 1.0
+  - name: fakenews_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/fakenews/*.gz
+    label: "lq"
+    sample:
+      test: 1.0
+
+
+  - name: adult_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/adult/*.gz
+    label: "lq"
+    sample:
+      train: 1.0
+  - name: adult_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/adult/*.gz
+    label: "lq"
+    sample:
+      dev: 1.0
+  - name: adult_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/adult/*.gz
+    label: "lq"
+    sample:
+      test: 1.0
+
+  - name: cnn_dailymail
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/cnn_dailymail/train.jsonl.gz
+    label: "hq"
+    sample:
+      train: 0.5
+
+  - name: cnn_dailymail
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/cnn_dailymail/validation.jsonl.gz
+    label: "hq"
+    sample:
+      dev: 0.5
+
+  - name: cnn_dailymail
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/cnn_dailymail/test.jsonl.gz
+    label: "hq"
+    sample:
+      test: 0.5
+
+  - name: bbc_news
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/bbc_news/train/*
+    label: "hq"
+    sample:
+      train: 0.5
+      test: 0.05
+      dev: 0.05
+
+  - name: multi_news
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/multi_news/train.jsonl.gz
+    label: "hq"
+    sample:
+      train: 0.5
+
+  - name: multi_news
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/multi_news/validation.jsonl.gz
+    label: "hq"
+    sample:
+      dev: 0.5
+
+  - name: multi_news
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/multi_news/test.jsonl.gz
+    label: "hq"
+    sample:
+      test: 0.5
+
+  - name: xsum
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/xsum/train.jsonl.gz
+    label: "hq"
+    sample:
+      train: 0.5
+
+  - name: xsum
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/xsum/validation.jsonl.gz
+    label: "hq"
+    sample:
+      dev: 0.5
+
+  - name: xsum
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/summarization/v1/documents/xsum/test.jsonl.gz
+    label: "hq"
+    sample:
+      test: 0.5
+
+
+  # - name: frontpage-news
+  #   documents:
+  #     - s3://ai2-llm/pretraining-data/sources/AndyReas-frontpage-news/v2/documents/hq/*.gz
+  #   label: "hq"
+  #   sample:
+  #     train: 0.5
+  #     dev: 0.025
+  #     test: 0.025
+
+  - name: recipes_nlg
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/RecipeNLG/v1/documents/*.gz
+    label: "hq"
+    sample:
+      train: 0.35
+      dev: 0.035
+      test: 0.035
+
+  - name: orca_math
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/microsoft-orca-math-word-problems-200k/v1/documents/*.gz
+    label: "hq"
+    sample:
+      train: 0.8
+      dev: 0.1
+      test: 0.1
+
+  - name: open-web-math_train
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/train/open-web-math/*.gz
+    label: "hq"
+    sample:
+      train: 1.0
+  - name: open-web-math_dev
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/valid/open-web-math/*.gz
+    label: "hq"
+    sample:
+      dev: 1.0
+  - name: open-web-math_test
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/whose_quality_corpus/v1/documents/test/open-web-math/*.gz
+    label: "hq"
+    sample:
+      test: 1.0

@@ -14,10 +14,10 @@ import regex
 from anyascii import anyascii
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
-from ..core.ft_tagger import BaseFastTextTagger, Prediction
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
+from .models.ft import FastTextPrediction, FastTextTagger
 
 with necessary.necessary("cld3", soft=True) as CLD3_AVAILABLE:
     if CLD3_AVAILABLE or TYPE_CHECKING:
@@ -102,45 +102,42 @@ class Cld2LanguageFilterParagraph(Cld2LanguageFilter):
 
 
 @TaggerRegistry.add("ft_lang_id_doc_v1")
-class FastTextAllLanguagesDocumentTagger(BaseFastTextTagger):
+class FastTextAllLanguagesDocumentTagger(FastTextTagger):
     MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
+    MODEL_MODE = "document"
 
     def __init__(self):
-        super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+        super().__init__(path=self.MODEL_PATH, mode=self.MODEL_MODE)
 
-    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[FastTextPrediction]:
         preds = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
         return [
-            Prediction(label=label.replace("__label__", ""), score=score)
+            FastTextPrediction(label=label.replace("__label__", ""), score=score)
             for label, score in sorted(zip(*preds), key=lambda x: x[1], reverse=True)
         ]
 
 
 @TaggerRegistry.add("ft_lang_id_paragraph_v1")
 class FastTextAllLanguageParagraphTagger(FastTextAllLanguagesDocumentTagger):
-    def __init__(self):
-        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
+    MODEL_MODE = "paragraph"
 
 
 @TaggerRegistry.add("ft_lang_id_en_doc_v2")
-class FastTextEnglishLanguageDocumentTagger(BaseFastTextTagger):
-    MODEL_PATH = "https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.bin"
-
-    def __init__(self):
-        super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
-
-    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+class FastTextEnglishLanguageDocumentTagger(FastTextAllLanguagesDocumentTagger):
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[FastTextPrediction]:
         pred = self.classifier.predict(text_slice.text.lower().replace("\n", " ").strip(), k=-1)
         for label, score in zip(*pred):
             if label == "__label__en":
-                return Prediction(label="en", score=score), Prediction(label="not_en", score=1.0 - score)
-        return Prediction(label="en", score=0.0), Prediction(label="not_en", score=1.0)
+                return (
+                    FastTextPrediction(label="en", score=score),
+                    FastTextPrediction(label="not_en", score=1.0 - score),
+                )
+        return FastTextPrediction(label="en", score=0.0), FastTextPrediction(label="not_en", score=1.0)
 
 
 @TaggerRegistry.add("ft_lang_id_en_paragraph_v2")
 class FastTextEnglishLanguageParagraphTagger(FastTextEnglishLanguageDocumentTagger):
-    def __init__(self):
-        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.PARAGRAPH_LEVEL_TAGGER)
+    MODEL_MODE = "paragraph"
 
 
 def add_global_language_score_from_slice_score(result: DocResult) -> DocResult:
