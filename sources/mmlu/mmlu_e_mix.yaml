@@ -11,7 +11,7 @@ streams:
       include:
         - >-
           (.attributes.mmlu_eleuther | length != 0) and
-          ((.attributes.mmlu_eleuther | map(.[2] > 0.8) | any) >= 0.8)
+          (.attributes.mmlu_eleuther | map(.[2] > 0.8) | any)
       syntax: jq
 
   - name: c4
@@ -26,7 +26,7 @@ streams:
       include:
         - >-
           (.attributes.mmlu_eleuther | length != 0) and
-          ((.attributes.mmlu_eleuther | map(.[2] > 0.8) | any) >= 0.8)
+          (.attributes.mmlu_eleuther | map(.[2] > 0.8) | any)
       syntax: jq
 
 work_dir:
