@@ -178,8 +178,6 @@ def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[Summa
             for ln in f:
                 summary = decoder.decode(ln)
                 trackers.setdefault(summary.name, _make_tracker()).add_summary(summary.to_summary_tuple())
-                print(summary.name, trackers[summary.name].total)
-                print(summary.name, trackers[summary.name].sum)
 
     # convert trackers to summaries
     summaries = [
