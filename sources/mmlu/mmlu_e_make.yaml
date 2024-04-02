@@ -1,0 +1,23 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/mmlu/v0/documents/eleuther/dev/*.gz
+  - s3://ai2-llm/pretraining-data/sources/mmlu/v0/documents/eleuther/test/*.gz
+  - s3://ai2-llm/pretraining-data/sources/mmlu/v0/documents/eleuther/validation/*.gz
+
+dedupe:
+  name: mmlu_eleuther
+  paragraphs:
+    attribute_name: mmlu_eleuther
+    by_ngram:
+      ngram_length: 13
+      stride: 1
+      overlap_threshold: 0.5
+      skip_short_paragraphs: true
+  skip_empty: true
+
+bloom_filter:
+  read_only: false
+  estimated_doc_count: 7426168
+  desired_false_positive_rate: 1e-6
+  file: s3://ai2-llm/bloom-filters/mmlu-eleuther-20240401.bin
+
+processes: 188
