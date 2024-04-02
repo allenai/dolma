@@ -1,0 +1,22 @@
+documents:
+    - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/*.gz
+
+
+dedupe:
+  name: dedupe_docs
+  documents:
+    attribute_name: bff_duplicate_docs
+    key: $.text
+  skip_empty: true
+
+bloom_filter:
+  file: /tmp/c4/bloom.bin
+  read_only: false
+  estimated_doc_count: 30000000000
+  desired_false_positive_rate: 1e-06
+
+work_dir:
+  input: /tmp/c4/input
+  output: /tmp/c4/output
+
+processes: 188
