@@ -11,6 +11,7 @@ def parse_args():
     opts = ap.parse_args()
     return opts
 
+
 def main():
     opts = parse_args()
     documents = glob_path(opts.documents)
@@ -33,3 +34,7 @@ def main():
                         text = data["text"][start:end]
                         print(f'{score}\n{text}\n----')
                 input('\n\n')
+
+
+if __name__ == '__main__':
+    main()
