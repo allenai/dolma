@@ -3,7 +3,7 @@ import multiprocessing
 import re
 from contextlib import ExitStack
 from tempfile import TemporaryDirectory
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import msgspec
 import smart_open
@@ -12,7 +12,12 @@ from msgspec.json import Decoder
 from rich.console import Console
 from rich.table import Table
 
-from .binning import BaseBucketApi, FixedBucketsValTracker, InferBucketsValTracker
+from .binning import (
+    BaseBucketApi,
+    FixedBucketsValTracker,
+    InferBucketsValTracker,
+    SummaryTuple,
+)
 from .data_types import OutputSpec
 from .errors import DolmaError
 from .parallel import BaseParallelProcessor, QueueType
@@ -36,16 +41,26 @@ class SummarySpec(msgspec.Struct):
     name: str
     counts: List[int]
     bins: List[float]
+    total: int
+    sum: Union[int, float]
 
     @classmethod
     def from_tracker(cls, name: str, tracker: "BaseBucketApi", n: int) -> "SummarySpec":
-        counts, bins = tracker.summarize(n=n)
-        return SummarySpec(name=name, counts=counts, bins=bins)
+        sm = tracker.summarize(n=n)
+        return SummarySpec(name=name, counts=sm.counts, bins=sm.bins, total=sm.total, sum=sm.sum)
 
     def to_tracker(self, tracker_type: str = "fixed", **tracker_kwargs) -> "BaseBucketApi":
         tracker = _make_tracker(type_=tracker_type, **tracker_kwargs)
-        tracker.add_many(values=self.bins, counts=self.counts)
+        tracker.add(values=self.bins, counts=self.counts)
         return tracker
+
+    def from_summary_tuple(self, summary: SummaryTuple) -> "SummarySpec":
+        return SummarySpec(
+            name=self.name, counts=summary.counts, bins=summary.bins, total=summary.total, sum=summary.sum
+        )
+
+    def to_summary_tuple(self) -> SummaryTuple:
+        return SummaryTuple(counts=self.counts, bins=self.bins, total=self.total, sum=self.sum)
 
 
 class AnalyzerProcessor(BaseParallelProcessor):
@@ -162,7 +177,7 @@ def aggregate_summaries(summaries_path: str, num_bins: int = 1000) -> List[Summa
         with smart_open.open(path, "rt") as f:
             for ln in f:
                 summary = decoder.decode(ln)
-                trackers.setdefault(summary.name, _make_tracker()).add_many(summary.bins, summary.counts)
+                trackers.setdefault(summary.name, _make_tracker()).add_summary(summary.to_summary_tuple())
 
     # convert trackers to summaries
     summaries = [
@@ -190,7 +205,9 @@ def round_values_for_visual(values: List[float], opt_sci: bool = False, max_deci
         return [f"{val:.{max_decimal}f}" for val in values]
 
 
-def visualize_summaries(summaries: List[SummarySpec], max_decimal: int = 4, num_viz_bins: int = 10):
+def visualize_summaries(
+    summaries: List[SummarySpec], max_decimal: int = 4, num_viz_bins: int = 10, show_total: bool = False
+):
     console = Console()
     console.print()
 
@@ -200,6 +217,8 @@ def visualize_summaries(summaries: List[SummarySpec], max_decimal: int = 4, num_
             name=summary.name,
             counts=(re_binned := summary.to_tracker().summarize(n=num_viz_bins, mode="count")).counts,
             bins=re_binned.bins,
+            total=summary.total,
+            sum=summary.sum,
         )
         # build the table here
         table = Table(title=short_summary.name, style="bold", min_width=len(short_summary.name))
@@ -226,6 +245,23 @@ def visualize_summaries(summaries: List[SummarySpec], max_decimal: int = 4, num_
         for value, dist, count in zip(ranges, counts_normed, short_summary.counts):
             table.add_row(value, dist, f"{count:,}")
 
+        # in the last row, we show the total sum and count.
+        # we first have to round the sum to a reasonable number of decimal points
+        if len(str(round(short_summary.sum))) > 10:
+            # regardless whether it is an integer or not, we use scientific notation for large numbers
+            tot_sum_round = f"{short_summary.sum:.2e}"
+        elif short_summary.sum == round(short_summary.sum):
+            # use comma formatting for integers
+            tot_sum_round = f"{int(short_summary.sum):,}"
+        else:
+            # use two decimal points for floats
+            tot_sum_round = f"{short_summary.sum:.2f}"
+
+        if show_total:
+            # add totals
+            table.add_row(f"{tot_sum_round}", "← sum/total →", f"{short_summary.total:,}")
+
+        # print the table, add a newline after
         console.print(table)
         console.print()
 
@@ -250,9 +286,25 @@ def create_and_run_analyzer(
     num_bins: int = 1000,
     num_processes: int = 1,
     name_regex: Optional[str] = None,
+    show_total: bool = False,
 ):
-    """ """
+    """Create and run the analyzer.
 
+    This function creates and runs an analyzer for the given attributes. It generates summaries and metadata
+    based on the provided paths and parameters.
+
+    Args:
+        attributes (List[str]): List of attributes.
+        summaries_path (Optional[str], optional): Path to the summaries directory. Defaults to None.
+        metadata_path (Optional[str], optional): Path to the metadata directory. Defaults to None.
+        report (Optional[str], optional): Path to the report directory. Defaults to None.
+        debug (bool, optional): Enable debug mode. Defaults to False.
+        seed (int, optional): Seed value for randomization. Defaults to 0.
+        num_bins (int, optional): Number of bins for analysis. Defaults to 1000.
+        num_processes (int, optional): Number of processes to use for analysis. Defaults to 1.
+        name_regex (Optional[str], optional): Regular expression for filtering attribute names. Defaults to None.
+        show_total (bool, optional): Show total summary. Defaults to False.
+    """
     # create the report directory if it doesn't exist
     if report:
         mkdir_p(report)
@@ -279,5 +331,5 @@ def create_and_run_analyzer(
         analyzer(num_bins=num_bins, name_regex=name_regex)
 
         summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=num_bins)
-        visualize_summaries(summaries=summaries)
+        visualize_summaries(summaries=summaries, show_total=show_total)
         write_output(summaries=summaries, report=report)

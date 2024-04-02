@@ -34,6 +34,10 @@ class AnalyzerConfig:
         default=0,
         help="Seed to use for reproducibility.",
     )
+    total: bool = field(
+        default=False,
+        help="Whether to include total count and sum in the report.",
+    )
     debug: bool = field(
         default=False,
         help="Whether to run in debug mode.",
@@ -79,4 +83,5 @@ class AnalyzerCli(BaseCli):
                 num_bins=parsed_config.bins,
                 num_processes=parsed_config.processes,
                 name_regex=parsed_config.regex,
+                show_total=parsed_config.total,
             )
