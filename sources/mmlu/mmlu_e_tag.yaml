@@ -1,0 +1,25 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7-dd_ngram_dp_030-qc_cc_en_bin_001/documents/cc_en_head/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7-dd_ngram_dp_030-qc_cc_en_bin_001/documents/cc_en_middle/*.gz
+  - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7-dd_ngram_dp_030-qc_cc_en_bin_001/documents/cc_en_tail/*.gz
+  - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v2-frac_005_100-qc_cc_multi_bin-paloma-rep-pii/documents/*.gz
+  - s3://ai2-llm/pretraining-data/sources/c4/v1_7-dd_ngram_dp_030-qc_cc_en_bin_001-fix/documents/*.gz
+
+dedupe:
+  name: mmlu_eleuther
+  paragraphs:
+    attribute_name: mmlu_eleuther
+    by_ngram:
+      ngram_length: 13
+      stride: 1
+      overlap_threshold: 0.5
+      skip_short_paragraphs: true
+  skip_empty: true
+
+bloom_filter:
+  read_only: true
+  estimated_doc_count: 7426168
+  desired_false_positive_rate: 1e-6
+  file: s3://ai2-llm/bloom-filters/mmlu-eleuther-20240401.bin
+
+processes: 188
