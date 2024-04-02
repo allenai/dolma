@@ -4,7 +4,17 @@ import re
 from contextlib import ExitStack
 from itertools import chain
 from tempfile import mkdtemp
-from typing import Any, Callable, Dict, Generator, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import msgspec
 import smart_open
@@ -123,14 +133,18 @@ def read_with_shuffle_ring(
             pos = random.randint(1, len(ring_reader)) - 1
 
             # read a page of data from the file at the sampled position
-            page = [ln for _ in range(page_size) if not ring_reader[pos].closed and (ln := ring_reader[pos].readline())]
+            page = [
+                ln for _ in range(page_size) if not ring_reader[pos].closed and (ln := ring_reader[pos].readline())
+            ]
 
             if len(page) < page_size:
                 # we have reached the end of the file, so we remove it from the ring
                 ring_reader.pop(pos).close()
                 if len(sources) > 0:
                     # more sources are available, so we add a new one to the ring
-                    ring_reader.insert(pos, stack.enter_context(smart_open.open(sources.pop(), mode=mode, encoding=encoding)))
+                    ring_reader.insert(
+                        pos, stack.enter_context(smart_open.open(sources.pop(), mode=mode, encoding=encoding))
+                    )
 
             # add the lines we just read to the buffer
             current_buffer.extend(page)
