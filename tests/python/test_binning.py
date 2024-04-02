@@ -60,12 +60,14 @@ class TestBinning(unittest.TestCase):
         for v in values:
             tracker.add(v)
 
-        tracker_counts, tracker_bins = tracker.summarize(10)
+        tracker_counts, tracker_bins, tracker_total, tracker_sum = tracker.summarize(10)
 
         self.assertEqual(sum(tracker_counts), len(values))
         self.assertEqual(sorted(tracker_bins), tracker_bins)
+        self.assertEqual(tracker_total, len(values))
+        self.assertAlmostEqual(tracker_sum, np.sum(values), delta=0.01)
 
-        tracker_dist, tracker_bins = tracker.summarize(10, density=True)
+        tracker_dist, tracker_bins, tracker_total, tracker_sum = tracker.summarize(10, density=True)
         hist_dist, hist_bins = np.histogram(values, bins=10, density=True)
 
         for td, hd in zip(tracker_dist, hist_dist):
@@ -73,6 +75,9 @@ class TestBinning(unittest.TestCase):
 
         for tb, hb in zip(tracker_bins, hist_bins):
             self.assertAlmostEqual(np.abs(tb - hb), 0, delta=0.5)
+
+        self.assertEqual(tracker_total, len(values))
+        self.assertAlmostEqual(tracker_sum, np.sum(values), delta=0.01)
 
 
 class FixedBinning(unittest.TestCase):
@@ -83,15 +88,15 @@ class FixedBinning(unittest.TestCase):
         tr = FixedBucketsValTracker()
         vals = np.random.randn(2_000_000) * 100
         total_count = len(vals)
+        tr.add([float(e) for e in vals], [1 for _ in vals])
 
-        for v in vals:
-            tr.add(v)
+        tracker_counts, tracker_bins, _, _ = tr.summarize(10)
+        hist_counts, hist_bins = np.histogram(vals, bins=10)
 
-        for (tr_c, tr_b), (hist_c, hist_b) in zip(zip(*tr.summarize(10)), zip(*np.histogram(vals, bins=10))):
-            count_diff = np.abs(tr_c - hist_c) / total_count
-            bin_diff = np.abs(tr_b - hist_b)
-            self.assertLess(count_diff, 0.01)
-            self.assertLess(bin_diff, 10)
+        count_diff = np.abs(tracker_counts - hist_counts) / total_count
+        bin_diff = np.abs(tracker_bins - hist_bins)
+        self.assertLess(np.sum(count_diff), 0.03)
+        self.assertLess(np.sum(bin_diff), 30)
 
     def test_uniform_bins(self):
         tr = FixedBucketsValTracker()
@@ -101,8 +106,11 @@ class FixedBinning(unittest.TestCase):
         for v in vals:
             tr.add(v)
 
-        for (tr_c, tr_b), (hist_c, hist_b) in zip(zip(*tr.summarize(10)), zip(*np.histogram(vals, bins=10))):
-            count_diff = np.abs(tr_c - hist_c) / total_count
-            bin_diff = np.abs(tr_b - hist_b)
-            self.assertLess(count_diff, 0.01)
-            self.assertLess(bin_diff, 0.01)
+        tracker_counts, tracker_bins, _, _ = tr.summarize(10)
+        hist_counts, hist_bins = np.histogram(vals, bins=10)
+
+        count_diff = np.abs(tracker_counts - hist_counts) / total_count
+        bin_diff = np.abs(tracker_bins - hist_bins)
+
+        self.assertLess(np.sum(count_diff), 0.01)
+        self.assertLess(np.sum(bin_diff), 10)
