@@ -2,4 +2,4 @@
 
 PATH=/home/vscode/.cargo/bin:$PATH
 cd dolma
-source /home/vscode/miniforge3/bin/activate &&  pip install cmake && pip install "maturin[patchelf]>=1.1,<2.0"
+source /home/vscode/miniforge3/bin/activate && pip install cmake "maturin[patchelf]>=1.1,<2.0"
