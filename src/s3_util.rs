@@ -303,7 +303,7 @@ pub fn new_client(region_name: Option<String>) -> Result<S3Client, io::Error> {
 
     let region = Region::new(
         std::env::var("REGION")
-            .unwrap_or_else(|_| region_name.unwrap_or_else(|| String::from("us-west-2"))),
+            .unwrap_or_else(|_| region_name.unwrap_or_else(|| String::from("us-east-1"))),
     );
 
     let config = rt.block_on(aws_config::from_env().region(region).load());
