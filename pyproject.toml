@@ -1,8 +1,8 @@
 [project]
 name = "dolma"
-version = "1.0.1"
+version = "1.0.3"
 description = "Data filters"
-license = {text = "Apache-2.0"}
+license = { text = "Apache-2.0" }
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = [
@@ -16,7 +16,7 @@ dependencies = [
     "msgspec>=0.14.2",
     "nltk==3.8.1",
     "omegaconf>=2.3.0",
-    "LTpycld2==0.42",     # fork of pycld2 that works on Apple Silicon
+    "LTpycld2==0.42",        # fork of pycld2 that works on Apple Silicon
     # "pycld2==0.41",
     # "pycld3==0.22",       # does not install correctly
     "platformdirs>=4.2.0",
@@ -31,7 +31,7 @@ dependencies = [
     "numpy",
     "necessary>=0.4.3",
     "langdetect>=1.0.9",
-    "charset-normalizer>=3.2.0"
+    "charset-normalizer>=3.2.0",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -112,17 +112,9 @@ dev = [
     "pytest>=5.2",
 ]
 # extension to process code
-code = [
-    "detect-secrets==1.4.0",
-    "beautifulsoup4>=4",
-    "pygments",
-    "regex"
-]
+code = ["detect-secrets==1.4.0", "beautifulsoup4>=4", "pygments", "regex"]
 # extension to detect PIIs using presidio
-pii = [
-    "presidio_analyzer==2.2.32",
-    "regex"
-]
+pii = ["presidio_analyzer==2.2.32", "regex"]
 # # extension to parse warc files
 # warc = [
 #     "warcio>=1.7.4",
@@ -196,7 +188,7 @@ target-version = ["py38", "py39", "py310", "py311", "py312"]
 
 [tool.isort]
 profile = "black"
-py_version=38
+py_version = 38
 known_first_party = ["dolma"]
 known_local_folder = ["tests", "python"]
 extend_skip_glob = [
@@ -207,7 +199,7 @@ extend_skip_glob = [
     "src/*",
     "tests/config/*",
     "tests/data/*",
-    "tests/work/*"
+    "tests/work/*",
 ]
 
 [tool.autopep8]
@@ -228,9 +220,7 @@ warn_return_any = false
 warn_unreachable = true
 show_error_codes = true
 pretty = true
-plugins = [
-    "numpy.typing.mypy_plugin"
-]
+plugins = ["numpy.typing.mypy_plugin"]
 
 [tool.mypy-tests]
 strict_optional = false

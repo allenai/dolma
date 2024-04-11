@@ -1,3 +1,4 @@
+import os
 import warnings
 
 # warning raised by pkg_resources used in a lot of google packages
@@ -12,3 +13,6 @@ for module in ("botocore", "tqdm", "dateutil"):
 
 # ignore type annotation errors in this package
 warnings.filterwarnings("ignore", message=r".*google\._upb\._message.*", category=DeprecationWarning)
+
+# prefer ipdb over pdb in tests
+os.environ.setdefault("PYTHONBREAKPOINT", "ipdb.set_trace")
