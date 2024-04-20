@@ -148,10 +148,12 @@ def get_attributes(text: str) -> GopherAttributes:
 
         attrs.word_count = word_count
         attrs.median_word_length = robust_median([len(word) for word in words])
-        attrs.symbol_to_word_ratio = sum(1 for word in words if any(s in word for s in SYMBOLS)) / word_count
-        attrs.fraction_of_words_with_alpha_character = (
-            sum(1 for word in words if any(c.isalpha() for c in word)) / word_count
+        attrs.symbol_to_word_ratio = sum(1 for word in words if any(s in word for s in SYMBOLS)) / max(
+            word_count, 1
         )
+        attrs.fraction_of_words_with_alpha_character = sum(
+            1 for word in words if any(c.isalpha() for c in word)
+        ) / max(word_count, 1)
         attrs.required_word_count = sum(1 for word in words if word in REQUIRED_ENGLISH_WORDS)
 
         all_counts = all_ngram_counts(words)
@@ -162,14 +164,13 @@ def get_attributes(text: str) -> GopherAttributes:
                 continue
             if n in count_most_common_ngrams:
                 most_common_ngram, count = ngram_counts.most_common(1)[0]
-                value = count * sum(len(w) for w in most_common_ngram) / character_count
+                value = count * sum(len(w) for w in most_common_ngram) / max(character_count, 1)
                 attrs.fraction_of_characters_in_most_common_ngram.append((n, value))
             else:
                 ng_char_count = sum(count * sum(len(w) for w in ng) for ng, count in ngram_counts.items())
-                value = (
-                    sum(count * sum(len(w) for w in ng) for ng, count in ngram_counts.items() if count > 1)
-                    / ng_char_count
-                )
+                value = sum(
+                    count * sum(len(w) for w in ng) for ng, count in ngram_counts.items() if count > 1
+                ) / max(ng_char_count, 1)
                 attrs.fraction_of_characters_in_duplicate_ngrams.append((n, value))
 
         lines = text.split("\n")
@@ -179,16 +180,16 @@ def get_attributes(text: str) -> GopherAttributes:
                 attrs.fraction_of_lines_starting_with_bullet_point += 1
             if line.endswith("\u2026"):
                 attrs.fraction_of_lines_ending_with_ellipsis += 1
-        attrs.fraction_of_lines_starting_with_bullet_point /= line_count
-        attrs.fraction_of_lines_ending_with_ellipsis /= line_count
+        attrs.fraction_of_lines_starting_with_bullet_point /= max(line_count, 1)
+        attrs.fraction_of_lines_ending_with_ellipsis /= max(line_count, 1)
 
         line_counts = Counter(lines)
-        attrs.fraction_of_duplicate_lines = (
-            sum(count for line, count in line_counts.items() if count > 1) / line_count
+        attrs.fraction_of_duplicate_lines = sum(count for line, count in line_counts.items() if count > 1) / max(
+            line_count, 1
         )
-        attrs.fraction_of_characters_in_duplicate_lines = (
-            sum(len(line) * count for line, count in line_counts.items() if count > 1) / character_count
-        )
+        attrs.fraction_of_characters_in_duplicate_lines = sum(
+            len(line) * count for line, count in line_counts.items() if count > 1
+        ) / max(character_count, 1)
     except Exception as e:
         logging.exception(f"Error processing text {e}: {text[:200]}")
 
