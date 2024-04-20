@@ -7,6 +7,7 @@ from . import (
     length,
     pii,
     punctuation,
+    quality,
     repetitions,
     sampling,
     tokenizers,

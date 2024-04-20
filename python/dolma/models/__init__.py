@@ -8,7 +8,6 @@ from .fasttext_model import (
     FastTextSupervisedCli,
     FastTextUnsupervisedCli,
 )
-from .floret_model import FloretSupervisedCli, FloretUnsupervisedCli
 
 A = TypeVar("A", bound="ArgumentParser")
 
@@ -16,8 +15,6 @@ MODELS = {
     "fasttext": FastTextSupervisedCli,
     "ft-unsupervised": FastTextUnsupervisedCli,
     "ft-quantize": FastTextQuantizeCli,
-    "floret": FloretSupervisedCli,
-    "floret-unsupervised": FloretUnsupervisedCli,
 }
 
 
