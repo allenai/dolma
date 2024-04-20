@@ -6,7 +6,7 @@ from dolma.taggers.models.ft import FastTextPrediction, FastTextTagger
 from dolma.models.word_tokenizers import TokenizerRegistry
 
 
-class BaseQualityTagger(FastTextTagger):
+class FastTextBaseQualityTagger(FastTextTagger):
     MODEL_PATH: str
     MODEL_MODE: str
     TOKENIZER_MODE: str
@@ -30,7 +30,7 @@ class BaseQualityTagger(FastTextTagger):
 
 
 @TaggerRegistry.add("cc_multi_bin")
-class Dolma17BinaryCommonCrawlWiki(BaseQualityTagger):
+class FastTextDolma17BinaryCommonCrawlWiki(FastTextBaseQualityTagger):
     MODEL_PATH = "https://dolma-artifacts.org/fasttext_models/dolma-1_7/cc_wiki_wikiref_sw_pes2o_adult_fakenews_math_books_openhermes.bin"
     MODEL_MODE = "document"
     TOKENIZER_MODE = "ws"
