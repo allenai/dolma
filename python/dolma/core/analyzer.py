@@ -205,7 +205,9 @@ def round_values_for_visual(values: List[float], opt_sci: bool = False, max_deci
         return [f"{val:.{max_decimal}f}" for val in values]
 
 
-def visualize_summaries(summaries: List[SummarySpec], max_decimal: int = 4, num_viz_bins: int = 10):
+def visualize_summaries(
+    summaries: List[SummarySpec], max_decimal: int = 4, num_viz_bins: int = 10, show_total: bool = False
+):
     console = Console()
     console.print()
 
@@ -255,8 +257,9 @@ def visualize_summaries(summaries: List[SummarySpec], max_decimal: int = 4, num_
             # use two decimal points for floats
             tot_sum_round = f"{short_summary.sum:.2f}"
 
-        # add totals
-        table.add_row(f"{tot_sum_round}", "← sum/total →", f"{short_summary.total:,}")
+        if show_total:
+            # add totals
+            table.add_row(f"{tot_sum_round}", "← sum/total →", f"{short_summary.total:,}")
 
         # print the table, add a newline after
         console.print(table)
@@ -283,9 +286,25 @@ def create_and_run_analyzer(
     num_bins: int = 1000,
     num_processes: int = 1,
     name_regex: Optional[str] = None,
+    show_total: bool = False,
 ):
-    """ """
+    """Create and run the analyzer.
 
+    This function creates and runs an analyzer for the given attributes. It generates summaries and metadata
+    based on the provided paths and parameters.
+
+    Args:
+        attributes (List[str]): List of attributes.
+        summaries_path (Optional[str], optional): Path to the summaries directory. Defaults to None.
+        metadata_path (Optional[str], optional): Path to the metadata directory. Defaults to None.
+        report (Optional[str], optional): Path to the report directory. Defaults to None.
+        debug (bool, optional): Enable debug mode. Defaults to False.
+        seed (int, optional): Seed value for randomization. Defaults to 0.
+        num_bins (int, optional): Number of bins for analysis. Defaults to 1000.
+        num_processes (int, optional): Number of processes to use for analysis. Defaults to 1.
+        name_regex (Optional[str], optional): Regular expression for filtering attribute names. Defaults to None.
+        show_total (bool, optional): Show total summary. Defaults to False.
+    """
     # create the report directory if it doesn't exist
     if report:
         mkdir_p(report)
@@ -312,5 +331,5 @@ def create_and_run_analyzer(
         analyzer(num_bins=num_bins, name_regex=name_regex)
 
         summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=num_bins)
-        visualize_summaries(summaries=summaries)
+        visualize_summaries(summaries=summaries, show_total=show_total)
         write_output(summaries=summaries, report=report)

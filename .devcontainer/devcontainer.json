@@ -1,0 +1,10 @@
+{
+	"name": "dolma-container",
+	"build": {
+		"context": "..",
+		"dockerfile": "Dockerfile"
+	},
+	"mounts": [
+		"source=${localEnv:HOME}/.aws,target=/home/vscode/.aws,type=bind,consistency=cached"
+	]
+}

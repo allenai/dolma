@@ -186,7 +186,9 @@ pub async fn object_size(
         .send()
         .await
         .map_err(|e| io::Error::new(io::ErrorKind::Other, e));
-    Ok(resp?.content_length as usize)
+    let maybe_length = resp?.content_length();
+    let size = usize::try_from(maybe_length.unwrap_or(0)).unwrap();
+    Ok(size)
 }
 
 // Expand wildcard patterns into a list of object paths
@@ -253,7 +255,6 @@ pub fn find_objects_matching_patterns(
             // containing all prefixes that do NOT end with "/"
             let to_validate_stream_inputs: Vec<String> = resp
                 .contents()
-                .unwrap_or_default()
                 .iter()
                 .filter_map(|prefix| {
                     if !prefix.key().unwrap().ends_with("/") {
@@ -300,7 +301,10 @@ pub fn new_client(region_name: Option<String>) -> Result<S3Client, io::Error> {
         .build()
         .unwrap();
 
-    let region = Region::new(region_name.unwrap_or(String::from("us-east-1")));
+    let region = Region::new(
+        std::env::var("REGION")
+            .unwrap_or_else(|_| region_name.unwrap_or_else(|| String::from("us-east-1"))),
+    );
 
     let config = rt.block_on(aws_config::from_env().region(region).load());
     let s3_client = S3Client::new(&config);
@@ -401,12 +405,27 @@ mod test {
             .build()
             .unwrap();
         let s3_client = new_client(None)?;
+        let s3_prefix = get_dolma_test_prefix();
 
-        let key = "pretraining-data/sources/openstax_paragraphs/raw/openstax_books.jsonl";
-        let resp = rt.block_on(object_size(&s3_client, "dolma-tests", key));
+        let s3_dest = "/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
+        let s3_path = s3_prefix + s3_dest;
+        let (s3_bucket, s3_key) = split_url(s3_path.as_str()).unwrap();
+
+        // upload a file to s3
+        let local_source_file = "tests/data/provided/documents/000.json.gz";
+        rt.block_on(upload_file(
+            &s3_client,
+            Path::new(local_source_file),
+            s3_bucket,
+            s3_key,
+            Some(3), // number of attempts
+        ))?;
+
+        // check the size matches expected
+        let resp = rt.block_on(object_size(&s3_client, s3_bucket, s3_key));
 
         let size = resp.unwrap();
-        assert_eq!(size, 14582478);
+        assert_eq!(size, 25985);
         Ok(())
     }
 
@@ -439,10 +458,10 @@ mod test {
         // download the file back from s3
         let local_output_file =
             "tests/work/output/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
+
         rt.block_on(download_to_file(
             &s3_client,
             s3_bucket,
-            // s3_path,
             s3_key,
             Path::new(local_output_file),
             Some(3), // number of attempts

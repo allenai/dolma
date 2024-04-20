@@ -216,10 +216,12 @@ class BaseBucketApi:
         raise NotImplementedError()
 
     @overload
-    def add(self, values: List[Union[int, float]], counts: List[int]): ...
+    def add(self, values: List[Union[int, float]], counts: List[int]):
+        pass
 
     @overload
-    def add(self, values: Union[int, float], counts: int = 1): ...
+    def add(self, values: Union[int, float], counts: int = 1):
+        pass
 
     def add(self, values: Union[List[Union[int, float]], Union[int, float]], counts: Union[List[int], int] = 1):
         if isinstance(values, list) != isinstance(counts, list):

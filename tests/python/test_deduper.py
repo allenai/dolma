@@ -6,6 +6,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Dict, List, Tuple, TypeVar, Union
 from unittest import TestCase
 
+import smart_open
 from typing_extensions import TypedDict
 
 from dolma.cli.__main__ import main
@@ -319,3 +320,110 @@ class TestDeduperPipeline(TestCasePipeline):
         self.assertEqual(v1, 1.0)
         self.assertEqual(documents[1][s2:e2], duplicate_text)
         self.assertEqual(v2, 1.0)
+
+
+class TestDeduperUnicode(TestCase):
+    def test_unicode(self):
+        paragraphs = [
+            "This is a paragraph that has no duplication.",
+            "This is a paragraph that will be duplicated.",
+            "This is a paragraph that will be duplicated.",
+            "This paragraph has emojis 😊",
+            "This paragraph has emojis 🀜 and is duplicated",
+            "This paragraph has emojis 🀜 and is duplicated",
+            "Wrapping up with one more unique paragraph.",
+        ]
+        text = "\n".join(paragraphs)
+
+        with TemporaryDirectory() as d:
+            (documents_dir := Path(d) / "documents").mkdir(exist_ok=True, parents=True)
+            with smart_open.open(f"{documents_dir}/test.jsonl.gz", "wt", encoding="utf-8") as f:
+                f.write(json.dumps({"id": "1", "text": text, "source": __file__}) + "\n")
+
+            (attributes_dir := Path(d) / "attributes").mkdir(exist_ok=True, parents=True)
+            config = {
+                "documents": [f"{documents_dir}/test.jsonl.gz"],
+                "dedupe": {
+                    "name": "dedupe_paragraphs",
+                    "paragraphs": {"attribute_name": "bff_duplicate_paragraph_spans"},
+                    "skip_empty": True,
+                },
+                "bloom_filter": {
+                    "file": f"{d}/bloom_filter",
+                    "read_only": False,
+                    "estimated_doc_count": 100,
+                    "desired_false_positive_rate": 1e-06,
+                },
+                "processes": 1,
+            }
+
+            with smart_open.open(f"{d}/config.json", "wt", encoding="utf-8") as f:
+                f.write(json.dumps(config))
+
+            main(argv=["-c", f"{d}/config.json", "dedupe"])
+
+            attributes = load_jsonl(f"{attributes_dir}/dedupe_paragraphs/test.jsonl.gz")
+
+            first_dup, second_dup = attributes[0]["attributes"]["bff_duplicate_paragraph_spans"]
+
+            self.assertEqual(text[first_dup[0] : first_dup[1]], paragraphs[2] + "\n")
+            self.assertEqual(text[second_dup[0] : second_dup[1]], paragraphs[5] + "\n")
+
+    def test_unicode_fuzzy(self):
+        paragraphs = [
+            "This is a paragraph that has no duplication.",
+            "This is a paragraph that will be duplicated.",
+            "This is a paragraph that will be duplicated.",
+            "This paragraph has emojis 😊",
+            "This paragraph has emojis 🀜 and is duplicated",
+            "This paragraph has emojis 🀜 and is duplicated",
+            "Some more info here.",
+            "Text for thought",
+            "Beeeee 🃚",
+            "Wrapping up with one more unique paragraph.",
+            "Bang!",
+        ]
+        text = "\n".join(paragraphs)
+
+        with TemporaryDirectory() as d:
+            (documents_dir := Path(d) / "documents").mkdir(exist_ok=True, parents=True)
+            with smart_open.open(f"{documents_dir}/test.jsonl.gz", "wt", encoding="utf-8") as f:
+                f.write(json.dumps({"id": "1", "text": text, "source": __file__}) + "\n")
+
+            (attributes_dir := Path(d) / "attributes").mkdir(exist_ok=True, parents=True)
+            config = {
+                "documents": [f"{documents_dir}/test.jsonl.gz"],
+                "dedupe": {
+                    "name": "dedupe_paragraphs",
+                    "paragraphs": {
+                        "attribute_name": "bff_duplicate_paragraph_spans",
+                        "by_ngram": {"ngram_length": 5, "stride": 1, "overlap_threshold": 0.0},
+                    },
+                    "skip_empty": True,
+                },
+                "bloom_filter": {
+                    "file": f"{d}/bloom_filter",
+                    "read_only": False,
+                    "estimated_doc_count": 100,
+                    "desired_false_positive_rate": 1e-06,
+                },
+                "processes": 1,
+            }
+
+            with smart_open.open(f"{d}/config.json", "wt", encoding="utf-8") as f:
+                f.write(json.dumps(config))
+
+            main(argv=["-c", f"{d}/config.json", "dedupe"])
+
+            attributes = load_jsonl(f"{attributes_dir}/dedupe_paragraphs/test.jsonl.gz")
+
+            self.assertEqual(len(attributes[0]["attributes"]["bff_duplicate_paragraph_spans"]), len(paragraphs))
+
+            for para, (start, end, _) in zip(
+                paragraphs, attributes[0]["attributes"]["bff_duplicate_paragraph_spans"]
+            ):
+                if para == paragraphs[-1]:
+                    # TODO: fix last paragraph not having a newline
+                    self.assertEqual(text[start:end], para)
+                else:
+                    self.assertEqual(text[start:end], para + "\n")
