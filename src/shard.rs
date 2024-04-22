@@ -11,6 +11,7 @@ use glob::glob;
 use rayon::prelude::*;
 use serde_json::Value;
 
+use crate::filters::DocFilter;
 use crate::s3_util;
 use crate::shard::shard_config::*;
 
@@ -23,6 +24,7 @@ pub struct Shard {
     pub filter: Option<FilterConfig>,
     pub span_replacements: Option<Vec<SpanReplacementConfig>>,
     pub discard_fields: Option<Vec<String>>,
+    pub min_text_length: Option<usize>,
 }
 
 // A collection of paths to a document file and corresponding attribute files.
@@ -78,12 +80,13 @@ impl Shard {
                         "{}/{}-{:04}.json.gz",
                         stream_config.output.path, stream_config.name, stream_shard_count
                     );
-                    let shard = Shard {
+                    let shard: Shard = Shard {
                         inputs: shard_inputs.clone(),
                         output: output.clone(),
                         filter: stream_config.filter.clone(),
                         span_replacements: stream_config.span_replacement.clone(),
                         discard_fields: stream_config.output.discard_fields.clone(),
+                        min_text_length: stream_config.output.min_text_length.clone(),
                     };
                     shards.push(shard);
                     stream_shard_count += 1;
@@ -103,6 +106,7 @@ impl Shard {
                     filter: stream_config.filter.clone(),
                     span_replacements: stream_config.span_replacement.clone(),
                     discard_fields: stream_config.output.discard_fields.clone(),
+                    min_text_length: stream_config.output.min_text_length.clone(),
                 };
                 shards.push(shard);
                 stream_shard_count += 1;
@@ -129,8 +133,9 @@ impl Shard {
             s3_client: Box::new(s3_util::new_client(None)?),
             work: work_dirs.clone(),
         };
+        let min_text_length = self.min_text_length.clone().unwrap_or(0);
 
-        let output_path = cache.prepare_output(&self.output)?;
+        let output_path: PathBuf = cache.prepare_output(&self.output)?;
         {
             let output_file = OpenOptions::new()
                 .read(false)
@@ -169,6 +174,20 @@ impl Shard {
 
                 let mut line_number = 0;
                 let mut lines_written = 0;
+
+                // using the doc filters later to determine if we should keep the document
+                let doc_filters = DocFilter::new(self.filter.as_ref())?;
+
+                // we have to create list of span replaces, potentially dealing with the fact
+                // there might not be any span replacements
+                let span_replacers = self
+                    .span_replacements
+                    .as_ref()
+                    .unwrap_or(&Vec::new())
+                    .iter()
+                    .map(|cfg| SpanReplacer::new(cfg))
+                    .collect::<Vec<SpanReplacer>>();
+
                 for line in reader.lines() {
                     match line {
                         Ok(_) => {}
@@ -260,102 +279,124 @@ impl Shard {
                         }
                     }
 
-                    let mut should_write = true;
-                    for f in self.filter.iter() {
-                        if !f
-                            .should_keep(&data)
-                            .map_err(|s| io::Error::new(io::ErrorKind::Other, s))?
-                        {
-                            should_write = false;
-                            break;
-                        }
-                    }
-                    if should_write {
-                        if self.span_replacements.is_some() {
-                            let mut replacements = self
-                                .span_replacements
-                                .as_ref()
-                                .unwrap()
-                                .iter()
-                                .flat_map(|r| r.find_spans_to_replace(&data).unwrap())
-                                .collect::<Vec<SpanReplacement>>();
-                            if !replacements.is_empty() {
-                                replacements.sort_by(|a, b| a.start.cmp(&b.start));
+                    let should_write = doc_filters
+                        .should_keep(&data)
+                        .map_err(|s| io::Error::new(io::ErrorKind::Other, s))?;
 
-                                let mut new_text = String::new();
-                                let old_text = data["text"].as_str().unwrap().to_owned();
-                                let mut span_index = 0;
-                                let mut i = 0;
-                                let mut span_start_byte_index = 0;
-                                let mut chars = old_text.char_indices();
-                                let mut byte_index_with_char = chars.next();
-                                while byte_index_with_char.is_some() {
-                                    let (byte_index, c) = byte_index_with_char.unwrap();
-                                    if span_index < replacements.len() {
-                                        let is_inside_span = i >= replacements[span_index].start
-                                            && i < replacements[span_index].end;
-                                        if i == replacements[span_index].start {
-                                            span_start_byte_index = byte_index;
-                                        }
-                                        if !is_inside_span {
-                                            if i == replacements[span_index].end {
-                                                if !replacements[span_index].replacement.is_empty()
-                                                {
-                                                    let replacement_text = replacements[span_index]
-                                                        .replacement
-                                                        .to_owned()
-                                                        .replace(
-                                                            "{}",
-                                                            old_text
-                                                                [span_start_byte_index..byte_index]
-                                                                .to_owned()
-                                                                .as_str(),
-                                                        );
-                                                    new_text.push_str(&replacement_text);
-                                                }
-                                                while span_index < replacements.len()
-                                                    && replacements[span_index].start < i
-                                                {
-                                                    span_index += 1;
-                                                }
-                                            }
-                                            if span_index < replacements.len()
-                                                && replacements[span_index].start == i
-                                            {
-                                                span_start_byte_index = byte_index;
-                                            } else {
-                                                new_text.push(c);
-                                            }
-                                        }
-                                    } else {
-                                        new_text.push(c);
+                    if should_write {
+                        // if self.span_replacements.is_some() {
+                        // let mut replacements = self
+                        //     .span_replacements
+                        //     .as_ref()
+                        //     .unwrap()
+                        //     .iter()
+                        //     .flat_map(|r| r.find_spans_to_replace(&data).unwrap())
+                        //     .collect::<Vec<SpanReplacement>>();
+
+                        let mut replacements = span_replacers
+                            .iter()
+                            .map(|replacer| replacer.find_spans_to_replace(&data))
+                            .collect::<Result<Vec<Vec<SpanReplacement>>, io::Error>>()?
+                            .into_iter()
+                            .flatten()
+                            .collect::<Vec<SpanReplacement>>();
+
+                        if !replacements.is_empty() {
+                            replacements.sort_by(|a, b| a.start.cmp(&b.start));
+
+                            let mut new_text = String::new();
+                            let old_text = data["text"].as_str().unwrap().to_owned();
+                            let mut span_index = 0;
+                            let mut i = 0;
+                            let mut span_start_byte_index = 0;
+                            let mut chars = old_text.char_indices();
+                            let mut byte_index_with_char = chars.next();
+                            while byte_index_with_char.is_some() {
+                                let (byte_index, c) = byte_index_with_char.unwrap();
+                                if span_index < replacements.len() {
+                                    let is_inside_span = i >= replacements[span_index].start
+                                        && i < replacements[span_index].end;
+                                    if i == replacements[span_index].start {
+                                        span_start_byte_index = byte_index;
                                     }
-                                    i += 1;
-                                    byte_index_with_char = chars.next();
+                                    if !is_inside_span {
+                                        if i == replacements[span_index].end {
+                                            if !replacements[span_index].replacement.is_empty() {
+                                                let replacement_text = replacements[span_index]
+                                                    .replacement
+                                                    .to_owned()
+                                                    .replace(
+                                                        "{}",
+                                                        old_text[span_start_byte_index..byte_index]
+                                                            .to_owned()
+                                                            .as_str(),
+                                                    );
+                                                new_text.push_str(&replacement_text);
+                                            }
+                                            while span_index < replacements.len()
+                                                && replacements[span_index].start < i
+                                            {
+                                                span_index += 1;
+                                            }
+                                        }
+                                        if span_index < replacements.len()
+                                            && replacements[span_index].start == i
+                                        {
+                                            span_start_byte_index = byte_index;
+                                        } else {
+                                            new_text.push(c);
+                                        }
+                                    }
+                                } else {
+                                    new_text.push(c);
                                 }
-                                if span_index < replacements.len()
-                                    && !replacements[span_index].replacement.is_empty()
-                                {
-                                    let replacement_text =
-                                        replacements[span_index].replacement.to_owned().replace(
-                                            "{}",
-                                            old_text[span_start_byte_index..].to_owned().as_str(),
-                                        );
-                                    new_text.push_str(&replacement_text);
-                                }
-                                data["text"] = Value::String(new_text);
+                                i += 1;
+                                byte_index_with_char = chars.next();
                             }
+                            if span_index < replacements.len()
+                                && !replacements[span_index].replacement.is_empty()
+                            {
+                                let replacement_text =
+                                    replacements[span_index].replacement.to_owned().replace(
+                                        "{}",
+                                        old_text[span_start_byte_index..].to_owned().as_str(),
+                                    );
+                                new_text.push_str(&replacement_text);
+                            }
+                            data["text"] = Value::String(new_text);
                         }
+                        // }
                         for f in self.discard_fields.iter().flatten() {
                             data.as_object_mut().unwrap().remove(f);
                         }
 
-                        // TODO: add check to make sure that the text field is not empty. Something like
-                        // if !data["text"].as_str().unwrap().is_empty() || skip_empty
-                        // make it configurable and off by default
-                        lines_written += 1;
-                        serde_json::to_writer(&mut writer, &data)?;
-                        writer.write_all(b"\n")?;
+                        // length of text after cleanup
+                        let curr_text_length: usize = data["text"].as_str().unwrap().trim().len();
+
+                        // If min_text_length is not set, default to 0
+                        if curr_text_length >= min_text_length {
+                            let provenance_string = Value::String(format!(
+                                "{}:{}",
+                                Path::new(&input_path.doc_path)
+                                    .file_name()
+                                    .unwrap()
+                                    .to_str()
+                                    .unwrap(),
+                                line_number
+                            ));
+
+                            // provenance string is assigned to a key of data["metadata"]
+                            // if "metadata" is a key in data; otherwise, create "metadata"
+                            // and add provenance to it
+                            if !data["metadata"].is_object() {
+                                data["metadata"] = Value::Object(serde_json::Map::new());
+                            }
+                            data["metadata"]["provenance"] = provenance_string;
+
+                            lines_written += 1;
+                            serde_json::to_writer(&mut writer, &data)?;
+                            writer.write_all(b"\n")?;
+                        }
                     }
                 }
                 cache.finalize_input(&input_path.doc_path)?;
@@ -384,9 +425,11 @@ impl Shard {
 }
 
 pub mod shard_config {
+    use crate::filters::Selector;
     use jsonpath_rust::JsonPathFinder;
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
+    use std::io;
 
     #[derive(Serialize, Deserialize, Clone)]
     pub struct StreamConfig {
@@ -407,6 +450,7 @@ pub mod shard_config {
         pub path: String,
         pub max_size_in_bytes: usize,
         pub discard_fields: Option<Vec<String>>,
+        pub min_text_length: Option<usize>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
@@ -419,13 +463,16 @@ pub mod shard_config {
     pub struct FilterConfig {
         pub include: Vec<String>,
         pub exclude: Vec<String>,
+        pub syntax: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
     pub struct SpanReplacementConfig {
         pub span: String,
-        pub min_score: f64,
+        pub min_score: Option<f64>,
+        pub max_score: Option<f64>,
         pub replacement: String,
+        pub syntax: Option<String>,
     }
 
     pub struct SpanReplacement {
@@ -434,43 +481,67 @@ pub mod shard_config {
         pub replacement: String,
     }
 
-    impl SpanReplacementConfig {
+    pub struct SpanReplacer {
+        selector: Selector,
+        min_score: f64,
+        max_score: f64,
+        replacement: String,
+    }
+
+    impl SpanReplacer {
+        // Create a new SpanReplacer from a SpanReplacementConfig
+        pub fn new(config: &SpanReplacementConfig) -> SpanReplacer {
+            SpanReplacer {
+                selector: Selector::new(&config).unwrap(),
+                min_score: config.min_score.unwrap_or(f64::NEG_INFINITY),
+                max_score: config.max_score.unwrap_or(f64::INFINITY),
+                replacement: config.replacement.clone(),
+            }
+        }
+
         // Search for the configured attribute name in the given json
         // Attribute must contains a list of [start, end, score] spans.
         // Return a list of spans to be replaced.
-        pub fn find_spans_to_replace(&self, json: &Value) -> Result<Vec<SpanReplacement>, String> {
-            let mut finder = JsonPathFinder::from_str("{}", &self.span)?;
-            finder.set_json(Box::new(json.clone()));
-            let spans = finder.find();
-            if spans == Value::Null {
-                return Ok(Vec::new());
+        pub fn find_spans_to_replace(
+            &self,
+            json: &Value,
+        ) -> Result<Vec<SpanReplacement>, io::Error> {
+            match self.selector.select(json) {
+                // we found an array of spans; we process them one by one
+                Ok(Value::Array(spans)) => {
+                    let replacements: Vec<SpanReplacement> = spans
+                        .iter()
+                        .filter_map(|span| {
+                            let span = span.as_array().unwrap();
+                            let start = span[0].as_u64().unwrap();
+                            let end = span[1].as_u64().unwrap();
+                            let score = span[2].as_f64().unwrap();
+                            if score >= self.min_score && score < self.max_score {
+                                let replacement = SpanReplacement {
+                                    start: start as usize,
+                                    end: end as usize,
+                                    replacement: self.replacement.clone(),
+                                };
+                                Some(replacement)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<SpanReplacement>>();
+                    Ok(replacements)
+                }
+                // we found no spans, so it's okay to return empty array
+                Ok(Value::Null) => Ok(Vec::new()),
+                Err(e) => Err(e),
+                Ok(spans) => Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Invalid span type: {}; expected array or null.", spans),
+                )),
             }
-            let replacements: Vec<SpanReplacement> = spans
-                .as_array()
-                .unwrap()
-                .iter()
-                .flat_map(|span| span.as_array().unwrap().iter())
-                .filter_map(|span| {
-                    let span = span.as_array().unwrap();
-                    let start = span[0].as_u64().unwrap();
-                    let end = span[1].as_u64().unwrap();
-                    let score = span[2].as_f64().unwrap();
-                    if score >= self.min_score {
-                        let replacement = SpanReplacement {
-                            start: start as usize,
-                            end: end as usize,
-                            replacement: self.replacement.clone(),
-                        };
-                        Some(replacement)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<SpanReplacement>>();
-            Ok(replacements)
         }
     }
 
+    // TODO: remove this since it's not used (we use what's in filters.rs instead)
     impl FilterConfig {
         // Check the json for the existence of any element matching the configured include/exclude patterns
         // Determine whether to keep the document based on the include/exclude matches
@@ -528,6 +599,7 @@ impl FileCache {
                 bucket,
                 key,
                 &path,
+                Some(3), // retry twice if fail
             ))?;
             Ok(path.clone())
         } else {
@@ -580,7 +652,13 @@ impl FileCache {
                 .enable_all()
                 .build()
                 .unwrap();
-            rt.block_on(s3_util::upload_file(&self.s3_client, &path, bucket, key))?;
+            rt.block_on(s3_util::upload_file(
+                &self.s3_client,
+                &path,
+                bucket,
+                key,
+                Some(3), // retry twice if fail
+            ))?;
             std::fs::remove_file(&path)?;
             {
                 // Create empty file to indicate that the shard is done.

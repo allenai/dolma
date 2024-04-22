@@ -5,20 +5,17 @@ import abc
 import argparse
 import os
 import random
+from abc import ABC
 
 import numpy as np
 import pandas as pd
 import torch
-
-from abc import ABC
-
-from torch.utils.data import DataLoader
 from accelerate import Accelerator
-from tqdm import tqdm
-
 from datasets import load_dataset
 from hf_olmo import OLMoForCausalLM, OLMoTokenizerFast
 from rouge_score import rouge_scorer
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 from transformers import DataCollatorForSeq2Seq, get_scheduler
 
 models_checkpoints = {
@@ -43,9 +40,13 @@ def get_args():
     args.add_argument("--per_device_train_batch_size", type=int, default=8, help="Batch size")
     args.add_argument("--test_per_device_train_batch_size", type=int, default=16, help="Test Batch size")
     args.add_argument("--learning_rate", type=float, default=5e-5, help="Learning rate")
-    args.add_argument("--n-solutions-sampled", default=20, type=int, help="Number of solutions to sample per example")
+    args.add_argument(
+        "--n-solutions-sampled", default=20, type=int, help="Number of solutions to sample per example"
+    )
     args.add_argument("--num-train-epochs", type=int, default=3, help="Number of training epochs")
-    args.add_argument("--warmup_ratio", type=float, default=0.03, help="Ratio of total training steps used for warmup.")
+    args.add_argument(
+        "--warmup_ratio", type=float, default=0.03, help="Ratio of total training steps used for warmup."
+    )
 
     return args.parse_args()
 
@@ -75,7 +76,9 @@ class BabiEval(Eval):
         return prompt
 
     def get_num_new_tokens(self, test_example, tokenizer):
-        # generate a bit more tokens than gold (otherwise we might think prediction is correct even though the actual prediction is longer, thus wrong) - this can be replaced with a stop token
+        # generate a bit more tokens than gold (otherwise we might think
+        # prediction is correct even though the actual prediction is longer, thus
+        # wrong) - this can be replaced with a stop token
         return len(tokenizer.encode(test_example["answer"], add_special_tokens=False)) + 5
 
     def compute_metrics(self, prediction, test_example):
@@ -84,7 +87,7 @@ class BabiEval(Eval):
 
 class WebNLGEval(Eval):
     def __init__(self):
-        self.scorer = rouge_scorer.RougeScorer(['rouge2'], use_stemmer=True)
+        self.scorer = rouge_scorer.RougeScorer(["rouge2"], use_stemmer=True)
 
     def build_prompt(self, test_example, demonstrations):
         prompt = """I will verbalize an abstract representation of a sentence in natural language. To do so, I will first show the representation and then the natural language. The text needs to include all of the information in the representation.\n\n"""
@@ -100,7 +103,8 @@ class WebNLGEval(Eval):
         return 200  # this is enough for the test set
 
     def compute_metrics(self, prediction, test_example):
-        return {"rouge2_f1": self.scorer.score(test_example["target"], prediction)['rouge2'].fmeasure}
+        return {"rouge2_f1": self.scorer.score(test_example["target"], prediction)["rouge2"].fmeasure}
+
 
 class GSM8KEval(Eval):
     def build_prompt(self, test_example, demonstrations):
@@ -110,7 +114,6 @@ class GSM8KEval(Eval):
         return 300  # this is enough for the test set
 
     def compute_metrics(self, prediction, test_example):
-
         def run_program(code):
             """Important: executing code outside a secure docker container is potentially dangerous"""
             if "import" in code:
@@ -155,7 +158,7 @@ def complete_prompt(model, tokenizer, prompt: str, new_tokens=100):
     input_ids = torch.Tensor([input_ids]).long().to(model.device)
     attention_mask = torch.ones_like(input_ids).to(model.device)
     entire_output = model.generate(input_ids, attention_mask=attention_mask, max_length=max_length)[0]
-    output_new_tokens = entire_output[len(input_ids[0]):]
+    output_new_tokens = entire_output[len(input_ids[0]) :]
     decoded = tokenizer.decode(output_new_tokens, skip_special_tokens=True).strip()
 
     return decoded
@@ -186,8 +189,9 @@ def eval_only(evaluator, model, model_name, tokenizer, train_dataset, test_datas
                 context = evaluator.build_prompt(ex, demonstrations)
                 n_new_tokens = evaluator.get_num_new_tokens(ex, tokenizer)
 
-                prediction = complete_prompt(model=model, tokenizer=tokenizer, prompt=context,
-                                             new_tokens=n_new_tokens)
+                prediction = complete_prompt(
+                    model=model, tokenizer=tokenizer, prompt=context, new_tokens=n_new_tokens
+                )
                 prediction = prediction.split("\n")[0].strip()
 
                 ex_metrics = evaluator.compute_metrics(prediction, ex)
@@ -195,30 +199,28 @@ def eval_only(evaluator, model, model_name, tokenizer, train_dataset, test_datas
                 all_metrics.append(ex_metrics)
                 avg_metrics = {key: np.mean([ex[key] for ex in all_metrics]) for key in all_metrics[0].keys()}
 
-                results.append({
-                    "model": model_name,
-                    "few_shot": few_shot,
-                    "seed": seed,
-                    "context": context,
-                    "prediction": prediction,
-                    "answer": ex.get("answer") or ex.get("target"),
-                    **ex_metrics
-                })
+                results.append(
+                    {
+                        "model": model_name,
+                        "few_shot": few_shot,
+                        "seed": seed,
+                        "context": context,
+                        "prediction": prediction,
+                        "answer": ex.get("answer") or ex.get("target"),
+                        **ex_metrics,
+                    }
+                )
                 tqdm_loop.set_description(
-                    f"model: {model_name}, few_shots: {few_shot}, seed: {seed}, " + ", ".join(
-                        [f"{key}: {value:.3f}" for key, value in avg_metrics.items()]))
+                    f"model: {model_name}, few_shots: {few_shot}, seed: {seed}, "
+                    + ", ".join([f"{key}: {value:.3f}" for key, value in avg_metrics.items()])
+                )
             except Exception as e:
                 print(e)
                 print(f"Skipping...")
                 continue
 
         avg_metrics = {key: np.mean([ex[key] for ex in all_metrics]) for key in all_metrics[0].keys()}
-        agg_results.append({
-            "model": model_name,
-            "seed": seed,
-            "few_shot": few_shot,
-            **avg_metrics
-        })
+        agg_results.append({"model": model_name, "seed": seed, "few_shot": few_shot, **avg_metrics})
 
     return results, agg_results
 
@@ -243,16 +245,22 @@ def train_and_eval_gsm8k(evaluator, model, model_name, tokenizer, test_dataset, 
         i = 0
         for eval_batch in eval_loop:
             max_length = eval_batch["input_ids"].size(1) + evaluator.get_num_new_tokens(None, tokenizer)
-            entire_output = model.generate(eval_batch["input_ids"], attention_mask=eval_batch["attention_mask"],
-                                           max_length=max_length, do_sample=True, temperature=0.7, top_p=0.6,
-                                           num_return_sequences=args.n_solutions_sampled)
-            output_new_tokens = entire_output[:, eval_batch["input_ids"].size(1):]
+            entire_output = model.generate(
+                eval_batch["input_ids"],
+                attention_mask=eval_batch["attention_mask"],
+                max_length=max_length,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.6,
+                num_return_sequences=args.n_solutions_sampled,
+            )
+            output_new_tokens = entire_output[:, eval_batch["input_ids"].size(1) :]
             decoded = tokenizer.batch_decode(output_new_tokens, skip_special_tokens=True)
 
-            for j, ex in enumerate(examples[i:i + args.test_per_device_train_batch_size]):
+            for j, ex in enumerate(examples[i : i + args.test_per_device_train_batch_size]):
                 predictions = []
                 predictions_accuracies = []
-                for prediction in decoded[j * args.n_solutions_sampled:(j + 1) * args.n_solutions_sampled]:
+                for prediction in decoded[j * args.n_solutions_sampled : (j + 1) * args.n_solutions_sampled]:
                     prediction = prediction.strip()
                     predictions.append(prediction)
 
@@ -260,14 +268,16 @@ def train_and_eval_gsm8k(evaluator, model, model_name, tokenizer, test_dataset, 
 
                     predictions_accuracies.append(accuracy)
 
-                eval_result.append({
-                    "model": model_name,
-                    "input": ex["question"],
-                    "gold": ex["answer"].split("####")[1].strip(),
-                    "prediction_0": predictions[0],
-                    "pass@k": any(predictions_accuracies),
-                    "pass_rate": np.mean(predictions_accuracies),
-                })
+                eval_result.append(
+                    {
+                        "model": model_name,
+                        "input": ex["question"],
+                        "gold": ex["answer"].split("####")[1].strip(),
+                        "prediction_0": predictions[0],
+                        "pass@k": any(predictions_accuracies),
+                        "pass_rate": np.mean(predictions_accuracies),
+                    }
+                )
                 accuracies.append(any(predictions_accuracies))
             eval_loop.set_description(f"Evaluating, accuracy: {np.mean(accuracies):.3f}")
             i += args.test_per_device_train_batch_size
@@ -280,7 +290,9 @@ def train_and_eval_gsm8k(evaluator, model, model_name, tokenizer, test_dataset, 
     np.random.seed(seed)
     random.seed(seed)
 
-    train_dataset = load_dataset("json", data_files={"train": "code_reasoning_ablations_gsm8k_code.jsonl"})["train"].map(lambda ex: {"answer": ex["python"]})
+    train_dataset = load_dataset("json", data_files={"train": "code_reasoning_ablations_gsm8k_code.jsonl"})[
+        "train"
+    ].map(lambda ex: {"answer": ex["python"]})
     train_dataset = train_dataset.shuffle(seed=seed).select(range(args.n_train_samples))
 
     accelerator = Accelerator()
@@ -289,14 +301,18 @@ def train_and_eval_gsm8k(evaluator, model, model_name, tokenizer, test_dataset, 
         "train": train_dataset.map(
             tokenize_function_train,
             batched=False,
-            remove_columns=[name for name in train_dataset.column_names if
-                            name not in ["input_ids", "labels", "attention_mask"]],
+            remove_columns=[
+                name
+                for name in train_dataset.column_names
+                if name not in ["input_ids", "labels", "attention_mask"]
+            ],
         ),
         "test": test_dataset.map(
             tokenize_function_eval,
             batched=False,
-            remove_columns=[name for name in test_dataset.column_names if
-                            name not in ["input_ids", "labels", "attention_mask"]],
+            remove_columns=[
+                name for name in test_dataset.column_names if name not in ["input_ids", "labels", "attention_mask"]
+            ],
         ),
     }
 
@@ -304,14 +320,14 @@ def train_and_eval_gsm8k(evaluator, model, model_name, tokenizer, test_dataset, 
         tokenized_datasets["train"],
         shuffle=True,
         collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest"),
-        batch_size=args.per_device_train_batch_size
+        batch_size=args.per_device_train_batch_size,
     )
 
     test_dataloader = DataLoader(
         tokenized_datasets["test"],
         shuffle=False,
         collate_fn=DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model, padding="longest"),
-        batch_size=args.test_per_device_train_batch_size
+        batch_size=args.test_per_device_train_batch_size,
     )
 
     optimizer = torch.optim.AdamW([p for n, p in model.named_parameters()], lr=args.learning_rate)
@@ -363,10 +379,7 @@ def train_and_eval_gsm8k(evaluator, model, model_name, tokenizer, test_dataset, 
     best_acc = max(acc_per_epoch)
     best_epoch = acc_per_epoch.index(best_acc)
 
-    agg_results = [{
-            "model": model_name,
-            "seed": seed,
-            "pass@k": max(acc_per_epoch)}]
+    agg_results = [{"model": model_name, "seed": seed, "pass@k": max(acc_per_epoch)}]
     return results_per_epoch[best_epoch], agg_results
 
 
@@ -375,7 +388,9 @@ def main():
 
     random.seed(args.seed)
 
-    hf_dataset = {"babi": ("Muennighoff/babi", ), "web_nlg": ("GEM/web_nlg", "en"), "gsm8k": ("gsm8k", "main")}[args.dataset]
+    hf_dataset = {"babi": ("Muennighoff/babi",), "web_nlg": ("GEM/web_nlg", "en"), "gsm8k": ("gsm8k", "main")}[
+        args.dataset
+    ]
 
     print("Loading dataset...")
     train_dataset = load_dataset(*hf_dataset)["train"]
@@ -392,10 +407,15 @@ def main():
 
     evaluator = {"babi": BabiEval, "web_nlg": WebNLGEval, "gsm8k": GSM8KEval}[args.dataset]()
 
-    checkpoints_of_evaluated_models = models_checkpoints if args.models is None else {model_name: checkpoint for
-                                                                                      model_name, checkpoint in
-                                                                                      models_checkpoints.items() if
-                                                                                      model_name in args.models}
+    checkpoints_of_evaluated_models = (
+        models_checkpoints
+        if args.models is None
+        else {
+            model_name: checkpoint
+            for model_name, checkpoint in models_checkpoints.items()
+            if model_name in args.models
+        }
+    )
 
     results, agg_results = [], []
     for model_name, checkpoint in checkpoints_of_evaluated_models.items():
@@ -409,9 +429,13 @@ def main():
 
         for seed in range(args.number_seeds):
             if args.dataset in ["babi", "web_nlg"]:
-                seed_results, seed_agg_results = eval_only(evaluator, model, model_name, tokenizer, train_dataset, test_dataset, seed, args)
+                seed_results, seed_agg_results = eval_only(
+                    evaluator, model, model_name, tokenizer, train_dataset, test_dataset, seed, args
+                )
             else:
-                seed_results, seed_agg_results = train_and_eval_gsm8k(evaluator, model, model_name, tokenizer, test_dataset, seed, args)
+                seed_results, seed_agg_results = train_and_eval_gsm8k(
+                    evaluator, model, model_name, tokenizer, test_dataset, seed, args
+                )
             results += seed_results
             agg_results += seed_agg_results
 
@@ -432,7 +456,8 @@ def main():
 
     # final results
     metric_keys = [key for key in df_agg.keys() if key not in ["model", "seed", "few_shot"]]
-    print(df.groupby(['model']).mean(numeric_only=True)[metric_keys])
+    print(df.groupby(["model"]).mean(numeric_only=True)[metric_keys])
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

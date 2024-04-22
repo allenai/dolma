@@ -1,0 +1,28 @@
+{
+  "documents": [
+    "tests/data/provided/deduper/doc*/000.json.gz"
+  ],
+  "work_dir": {
+    "input": "tests/work/temp/dedupe-para/input",
+    "output": "tests/work/temp/dedupe-para/output"
+  },
+  "dedupe": {
+    "name": "dedupe_paragraph_ngrams",
+    "paragraphs": {
+      "attribute_name": "bff_duplicate_paragraph_spans",
+      "by_ngram": {
+        "ngram_length": 6,
+        "stride": 3,
+        "overlap_threshold": 0.5
+      }
+    }
+  },
+  "bloom_filter": {
+    "file": "tests/work/para_bloom_filter.bin",
+    "size_in_bytes": 0,
+    "read_only": false,
+    "estimated_doc_count": 1000,
+    "desired_false_positive_rate": 0.001
+  },
+  "processes": 1
+}

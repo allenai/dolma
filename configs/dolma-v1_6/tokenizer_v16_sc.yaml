@@ -1,0 +1,23 @@
+destination: ${oc.env:HOME}/ai2-llm/preprocessed/olmo-mix/v1_6-decontaminated-sc/gpt-neox-olmo-dolma-v1_6
+documents:
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/books
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/c4
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/cc_en_head
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/cc_en_middle
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/cc_en_tail
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/pes2o
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/reddit
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/stack
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-decontaminated/documents/wiki
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/starcoder/v0/documents/*/*.json.gz
+
+processes: 168
+seed: 3920
+max_size: 21_474_836_480
+
+tokenizer:
+  name_or_path: allenai/gpt-neox-olmo-dolma-v1_5
+  bos_token_id: null
+  eos_token_id: 50279
+  pad_token_id: 1
+  segment_before_tokenization: false

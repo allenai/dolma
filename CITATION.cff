@@ -2,7 +2,9 @@
 # Visit https://bit.ly/cffinit to generate yours today!
 
 cff-version: 1.2.0
-title: DOLMa
+title: >-
+  Dolma: an Open Corpus of Three Trillion Tokens for
+  Language Model Pretraining Research
 message: >-
   If you use this software, please cite it using the
   metadata from this file.
@@ -11,49 +13,189 @@ authors:
   - family-names: Soldaini
     given-names: Luca
     email: lucas@allenai.org
-    affiliation: Allen Institute for AI
+    affiliation: Allen Institute For AI
     orcid: 'https://orcid.org/0000-0001-6998-9863'
-  - given-names: Kyle
-    family-names: Lo
-    email: kylel@allenai.org
-    affiliation: Allen Institute for AI
-    orcid: 'https://orcid.org/0000-0002-1804-2853'
-  - given-names: Rodney
-    family-names: Kinney
+  - family-names: Kinney
+    given-names: Rodney
     email: rodneyk@allenai.org
-    affiliation: Allen Institute for AI
-  - given-names: Aakanksha
-    family-names: Naik
-    email: aakankshan@allenai.org
-    affiliation: Allen Institute for AI
-    orcid: 'https://orcid.org/0000-0002-3673-0051'
-  - given-names: Abhilasha
-    family-names: Ravichander
-    email: abhilashar@allenai.org
-    affiliation: Allen Institute for AI
-  - given-names: Akshita
-    family-names: Bhagia
+    affiliation: Allen Institute For AI
+  - family-names: Bhagia
+    given-names: Akshita
     email: akshitab@allenai.org
-    affiliation: Allen Institute for AI
-  - given-names: Dirk
-    family-names: Groeneveld
-    email: dirkg@allenai.org
-    affiliation: Allen Institute for AI
-  - given-names: Dustin
-    family-names: Schwenk
+    affiliation: Allen Institute For AI
+  - family-names: Schwenk
+    given-names: Dustin
     email: dustins@allenai.org
-    affiliation: Allen Institute for AI
-  - given-names: Ian
-    family-names: Magnusson
-    email: ianm@allenai.org
-    affiliation: Allen Institute for AI
-  - given-names: Khyathi
-    family-names: Chandu
+    affiliation: Allen Institute For AI
+  - family-names: Atkinson
+    given-names: David
+    email: davida@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Authur
+    given-names: Russell
+    email: russell.authur@gmail.com
+    affiliation: Allen Institute For AI
+  - family-names: Bogin
+    given-names: Ben
+    email: benb@allenai.org
+    affiliation: 'Allen Institute For AI, University of Washington'
+  - family-names: Chandu
+    given-names: Khyathi
     email: khyathic@allenai.org
-    affiliation: khyathic@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Dumas
+    given-names: Jennifer
+    email: jend@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Elazar
+    given-names: Yanai
+    email: yanaiela@gmail.com
+    affiliation: 'Allen Institute For AI, University of Washington'
+  - family-names: Hofmann
+    given-names: Valentin
+    email: valentinh@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Jha
+    given-names: Ananya Harsh
+    email: ananyah@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Kumar
+    given-names: Sachin
+    email: sachink@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Lucy
+    given-names: Li
+    email: lucy3_li@berkeley.edu
+    affiliation: 'University for Berkeley, Allen Institute For AI'
+  - family-names: Lyu
+    given-names: Xinxi
+    email: alrope@cs.washington.edu
+    affiliation: Allen Institute For AI
+  - family-names: Lambert
+    given-names: Nathan
+    email: nathanl@allenai.org
+    affiliation: Allen Institute For AI
+    orcid: 'https://orcid.org/0000-0002-9997-6817'
+  - family-names: Magnusson
+    given-names: Ian
+    email: ianm@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Morrison
+    given-names: Jacob
+    email: jacobm@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Muennighoff
+    given-names: Niklas
+    email: n.muennighoff@gmail.com
+  - family-names: Naik
+    given-names: Aakanksha
+    email: aakankshan@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Nam
+    given-names: Crystal
+    email: crystaln@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Peters
+    given-names: Matthew E
+    affiliation: Spiffy AI
+    email: matt@spiffy.ai
+  - family-names: Ravichander
+    given-names: Abhilasha
+    email: abhilashar@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Richardson
+    given-names: Kyle
+    email: kyler@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Shen
+    given-names: Shannon Zejiang
+    email: zejiangshen@gmail.com
+    affiliation: Massachusetts Institute of Technology
+  - family-names: Strubell
+    given-names: Emma
+    email: strubell@cmu.edu
+    affiliation: 'Carnegie Mellon University, Allen Institute For AI'
+    orcid: 'https://orcid.org/0000-0003-2798-0726'
+  - family-names: Subramani
+    given-names: Nishant
+    email: nishant.subramani23@gmail.com
+    affiliation: 'Carnegie Mellon University, Allen Institute For AI'
+  - family-names: Tafjord
+    given-names: Oyvind
+    email: oyvindt@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Walsh
+    given-names: Pete
+    email: petew@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Zettlemoyer
+    given-names: Luke
+    email: lsz@cs.washington.edu
+    affiliation: University of Washington
+    orcid: 'https://orcid.org/0009-0008-8296-0764'
+  - family-names: Smith
+    given-names: Noah A
+    email: noah@allenai.org
+    affiliation: 'Allen Institute For AI, University of Washington'
+    orcid: 'https://orcid.org/0000-0002-2310-6380'
+  - family-names: Hajishirzi
+    given-names: Hannaneh
+    email: hannah@allenai.org
+    affiliation: 'Allen Institute For AI, University of Washington'
+    orcid: 'https://orcid.org/0000-0002-1055-6657'
+  - family-names: Beltagy
+    given-names: Iz
+    email: beltagy@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Groeneveld
+    given-names: Dirk
+    email: dirkg@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Dodge
+    given-names: Jesse
+    email: jessed@allenai.org
+    affiliation: Allen Institute For AI
+  - family-names: Lo
+    given-names: Kyle
+    email: kylel@allenai.org
+    affiliation: Allen Institute For AI
+identifiers:
+  - type: url
+    value: 'https://arxiv.org/abs/2402.00159'
+    description: arXiv
+  - type: url
+    value: 'https://huggingface.co/datasets/allenai/dolma'
+    description: Dataset
 repository-code: 'https://github.com/allenai/dolma'
 url: 'https://github.com/allenai/dolma'
 abstract: >
-  Data and tools for generating and inspecting OLMo
-  pre-training data.
+  Language models have become a critical technology to
+  tackling a wide range of natural language processing
+  tasks, yet many details about how the best-performing
+  language models were developed are not reported. In
+  particular, information about their pretraining corpora is
+  seldom discussed: commercial language models rarely
+  provide any information about their data; even open models
+  rarely release datasets they are trained on, or an exact
+  recipe to reproduce them. As a result, it is challenging
+  to conduct certain threads of language modeling research,
+  such as understanding how training data impacts model
+  capabilities and shapes their limitations. To facilitate
+  open research on language model pretraining, we release
+  Dolma, a three trillion tokens English corpus, built from
+  a diverse mixture of web content, scientific papers, code,
+  public-domain books, social media, and encyclopedic
+  materials. In addition, we open source our data curation
+  toolkit to enable further experimentation and reproduction
+  of our work. In this report, we document Dolma, including
+  its design principles, details about its construction, and
+  a summary of its contents. We interleave this report with
+  analyses and experimental results from training language
+  models on intermediate states of Dolma to share what we
+  have learned about important data curation practices,
+  including the role of content or quality filters,
+  deduplication, and multi-source mixing. Dolma has been
+  used to train OLMo, a state-of-the-art, open language
+  model and framework designed to build and study the
+  science of language modeling.
 license: Apache-2.0

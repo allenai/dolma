@@ -1,6 +1,6 @@
-# Contributing to Dolma
+# Contributing to the Dolma Toolkit
 
-We welcome contributions to Dolma. Please read this document to learn how to contribute.
+We welcome contributions to the Dolma Toolkit. Please read this document to learn how to contribute.
 
 ## Development
 

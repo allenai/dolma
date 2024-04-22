@@ -17,7 +17,6 @@ pip-wheel-metadata/
 .vscode/
 /*.iml
 
-
 # jupyter notebooks
 
 .ipynb_checkpoints

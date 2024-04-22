@@ -21,9 +21,8 @@ from typing import Any, Dict, List, Union
 
 import requests
 import smart_open
-from uniseg.wordbreak import words as uniseg_get_words
-
 from dolma.core.parallel import BaseParallelProcessor, QueueType
+from uniseg.wordbreak import words as uniseg_get_words
 
 CMD_INSTALL = "pip install git+https://github.com/santhoshtr/wikiextractor.git requests smart_open tqdm"
 

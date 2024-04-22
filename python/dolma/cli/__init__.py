@@ -4,14 +4,13 @@ Utilities to work with a OmegaConf structured config object
 Author: Luca Soldaini (@soldni)
 """
 
-
 from argparse import ArgumentParser, Namespace
 from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import Field
 from dataclasses import field as dataclass_field
 from dataclasses import is_dataclass
-from logging import warn
+from logging import warning
 from typing import (
     Any,
     Dict,
@@ -32,7 +31,7 @@ from omegaconf.errors import OmegaConfBaseException
 from rich.console import Console
 from rich.syntax import Syntax
 
-from dolma.core.errors import DolmaConfigError
+from ..core.errors import DolmaConfigError
 
 __all__ = [
     "BaseCli",
@@ -74,14 +73,13 @@ def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None
         typ_ = config.__annotations__.get(field_name, dt_field.metadata.get("type", MISSING))
 
         if typ_ is MISSING:
-            warn(f"No type annotation for field {field_name} in {config.__name__}")
+            warning(f"No type annotation for field {field_name} in {config.__name__}")
             continue
 
         # join prefix and field name
         field_name = f"{prefix}.{field_name}" if prefix else field_name
 
-        # This section here is to handle Optional[T] types
-        # We only care for cases where T is a dataclass
+        # This section here is to handle Optional[T] types; we only care for cases where T is a dataclass
         # So we first check if type is Union since Optional[T] is just a shorthand for Union[T, None]
         # and that the union contains only one non-None type
         if get_origin(typ_) == Union:
@@ -182,12 +180,14 @@ class BaseCli(Generic[D]):
     @classmethod
     def make_parser(cls, parser: A) -> A:
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        return make_parser(parser, cls.CONFIG)
+        return make_parser(parser, cls.CONFIG)  # pyright: ignore
 
     @classmethod
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
-        parsed_config = namespace_to_nested_omegaconf(args=args, structured=cls.CONFIG, config=config)
+        parsed_config = namespace_to_nested_omegaconf(
+            args=args, structured=cls.CONFIG, config=config  # pyright: ignore
+        )
         try:
             return cls.run(parsed_config)
         except OmegaConfBaseException as ex:

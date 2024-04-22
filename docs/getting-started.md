@@ -1,12 +1,12 @@
 # Getting Started
 
-To get started, please install Dolma using `pip`:
+To get started, please install Dolma toolkit using `pip`:
 
 ```shell
 pip install dolma
 ```
 
-After installing Dolma, you get access to the `dolma` command line tool. To see the available commands, use the `--help` flag.
+After installing Dolma toolkit, you get access to the `dolma` command line tool. To see the available commands, use the `--help` flag.
 
 ```plain-text
 $ dolma --help
@@ -48,7 +48,6 @@ We use [this script](https://github.com/allenai/dolma/blob/main/scripts/make_wik
 ```shell
 python scripts/make_wikipedia.py \
   --output wikipedia \
-  --languages simple \
   --date 20231001 \
   --lang simple \
   --num_processes 16
@@ -182,7 +181,7 @@ Finally, we tokenize the dataset using the `tokens` command. In this example, we
 ```shell
 dolma tokens \
     --documents "wikipedia/example0/documents/*.gz" \
-    --tokenizer_name_or_path "EleutherAI/gpt-neox-20b" \
+    --tokenizer.name_or_path "EleutherAI/gpt-neox-20b" \
     --destination wikipedia/example0/tokens \
     --processes 16
 ```

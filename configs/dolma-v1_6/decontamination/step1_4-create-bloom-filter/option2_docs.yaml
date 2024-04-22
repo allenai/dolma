@@ -1,0 +1,76 @@
+documents:
+    - ${oc.env:HOME}/perplexity/v2_small/documents/c4_100_domains/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/c4_100_domains/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/c4_en/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/c4_en/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/gab/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/gab/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/ice/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/ice/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/m2d2_s2orc/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/m2d2_s2orc/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/m2d2_wiki/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/m2d2_wiki/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/manosphere/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/manosphere/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/mc4_en/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/mc4_en/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/pile/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/pile/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/ptb/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/ptb/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/twitterAEE/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/twitterAEE/test/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/wikitext_103/val/*.gz
+    - ${oc.env:HOME}/perplexity/v2_small/documents/wikitext_103/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/4chan_meta_sep/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/4chan_meta_sep/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/c4_100_domains/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/c4_100_domains/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/c4_en/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/c4_en/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/dolma_100_subreddits/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/dolma_100_subreddits/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/dolma-v1_5/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/dolma-v1_5/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/falcon-refinedweb/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/falcon-refinedweb/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/gab/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/gab/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/ice_fixed/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/ice_fixed/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/m2d2_s2orc_unsplit/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/m2d2_s2orc_unsplit/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/m2d2_wikipedia_unsplit/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/m2d2_wikipedia_unsplit/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/manosphere_meta_sep/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/manosphere_meta_sep/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/mc4/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/mc4/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/pile/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/pile/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/ptb/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/ptb/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/redpajama/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/redpajama/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/twitterAAE_HELM_fixed/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/twitterAAE_HELM_fixed/test/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/wikitext_103/val/*.gz
+    - ${oc.env:HOME}/perplexity/v3/documents/wikitext_103/test/*.gz
+
+
+dedupe:
+  name: paloma_documents
+  documents:
+    attribute_name: bff_duplicates
+    key: $.text
+  skip_empty: true
+
+bloom_filter:
+  read_only: false
+  estimated_doc_count: 188815
+  # size_in_bytes: 104857600  # 100 MB; smaller causes too many FPs
+  desired_false_positive_rate: 1e-15
+  file: ${oc.env:HOME}/perplexity/filters/paloma_documents.bin
+
+processes: 188

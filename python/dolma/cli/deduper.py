@@ -15,8 +15,30 @@ from dolma.core.paths import glob_path, is_local
 
 
 @dataclass
+class NgramDedupeConfig:
+    ngram_length: int = field(default=0, help="Number of Uniseg segmented words per ngram")
+    stride: int = field(
+        default=0, help="Number of words to skip between ngrams. By default, consider all possible ngrams."
+    )
+    overlap_threshold: float = field(
+        default=1.0,
+        help="Fraction of ngrams that must be seen before a paragraph is considered a duplicate. By default, only full overlap is considered.",
+    )
+    skip_short_paragraphs: bool = field(
+        default=False, help="If true, paragraphs shorter than (ngram_length + stride) will be skipped."
+    )
+
+
+@dataclass
 class ParagraphDedupeConfig:
     attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
+    by_ngram: Optional[NgramDedupeConfig] = field(
+        default=None, help="Configuration for deduping paragraphs by ngram overlap"
+    )
+    paragraph_separator: Optional[str] = field(
+        default="\n",
+        help="String to use to separate paragraphs. By default, paragraphs are separated by newlines.",
+    )
 
 
 @dataclass
@@ -62,6 +84,10 @@ class DedupeConfig:
         default=None, help="Configuration for paragraph deduplication"
     )
     skip_empty: Optional[bool] = field(default=False, help="If true, empty documents/paragraphs will be skipped")
+    min_length: Optional[int] = field(default=0, help="Minimum length of documents/paragraphs to be deduplicated")
+    min_words: Optional[int] = field(
+        default=0, help="Minimum number of uniseg word units in documents/paragraphs to be deduplicated"
+    )
 
 
 @dataclass
@@ -93,8 +119,18 @@ class DeduperCli(BaseCli):
             work_dirs = stack.enter_context(make_workdirs(parsed_config.work_dir))
 
             # create a dedupe config to populate
-            dedupe_dict_config: Dict[str, Any] = {"skip_empty": parsed_config.dedupe.skip_empty}
+            dedupe_dict_config: Dict[str, Any] = {
+                "skip_empty": parsed_config.dedupe.skip_empty,
+                "min_length": parsed_config.dedupe.min_length,
+                "min_words": parsed_config.dedupe.min_words,
+            }
             try_name = parsed_config.dedupe.name if not om.is_missing(parsed_config.dedupe, "name") else None
+
+            if dedupe_dict_config["min_length"] < 0:
+                raise ValueError("min_length must be >= 0")
+
+            if dedupe_dict_config["min_words"] < 0:
+                raise ValueError("min_words must be >= 0")
 
             # add either the document or paragraph dedupe config
             if not (

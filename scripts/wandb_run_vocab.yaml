@@ -1,9 +1,13 @@
 # Run Names
-olmo-small-pile-fixed-*: The Pile
-olmo-small-rpj-*: Red Pajama
-olmo-small-dolma-*: Dolma
+olmo-small-pile-fixed-*: Pile
+olmo-small-rpj-*: Red Pajama v1
+olmo-small-dolma-*: Dolma v1.5
 olmo-small-falcon-*: RefinedWeb
+olmo-small-c4-*: C4
+olmo-small-mc4-*: mC4 (English)
 olmo-small-3T-lower-lr-tie_*: 1B Dolma Model
+
+GPT-Neox-20B*: C4 Baseline
 
 # Ablation for PII masking
 v1-small-pi-less-than-5-anonymize_*: PII Remove (>=5) + Mask (<5)
@@ -16,23 +20,42 @@ reddit-v1-ablation-pii-nsfw-toxic_filtered_*: PII + NSFW + Hate Filter
 reddit-v1-ablation-toxic-filtered_*: NSFW + Hate Filter
 
 # Data mixture
-olmo-mix-v1-sample_*: Equal Data Mix
-olmo-mix-v1-sample-mix2_*: "200% Wiki, 200% peS2o"
-olmo-mix-v1-sample-all-cc*: "Only Common Crawl (CC)"
-olmo-mix-v1-gopher-like_*: "20% Code, 60% CC, 200% peS2o"
+olmo-mix-v1-sample_*: Naïve Mix
+olmo-mix-v1-sample-mix2_*: "Reference+ Mix"
+olmo-mix-v1-sample-all-cc*: "Web Only Mix"
+olmo-mix-v1-gopher-like_*: "Gopher-like Mix"
 
 # Dedupe
 abl-cc-v2-small-dedup*: Paragraph Deduplication
 
 # Path to final cleanup
-v1-small-c4-cleaned_\d+: C4 Rules (EoS)
-v1-small-c4-filtered_\d+: C4 Rules (All)
-v1-small-gopher-filtered_\d+: Gopher Rules (All)
-v1-small-c4-cleaned-gopher-filtered_\d+: C4 (EoS), Gopher (All)
-v1-small-c4-cleaned-gopher-filtered-deduped_\d+: C4 (EoS), Gopher (All), Dedup
-
+v1-small-c4-cleaned_*: C4 Rules (EoS)
+v1-small-c4-filtered_*: C4 Rules (All)
+v1-small-gopher-filtered_*: Gopher Rules (All)
+v1-small-c4-cleaned-gopher-filtered_*: C4 (EoS), Gopher (All)
+v1-small-c4-cleaned-gopher-filtered-deduped_*: C4 (EoS), Gopher (All), Dedup
 cc_quality:
   olmo-mix-v1-sample-all-cc*: C4 (EoS), Gopher (All), Dedup, PII, Toxic
+
+cc_quality_only:
+  v1-small-c4-filtered_*: C4 All
+  v1-small-c4-cleaned_*: C4 NoPunc
+  v1-small-gopher-filtered_*: Gopher All
+  v1-small-c4-cleaned-gopher-filtered_*: C4 NoPunc + Gopher All
+
+cc_to_quality_plus_content:
+  v1-small-c4-cleaned-gopher-filtered_*: Quality Filters
+  v1-small-c4-cleaned-gopher-filtered-deduped_*: Quality Filters + Dedup
+  olmo-mix-v1-sample-all-cc*: Quality Filters + Dedup + Content Filters
+
+# Reddit ablations
+reddit_selection:
+
+    reddit-v5-ablation-filtered-gen-2_*: Atomic Content, Dedup, PII, Toxic
+    reddit-v3-ablation-base-*: Atomic Content
+    reddit-v2-ablation-base-*: Partial Threads, Dedup
+    reddit-v4-ablation-base-*: Complete Threads
+    reddit-v1-ablation-base_*: Partial Threads
 
 # Code Experiments
 stack-v2*: Dolma (Stack v2)
@@ -55,8 +78,8 @@ v1-small-nsfw-filtered-high*: NSFW Filter (High Threshold)
 
 # Training Metrics
 throughput/total_tokens: Total Tokens
-train/Perplexity: Perplexity (Train)
-train/CrossEntropyLoss: CE Loss (Train)
+train/Perplexity: Train@@@Perplexity
+train/CrossEntropyLoss: Train@@@CE
 
 
 # Downstream Metrics
@@ -89,7 +112,7 @@ eval/v3-small-dolma_common-crawl-validation/Perplexity: Dolma (Common Crawl)
 eval/v2-small-gab-validation/Perplexity: GAB
 eval/v2-small-ice-validation/Perplexity: ICE
 eval/v2-small-ptb-validation/Perplexity: Penn Treebank
-eval/v2-small-pile-validation/Perplexity: The Pile
+eval/v2-small-pile-validation/Perplexity: Pile
 eval/v2-small-4chan-validation/Perplexity: 4chan
 eval/v2-small-c4_en-validation/Perplexity: C4
 eval/v2-small-mc4_en-validation/Perplexity: mC4 (English)
@@ -105,7 +128,7 @@ eval/v2-small-c4_100_domains-validation/Perplexity: C4 (100 Domains)
 eval/gab-validation/Perplexity: GAB
 eval/ice-validation/Perplexity: ICE
 eval/ptb-validation/Perplexity: Penn Treebank
-eval/pile-validation/Perplexity: The Pile
+eval/pile-validation/Perplexity: Pile
 eval/4chan-validation/Perplexity: 4chan
 eval/c4_en-validation/Perplexity: C4
 eval/mc4_en-validation/Perplexity: mC4 (English)

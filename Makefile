@@ -31,6 +31,7 @@ publish:
 test: test-python test-rust
 
 test-python:
+	maturin develop --extras="all"
 	pytest -vsx tests/python
 	rm -rf tests/work/*
 
@@ -39,13 +40,18 @@ test-rust:
 	rm -rf tests/work/*
 
 develop:
-	maturin develop --extras=all
+	maturin develop --extras="all"
 
 style:
 	rustfmt --edition 2021 src/*.rs
-	autopep8 --in-place --recursive python/
-	isort python/
-	black python/
-	autopep8 --in-place --recursive tests/python/
-	isort tests/python/
-	black tests/python/
+	isort .
+	black .
+
+check:
+	isort --check .
+	black --check .
+	mypy tests/python/
+	mypy python/
+	flake8 tests/python/
+	flake8 python/
+	rustfmt --edition 2021 src/*.rs --check
