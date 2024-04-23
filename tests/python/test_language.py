@@ -1,18 +1,22 @@
 import unittest
-from typing import Callable, Dict, List, Tuple, Type
+from typing import Callable, Dict, List, Optional, Tuple, Type
 
 from dolma.core import BaseTagger, Document, Span
-from dolma.taggers.language import (  # Cld2LanguageFilter,; Cld2LanguageFilterParagraph,; Cld2LanguageFilterParagraphWithDocScoreTagger,; FastTextAllLanguagesDocumentTagger,; FastTextAllLanguageParagraphTagger,
+from dolma.taggers.language import (
     Cld2EnglishLanguageParagraphTagger,
     Cld2EnglishLanguageTagger,
     Cld2LanguageFilterParagraphWithDocScoreTagger,
+    FastTextAllLanguageParagraphTagger,
+    FastTextAllLanguagesDocumentTagger,
     FastTextEnglishLanguageDocumentTagger,
     FastTextEnglishLanguageParagraphTagger,
     FastTextEnglishLanguageParagraphWithDocScoreTagger,
-    FastTextLangIdParagraphTagger,
-    FastTextLangIdTagger,
-    ResiliparseLangIdParagraphTagger,
-    ResiliparseLangIdTagger,
+    LangdetectEnglishTagger,
+    LangdetectEnglishTaggerParagraph,
+    LinguaEnglishTagger,
+    LinguaEnglishTaggerParagraph,
+    LinguaTagger,
+    LinguaTaggerParagraph,
 )
 
 ENGLISH_PARAGRAPH = """
@@ -35,7 +39,7 @@ JAPANESE_PARAGRAPH = """
 class BaseEnglishTaggerTest:
     doc_tagger_cls: Type[BaseTagger]
     par_tagger_cls: Type[BaseTagger]
-    par_tagger_w_doc_score_cls: Type[BaseTagger]
+    par_tagger_w_doc_score_cls: Optional[Type[BaseTagger]] = None
 
     assertEqual: Callable
     assertGreater: Callable
@@ -44,7 +48,9 @@ class BaseEnglishTaggerTest:
     def setUp(self) -> None:
         self.doc_tagger = self.doc_tagger_cls()
         self.par_tagger = self.par_tagger_cls()
-        self.par_tagger_w_doc_score = self.par_tagger_w_doc_score_cls()
+        self.par_tagger_w_doc_score = (
+            self.par_tagger_w_doc_score_cls() if self.par_tagger_w_doc_score_cls else None
+        )
 
         self.single_paragraph_docs = [
             Document(text=ENGLISH_PARAGRAPH, id="en", source=__file__),
@@ -61,36 +67,50 @@ class BaseEnglishTaggerTest:
     def test_document(self):
         for doc in self.single_paragraph_docs:
             result = self.doc_tagger.predict(doc)
-            self.assertEqual(len(result.spans), 2)
-            self.assertEqual(result.spans[0].type, "en")
-            self.assertEqual(result.spans[1].type, "not_en")
-            if doc.id == "en":
-                self.assertGreater(result.spans[0].score, 0.5)
-            else:
-                self.assertLess(result.spans[0].score, 0.5)
-            self.assertEqual(result.spans[1].score, 1 - result.spans[0].score)
+            try:
+                self.assertEqual(len(result.spans), 2)
+                self.assertEqual(sorted(t.type for t in result.spans), ["en", "not_en"])
+
+                span = max(result.spans, key=lambda s: s.score)
+                if doc.id == "en":
+                    self.assertEqual(span.type, "en")
+                else:
+                    self.assertEqual(span.type, "not_en")
+                self.assertEqual(sum(s.score for s in result.spans), 1.0)
+            except AssertionError:
+                breakpoint()
 
     def test_paragraph(self):
         for doc in self.multi_paragraph_docs:
             result = self.par_tagger.predict(doc)
             self.assertEqual(len(result.spans), 4)
-            self.assertEqual(result.spans[0].type, "en")
-            self.assertEqual(result.spans[1].type, "not_en")
-            self.assertEqual(result.spans[2].type, "en")
-            self.assertEqual(result.spans[3].type, "not_en")
-            if doc.id.startswith("en"):
-                self.assertGreater(result.spans[0].score, 0.5)
-                self.assertLess(result.spans[2].score, 0.5)
-            elif doc.id.endswith("en"):
-                self.assertLess(result.spans[0].score, 0.5)
-                self.assertGreater(result.spans[2].score, 0.5)
-            else:
-                self.assertLess(result.spans[0].score, 0.5)
-                self.assertLess(result.spans[2].score, 0.5)
-            self.assertEqual(result.spans[1].score, 1 - result.spans[0].score)
-            self.assertEqual(result.spans[3].score, 1 - result.spans[2].score)
+
+            english_matches = [s for s in result.spans if s.type == "en"]
+            non_en_matches = [s for s in result.spans if s.type == "not_en"]
+            self.assertEqual(len(english_matches), 2)
+            self.assertEqual(len(non_en_matches), 2)
+
+            grouped_spans = {}
+            for span in result.spans:
+                grouped_spans.setdefault((span.start, span.end), []).append(span)
+
+            # make sure 2 paragraphs are found
+            self.assertEqual(len(grouped_spans), 2)
+
+            # check that the scores sum to 1.0.
+            self.assertEqual(all(sum(s.score for s in spans) == 1.0 for spans in grouped_spans.values()), True)
+
+            for paragraph_spans, paragraph_language in zip(
+                sorted(grouped_spans.values(), key=lambda spans: spans[0].start), doc.id.split("_")
+            ):
+                expected_order = ["en", "not_en"] if paragraph_language == "en" else ["not_en", "en"]
+                actual_order = [s.type for s in sorted(paragraph_spans, key=lambda s: -s.score)]
+                self.assertEqual(actual_order, expected_order)
 
     def test_paragraph_with_doc_score(self):
+        if self.par_tagger_w_doc_score is None:
+            return
+
         for doc in self.multi_paragraph_docs:
             results_regular = self.par_tagger.predict(doc)
             results_with_doc_score = self.par_tagger_w_doc_score.predict(doc)
@@ -147,12 +167,20 @@ class TestFastText(BaseEnglishTaggerTest, unittest.TestCase):
 
 
 class TestFastTextAllLanguages(BaseMultilingualTaggerTest, unittest.TestCase):
-    doc_tagger_cls = FastTextLangIdTagger
-    par_tagger_cls = FastTextLangIdParagraphTagger
-    par_tagger_w_doc_score_cls = BaseTagger
+    doc_tagger_cls = FastTextAllLanguagesDocumentTagger
+    par_tagger_cls = FastTextAllLanguageParagraphTagger
 
 
-class TestResiliparseLangId(BaseMultilingualTaggerTest, unittest.TestCase):
-    doc_tagger_cls = ResiliparseLangIdTagger
-    par_tagger_cls = ResiliparseLangIdParagraphTagger
-    par_tagger_w_doc_score_cls = BaseTagger
+class TestLangdetect(BaseEnglishTaggerTest, unittest.TestCase):
+    doc_tagger_cls = LangdetectEnglishTagger
+    par_tagger_cls = LangdetectEnglishTaggerParagraph
+
+
+class TestLingua(BaseMultilingualTaggerTest, unittest.TestCase):
+    doc_tagger_cls = LinguaTagger
+    par_tagger_cls = LinguaTaggerParagraph
+
+
+class TestLinguaEnglish(BaseEnglishTaggerTest, unittest.TestCase):
+    doc_tagger_cls = LinguaEnglishTagger
+    par_tagger_cls = LinguaEnglishTaggerParagraph

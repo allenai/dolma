@@ -8,22 +8,23 @@ import smart_open
 from charset_normalizer import detect
 from necessary import necessary
 
+from dolma.core.data_types import Document
+
 from ..core.parallel import BaseParallelProcessor, QueueType
+from ..core.taggers import BaseTagger
 from ..taggers.language import (
     BaseLanguageTagger,
-    Cld2LanguageTagger,
+    Cld2EnglishLanguageTagger,
     Cld3LanguageTagger,
-    FastTextLangIdTagger,
-    NullLanguageTagger,
-    ResiliparseLangIdTagger,
+    FastTextAllLanguagesDocumentTagger,
 )
 from .html import HTML_EXTRACTORS, BaseHtmlExtractor, UrlNormalizer
 from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
 from .types import WarcDocument, WarcDocumentMetadata, WarcDocumentMetadataLanguage
 from .utils import raise_warc_dependency_error
 
-with necessary("fastwarc", soft=True) as WARCIO_AVAILABLE:
-    if WARCIO_AVAILABLE or TYPE_CHECKING:
+with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
+    if FASTWARC_AVAILABLE or TYPE_CHECKING:
         from fastwarc.warc import ArchiveIterator, WarcRecordType
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
@@ -33,12 +34,11 @@ with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
 
 DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
 
-LANGUAGE_TAGGERS = {
-    "fasttext": FastTextLangIdTagger,
-    "resiliparse": ResiliparseLangIdTagger,
-    "cld2": Cld2LanguageTagger,
+LANGUAGE_TAGGERS: Dict[Union[str, None], Type[BaseTagger]] = {
+    "fasttext": FastTextAllLanguagesDocumentTagger,
+    "cld2": Cld2EnglishLanguageTagger,
     "cld3": Cld3LanguageTagger,
-    "null": NullLanguageTagger,
+    None: BaseLanguageTagger,
 }
 
 
@@ -47,8 +47,10 @@ class WarcProcessor(BaseParallelProcessor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        assert WARCIO_AVAILABLE, raise_warc_dependency_error("fastwarc")
-        assert DATEPARSER_AVAILABLE, raise_warc_dependency_error("dateparser")
+        if not FASTWARC_AVAILABLE:
+            raise_warc_dependency_error("fastwarc")
+        if not DATEPARSER_AVAILABLE:
+            raise_warc_dependency_error("dateparser")
 
     @staticmethod
     def _format_to_dolma_timestamp(timestamp: Optional[datetime.datetime] = None) -> str:
@@ -129,9 +131,9 @@ class WarcProcessor(BaseParallelProcessor):
         license_extractor = license_extr_cls(**license_extr_kwargs)
 
         # Create the language tagger
-        language_tagger_name: str = kwargs.get("language_tagger") or "null"
+        language_tagger_name: Union[str, None] = kwargs.get("language_tagger") or None
         language_tagger_kwargs: Dict[str, Any] = kwargs.get("language_tagger_kwargs") or {}
-        language_tagger_cls: Union[Type[BaseLanguageTagger], None] = LANGUAGE_TAGGERS.get(language_tagger_name)
+        language_tagger_cls = LANGUAGE_TAGGERS.get(language_tagger_name, None) or None
         if language_tagger_cls is None:
             raise ValueError(f"Language tagger {language_tagger_name} is not supported.")
         language_tagger = language_tagger_cls(**language_tagger_kwargs)
@@ -183,8 +185,12 @@ class WarcProcessor(BaseParallelProcessor):
 
                 # sort the predicted languages by score
                 predicted_languages = [
-                    WarcDocumentMetadataLanguage(code=lang.code, conf=lang.conf)
-                    for lang in sorted(language_tagger.predict_text(text=text), key=lambda x: x.conf, reverse=True)
+                    WarcDocumentMetadataLanguage(code=lang.type, conf=lang.score)
+                    for lang in sorted(
+                        language_tagger.predict(doc=Document(text=text, id="", source="")).spans,
+                        key=lambda x: x.score,
+                        reverse=True,
+                    )
                 ]
 
                 metadata = WarcDocumentMetadata(

@@ -24,7 +24,7 @@ AVAILABLE_COMMANDS = {
     "list": ListTaggerCli,
     "stat": AnalyzerCli,
     "tokens": TokenizerCli,
-    "warc": WarcExtractorCli
+    "warc": WarcExtractorCli,
     # following functionality is not yet implemented
     # "train-ft": None,
     # "train-lm": None,

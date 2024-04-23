@@ -7,10 +7,6 @@ from necessary import necessary
 
 from .utils import raise_warc_dependency_error
 
-with necessary("justext", soft=True) as JUSTEXT_AVAILABLE:
-    if JUSTEXT_AVAILABLE or TYPE_CHECKING:
-        from justext import justext  # noqa: F401
-
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
     if TRAFILATURA_AVAILABLE or TYPE_CHECKING:
         import trafilatura  # noqa: F401

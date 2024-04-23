@@ -164,7 +164,7 @@ class ListTaggerCli(BaseCli):
         table.add_column("name", justify="left", style="cyan")
         table.add_column("class", justify="left", style="magenta")
 
-        for tagger_name, tagger_cls in sorted(TaggerRegistry.taggers()):
+        for tagger_name, tagger_cls in sorted(TaggerRegistry.items()):
             tagger_repr = f"{tagger_cls.__module__}.{tagger_cls.__name__}"
             table.add_row(tagger_name, tagger_repr)
 
