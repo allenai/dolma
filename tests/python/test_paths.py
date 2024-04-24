@@ -12,11 +12,11 @@ from dolma.core.paths import (
     is_glob,
     join_path,
     make_relative,
+    split_ext,
     split_glob,
     split_path,
     sub_prefix,
     sub_suffix,
-    split_ext,
 )
 
 from .utils import clean_test_data, get_test_prefix, skip_aws_tests, upload_s3_prefix
@@ -299,7 +299,7 @@ class TestSplitExt(TestCase):
         prot, parts, ext = split_ext("file.txt")
 
         self.assertEqual(prot, "")
-        self.assertEqual(parts, ("file", ))
+        self.assertEqual(parts, ("file",))
         self.assertEqual(ext, ".txt")
 
         prot, parts, ext = split_ext("file.tar.gz")
