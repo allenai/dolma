@@ -41,7 +41,7 @@ class WarcExtractorConfig:
     )
     source_name: str = field(help="Name to assign to the source.")
     html_extractor: str = field(
-        default="trafilatura",
+        default="resiliparse",
         help="HTML extractor to use.",
     )
     html_kwargs: Optional[dict] = field(

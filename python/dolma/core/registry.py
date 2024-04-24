@@ -9,37 +9,31 @@ R = TypeVar("R", bound=Type)
 class BaseRegistry(Generic[T]):
     """A registry for objects."""
 
-    __all_registries: Dict[str, "BaseRegistry"] = {}
+    _registry_storage: Dict[str, T]
 
-    def __new__(cls):
-        # enforce singleton pattern for each registry
-        if cls.__name__ not in cls.__all_registries:
-            cls.__all_registries[cls.__name__] = super().__new__(cls)
-        return cls.__all_registries[cls.__name__]
-
-    def __init__(self) -> None:
-        self.__registry: Dict[str, T] = {}
+    @classmethod
+    def _get_storage(cls) -> Dict[str, T]:
+        if not hasattr(cls, "_registry_storage"):
+            cls._registry_storage = {}
+        return cls._registry_storage  # type: ignore
 
     @classmethod
     def items(cls) -> Generator[Tuple[str, T], None, None]:
         """Yield all items in the registry."""
-        registry = cls()
-        yield from ((s, registry.__registry[s]) for s in sorted(registry.__registry))
+        yield from sorted(cls._get_storage().items())
 
     @classmethod
     def add(cls, name: str) -> Callable[[R], R]:
         """Add a class to the registry."""
-        registry = cls()
 
-        def _add(tagger_self: T, tagger_name: str = name, taggers_dict: Dict[str, T] = registry.__registry) -> T:
+        def _add(tagger_self: T, tagger_name: str = name, cls_: Type[BaseRegistry] = cls) -> T:
             """Add a tagger to the registry using tagger_name as the name."""
-            if tagger_name in taggers_dict and taggers_dict[tagger_name] != tagger_self:
+            if tagger_name in cls_._get_storage() and cls_._get_storage()[tagger_name] != tagger_self:
                 if tagger_self.__module__ == "__main__":
                     return tagger_self
 
                 raise ValueError(f"Tagger {tagger_name} already exists")
-
-            taggers_dict[tagger_name] = tagger_self
+            cls_._get_storage()[tagger_name] = tagger_self
             return tagger_self
 
         return _add  # type: ignore
@@ -47,23 +41,23 @@ class BaseRegistry(Generic[T]):
     @classmethod
     def remove(cls, name: str) -> bool:
         """Remove a tagger from the registry."""
-        if name in (registry := cls()).__registry:
-            registry.__registry.pop(name)
+        if name in cls._get_storage():
+            cls._get_storage().pop(name)
             return True
         return False
 
     @classmethod
     def has(cls, name: str) -> bool:
         """Check if a tagger exists in the registry."""
-        return name in cls().__registry
+        return name in cls._get_storage()
 
     @classmethod
     def get(cls, name: str) -> T:
         """Get a tagger from the registry; raise ValueError if it doesn't exist."""
-        if name not in (registry := cls()).__registry:
-            tagger_names = ", ".join([tn for tn, _ in registry.items()])
+        if name not in cls._get_storage():
+            tagger_names = ", ".join([tn for tn, _ in cls.items()])
             raise ValueError(f"Unknown tagger {name}; available taggers: {tagger_names}")
-        return registry.__registry[name]
+        return cls._get_storage()[name]
 
 
 class TaggerRegistry(BaseRegistry[Type[BaseTagger]]):

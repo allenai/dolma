@@ -1,7 +1,7 @@
 import datetime
 import multiprocessing
 import re
-from typing import TYPE_CHECKING, Any, Dict, Optional, Type, Union
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 import msgspec
 import smart_open
@@ -11,15 +11,12 @@ from necessary import necessary
 from dolma.core.data_types import Document
 
 from ..core.parallel import BaseParallelProcessor, QueueType
-from ..core.taggers import BaseTagger
-from ..taggers.language import (
-    BaseLanguageTagger,
-    Cld2EnglishLanguageTagger,
-    Cld3LanguageTagger,
-    FastTextAllLanguagesDocumentTagger,
+from .html import UrlNormalizer
+from .registries import (
+    HtmlExtractorRegistry,
+    LanguageTaggerRegistry,
+    LicenseExtractorRegistry,
 )
-from .html import HTML_EXTRACTORS, BaseHtmlExtractor, UrlNormalizer
-from .license import LICENSE_EXTRACTORS, BaseLicenseExtractor
 from .types import WarcDocument, WarcDocumentMetadata, WarcDocumentMetadataLanguage
 from .utils import raise_warc_dependency_error
 
@@ -33,13 +30,6 @@ with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
 
 
 DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
-
-LANGUAGE_TAGGERS: Dict[Union[str, None], Type[BaseTagger]] = {
-    "fasttext": FastTextAllLanguagesDocumentTagger,
-    "cld2": Cld2EnglishLanguageTagger,
-    "cld3": Cld3LanguageTagger,
-    None: BaseLanguageTagger,
-}
 
 
 class WarcProcessor(BaseParallelProcessor):
@@ -117,26 +107,17 @@ class WarcProcessor(BaseParallelProcessor):
         # create the html extractor
         html_extractor_name: str = kwargs.get("html_extractor") or "resiliparse"
         html_extractor_kwargs: Dict[str, Any] = kwargs.get("html_kwargs") or {}
-        html_extractor_cls: Union[Type[BaseHtmlExtractor], None] = HTML_EXTRACTORS.get(html_extractor_name)
-        if html_extractor_cls is None:
-            raise ValueError(f"Extractor `{html_extractor_name}` is not supported.")
-        html_extractor = html_extractor_cls(**html_extractor_kwargs)
+        html_extractor = HtmlExtractorRegistry.get(html_extractor_name)(**html_extractor_kwargs)
 
         # create the license extractor
         license_extr_name: str = kwargs.get("license_extractor") or "null"
         license_extr_kwargs: Dict[str, Any] = kwargs.get("license_kwargs") or {}
-        license_extr_cls: Union[Type[BaseLicenseExtractor], None] = LICENSE_EXTRACTORS.get(license_extr_name)
-        if license_extr_cls is None:
-            raise ValueError(f"License extractor {license_extr_name} is not supported.")
-        license_extractor = license_extr_cls(**license_extr_kwargs)
+        license_extractor = LicenseExtractorRegistry.get(license_extr_name)(**license_extr_kwargs)
 
         # Create the language tagger
-        language_tagger_name: Union[str, None] = kwargs.get("language_tagger") or None
+        language_tagger_name: str = kwargs.get("language_tagger") or "null"
         language_tagger_kwargs: Dict[str, Any] = kwargs.get("language_tagger_kwargs") or {}
-        language_tagger_cls = LANGUAGE_TAGGERS.get(language_tagger_name, None) or None
-        if language_tagger_cls is None:
-            raise ValueError(f"Language tagger {language_tagger_name} is not supported.")
-        language_tagger = language_tagger_cls(**language_tagger_kwargs)
+        language_tagger = LanguageTaggerRegistry.get(language_tagger_name)(**language_tagger_kwargs)
 
         # url normalizer
         url_normalizer = UrlNormalizer()

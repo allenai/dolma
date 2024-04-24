@@ -6,6 +6,8 @@ from dolma.taggers.language import (
     Cld2EnglishLanguageParagraphTagger,
     Cld2EnglishLanguageTagger,
     Cld2LanguageFilterParagraphWithDocScoreTagger,
+    Cld2LanguageTagger,
+    Cld2LanguageTaggerParagraph,
     FastTextAllLanguageParagraphTagger,
     FastTextAllLanguagesDocumentTagger,
     FastTextEnglishLanguageDocumentTagger,
@@ -152,6 +154,11 @@ class BaseMultilingualTaggerTest(BaseEnglishTaggerTest):
 
     def test_paragraph_with_doc_score(self):
         return
+
+
+class TestCld2AllLanganuges(BaseMultilingualTaggerTest, unittest.TestCase):
+    doc_tagger_cls = Cld2LanguageTagger
+    par_tagger_cls = Cld2LanguageTaggerParagraph
 
 
 class TestPyCld2(BaseEnglishTaggerTest, unittest.TestCase):

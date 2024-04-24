@@ -1,10 +1,11 @@
 import logging
 import re
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Dict, Iterable, Optional, Type, Union
+from typing import TYPE_CHECKING, Iterable, Optional, Union
 
 from necessary import necessary
 
+from .registries import HtmlExtractorRegistry
 from .utils import raise_warc_dependency_error
 
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
@@ -55,6 +56,7 @@ class BaseHtmlExtractor:
         pass
 
 
+@HtmlExtractorRegistry.add("resiliparse")
 class ResiliparseHtmlExtractor(BaseHtmlExtractor):
     def __init__(
         self,
@@ -112,6 +114,7 @@ class ResiliparseHtmlExtractor(BaseHtmlExtractor):
         return text
 
 
+@HtmlExtractorRegistry.add("trafilatura")
 class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
     """An HTML extractor that uses trafilatura."""
 
@@ -165,9 +168,3 @@ class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
         )
         self._flush()
         return output or ""
-
-
-HTML_EXTRACTORS: Dict[str, Type[BaseHtmlExtractor]] = {
-    "trafilatura": TrafilaturaHtmlExtractor,
-    "resiliparse": ResiliparseHtmlExtractor,
-}

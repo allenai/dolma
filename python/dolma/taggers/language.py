@@ -89,9 +89,9 @@ class Cld3LanguageTaggerParagraph(Cld3LanguageTagger):
     PREDICT_ON_PARAGRAPHS = True
 
 
-@TaggerRegistry.add("cld2_en_doc_v2")
-class Cld2EnglishLanguageTagger(BaseLanguageTagger):
-    INCLUDE_NEGATIVE = True
+@TaggerRegistry.add("cld2_doc_v2")
+class Cld2LanguageTagger(BaseLanguageTagger):
+    INCLUDE_NEGATIVE = False
     PREDICT_ON_PARAGRAPHS = False
     RE_BAD_CHARS = regex.compile(r"[\p{Cc}\p{Cs}]+")
 
@@ -118,9 +118,24 @@ class Cld2EnglishLanguageTagger(BaseLanguageTagger):
                 break
             except cld2.error:
                 ...
+        return [(d[0][:2].lower(), d[2] / 100.0) for d in details if d[0] != "UNKNOWN_LANGUAGE" and is_reliable]
 
-        score = max([d[2] for d in details if d[0] == "ENGLISH" and is_reliable] or [0])
-        return [("en", score / 100.0)]
+
+@TaggerRegistry.add("cld2_paragraph_v2")
+class Cld2LanguageTaggerParagraph(Cld2LanguageTagger):
+    INCLUDE_NEGATIVE = False
+    PREDICT_ON_PARAGRAPHS = True
+
+
+@TaggerRegistry.add("cld2_en_doc_v2")
+class Cld2EnglishLanguageTagger(Cld2LanguageTagger):
+    INCLUDE_NEGATIVE = True
+    PREDICT_ON_PARAGRAPHS = False
+
+    def predict_text(self, text: str) -> List[Tuple[str, float]]:
+        pred = super().predict_text(text)
+        filtered_preds = [(lang, score) for lang, score in pred if lang == "en"] or [("en", 0.0)]
+        return filtered_preds  # pyright: ignore
 
 
 @TaggerRegistry.add("cld2_en_paragraph_v2")

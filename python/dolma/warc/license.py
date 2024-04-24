@@ -1,8 +1,10 @@
 from abc import abstractmethod
-from typing import Dict, Optional, Sequence, Type
+from typing import Optional, Sequence
 
 import msgspec
 import regex
+
+from .registries import LicenseExtractorRegistry
 
 
 class BaseLicenseExtractor:
@@ -23,6 +25,7 @@ class License(msgspec.Struct):
         self.conf = round(self.conf, 3)
 
 
+@LicenseExtractorRegistry.add("cc_re")
 class CreativeCommonsRegexLicenseExtractor(BaseLicenseExtractor):
     """Adapted from https://github.com/dkpro/dkpro-c4corpus/blob/da61281a8a77fad0d6a7d27c06b5e2fe3282e28f/dkpro-c4corpus-license/src/main/java/de/tudarmstadt/ukp/dkpro/c4corpus/license/impl/LicenseDetectorBasic.java"""  # noqa
 
@@ -76,6 +79,7 @@ class CreativeCommonsRegexLicenseExtractor(BaseLicenseExtractor):
         return licenses
 
 
+@LicenseExtractorRegistry.add("cc_re_fast")
 class CreativeCommonsFastRegexHtmlExtractor(CreativeCommonsRegexLicenseExtractor):
     """Adapted from https://github.com/dkpro/dkpro-c4corpus/blob/da61281a8a77fad0d6a7d27c06b5e2fe3282e28f/dkpro-c4corpus-license/src/main/java/de/tudarmstadt/ukp/dkpro/c4corpus/license/impl/FastRegexLicenceDetector.java"""  # noqa
 
@@ -85,13 +89,7 @@ class CreativeCommonsFastRegexHtmlExtractor(CreativeCommonsRegexLicenseExtractor
     )
 
 
+@LicenseExtractorRegistry.add("null")
 class NullExtractor(BaseLicenseExtractor):
     def __call__(self, content: str) -> Sequence["License"]:
         return []
-
-
-LICENSE_EXTRACTORS: Dict[str, Type[BaseLicenseExtractor]] = {
-    "cc_regex": CreativeCommonsRegexLicenseExtractor,
-    "cc_regex_fast": CreativeCommonsFastRegexHtmlExtractor,
-    "null": NullExtractor,
-}
