@@ -35,35 +35,20 @@ class WarcExtractorConfig:
         default=False,
         help="Whether to run in debug mode.",
     )
-    skip_unknown_license: bool = field(
-        default=False,
-        help="Whether to skip documents with unknown licenses.",
-    )
     source_name: str = field(help="Name to assign to the source.")
-    html_extractor: str = field(
+    skip_if_empty_heuristics: bool = field(
+        help="Whether to skip a document if all the heuristics return empty.", bool=False
+    )
+    store_html_in_metadata: bool = field(help="Whether to store the HTML content in the metadata.", bool=False)
+    linearizer: str = field(
         default="resiliparse",
-        help="HTML extractor to use.",
+        help="Name of the linearizer to use.",
     )
-    html_kwargs: Optional[dict] = field(
-        default=None,
-        help="HTML extractor arguments.",
+    extractors: List[str] = field(
+        default=[],
+        help="Name of the extractors to use.",
     )
-    license_extractor: Optional[str] = field(
-        default=None,
-        help="License extractor to use.",
-    )
-    license_kwargs: Optional[dict] = field(
-        default=None,
-        help="License extractor arguments.",
-    )
-    language_tagger: Optional[str] = field(
-        default=None,
-        help="Language tagger to use for extraction.",
-    )
-    language_kwargs: Optional[dict] = field(
-        default=None,
-        help="Language tagger arguments.",
-    )
+
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
     dryrun: bool = field(
         default=False,
@@ -113,14 +98,11 @@ class WarcExtractorCli(BaseCli):
                 num_processes=parsed_config.processes,
                 ignore_existing=parsed_config.ignore_existing,
                 debug=parsed_config.debug,
-                skip_unknown_license=parsed_config.skip_unknown_license,
                 source_name=source_name,
-                html_extractor=parsed_config.html_extractor,
-                html_kwargs=parsed_config.html_kwargs,
-                license_extractor=parsed_config.license_extractor,
-                license_kwargs=parsed_config.license_kwargs,
-                language_tagger=parsed_config.language_tagger,
-                language_kwargs=parsed_config.language_kwargs,
+                skip_if_empty_heuristics=parsed_config.skip_if_empty_heuristics,
+                store_html_in_metadata=parsed_config.store_html_in_metadata,
+                linearizer_name=parsed_config.linearizer,
+                extractors_name=parsed_config.extractors,
             )
 
 

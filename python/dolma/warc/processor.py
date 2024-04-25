@@ -1,24 +1,19 @@
 import datetime
 import multiprocessing
-import re
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 import msgspec
 import smart_open
 from charset_normalizer import detect
 from necessary import necessary
 
-from dolma.core.data_types import Document
+from dolma.core.paths import join_path, split_ext
 
 from ..core.parallel import BaseParallelProcessor, QueueType
-from .html import UrlNormalizer
-from .registries import (
-    HtmlExtractorRegistry,
-    LanguageTaggerRegistry,
-    LicenseExtractorRegistry,
-)
-from .types import WarcDocument, WarcDocumentMetadata, WarcDocumentMetadataLanguage
-from .utils import raise_warc_dependency_error
+from .documents import WarcDocument, WarcDocumentMetadata
+from .extractors import ExtractorInputType, partition_extractors
+from .registries import ExtractorRegistry, LinearizerRegistry
+from .utils import UrlNormalizer, raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
     if FASTWARC_AVAILABLE or TYPE_CHECKING:
@@ -96,8 +91,8 @@ class WarcProcessor(BaseParallelProcessor):
         encoder = msgspec.json.Encoder()
 
         # skip license if unknown
-        skip_unknown_license: bool = kwargs.get("skip_unknown_license") or False
-        keep_html_in_metadata: bool = kwargs.get("keep_html_in_metadata") or False
+        skip_if_empty_heuristics: bool = kwargs.get("skip_if_empty_heuristics") or False
+        store_html_in_metadata: bool = kwargs.get("store_html_in_metadata") or False
 
         # get the name of this source
         source_name = kwargs.get("source_name", None)
@@ -105,42 +100,38 @@ class WarcProcessor(BaseParallelProcessor):
             raise ValueError(f"source_name must be a string, not {source_name} ({type(source_name)})")
 
         # create the html extractor
-        html_extractor_name: str = kwargs.get("html_extractor") or "resiliparse"
-        html_extractor_kwargs: Dict[str, Any] = kwargs.get("html_kwargs") or {}
-        html_extractor = HtmlExtractorRegistry.get(html_extractor_name)(**html_extractor_kwargs)
+        linearizer_name: str = kwargs.get("linearizer") or "resiliparse"
+        linearizer = LinearizerRegistry.get(linearizer_name)()
 
         # create the license extractor
-        license_extr_name: str = kwargs.get("license_extractor") or "null"
-        license_extr_kwargs: Dict[str, Any] = kwargs.get("license_kwargs") or {}
-        license_extractor = LicenseExtractorRegistry.get(license_extr_name)(**license_extr_kwargs)
-
-        # Create the language tagger
-        language_tagger_name: str = kwargs.get("language_tagger") or "null"
-        language_tagger_kwargs: Dict[str, Any] = kwargs.get("language_tagger_kwargs") or {}
-        language_tagger = LanguageTaggerRegistry.get(language_tagger_name)(**language_tagger_kwargs)
+        extractors_names: List[str] = kwargs.get("extractors") or []
+        extractors = partition_extractors([ExtractorRegistry.get(name)() for name in extractors_names])
 
         # url normalizer
         url_normalizer = UrlNormalizer()
 
-        # derive the destination path if it is not provided and the source path contains a WARC extension
+        # derive the destination path if it is not provided by splitting out all the
+        # extensions, removing gz and warc, and adding jsonl.gz
         if not destination_path.endswith(".jsonl.gz"):
-            destination_path = re.sub(r"(\.warc)?\.gz$", "", destination_path) + ".jsonl.gz"
+            prot, base_dst, extension = split_ext(destination_path)
+            extension = extension.replace(".gz", "").replace(".warc", "") + ".jsonl.gz"
+            destination_path = join_path(prot, *base_dst[:-1], base_dst[-1] + extension)
 
         with smart_open.open(source_path, "rb") as warc_file, smart_open.open(
             destination_path, "wb"
         ) as output_file:
-            for record in ArchiveIterator(
-                warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo
-            ):
+            it = ArchiveIterator(warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo)
+            for record in it:
                 if record.record_type == WarcRecordType.warcinfo:
                     warc_date = record.record_date or None
                     warc_filename = record.record_id or None
                     continue
 
+                # content is in bytes here
                 content = record.reader.read()
 
-                records_cnt += 1
-
+                # handling decoding here; we try to decode the content using the charset (fast),
+                # and only if that fails, we use the chardet library to detect the encoding (slow)
                 decoded_content = ""
                 if record.http_charset:
                     try:
@@ -152,11 +143,29 @@ class WarcProcessor(BaseParallelProcessor):
                 if not decoded_content:
                     continue
 
-                licenses = license_extractor(content=decoded_content)
+                # keep track of the number of records processed
+                records_cnt += 1
 
-                if skip_unknown_license and not licenses:
+                # these are the properties extracted from the HTML content
+                properties = [
+                    prop
+                    for extractor in extractors[ExtractorInputType.HTML]
+                    for prop in extractor.extract(content=decoded_content)
+                ]
+
+                if skip_if_empty_heuristics and not properties:
                     continue
-                text = html_extractor(content=decoded_content)
+
+                text = linearizer.linearize(content=decoded_content)
+
+                # these are the properties extracted from the linearized plain text
+                properties.extend(
+                    [
+                        prop
+                        for extractor in extractors[ExtractorInputType.PLAIN]
+                        for prop in extractor.extract(content=decoded_content)
+                    ]
+                )
 
                 # metadata
                 ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
@@ -164,25 +173,14 @@ class WarcProcessor(BaseParallelProcessor):
                 target_uri = record.headers.get("WARC-Target-URI")
                 payload_id = record.headers.get("WARC-Payload-Digest").split(":")[1].lower()
 
-                # sort the predicted languages by score
-                predicted_languages = [
-                    WarcDocumentMetadataLanguage(code=lang.type, conf=lang.score)
-                    for lang in sorted(
-                        language_tagger.predict(doc=Document(text=text, id="", source="")).spans,
-                        key=lambda x: x.score,
-                        reverse=True,
-                    )
-                ]
-
                 metadata = WarcDocumentMetadata(
                     url=target_uri,
                     norm_url=url_normalizer(target_uri),
-                    content=decoded_content if keep_html_in_metadata else None,
+                    html=decoded_content if store_html_in_metadata else None,
                     warc_date=cls._format_to_dolma_timestamp(warc_date),
                     warc_filename=warc_filename or "",
                     content_type=ctype,
-                    licenses=licenses,
-                    languages=predicted_languages,
+                    properties=properties,
                 )
 
                 document = WarcDocument(

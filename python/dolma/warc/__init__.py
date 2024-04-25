@@ -5,6 +5,10 @@ from typing import List, Optional, Union
 
 from ..core.paths import glob_path
 from ..core.runtime import _make_paths_from_prefix
+
+# we need to import these to make sure they are registered
+from . import extractors  # noqa: F401  # pyright: ignore
+from . import linearizers  # noqa: F401  # pyright: ignore
 from .processor import WarcProcessor
 
 
@@ -19,13 +23,10 @@ def create_and_run_warc_pipeline(
     skip_on_failure: bool = False,
     retries_on_error: int = 0,
     num_processes: int = 1,
-    skip_unknown_license: bool = False,
-    html_extractor: str = "resiliparse",
-    html_kwargs: Optional[dict] = None,
-    license_extractor: Optional[str] = None,
-    license_kwargs: Optional[dict] = None,
-    language_tagger: Optional[str] = None,
-    language_kwargs: Optional[dict] = None,
+    skip_if_empty_heuristics: bool = False,
+    store_html_in_metadata: bool = False,
+    linearizer_name: str = "resiliparse",
+    extractors_name: Optional[List[str]] = None,
 ):
     with ExitStack() as stack:
         if metadata is None:
@@ -74,12 +75,9 @@ def create_and_run_warc_pipeline(
         )
         processor(
             skip_on_failure=skip_on_failure,
-            skip_unknown_license=skip_unknown_license,
-            html_extractor=html_extractor,
-            html_kwargs=html_kwargs,
-            license_extractor=license_extractor,
-            license_kwargs=license_kwargs,
-            language_tagger=language_tagger,
-            language_kwargs=language_kwargs,
+            skip_if_empty_heuristics=skip_if_empty_heuristics,
+            store_html_in_metadata=store_html_in_metadata,
+            linearizer=linearizer_name,
+            extractors=extractors_name,
             source_name=source_name,
         )

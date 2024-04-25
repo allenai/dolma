@@ -1,11 +1,10 @@
 import logging
-import re
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Iterable, Optional, Union
 
 from necessary import necessary
 
-from .registries import HtmlExtractorRegistry
+from .registries import LinearizerRegistry
 from .utils import raise_warc_dependency_error
 
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
@@ -20,44 +19,16 @@ with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
         from resiliparse.parse.html import HTMLTree  # noqa: F401
 
 
-with necessary("w3lib", soft=True) as W3LIB_AVAILABLE:
-    if W3LIB_AVAILABLE or TYPE_CHECKING:
-        from w3lib.url import canonicalize_url  # noqa: F401
-
-with necessary("url_normalize", soft=True) as URL_NORMALIZE_AVAILABLE:
-    if URL_NORMALIZE_AVAILABLE or TYPE_CHECKING:
-        from url_normalize import url_normalize  # noqa: F401
-
-
-class UrlNormalizer:
-    def __init__(self):
-        assert URL_NORMALIZE_AVAILABLE, raise_warc_dependency_error("url-normalize")
-        assert W3LIB_AVAILABLE, raise_warc_dependency_error("w3lib")
-        self.www_subdomain_regex = re.compile(r"^(www\d*\.)", re.IGNORECASE)
-
-    def __call__(self, url: str) -> str:
-        canonical = canonicalize_url(url)
-        normalized = str(url_normalize(canonical))
-
-        # remove the protocol
-        _, normalized = normalized.split("://", 1)
-
-        # remove the www subdomain
-        normalized = self.www_subdomain_regex.sub("", normalized)
-
-        return normalized
-
-
-class BaseHtmlExtractor:
-    """A base class for extractors. Turns HTML into text."""
+class BaseLinearizer:
+    """A base class for linearizers, i.e. tools to turn HTML into text."""
 
     @abstractmethod
-    def __call__(self, content: Union[str, bytes]) -> str:
+    def linearize(self, content: Union[str, bytes]) -> str:
         pass
 
 
-@HtmlExtractorRegistry.add("resiliparse")
-class ResiliparseHtmlExtractor(BaseHtmlExtractor):
+@LinearizerRegistry.add("resiliparse")
+class ResiliparseHtmlExtractor(BaseLinearizer):
     def __init__(
         self,
         preserve_formatting: bool = True,
@@ -82,7 +53,7 @@ class ResiliparseHtmlExtractor(BaseHtmlExtractor):
         self.comments = comments
         self.skip_elements = skip_elements
 
-    def __call__(self, content: Union[str, bytes]) -> str:
+    def linearize(self, content: Union[str, bytes]) -> str:
         #         html (HTMLTree or str) – HTML as DOM tree or Unicode string
         # preserve_formatting (bool) – preserve basic block-level formatting
         # main_content (bool) – apply simple heuristics for extracting only “main-content” elements
@@ -114,8 +85,8 @@ class ResiliparseHtmlExtractor(BaseHtmlExtractor):
         return text
 
 
-@HtmlExtractorRegistry.add("trafilatura")
-class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
+@LinearizerRegistry.add("trafilatura")
+class TrafilaturaHtmlExtractor(BaseLinearizer):
     """An HTML extractor that uses trafilatura."""
 
     def __init__(
@@ -154,7 +125,7 @@ class TrafilaturaHtmlExtractor(BaseHtmlExtractor):
             self.counter = 0
         self.counter += 1
 
-    def __call__(self, content: Union[str, bytes]) -> str:
+    def linearize(self, content: Union[str, bytes]) -> str:
         output = trafilatura.extract(
             filecontent=content,
             output_format="txt",
