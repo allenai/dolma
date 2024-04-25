@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig, make_workdirs
