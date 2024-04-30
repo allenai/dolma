@@ -20,6 +20,8 @@ class InputSpec(Struct):
     id: str
     text: str
     source: str = ""
+    created: str = ""
+    added: str = ""
     version: Optional[str] = None
 
 
@@ -27,9 +29,13 @@ class InputSpecWithMetadata(InputSpec):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class InputSpecWithMetadataAndAttributes(InputSpecWithMetadata):
+    attributes: Optional[Dict[str, List[Tuple[int, int, float]]]] = None
+
+
 class OutputSpec(Struct):
     id: str
-    attributes: Dict[str, List[Tuple[int, int, float]]]
+    attributes: Dict[str, List[TaggerOutputValueType]]
     source: Optional[str] = None
 
 
@@ -109,6 +115,59 @@ class DocumentWithMetadata(Document):
     def __str__(self) -> str:
         repr_ = super().__str__()
         return repr_.rstrip(")") + f",metadata={'...' if self.metadata else 'none'})"
+
+
+class DocumentWithMetadataAndAttributes(DocumentWithMetadata):
+    def __init__(
+        self, *args, attributes: Optional[Dict[str, List[Tuple[int, int, float]]]] = None, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.attributes = attributes or {}
+
+    @classmethod
+    def from_spec(cls, spec: InputSpecWithMetadataAndAttributes) -> "DocumentWithMetadataAndAttributes":
+        return DocumentWithMetadataAndAttributes(
+            source=spec.source,
+            version=spec.version,
+            id=spec.id,
+            text=spec.text,
+            metadata=spec.metadata,
+            attributes=spec.attributes,
+        )
+
+    @classmethod
+    def from_json(cls, d: Dict) -> "DocumentWithMetadataAndAttributes":
+        return DocumentWithMetadataAndAttributes(
+            source=d["source"],
+            version=d["version"],
+            id=d["id"],
+            text=d["text"],
+            metadata=d["metadata"],
+            attributes=d["attributes"],
+        )
+
+    def to_json(self) -> Dict:
+        return {
+            "source": self.source,
+            "version": self.version,
+            "id": self.id,
+            "text": self.text,
+            "metadata": self.metadata,
+            "attributes": self.attributes,
+        }
+
+    def to_spec(self) -> InputSpecWithMetadataAndAttributes:
+        return InputSpecWithMetadataAndAttributes(
+            source=self.source,
+            version=self.version,
+            id=self.id,
+            text=self.text,
+            metadata=self.metadata,
+            attributes=self.attributes,
+        )
+
+    def __str__(self) -> str:
+        return super().__str__().rstrip(")") + f",attributes={'...' if self.attributes else 'none'})"
 
 
 class Span:
@@ -257,3 +316,154 @@ class TextSlice:
 
     def __str__(self) -> str:
         return f"{self.__class__.__name__}(text={repr(self.text)},start={self.start},end={self.end})"
+
+
+# WORK IN PROGRESS FOR TYPES REFACTOR
+
+# class MetadataDefinition(NamedTuple):
+#     name: str
+#     type: Type
+#     default: Any
+
+
+# class DocumentSpec(msgspec.Struct):
+#     text: str
+#     id: str = ""
+#     source: str = ""
+#     version: Optional[str] = None
+
+#     # by default, metadata is not one of the parsed fields
+#     metadata: ClassVar[Optional[Dict[str, Any]]] = None
+
+#     @classmethod
+#     def add_metadata(cls, metadata_defs: Iterable[MetadataDefinition]) -> "Type[DocumentSpec]":
+#         """Create a new DocumentSpec class with metadata fields."""
+
+#         metadata_defs = sorted(metadata_defs)
+
+#         signature = md5(pickle.dumps(metadata_defs)).hexdigest()[:6]
+#         metadata_spec = msgspec.defstruct(f"MetadataSpec{signature}", metadata_defs)
+#         fields = [
+#             (
+#                 (field.name, field.type, field.default)
+#                 if field.default != msgspec.NODEFAULT
+#                 else (field.name, field.type)
+#             )
+#             for field in msgspec.structs.fields(cls)
+#         ]
+#         fields.append(("metadata", metadata_spec, None))
+#         new_spec = msgspec.defstruct(f"DocumentSpec{signature}", fields)
+
+#         return new_spec  # type: ignore
+
+
+# class _SingleAttributeSpec(msgspec.Struct):
+#     start: int
+#     end: int
+#     score: float
+
+
+# class Attribute(NamedTuple):
+#     start: int
+#     end: int
+#     type: str
+#     score: float
+#     tagger: str
+#     experiment: str
+
+#     @classmethod
+#     def new(
+#         cls, start: int, end: int, type: str, tagger: str, score: float = 1.0, experiment: Optional[str] = None
+#     ):
+#         return cls(start=start, end=end, type=type, tagger=tagger, score=score, experiment=experiment or tagger)
+
+
+# class DocumentSpec(msgspec.Struct):
+#     text: str
+#     id: str = ""
+#     source: str = ""
+#     version: Optional[str] = None
+
+#     # by default, metadata is not one of the parsed fields
+#     metadata: ClassVar[Optional[Dict[str, Any]]] = None
+
+#     @classmethod
+#     def add_metadata(cls, metadata_defs: Iterable[MetadataDefinition]) -> "Type[DocumentSpec]":
+#         """Create a new DocumentSpec class with metadata fields."""
+
+#         metadata_defs = sorted(metadata_defs)
+
+#         signature = md5(pickle.dumps(metadata_defs)).hexdigest()[:6]
+#         metadata_spec = msgspec.defstruct(f"MetadataSpec{signature}", metadata_defs)
+#         fields = [
+#             (
+#                 (field.name, field.type, field.default)
+#                 if field.default != msgspec.NODEFAULT
+#                 else (field.name, field.type)
+#             )
+#             for field in msgspec.structs.fields(cls)
+#         ]
+#         fields.append(("metadata", metadata_spec, None))
+#         new_spec = msgspec.defstruct(f"DocumentSpec{signature}", fields)
+
+#         return new_spec  # type: ignore
+
+
+# class _SingleAttributeSpec(msgspec.Struct):
+#     start: int
+#     end: int
+#     score: float
+
+
+# class Attribute(NamedTuple):
+#     start: int
+#     end: int
+#     type: str
+#     score: float
+#     tagger: str
+#     experiment: str
+
+#     @classmethod
+#     def new(
+#         cls, start: int, end: int, type: str, tagger: str, score: float = 1.0, experiment: Optional[str] = None
+#     ):
+#         return cls(start=start, end=end, type=type, tagger=tagger, score=score, experiment=experiment or tagger)
+
+
+# class AttributesSpec(msgspec.Struct):
+#     id: str
+#     attributes: Dict[str, List[_SingleAttributeSpec]]
+#     source: Optional[str] = None
+
+#     def add(self, *attributes: Attribute):
+#         for attribute in attributes:
+#             key = f"{attribute.experiment}__{attribute.tagger}__{attribute.type}"
+#             val = _SingleAttributeSpec(start=attribute.start, end=attribute.end, score=attribute.score)
+#             self.attributes.setdefault(key, []).append(val)
+
+
+# if __name__ == "__main__":
+#     samples = [
+#         {"text": "Hello, world!", "id": "1", "metadata": {"lang": "en", "url": "example.com"}},
+#         {"text": "Goodbye, world!", "id": "2", "metadata": {"lang": "en", "url": "good.com"}},
+#         {"text": "No metadata", "id": "3"},
+#         {"text": "Only language", "id": "4", "metadata": {"lang": "en"}},
+#     ]
+
+#     import msgspec
+#     import json
+
+#     parser = msgspec.json.Decoder(DocumentSpec)
+
+#     for sample in samples:
+#         as_json = json.dumps(sample)
+#         out = parser.decode(as_json)
+#         print(out)
+
+#     metadata_spec = DocumentSpec.add_metadata([MetadataDefinition("lang", str, ""), MetadataDefinition("url", str, "")])
+#     parser = msgspec.json.Decoder(metadata_spec)
+
+#     for sample in samples:
+#         as_json = json.dumps(sample)
+#         out = parser.decode(as_json)
+#         print(out)

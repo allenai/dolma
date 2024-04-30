@@ -27,10 +27,14 @@ class UrlNormalizer:
     def __init__(self):
         assert URL_NORMALIZE_AVAILABLE, raise_warc_dependency_error("url-normalize")
         assert W3LIB_AVAILABLE, raise_warc_dependency_error("w3lib")
-        self.www_subdomain_regex = re.compile(r"^(www\d*\.)", re.IGNORECASE)
+        self.www_subdomain_regex = re.compile(r"(^(www\d*\.))|(/+$)", re.IGNORECASE)
 
     def __call__(self, url: str) -> str:
-        canonical = canonicalize_url(url)
+        # remove leading '<' or quotes and trailing '>', quotes, or slashes
+        clean_url = re.sub(r"(^['\"<]+)|([/'\">]+$)", "", url)
+
+        # canonicalize the URL
+        canonical = canonicalize_url(clean_url)
         normalized = str(url_normalize(canonical))
 
         # remove the protocol

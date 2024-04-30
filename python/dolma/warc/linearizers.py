@@ -1,10 +1,10 @@
 import logging
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Iterable, Optional, Union
+from typing import TYPE_CHECKING, Iterable, Optional, Type, Union
 
 from necessary import necessary
 
-from .registries import LinearizerRegistry
+from ..core.registry import BaseRegistry
 from .utils import raise_warc_dependency_error
 
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
@@ -25,6 +25,10 @@ class BaseLinearizer:
     @abstractmethod
     def linearize(self, content: Union[str, bytes]) -> str:
         pass
+
+
+class LinearizerRegistry(BaseRegistry[Type[BaseLinearizer]]):
+    pass
 
 
 @LinearizerRegistry.add("resiliparse")

@@ -1,5 +1,6 @@
 import datetime
 import multiprocessing
+from itertools import chain
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 import msgspec
@@ -7,12 +8,15 @@ import smart_open
 from charset_normalizer import detect
 from necessary import necessary
 
-from dolma.core.paths import join_path, split_ext
-
+from ..core.data_types import InputSpecWithMetadataAndAttributes
 from ..core.parallel import BaseParallelProcessor, QueueType
-from .documents import WarcDocument, WarcDocumentMetadata
-from .extractors import ExtractorInputType, partition_extractors
-from .registries import ExtractorRegistry, LinearizerRegistry
+from ..core.paths import join_path, split_ext
+from ..core.registry import TaggerRegistry
+from ..core.utils import make_variable_name
+
+# from .documents import WarcDocument, WarcDocumentMetadata
+# from .filters import FilterInputType, partition_extractors
+from .linearizers import LinearizerRegistry
 from .utils import UrlNormalizer, raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
@@ -90,25 +94,35 @@ class WarcProcessor(BaseParallelProcessor):
         # encoder
         encoder = msgspec.json.Encoder()
 
-        # skip license if unknown
-        skip_if_empty_heuristics: bool = kwargs.get("skip_if_empty_heuristics") or False
-        store_html_in_metadata: bool = kwargs.get("store_html_in_metadata") or False
-
-        # get the name of this source
+        # get the name and version of this source
         source_name = kwargs.get("source_name", None)
+        source_version = kwargs.get("source_version", "v0")
         if not isinstance(source_name, str):
             raise ValueError(f"source_name must be a string, not {source_name} ({type(source_name)})")
+
+        # create any tagger that runs before html extraction
+        pre_taggers_names: List[str] = kwargs.get("pre_taggers") or []
+        pre_taggers = {make_variable_name(name): TaggerRegistry.get(name)() for name in pre_taggers_names}
 
         # create the html extractor
         linearizer_name: str = kwargs.get("linearizer") or "resiliparse"
         linearizer = LinearizerRegistry.get(linearizer_name)()
 
-        # create the license extractor
-        extractors_names: List[str] = kwargs.get("extractors") or []
-        extractors = partition_extractors([ExtractorRegistry.get(name)() for name in extractors_names])
-
         # url normalizer
         url_normalizer = UrlNormalizer()
+
+        # create any tagger that runs after html extraction
+        post_taggers_names: List[str] = kwargs.get("post_taggers") or []
+        post_taggers = {make_variable_name(name): TaggerRegistry.get(name)() for name in post_taggers_names}
+
+        # whether to store html in metadata after extraction
+        store_html_in_metadata: bool = kwargs.get("store_html_in_metadata") or False
+
+        # whether to skip this document if pre-taggers find nothing
+        skip_no_pre_taggers: bool = kwargs.get("skip_no_pre_taggers") or False
+
+        # whether to skip this document if post-taggers find nothing
+        skip_no_post_taggers: bool = kwargs.get("skip_no_post_taggers") or False
 
         # derive the destination path if it is not provided by splitting out all the
         # extensions, removing gz and warc, and adding jsonl.gz
@@ -143,56 +157,53 @@ class WarcProcessor(BaseParallelProcessor):
                 if not decoded_content:
                     continue
 
-                # keep track of the number of records processed
-                records_cnt += 1
-
-                # these are the properties extracted from the HTML content
-                properties = [
-                    prop
-                    for extractor in extractors[ExtractorInputType.HTML]
-                    for prop in extractor.extract(content=decoded_content)
-                ]
-
-                if skip_if_empty_heuristics and not properties:
-                    continue
-
-                text = linearizer.linearize(content=decoded_content)
-
-                # these are the properties extracted from the linearized plain text
-                properties.extend(
-                    [
-                        prop
-                        for extractor in extractors[ExtractorInputType.PLAIN]
-                        for prop in extractor.extract(content=decoded_content)
-                    ]
-                )
-
                 # metadata
                 ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
                 date = cls._parse_warc_timestamp(record.http_headers.get("Date"))
                 target_uri = record.headers.get("WARC-Target-URI")
                 payload_id = record.headers.get("WARC-Payload-Digest").split(":")[1].lower()
-
-                metadata = WarcDocumentMetadata(
-                    url=target_uri,
-                    norm_url=url_normalizer(target_uri),
+                metadata = dict(
+                    warc_url=target_uri,
+                    url=url_normalizer(target_uri),
                     html=decoded_content if store_html_in_metadata else None,
                     warc_date=cls._format_to_dolma_timestamp(warc_date),
                     warc_filename=warc_filename or "",
                     content_type=ctype,
-                    properties=properties,
                 )
-
-                document = WarcDocument(
-                    source="warc",
+                doc = InputSpecWithMetadataAndAttributes(
+                    source=source_name,
+                    version=source_version,
                     id=payload_id,
-                    created=cls._format_to_dolma_timestamp(date),
-                    added=cls._format_to_dolma_timestamp(date_now),
-                    text=text or "",
+                    text="",  # this will come later
                     metadata=metadata,
                 )
 
-                output_file.write(encoder.encode(document) + b"\n")  # pyright: ignore
+                # keep track of the number of records processed
+                records_cnt += 1
+
+                # these are the properties extracted from
+                pre_attributes = {name: tagger.tag(doc) for name, tagger in pre_taggers.items()}
+                if skip_no_pre_taggers and not pre_attributes:
+                    continue
+
+                # extract text
+                doc.text = linearizer.linearize(content=decoded_content)
+
+                # these are the properties extracted from the HTML content
+                post_attributes = {name: tagger.tag(doc) for name, tagger in post_taggers.items()}
+                if skip_no_post_taggers and not post_attributes:
+                    continue
+
+                doc.attributes = {
+                    f"{t_name}__{t_name}__{make_variable_name(a_name)}": attr_values
+                    for t_name, attributes in chain(pre_attributes.items(), post_attributes.items())
+                    for a_name, attr_values in attributes.items()
+                }
+
+                doc.created = cls._format_to_dolma_timestamp(date)
+                doc.added = cls._format_to_dolma_timestamp(date_now)
+
+                output_file.write(encoder.encode(doc) + b"\n")  # pyright: ignore
 
                 extracted_cnt += 1
 

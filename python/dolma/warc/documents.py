@@ -23,7 +23,7 @@ class ExtractedProperty(msgspec.Struct):
 class WarcDocumentMetadata(msgspec.Struct):
     html: Optional[str]
     url: str
-    norm_url: str
+    warc_url: str
     content_type: str
     warc_date: str
     warc_filename: str

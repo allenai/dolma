@@ -7,7 +7,6 @@ from ..core.paths import glob_path
 from ..core.runtime import _make_paths_from_prefix
 
 # we need to import these to make sure they are registered
-from . import extractors  # noqa: F401  # pyright: ignore
 from . import linearizers  # noqa: F401  # pyright: ignore
 from .processor import WarcProcessor
 

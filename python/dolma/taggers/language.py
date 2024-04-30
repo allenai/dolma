@@ -155,7 +155,7 @@ class FastTextAllLanguagesDocumentTagger(BaseLanguageTagger, BaseFastTextTagger)
 
     def predict_text(self, text: str) -> List[Tuple[str, float]]:
         preds = self.classifier.predict(text.lower().replace("\n", " ").strip(), k=-1)
-        return [(label.replace("__label__", ""), score) for label, score in zip(*preds)]
+        return [(label.replace("__label__", ""), float(score)) for label, score in zip(*preds)]
 
 
 @TaggerRegistry.add("ft_lang_id_paragraph_v1")
@@ -173,6 +173,12 @@ class FastTextEnglishLanguageDocumentTagger(FastTextAllLanguagesDocumentTagger):
         preds = super().predict_text(text)
         filtered_preds = [(lang, score) for lang, score in preds if lang == "en"] or [("en", 0.0)]
         return filtered_preds  # pyright: ignore
+
+
+@TaggerRegistry.add("ft_lang_id_en_only_v2")
+class FastTextEnglishOnlyLanguageDocumentTagger(FastTextEnglishLanguageDocumentTagger):
+    INCLUDE_NEGATIVE = False
+    PREDICT_ON_PARAGRAPHS = False
 
 
 @TaggerRegistry.add("ft_lang_id_en_paragraph_v2")
@@ -253,6 +259,12 @@ class LinguaEnglishTagger(LinguaTagger):
         pred = super().predict_text(text)
         filtered_langs = [(lang, score) for lang, score in pred if lang == "en"] or [("en", 0.0)]
         return filtered_langs  # pyright: ignore
+
+
+@TaggerRegistry.add("lingua_en_only_v1")
+class LinguaEnglishOnlyTagger(LinguaEnglishTagger):
+    INCLUDE_NEGATIVE = False
+    PREDICT_ON_PARAGRAPHS = False
 
 
 @TaggerRegistry.add("lingua_par_v1")
