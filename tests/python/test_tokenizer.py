@@ -26,6 +26,13 @@ GPT_NEO_TOKENIZER = {
     "eos_token_id": 50279,
     "pad_token_id": 1,
 }
+LLAMA3_TOKENIZER = {
+    "filename": f"{TEST_DIR}/data/tokenizer/llama3-test-tokenizer.json",
+    "bos_token_id": 128000,
+    "eos_token_id": 128001,
+    "pad_token_id": None,
+}
+
 
 TEXT_WITH_NO_NEWLINES = {
     "text": "This is a document with no newlines.",
@@ -213,6 +220,66 @@ class TestTokenizerCli(TestCase):
                 in {
                     GPT_NEO_TOKENIZER["eos_token_id"],
                     GPT_NEO_TOKENIZER["pad_token_id"],
+                }
+            )
+            self.assertEqual(special_tokens, 1)
+
+    def test_llama3_e2e(self):
+        config = {
+            "destination": f"{TEST_DIR}/work/tokenizer/gpt-neo-segment",
+            "documents": [
+                f"{TEST_DIR}/data/provided/documents/000.json.gz",
+            ],
+            "processes": 1,
+            "seed": 3920,
+            "dtype": "uint32",
+            "tokenizer": {
+                "name_or_path": LLAMA3_TOKENIZER["filename"],
+                "bos_token_id": LLAMA3_TOKENIZER["bos_token_id"],
+                "eos_token_id": LLAMA3_TOKENIZER["eos_token_id"],
+                "pad_token_id": LLAMA3_TOKENIZER["pad_token_id"],
+                "segment_before_tokenization": True,
+            },
+            "debug": True,
+        }
+        tokenizer = BaseTokenizer.from_file(LLAMA3_TOKENIZER["filename"])
+
+        with NamedTemporaryFile(mode="wt") as f:
+            json.dump(config, f)
+            f.flush()
+            main(argv=["-c", f.name, "tokens"])
+
+        with smart_open.open(f"{config['destination']}/part-0-00000.csv.gz") as f:
+            reader = csv.reader(f)
+            metadata = [
+                {"start": int(row[0]), "end": int(row[1]), "id": row[2], "src": row[3], "pos": int(row[4])}
+                for row in reader
+            ]
+
+        size = max(m["end"] for m in metadata)
+        memmap = numpy.memmap(
+            f"{config['destination']}/part-0-00000.npy", dtype=numpy.uint32, mode="r", shape=(size,)
+        )
+
+        with smart_open.open(f"{TEST_DIR}/data/provided/documents/000.json.gz") as f:
+            documents = [json.loads(line) for line in f]
+
+        for doc_metadata in metadata:
+            original_text = documents[doc_metadata["pos"] - 1]["text"]
+            tokens = memmap[doc_metadata["start"] : doc_metadata["end"]]
+            tokenized_text = tokenizer.decode(tokens)
+
+            self.assertEqual(tokens[-1], LLAMA3_TOKENIZER["eos_token_id"])
+            self.assertEqual(tokenized_text, original_text)
+
+            # count the number of special tokens in tokens
+            special_tokens = sum(
+                1
+                for t in tokens
+                if t
+                in {
+                    LLAMA3_TOKENIZER["eos_token_id"],
+                    LLAMA3_TOKENIZER["pad_token_id"],
                 }
             )
             self.assertEqual(special_tokens, 1)
