@@ -36,7 +36,7 @@ class BaseRegistry(Generic[T]):
             cls_._get_storage()[tagger_name] = tagger_self
             return tagger_self
 
-        return _add  # pyright: ignore
+        return _add  # type: ignore
 
     @classmethod
     def remove(cls, name: str) -> bool:
