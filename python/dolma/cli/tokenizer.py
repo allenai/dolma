@@ -196,6 +196,7 @@ class TokenizerCli(BaseCli):
                 eos_token_id=parsed_config.tokenizer.eos_token_id,
                 pad_token_id=parsed_config.tokenizer.pad_token_id,
                 segment_before_tokenization=parsed_config.tokenizer.segment_before_tokenization,
+                dtype=parsed_config.dtype,
                 seed=parsed_config.seed,
                 metadata_dir=work_dirs.output,
                 max_size=parsed_config.max_size,
