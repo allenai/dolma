@@ -15,7 +15,7 @@ class BaseRegistry(Generic[T]):
     def _get_storage(cls) -> Dict[str, T]:
         if not hasattr(cls, "_registry_storage"):
             cls._registry_storage = {}
-        return cls._registry_storage  # type: ignore
+        return cls._registry_storage  # pyright: ignore
 
     @classmethod
     def items(cls) -> Generator[Tuple[str, T], None, None]:
@@ -36,7 +36,7 @@ class BaseRegistry(Generic[T]):
             cls_._get_storage()[tagger_name] = tagger_self
             return tagger_self
 
-        return _add  # type: ignore
+        return _add  # pyright: ignore
 
     @classmethod
     def remove(cls, name: str) -> bool:
