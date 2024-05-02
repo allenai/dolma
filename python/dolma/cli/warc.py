@@ -10,6 +10,18 @@ from dolma.warc import create_and_run_warc_pipeline
 
 
 @dataclass
+class TaggerConfig:
+    taggers: List[str] = field(
+        default=[],
+        help="List of taggers to run.",
+    )
+    skip: bool = field(
+        default=False,
+        help="Whether to skip if taggers returns no output.",
+    )
+
+
+@dataclass
 class WarcExtractorConfig:
     documents: List[str] = field(
         default=[],
@@ -31,22 +43,21 @@ class WarcExtractorConfig:
         default=False,
         help="Whether to ignore existing outputs and re-run the taggers.",
     )
+
     debug: bool = field(
         default=False,
         help="Whether to run in debug mode.",
     )
     source_name: str = field(help="Name to assign to the source.")
-    skip_if_empty_heuristics: bool = field(
-        help="Whether to skip a document if all the heuristics return empty.", bool=False
-    )
-    store_html_in_metadata: bool = field(help="Whether to store the HTML content in the metadata.", bool=False)
     linearizer: str = field(
         default="resiliparse",
-        help="Name of the linearizer to use.",
+        help="Name of the HTML linearizer to use.",
     )
-    extractors: List[str] = field(
-        default=[],
-        help="Name of the extractors to use.",
+    pre: TaggerConfig = field(default=TaggerConfig(), help="Configuration for pre-extraction taggers.")
+    post: TaggerConfig = field(default=TaggerConfig(), help="Configuration for post-extraction taggers.")
+    store_html_in_metadata: bool = field(
+        default=False,
+        help="Whether to store the HTML content in the metadata.",
     )
 
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
@@ -99,16 +110,10 @@ class WarcExtractorCli(BaseCli):
                 ignore_existing=parsed_config.ignore_existing,
                 debug=parsed_config.debug,
                 source_name=source_name,
-                skip_if_empty_heuristics=parsed_config.skip_if_empty_heuristics,
+                pre_taggers=parsed_config.pre.taggers,
+                skip_no_pre_taggers=parsed_config.pre.skip,
+                post_taggers=parsed_config.post.taggers,
+                skip_no_post_taggers=parsed_config.post.skip,
                 store_html_in_metadata=parsed_config.store_html_in_metadata,
                 linearizer_name=parsed_config.linearizer,
-                extractors_name=parsed_config.extractors,
             )
-
-
-@dataclass
-class ListTaggerConfig:
-    tagger_modules: List[str] = field(
-        default=[],
-        help="List of Python modules $PYTHONPATH to import custom taggers from.",
-    )

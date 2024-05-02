@@ -19,15 +19,16 @@ from ..core.taggers import BaseTaggerWithMetadata
 class CreativeCommonsRegexLicenseExtractor(BaseTaggerWithMetadata):
     """Adapted from https://github.com/dkpro/dkpro-c4corpus/blob/da61281a8a77fad0d6a7d27c06b5e2fe3282e28f/dkpro-c4corpus-license/src/main/java/de/tudarmstadt/ukp/dkpro/c4corpus/license/impl/LicenseDetectorBasic.java"""  # noqa
 
-    PRE_REGEX_SEARCH = "creativecommons.org/licenses"
-    LICENSE_TYPE = "by|by-sa|by-nd|by-nc|by-nc-sa|by-nc-nd|publicdomain"
-    VERSION = "\\d+\\.\\d+"
-    LANG_PREFIX = "\\w{2}"
+    PRE_REGEX_SEARCH = ("creativecommons.org/licenses", "creativecommons.org/publicdomain")
+    LICENSE_TYPE = "by(-nc)?(-nd)?(-sa)?"
+    VERSION = r"\d+\.\d+"
+    LANG_PREFIX = r"\w{2}"
     RE_LICENSE_ATTRIBUTE_PATTERN = regex.compile(
         "<(a|A|meta)\\s[\\w\\p{Punct}\\s=]*\n*(href|HREF|content)"
-        "=('|\"|&quot;)?http(s*)://creativecommons\\.org/licenses/"
-        f"(?P<type>{LICENSE_TYPE})(?P<version>/{VERSION})?"
-        f"(?P<lang>/{LANG_PREFIX})?/?('|\"|&quot;).*?>"
+        "=('|\"|&quot;)?http(s*)://creativecommons\\.org/"
+        f"((licenses/(?P<type>{LICENSE_TYPE}))|(?P<type>publicdomain/(zero|certification|mark)))"
+        f"(?P<version>/{VERSION})?"
+        f"((/{LANG_PREFIX})?/((deed|legalcode)\\.)?(?P<lang>{LANG_PREFIX}))?.*?('|\"|&quot;).*?>"
     )
 
     def __init__(self):
@@ -45,27 +46,23 @@ class CreativeCommonsRegexLicenseExtractor(BaseTaggerWithMetadata):
         if html is None:
             raise ValueError("Cannot find `html` key in metadata.")
 
-        if self.PRE_REGEX_SEARCH not in html:
+        if not any(p in html for p in self.PRE_REGEX_SEARCH):
             return DocResult(doc=doc, spans=[])
 
         spans: List[Span] = []
         for i, match in enumerate(self.RE_LICENSE_ATTRIBUTE_PATTERN.finditer(html)):
-            name = match.group("type")
-            if self.has_version_group:
-                version = float(v.strip("/")) if (v := match.group("version")) is not None else v
-            else:
-                version = "null"
+            license_string = match.group("type")
+            if self.has_version_group and (version := match.group("version")) is not None:
+                license_string += f"_{version.strip('/')}"
 
-            if self.has_lang_group:
-                lang = n.strip() if (n := match.group("lang")) is not None else n
-            else:
-                lang = "null"
+            if self.has_lang_group and (lang := match.group("lang")) is not None:
+                license_string += f"_{lang}"
 
             # if multiple license matches are found, the confidence is lowered
             # for each match. The first match has a confidence of 1.0, the second
             # has a confidence of 0.75, the third 0.667, the fourth 0.625, etc.
             score = 0.5 + 0.5 / (i + 1.0)
-            spans.append(Span(start=0, end=len(doc.text), type=f"cc_{name}_{version}_{lang}", score=score))
+            spans.append(Span(start=0, end=len(doc.text), type=f"cc_{license_string}", score=score))
 
         return DocResult(doc=doc, spans=spans)
 

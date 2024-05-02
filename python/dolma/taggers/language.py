@@ -158,6 +158,13 @@ class FastTextAllLanguagesDocumentTagger(BaseLanguageTagger, BaseFastTextTagger)
         return [(label.replace("__label__", ""), float(score)) for label, score in zip(*preds)]
 
 
+@TaggerRegistry.add("ft_lang_id_1e2")
+class FastTextAllLanguagesDocumentMinScoreTagger(FastTextAllLanguagesDocumentTagger):
+    def predict_text(self, text: str) -> List[Tuple[str, float]]:
+        out = super().predict_text(text)
+        return [(lang, round(score, 2)) for lang, score in out if score > 0.01]
+
+
 @TaggerRegistry.add("ft_lang_id_paragraph_v1")
 class FastTextAllLanguageParagraphTagger(FastTextAllLanguagesDocumentTagger):
     INCLUDE_NEGATIVE = False
@@ -239,6 +246,9 @@ class LangdetectEnglishTaggerParagraph(LangdetectEnglishTagger):
 
 @TaggerRegistry.add("lingua_doc_v1")
 class LinguaTagger(BaseLanguageTagger):
+    INCLUDE_NEGATIVE = False
+    PREDICT_ON_PARAGRAPHS = False
+
     def __init__(self) -> None:
         super().__init__()
         if not LANGDETECT_AVAILABLE:
@@ -248,6 +258,13 @@ class LinguaTagger(BaseLanguageTagger):
     def predict_text(self, text: str) -> List[Tuple[str, float]]:
         langs_conf = self.detector.compute_language_confidence_values(text) or []
         return [(lang.language.iso_code_639_1.name.lower(), float(lang.value)) for lang in langs_conf]
+
+
+@TaggerRegistry.add("lingua_1e2")
+class LinguaMinScoreTagger(LinguaTagger):
+    def predict_text(self, text: str) -> List[Tuple[str, float]]:
+        out = super().predict_text(text)
+        return [(lang, round(score, 2)) for lang, score in out if score > 0.01]
 
 
 @TaggerRegistry.add("lingua_doc_en_v1")
