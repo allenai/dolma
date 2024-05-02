@@ -78,7 +78,7 @@ class WimbdToDolmaProcessor(BaseParallelProcessor):
             for line in source:
                 data = decoder.decode(line)
                 id_ = hashlib.md5(data.text.encode()).hexdigest()
-                converted_doucument = DolmaInputSpec(
+                converted_document = DolmaInputSpec(
                     id=id_,
                     text=data.text,
                     source=source_name,
@@ -87,7 +87,7 @@ class WimbdToDolmaProcessor(BaseParallelProcessor):
                     created=current_time,
                     metadata=data.metadata,
                 )
-                destination.write(encoder.encode(converted_doucument) + b"\n")  # type: ignore
+                destination.write(encoder.encode(converted_document) + b"\n")  # type: ignore
                 documents_count += 1
 
                 if documents_count % update_interval == 0:

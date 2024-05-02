@@ -12,6 +12,7 @@ from dolma.core.paths import (
     is_glob,
     join_path,
     make_relative,
+    split_ext,
     split_glob,
     split_path,
     sub_prefix,
@@ -290,3 +291,52 @@ class TestPaths(TestCase):
 
         path = "/no/glob/here"
         self.assertEqual(split_glob(path), ("/no/glob/here", ""))
+
+
+class TestSplitExt(TestCase):
+    def test_file(self):
+
+        prot, parts, ext = split_ext("file.txt")
+
+        self.assertEqual(prot, "")
+        self.assertEqual(parts, ("file",))
+        self.assertEqual(ext, ".txt")
+
+        prot, parts, ext = split_ext("file.tar.gz")
+        self.assertEqual(prot, "")
+        self.assertEqual(parts, ("file",))
+        self.assertEqual(ext, ".tar.gz")
+
+        prot, parts, ext = split_ext("file")
+        self.assertEqual(prot, "")
+        self.assertEqual(parts, ("file",))
+        self.assertEqual(ext, "")
+
+        prot, parts, ext = split_ext("file.")
+        self.assertEqual(prot, "")
+        self.assertEqual(parts, ("file",))
+        self.assertEqual(ext, ".")
+
+    def test_path(self):
+
+        prot, parts, ext = split_ext("path/to/file.txt")
+
+        self.assertEqual(prot, "")
+        self.assertEqual(parts, ("path", "to", "file"))
+        self.assertEqual(ext, ".txt")
+
+        prot, parts, ext = split_ext("/path/to/file.tar.gz")
+        self.assertEqual(prot, "")
+        self.assertEqual(parts, ("/", "path", "to", "file"))
+        self.assertEqual(ext, ".tar.gz")
+
+    def test_remote(self):
+        prot, parts, ext = split_ext("s3://path/to/file.tar.gz")
+        self.assertEqual(prot, "s3")
+        self.assertEqual(parts, ("path", "to", "file"))
+        self.assertEqual(ext, ".tar.gz")
+
+        prot, parts, ext = split_ext("gcs://file.gz")
+        self.assertEqual(prot, "gcs")
+        self.assertEqual(parts, ("file",))
+        self.assertEqual(ext, ".gz")

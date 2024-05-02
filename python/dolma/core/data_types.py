@@ -20,6 +20,8 @@ class InputSpec(Struct):
     id: str
     text: str
     source: str = ""
+    created: str = ""
+    added: str = ""
     version: Optional[str] = None
 
 
@@ -27,9 +29,13 @@ class InputSpecWithMetadata(InputSpec):
     metadata: Optional[Dict[str, Any]] = None
 
 
+class InputSpecWithMetadataAndAttributes(InputSpecWithMetadata):
+    attributes: Optional[Dict[str, List[Tuple[int, int, float]]]] = None
+
+
 class OutputSpec(Struct):
     id: str
-    attributes: Dict[str, List[Tuple[int, int, float]]]
+    attributes: Dict[str, List[TaggerOutputValueType]]
     source: Optional[str] = None
 
 
@@ -109,6 +115,59 @@ class DocumentWithMetadata(Document):
     def __str__(self) -> str:
         repr_ = super().__str__()
         return repr_.rstrip(")") + f",metadata={'...' if self.metadata else 'none'})"
+
+
+class DocumentWithMetadataAndAttributes(DocumentWithMetadata):
+    def __init__(
+        self, *args, attributes: Optional[Dict[str, List[Tuple[int, int, float]]]] = None, **kwargs
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self.attributes = attributes or {}
+
+    @classmethod
+    def from_spec(cls, spec: InputSpecWithMetadataAndAttributes) -> "DocumentWithMetadataAndAttributes":
+        return DocumentWithMetadataAndAttributes(
+            source=spec.source,
+            version=spec.version,
+            id=spec.id,
+            text=spec.text,
+            metadata=spec.metadata,
+            attributes=spec.attributes,
+        )
+
+    @classmethod
+    def from_json(cls, d: Dict) -> "DocumentWithMetadataAndAttributes":
+        return DocumentWithMetadataAndAttributes(
+            source=d["source"],
+            version=d["version"],
+            id=d["id"],
+            text=d["text"],
+            metadata=d["metadata"],
+            attributes=d["attributes"],
+        )
+
+    def to_json(self) -> Dict:
+        return {
+            "source": self.source,
+            "version": self.version,
+            "id": self.id,
+            "text": self.text,
+            "metadata": self.metadata,
+            "attributes": self.attributes,
+        }
+
+    def to_spec(self) -> InputSpecWithMetadataAndAttributes:
+        return InputSpecWithMetadataAndAttributes(
+            source=self.source,
+            version=self.version,
+            id=self.id,
+            text=self.text,
+            metadata=self.metadata,
+            attributes=self.attributes,
+        )
+
+    def __str__(self) -> str:
+        return super().__str__().rstrip(")") + f",attributes={'...' if self.attributes else 'none'})"
 
 
 class Span:
