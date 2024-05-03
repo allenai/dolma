@@ -8,7 +8,7 @@ requires-python = ">=3.8"
 dependencies = [
     "anyascii>=0.3.2",
     "blingfire==0.1.8",
-    "boto3[crt]>=1.28",
+    "boto3>=1.28",
     "cached-path>=1.5.1",
     # "fasttext==0.9.2",    # broken with new version of setuptools; using fasttext-wheel instead
     "fasttext-wheel==0.9.2",
