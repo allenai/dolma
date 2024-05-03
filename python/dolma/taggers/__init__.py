@@ -5,6 +5,7 @@ from . import (
     jigsaw,
     language,
     length,
+    licenses,
     pii,
     punctuation,
     repetitions,

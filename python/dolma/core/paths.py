@@ -1,4 +1,5 @@
 import glob
+import os
 import re
 from functools import partial
 from hashlib import sha256
@@ -517,3 +518,22 @@ def decompress_path(path: str, dest: Optional[str] = None) -> str:
 
     # already decompressed or can't be decompressed
     return path
+
+
+def split_ext(path: str) -> Tuple[str, Tuple[str, ...], str]:
+    """
+    Split a path into its protocol and extensions.
+    """
+    prot, parts = split_path(path)
+    if not parts:
+        return prot, (), ""
+
+    filename = parts[-1]
+    extensions = []
+    while True:
+        filename, ext = os.path.splitext(filename)
+        if not ext:
+            break
+        extensions.append(ext)
+
+    return prot, (*parts[:-1], filename), "".join(reversed(extensions))
