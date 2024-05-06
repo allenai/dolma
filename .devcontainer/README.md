@@ -29,8 +29,11 @@ To get started with the devcontainer, follow these steps:
 
 7. Open a terminal within VSCode for all cli related tasks. (ie: `make test`) Simplest option is `Ctrl+Shift+P` (or `Cmd+Shift+P` on macOS) and select `Terminal: Create New Terminal`
 
+8. To run a profiler in the devcontainer, you'll need to add  the line ' "runArgs": ["--privileged","--cap-add=SYS_ADMIN"] ' to devcontainer.json before building. 
+
 ## Additional Configuration
 
 If you need to customize the devcontainer configuration, you can modify the `.devcontainer/devcontainer.json` file in this directory. Refer to the [VSCode Remote - Containers documentation](https://code.visualstudio.com/docs/remote/containers) for more information on configuring devcontainers. Just be selective about merging changes that might impact correctness across platforms/OS.
 
 Happy hacking!
+

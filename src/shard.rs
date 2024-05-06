@@ -601,6 +601,7 @@ impl FileCache {
                 &path,
                 Some(3), // retry twice if fail
             ))?;
+            log::info!("Download complete.");
             Ok(path.clone())
         } else {
             let path = Path::new(location);
