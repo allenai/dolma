@@ -8,7 +8,6 @@ from omegaconf.omegaconf import OmegaConf as om
 from ..core.paths import glob_path
 from ..core.registry import BaseRegistry
 
-
 C = TypeVar("C", bound=Callable)
 
 
@@ -19,13 +18,14 @@ class ResolverRegistry(BaseRegistry[Callable]):
 
         def _wrapped_add_fn(
             resolver: C,
-            base_add_fn: C = _add_fn,    # type: ignore
+            base_add_fn: C = _add_fn,  # type: ignore
             resolver_name: str = name,
         ) -> C:
             base_add_fn(resolver)
             resolver_name = f"d.{resolver_name}"
             om.register_new_resolver(resolver_name, resolver, replace=True)
             return resolver
+
         return _wrapped_add_fn
 
 

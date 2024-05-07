@@ -12,7 +12,7 @@ from dolma.core.utils import import_modules
 
 @dataclass
 class ListerConfig:
-    modules : List[str] = field(
+    modules: List[str] = field(
         default=[],
         help="List of Python modules $PYTHONPATH to import custom registry modules from.",
     )

@@ -9,12 +9,12 @@ from yaml import safe_load
 from ..core.paths import exists
 from .analyzer import AnalyzerCli
 from .deduper import DeduperCli
+from .listers import ListerCli
 from .mixer import MixerCli
 
 # must import these to register the resolvers
 from .resolvers import *  # noqa: F401,F403,W0401
 from .tagger import TaggerCli
-from .listers import ListerCli
 from .tokenizer import TokenizerCli
 from .warc import WarcExtractorCli
 
