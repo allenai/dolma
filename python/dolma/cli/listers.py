@@ -44,17 +44,27 @@ class ListerCli(BaseCli):
         # import tagger modules
         import_modules(parsed_config.modules)
 
-        for tagger_name, tagger_cls in BaseRegistry.registries():
-            if parsed_config.filter is not None and parsed_config.filter.lower() not in tagger_name.lower():
+        for reg_item_name, reg_item_cls in BaseRegistry.registries():
+            if parsed_config.filter is not None and parsed_config.filter.lower() not in reg_item_name.lower():
                 continue
 
-            table = Table(title=tagger_name, style="bold")
-            table.add_column("name", justify="left", style="cyan")
-            table.add_column("class", justify="left", style="magenta")
+            any_has_description = any(
+                reg_item_desc for _, _, reg_item_desc in reg_item_cls.items_with_description()
+            )
 
-            for tagger_name, tagger_cls in sorted(tagger_cls.items()):
-                tagger_repr = f"{tagger_cls.__module__}.{tagger_cls.__name__}"
-                table.add_row(tagger_name, tagger_repr)
+            table = Table(title=reg_item_name, style="bold")
+            table.width
+            table.add_column("name", justify="left", style="cyan", no_wrap=True, ratio=1)
+            table.add_column("class", justify="left", style="magenta", no_wrap=False, ratio=1)
+            if any_has_description:
+                table.add_column("description", justify="left", style="blue", no_wrap=False, ratio=4)
+
+            for reg_item_name, reg_item_cls, reg_item_desc in sorted(reg_item_cls.items_with_description()):
+                registry_module = f"{reg_item_cls.__module__}.{reg_item_cls.__name__}"
+                if any_has_description:
+                    table.add_row(reg_item_name, registry_module, reg_item_desc)
+                else:
+                    table.add_row(reg_item_name, registry_module)
 
             console = Console()
             console.print(table)

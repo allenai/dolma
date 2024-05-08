@@ -35,6 +35,11 @@ class BaseRegistry(Generic[T]):
         yield from sorted((n, t) for (n, (t, _)) in cls._get_storage().items())
 
     @classmethod
+    def items_with_description(cls) -> Generator[Tuple[str, T, Optional[str]], None, None]:
+        """Yield all items in the registry with their descriptions."""
+        yield from sorted((n, t, d) for (n, (t, d)) in cls._get_storage().items())
+
+    @classmethod
     def add(cls, name: str, desc: Optional[str] = None) -> Callable[[T], T]:
         """Add a class to the registry."""
 
