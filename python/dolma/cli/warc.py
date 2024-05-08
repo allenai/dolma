@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List
 
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, make_workdirs
+from dolma.cli.shared import WorkDirConfig, make_workdirs, maybe_parse_from_stdin
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
@@ -76,6 +76,8 @@ class WarcExtractorCli(BaseCli):
         logger = get_logger("warc")
 
         with make_workdirs(parsed_config.work_dir) as work_dirs:
+            parsed_config.documents = maybe_parse_from_stdin(parsed_config.documents)
+
             documents = [str(p) for p in parsed_config.documents]
             destination = [str(p) for p in parsed_config.destination]
 

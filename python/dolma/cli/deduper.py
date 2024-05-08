@@ -8,7 +8,12 @@ from omegaconf import OmegaConf as om
 
 from dolma import deduper
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, get_path_to_temp_file, make_workdirs
+from dolma.cli.shared import (
+    WorkDirConfig,
+    get_path_to_temp_file,
+    make_workdirs,
+    maybe_parse_from_stdin,
+)
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path, is_local
@@ -116,6 +121,8 @@ class DeduperCli(BaseCli):
         dict_config: Dict[str, Any] = {}
 
         with ExitStack() as stack:
+            parsed_config.documents = maybe_parse_from_stdin(parsed_config.documents)
+
             work_dirs = stack.enter_context(make_workdirs(parsed_config.work_dir))
 
             # create a dedupe config to populate

@@ -39,6 +39,7 @@ __all__ = [
     "make_parser",
     "namespace_to_nested_omegaconf",
     "print_config",
+    "maybe_parse_from_stdin",
 ]
 
 

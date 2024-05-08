@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, make_workdirs
+from dolma.cli.shared import WorkDirConfig, make_workdirs, maybe_parse_from_stdin
 from dolma.core.analyzer import create_and_run_analyzer
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
@@ -56,6 +56,8 @@ class AnalyzerCli(BaseCli):
     @classmethod
     def run(cls, parsed_config: AnalyzerConfig):
         logger = get_logger("analyzer")
+
+        parsed_config.attributes = maybe_parse_from_stdin(parsed_config.attributes)
 
         # perform some path validation to make sure we don't call the mixer with invalid config
         total_matching_documents = 0
