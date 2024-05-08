@@ -36,6 +36,7 @@ class InputSpecWithMetadataAndAttributes(InputSpecWithMetadata):
 class OutputSpec(Struct):
     id: str
     attributes: Dict[str, List[TaggerOutputValueType]]
+    first_two_hundred_text: Optional[str] = None
     source: Optional[str] = None
 
 

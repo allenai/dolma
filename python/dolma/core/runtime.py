@@ -217,7 +217,7 @@ def _write_sample_to_streams(
 
     for stream_path, attributes in attributes_by_stream.items():
         # actually write
-        output = OutputSpec(source=row.source, id=row.id, attributes=attributes)
+        output = OutputSpec(source=row.source, id=row.id, attributes=attributes, first_two_hundred_text=row.text[:200])
         output_streams[stream_path].write(output)
 
 
