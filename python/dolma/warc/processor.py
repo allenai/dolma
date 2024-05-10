@@ -156,7 +156,7 @@ class WarcProcessor(BaseParallelProcessor):
                 if record.http_charset:
                     try:
                         decoded_content = content.decode(record.http_charset).strip()
-                    except UnicodeDecodeError:
+                    except (UnicodeDecodeError, LookupError):
                         decoded_content = ""
                 if not decoded_content and (encoding := detect(content)["encoding"]):
                     decoded_content = content.decode(str(encoding)).strip()
