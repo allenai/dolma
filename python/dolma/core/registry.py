@@ -61,7 +61,7 @@ class BaseRegistry(Generic[T]):
             tagger_cls._get_storage()[tagger_name] = (tagger_self, tagger_desc)
             return tagger_self
 
-        return _add  # type: ignore
+        return _add
 
     @classmethod
     def remove(cls, name: str) -> bool:
