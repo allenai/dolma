@@ -1,4 +1,5 @@
 import datetime
+import logging
 import multiprocessing
 import tempfile
 from contextlib import ExitStack
@@ -86,7 +87,8 @@ class WarcProcessor(BaseParallelProcessor):
     ):
         max_time = kwargs.pop("backoff_max_time", None) or 10**60
         max_tries = kwargs.pop("backoff_max_tries", None) or 10
-        fn = backoff.on_exception(backoff.expo, Exception, max_time=max_time, max_tries=max_tries)(
+        (logger := cls.get_logger()).setLevel(logging.WARNING)
+        fn = backoff.on_exception(backoff.expo, Exception, max_time=max_time, max_tries=max_tries, logger=logger)(
             cls._process_single_without_backoff,
         )
         return fn(source_path, destination_path, queue, **kwargs)
