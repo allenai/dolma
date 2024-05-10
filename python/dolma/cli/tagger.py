@@ -3,7 +3,7 @@ from pstats import SortKey
 from typing import List, Optional
 
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, make_workdirs, maybe_parse_from_stdin
+from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
@@ -100,7 +100,6 @@ class TaggerCli(BaseCli):
         logger = get_logger("tagger")
 
         with make_workdirs(parsed_config.work_dir) as work_dirs:
-            parsed_config.documents = maybe_parse_from_stdin(parsed_config.documents)
 
             documents = [str(p) for p in parsed_config.documents]
             taggers = [str(p) for p in parsed_config.taggers]

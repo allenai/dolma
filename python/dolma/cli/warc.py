@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List
 
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, make_workdirs, maybe_parse_from_stdin
+from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
@@ -63,8 +63,9 @@ class WarcExtractorConfig:
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
     dryrun: bool = field(
         default=False,
-        help="If true, only print the configuration and exit without running the taggers.",
+        help="If true, only print the configuration and exit without running the pipieline.",
     )
+    check: bool = field(default=True, help="If true, check if input documents are valid paths before running the")
 
 
 class WarcExtractorCli(BaseCli):
@@ -76,8 +77,6 @@ class WarcExtractorCli(BaseCli):
         logger = get_logger("warc")
 
         with make_workdirs(parsed_config.work_dir) as work_dirs:
-            parsed_config.documents = maybe_parse_from_stdin(parsed_config.documents)
-
             documents = [str(p) for p in parsed_config.documents]
             destination = [str(p) for p in parsed_config.destination]
 
@@ -85,19 +84,20 @@ class WarcExtractorCli(BaseCli):
             if not isinstance(source_name, str):
                 raise ValueError(f"source_name must be a string, not {source_name} ({type(source_name)})")
 
-            # perform some path validation to make sure we don't call
-            # the extractor with invalid config
-            total_matching_documents = 0
-            for document in documents:
-                current_matching_documents = sum(1 for _ in glob_path(document))
-                if current_matching_documents == 0:
-                    # only raise a warning if no documents are found for a single path
-                    logger.warning("No documents found for path %s", document)
-                total_matching_documents += current_matching_documents
+            if parsed_config.check:
+                # perform some path validation to make sure we don't call the warc
+                # extractor with an invalid config
+                total_matching_documents = 0
+                for document in documents:
+                    current_matching_documents = sum(1 for _ in glob_path(document))
+                    if current_matching_documents == 0:
+                        # only raise a warning if no documents are found for a single path
+                        logger.warning("No documents found for path %s", document)
+                    total_matching_documents += current_matching_documents
 
-            if total_matching_documents == 0:
-                # but raise an error if no documents are found for all paths
-                raise DolmaConfigError(f"No documents found for paths {documents}.")
+                if total_matching_documents == 0:
+                    # but raise an error if no documents are found for all paths
+                    raise DolmaConfigError(f"No documents found for paths {documents}.")
 
             print_config(parsed_config)
             if parsed_config.dryrun:
