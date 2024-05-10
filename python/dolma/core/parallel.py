@@ -11,7 +11,7 @@ from datetime import datetime
 from functools import partial
 from queue import Queue
 from threading import Thread
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, TypeVar, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, TypeVar, Union
 
 import smart_open
 import tqdm
@@ -453,6 +453,14 @@ class BaseParallelProcessor:
             return False
         return True
 
+    def _get_existing_meta(self, *meta_prefixes: str) -> Set[str]:
+        """Get the existing metadata files for the given prefixes."""
+        existing_metadata = set()
+        for meta_prefix in meta_prefixes:
+            for path in glob_path(meta_prefix):
+                existing_metadata.add(re.sub(rf"{METADATA_SUFFIX}$", "", sub_prefix(path, meta_prefix)))
+        return existing_metadata
+
     def _get_all_paths(self) -> AllPathsTuple:
         """Get all paths to process using prefixes provided"""
         all_paths = AllPathsTuple.empty()
@@ -478,10 +486,7 @@ class BaseParallelProcessor:
             random.shuffle(rel_paths)
 
             # get a list of which metadata files already exist
-            existing_metadata_names = set(
-                re.sub(rf"{METADATA_SUFFIX}$", "", sub_prefix(path, meta_prefix))
-                for path in glob_path(meta_prefix)
-            )
+            existing_metadata_names = self._get_existing_meta(meta_prefix)
 
             for path in rel_paths:
                 if not self.ignore_existing and path in existing_metadata_names:
@@ -501,14 +506,23 @@ class BaseParallelProcessor:
     def __call__(self, **process_single_kwargs: Any):
         """Run the processor."""
 
+        logger = self.get_logger()
+        logger.setLevel(logging.INFO)
+
         random.seed(self.seed)
 
         # in case the user wants to override the default kwargs for retries
         process_single_kwargs.setdefault("retries_on_error", self.retries_on_error)
 
         all_paths = self._get_all_paths()
+        logger.info("Found %s files to process", len(all_paths.src))
 
-        print(f"Found {len(all_paths.src):,} files to process")
+        if len(all_paths.src) == 0:
+            if len(self._get_existing_meta(*self.meta_prefixes)) > 0:
+                logger.info("All files already processed; skipping.")
+                return
+            else:
+                raise DolmaError("No files found to process.")
 
         fn = self._debug_run_all if self.debug else self._multiprocessing_run_all
 

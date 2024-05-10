@@ -10,6 +10,7 @@ from . import (
     punctuation,
     repetitions,
     sampling,
+    science,
     tokenizers,
     url,
 )

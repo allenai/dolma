@@ -127,6 +127,7 @@ warc = [
     "fastwarc",
     "w3lib",
     "url-normalize",
+    "dateparser"
 
 ]
 trafilatura = [

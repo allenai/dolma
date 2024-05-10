@@ -226,11 +226,11 @@ def patch_old_omegaconf():
         is_primitive_container,
         is_structured_config,
     )
-    from omegaconf.errors import (
-        InterpolationToMissingValueError,  # pylint: disable=import-outside-toplevel
+    from omegaconf.errors import (  # pylint: disable=import-outside-toplevel
+        InterpolationToMissingValueError,
     )
-    from omegaconf.nodes import (
-        InterpolationResultNode,  # pylint: disable=import-outside-toplevel
+    from omegaconf.nodes import (  # pylint: disable=import-outside-toplevel
+        InterpolationResultNode,
     )
 
     def _resolve_container_value(cfg: Container, key: Any) -> None:

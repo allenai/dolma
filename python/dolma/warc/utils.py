@@ -25,8 +25,10 @@ def raise_warc_dependency_error(package: str):
 
 class UrlNormalizer:
     def __init__(self):
-        assert URL_NORMALIZE_AVAILABLE, raise_warc_dependency_error("url-normalize")
-        assert W3LIB_AVAILABLE, raise_warc_dependency_error("w3lib")
+        if not URL_NORMALIZE_AVAILABLE:
+            raise_warc_dependency_error("url-normalize")
+        if not W3LIB_AVAILABLE:
+            raise_warc_dependency_error("w3lib")
         self.www_subdomain_regex = re.compile(r"(^(www\d*\.))|(/+$)", re.IGNORECASE)
 
     def __call__(self, url: str) -> str:
