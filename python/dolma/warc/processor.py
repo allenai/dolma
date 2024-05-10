@@ -30,6 +30,10 @@ with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:
         import dateparser
 
+with necessary("backoff", soft=True) as BACKOFF_AVAILABLE:
+    if BACKOFF_AVAILABLE or TYPE_CHECKING:
+        import backoff
+
 
 DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
 
@@ -39,10 +43,9 @@ class WarcProcessor(BaseParallelProcessor):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if not FASTWARC_AVAILABLE:
-            raise_warc_dependency_error("fastwarc")
-        if not DATEPARSER_AVAILABLE:
-            raise_warc_dependency_error("dateparser")
+        assert FASTWARC_AVAILABLE, raise_warc_dependency_error("fastwarc")
+        assert DATEPARSER_AVAILABLE, raise_warc_dependency_error("dateparser")
+        assert BACKOFF_AVAILABLE, raise_warc_dependency_error("backoff")
 
     @staticmethod
     def _format_to_dolma_timestamp(timestamp: Optional[datetime.datetime] = None) -> str:
@@ -75,6 +78,21 @@ class WarcProcessor(BaseParallelProcessor):
 
     @classmethod
     def process_single(
+        cls,
+        source_path: str,
+        destination_path: str,
+        queue: QueueType,
+        **kwargs,
+    ):
+        max_time = kwargs.pop('backoff_max_time', None) or 10 ** 60
+        max_tries = kwargs.pop('backoff_max_tries', None) or 10
+        fn = backoff.on_exception(backoff.expo, Exception, max_time=max_time, max_tries=max_tries)(
+            cls._process_single_without_backoff,
+        )
+        return fn(source_path, destination_path, queue, **kwargs)
+
+    @classmethod
+    def _process_single_without_backoff(
         cls,
         source_path: str,
         destination_path: str,
