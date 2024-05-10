@@ -84,8 +84,8 @@ class WarcProcessor(BaseParallelProcessor):
         queue: QueueType,
         **kwargs,
     ):
-        max_time = kwargs.pop('backoff_max_time', None) or 10 ** 60
-        max_tries = kwargs.pop('backoff_max_tries', None) or 10
+        max_time = kwargs.pop("backoff_max_time", None) or 10**60
+        max_tries = kwargs.pop("backoff_max_tries", None) or 10
         fn = backoff.on_exception(backoff.expo, Exception, max_time=max_time, max_tries=max_tries)(
             cls._process_single_without_backoff,
         )
