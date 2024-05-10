@@ -1,7 +1,10 @@
 import re
+from pathlib import Path
 
 import numpy as np
 import yaml
+
+CONFIG_PATH = Path(__file__).parent / "configs/randomize_all.yaml"
 
 
 def has_style(style, styles):
@@ -68,8 +71,8 @@ class Config:
     """A simple config object that loads a config from a YAML file and
     presents as a dictionary"""
 
-    def __init__(self, config_file):
-        with open(config_file, "r") as f:
+    def __init__(self, config_file=CONFIG_PATH):
+        with open(config_file, "rt") as f:
             self.config = yaml.safe_load(f)
 
     def sample_from_list(self, list):

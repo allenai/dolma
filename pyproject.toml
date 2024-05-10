@@ -185,7 +185,7 @@ features = ["pyo3/extension-module"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-dolma = ["py.typed", "data/*", "warc/openwebmath/mmltex/*"]
+dolma = ["py.typed", "data/*", "warc/openwebmath/mmltex/*.xsl", "warc/openwebmath/configs/*.yaml"]
 
 [tool.black]
 line-length = 115

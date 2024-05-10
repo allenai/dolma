@@ -3,7 +3,9 @@ destination:
     - ${oc.env:HOME}/science/CC-MAIN-2024-18/documents
 processes: ${d.procs:}
 source_name: cccc_CC-MAIN-2024-18
-linearizer: openwebmath
+# linearizer: openwebmath
+linearizer: resiliparse
+
 pre:
     taggers:
         - owm_math_v1
@@ -16,7 +18,7 @@ post:
         - ft_dolma_doc_eng
     skip: true
 
-store_html_in_metadata: false
+store_html_in_metadata: true
 
 work_dir:
     input: /tmp/science/CC-MAIN-2024-18/input

@@ -184,7 +184,7 @@ class FastTextEnglishLanguageDocumentTagger(FastTextAllLanguagesDocumentTagger):
 
 @TaggerRegistry.add("ft_dolma_doc_eng")
 class FastTextEnglishDolmaTagger(FastTextEnglishLanguageDocumentTagger):
-    INCLUDE_NEGATIVE = True
+    INCLUDE_NEGATIVE = False
     PREDICT_ON_PARAGRAPHS = False
 
     def predict_text(self, text: str) -> List[Tuple[str, float]]:

@@ -1,6 +1,7 @@
 from resiliparse.parse.html import DOMCollection
 from tabulate import tabulate
-from text_extract.utils import has_style
+
+from .utils import has_style
 
 header_to_format = {f"h{i}": f"[heading_{i}]" for i in range(1, 7)}
 
