@@ -18,6 +18,7 @@ dependencies = [
     "omegaconf>=2.3.0",
     # "pycld2==0.41",
     # "pycld3==0.22",       # does not install correctly
+    "acora>=2.4",
     "platformdirs>=4.2.0",
     "pyyaml",
     "requests",
@@ -148,6 +149,14 @@ resiliparse = [
     "resiliparse",
 ]
 
+openwebmath = [
+    "dolma[warc]",
+    "resiliparse",
+    "tabulate",
+    "py_asciimath",
+    "lxml"
+]
+
 # all extensions
 all = [
     "dolma[dev]",
@@ -176,7 +185,7 @@ features = ["pyo3/extension-module"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-dolma = ["py.typed", "data/*"]
+dolma = ["py.typed", "data/*", "warc/openwebmath/mmltex/*"]
 
 [tool.black]
 line-length = 115

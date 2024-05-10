@@ -1,0 +1,16 @@
+documents:  ${d.stdin:}
+destination:
+    - ${oc.env:HOME}/cccc/CC-MAIN-2024-18/documents
+processes: ${d.procs:}
+source_name: cccc_CC-MAIN-2024-18
+linearizer: resiliparse
+pre:
+    taggers:
+        - cc_re
+    skip: true
+
+store_html_in_metadata: true
+
+work_dir:
+    input: /tmp/cccc/CC-MAIN-2024-18/input
+    output: /tmp/cccc/CC-MAIN-2024-18/output
