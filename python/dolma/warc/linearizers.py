@@ -1,6 +1,6 @@
 import logging
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Iterable, Optional, Type, Union
+from typing import TYPE_CHECKING, Iterable, Optional, Type
 
 from necessary import necessary
 
@@ -10,21 +10,28 @@ from .utils import raise_warc_dependency_error
 
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
     if TRAFILATURA_AVAILABLE or TYPE_CHECKING:
-        import trafilatura  # noqa: F401
-        import trafilatura.meta  # noqa: F401
+        import trafilatura  # pylint: disable=import-error  # pyright:ignore
+        import trafilatura.meta  # pylint: disable=import-error  # pyright:ignore
+        import trafilatura.utils  # pylint: disable=import-error  # pyright:ignore
 
 with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
     if RESILIPARSE_AVAILABLE or TYPE_CHECKING:
-        from resiliparse.extract.html2text import extract_plain_text  # noqa: F401
-        from resiliparse.parse.encoding import detect_encoding  # noqa: F401
-        from resiliparse.parse.html import HTMLTree  # noqa: F401
+        from resiliparse.extract.html2text import (  # pylint: disable=no-name-in-module  # pyright:ignore
+            extract_plain_text,
+        )
+        from resiliparse.parse.encoding import (  # pylint: disable=no-name-in-module  # pyright:ignore
+            detect_encoding,
+        )
+        from resiliparse.parse.html import (  # pylint: disable=no-name-in-module  # pyright:ignore
+            HTMLTree,
+        )
 
 
 class BaseLinearizer:
     """A base class for linearizers, i.e. tools to turn HTML into text."""
 
     @abstractmethod
-    def linearize(self, content: Union[str, bytes]) -> str:
+    def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:
         pass
 
 
@@ -58,8 +65,8 @@ class ResiliparseHtmlExtractor(BaseLinearizer):
         self.comments = comments
         self.skip_elements = skip_elements
 
-    def linearize(self, content: Union[str, bytes]) -> str:
-        #         html (HTMLTree or str) – HTML as DOM tree or Unicode string
+    def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:
+        # html (HTMLTree or str) – HTML as DOM tree or Unicode string
         # preserve_formatting (bool) – preserve basic block-level formatting
         # main_content (bool) – apply simple heuristics for extracting only “main-content” elements
         # list_bullets (bool) – insert bullets / numbers for list items
@@ -69,11 +76,7 @@ class ResiliparseHtmlExtractor(BaseLinearizer):
         # noscript (bool) – extract contents of <noscript> elements
         # comments (bool) – treat comment sections as main content
         # skip_elements (t.Iterable[str] or None) – list of CSS selectors for elements to skip
-        if isinstance(content, bytes):
-            encoding = detect_encoding(content)
-            html = HTMLTree.parse_from_bytes(content, encoding)
-        else:
-            html = HTMLTree.parse(content)
+        html = HTMLTree.parse_from_bytes(document=content, encoding=encoding or detect_encoding(content))
 
         text = extract_plain_text(
             html=html,
@@ -130,9 +133,9 @@ class TrafilaturaHtmlExtractor(BaseLinearizer):
             self.counter = 0
         self.counter += 1
 
-    def linearize(self, content: Union[str, bytes]) -> str:
+    def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:
         output = trafilatura.extract(
-            filecontent=content,
+            filecontent=content.decode(encoding or trafilatura.utils.detect_encoding(content)),
             output_format="txt",
             include_comments=self.include_comments,
             include_links=self.include_links,
@@ -151,6 +154,6 @@ class OpenWebMathExtractor(BaseLinearizer):
     def __init__(self) -> None:
         self.extractor = Extractor()
 
-    def linearize(self, content: Union[str, bytes]) -> str:
-        output = self.extractor.extract_text(str(content))
+    def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:
+        output = self.extractor.extract_text(content.decode(encoding or detect_encoding(content)))
         return output or ""

@@ -226,7 +226,7 @@ def glob_path(
     if autoglob_dirs and fs.isdir(path):
         path = join_path(protocol, _unescape_glob(parsed_path), "*")
 
-    if '*' not in str(path):
+    if "*" not in str(path):
         # nothing to glob
         yield str(path)
         return

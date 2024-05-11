@@ -472,9 +472,7 @@ class BaseParallelProcessor:
         for src_prefix, dst_prefix, meta_prefix, kwargs_prefix in zip(
             self.src_prefixes, self.dst_prefixes, self.meta_prefixes, self.process_single_kwargs
         ):
-            current_source_prefixes = sorted(
-                [src_prefix] if self.skip_source_glob else glob_path(src_prefix)
-            )
+            current_source_prefixes = sorted([src_prefix] if self.skip_source_glob else glob_path(src_prefix))
 
             if len(current_source_prefixes) > 1:
                 # make relative only makes sense if there is more than one path; otherwise, it's unclear

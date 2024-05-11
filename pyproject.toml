@@ -18,19 +18,20 @@ dependencies = [
     "omegaconf>=2.3.0",
     # "pycld2==0.41",
     # "pycld3==0.22",       # does not install correctly
-    "acora>=2.4",
+    "hyperscan>=0.7.7",
     "platformdirs>=4.2.0",
     "pyyaml",
     "requests",
     "rich",
     "s3fs>=2023.6.0",
-    "smart-open",
+    "smart-open>=7.0.4",
     "tokenizers>=0.15.0,<1.0.0",
     "tqdm",
     "uniseg",
     "numpy",
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
+    "zstandard>=0.20.0",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

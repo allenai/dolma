@@ -65,7 +65,10 @@ class WarcExtractorConfig:
         default=False,
         help="If true, only print the configuration and exit without running the pipieline.",
     )
-    skip_checks: bool = field(default=False, help="If true, skip checks on paths (e.g. validation, globbing). Useful in case many paths are being evaluated.")
+    skip_checks: bool = field(
+        default=False,
+        help="If true, skip checks on paths (e.g. validation, globbing). Useful in case many paths are being evaluated.",
+    )
 
 
 class WarcExtractorCli(BaseCli):

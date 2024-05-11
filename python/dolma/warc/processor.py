@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Union
 
 import msgspec
 import smart_open
-from charset_normalizer import detect
 from necessary import necessary
 
 from ..core.data_types import InputSpecWithMetadataAndAttributes
@@ -17,15 +16,15 @@ from ..core.paths import glob_path, join_path, split_ext
 from ..core.registry import TaggerRegistry
 from ..core.runtime import _make_paths_from_prefix
 from ..core.utils import make_variable_name
-
-# from .documents import WarcDocument, WarcDocumentMetadata
-# from .filters import FilterInputType, partition_extractors
 from .linearizers import LinearizerRegistry
 from .utils import UrlNormalizer, raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
     if FASTWARC_AVAILABLE or TYPE_CHECKING:
-        from fastwarc.warc import ArchiveIterator, WarcRecordType
+        from fastwarc.warc import (  # pylint: disable=no-name-in-module
+            ArchiveIterator,
+            WarcRecordType,
+        )
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:
@@ -71,11 +70,14 @@ class WarcProcessor(BaseParallelProcessor):
         files: int = 0,
         records: int = 0,
         extracted: int = 0,
+        failed: int = 0,
     ) -> Dict[str, int]:
         """Records (documents) and records are the units we use to track progress."""
 
         # we call the super method to increment the progress bar
-        return super().increment_progressbar(queue, files=files, records=records, extracted=extracted)
+        return super().increment_progressbar(
+            queue, files=files, records=records, extracted=extracted, failed=failed
+        )
 
     @classmethod
     def process_single(
@@ -113,6 +115,7 @@ class WarcProcessor(BaseParallelProcessor):
         # hold the number of records processed in this variable
         records_cnt = 0
         extracted_cnt = 0
+        failed_cnt = 0
 
         # encoder
         encoder = msgspec.json.Encoder()
@@ -130,6 +133,9 @@ class WarcProcessor(BaseParallelProcessor):
         # create the html extractor
         linearizer_name: str = kwargs.get("linearizer_name") or "resiliparse"
         linearizer = LinearizerRegistry.get(linearizer_name)()
+
+        # get compression format
+        cpz_ext = kwargs.get("compression", None) or "zst"
 
         # url normalizer
         url_normalizer = UrlNormalizer()
@@ -149,9 +155,9 @@ class WarcProcessor(BaseParallelProcessor):
 
         # derive the destination path if it is not provided by splitting out all the
         # extensions, removing gz and warc, and adding jsonl.gz
-        if not destination_path.endswith(".jsonl.gz"):
+        if not destination_path.endswith(f".jsonl.{cpz_ext}"):
             prot, base_dst, extension = split_ext(destination_path)
-            extension = extension.replace(".gz", "").replace(".warc", "") + ".jsonl.gz"
+            extension = extension.replace(f".{cpz_ext}", "").replace(".warc", "") + f".jsonl.{cpz_ext}"
             destination_path = join_path(prot, *base_dst[:-1], base_dst[-1] + extension)
 
         with smart_open.open(source_path, "rb") as warc_file, smart_open.open(
@@ -170,18 +176,19 @@ class WarcProcessor(BaseParallelProcessor):
                 # keep track of the number of records processed
                 records_cnt += 1
 
-                # handling decoding here; we try to decode the content using the charset (fast),
-                # and only if that fails, we use the chardet library to detect the encoding (slow)
-                decoded_content = ""
-                if record.http_charset:
-                    try:
-                        decoded_content = content.decode(record.http_charset).strip()
-                    except (UnicodeDecodeError, LookupError, UnicodeError):
-                        decoded_content = ""
-                if not decoded_content and (encoding := detect(content)["encoding"]):
-                    decoded_content = content.decode(str(encoding)).strip()
-                if not decoded_content:
-                    continue
+                # # handling decoding here; we try to decode the content using the charset (fast),
+                # # and only if that fails, we use the chardet library to detect the encoding (slow)
+                # decoded_content = ""
+                # if record.http_charset:
+                #     try:
+                #         decoded_content = content.decode(record.http_charset).strip()
+                #     except (UnicodeDecodeError, LookupError, UnicodeError):
+                #         decoded_content = ""
+                # if not decoded_content and (encoding := detect(content)["encoding"]):
+                #     decoded_content = content.decode(str(encoding)).strip()
+                # if not decoded_content:
+                #     failed_cnt += 1
+                #     continue
 
                 # metadata
                 ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
@@ -191,7 +198,8 @@ class WarcProcessor(BaseParallelProcessor):
                 metadata = dict(
                     warc_url=target_uri,
                     url=url_normalizer(target_uri),
-                    html=decoded_content,
+                    # html=decoded_content,
+                    html=content,
                     warc_date=cls._format_to_dolma_timestamp(warc_date),
                     warc_filename=warc_filename or "",
                     content_type=ctype,
@@ -211,7 +219,7 @@ class WarcProcessor(BaseParallelProcessor):
                     continue
 
                 # extract text
-                doc.text = linearizer.linearize(content=decoded_content)
+                doc.text = linearizer.linearize(content=content, encoding=record.http_charset)
 
                 # these are the properties extracted from the HTML content
                 post_attributes = {name: tagger.tag(doc) for name, tagger in post_taggers.items()}
@@ -236,17 +244,20 @@ class WarcProcessor(BaseParallelProcessor):
 
                 if extracted_cnt % update_interval == 0:
                     # update the progress bar every update_interval documents to prevent buffering
-                    cls.increment_progressbar(queue, records=records_cnt, extracted=extracted_cnt)
+                    cls.increment_progressbar(
+                        queue, records=records_cnt, extracted=extracted_cnt, failed=failed_cnt
+                    )
 
                     # reset the counters
                     extracted_cnt = 0
                     records_cnt = 0
+                    failed_cnt = 0
 
                     if queue.qsize() >= multiprocessing.cpu_count():
                         # double the update interval if the queue is full
                         update_interval *= 2
 
-        cls.increment_progressbar(queue, files=1, records=records_cnt, extracted=extracted_cnt)
+        cls.increment_progressbar(queue, files=1, records=records_cnt, extracted=extracted_cnt, failed=failed_cnt)
 
 
 def create_and_run_warc_pipeline(
@@ -315,6 +326,7 @@ def create_and_run_warc_pipeline(
             retries_on_error=retries_on_error,
             num_processes=num_processes,
         )
+
         processor(
             skip_on_failure=skip_on_failure,
             store_html_in_metadata=store_html_in_metadata,

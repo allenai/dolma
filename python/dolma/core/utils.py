@@ -3,17 +3,11 @@ import os
 import re
 import string
 import sys
-from typing import List, Union, cast
-
-try:
-    import blingfire
-
-    BLINGFIRE_AVAILABLE = True
-except Exception:
-    BLINGFIRE_AVAILABLE = False
+from typing import TYPE_CHECKING, List, Union, cast
 
 import nltk
 import uniseg.wordbreak
+from necessary import necessary
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 from omegaconf import OmegaConf as om
 
@@ -22,9 +16,13 @@ try:
 except LookupError:
     nltk.download("punkt")
 
-
 from .data_types import TextSlice
 from .loggers import get_logger
+
+with necessary("blingfire", soft=True) as BLINGFIRE_AVAILABLE:
+    if BLINGFIRE_AVAILABLE or TYPE_CHECKING:
+        import blingfire
+
 
 sent_tokenizer = PunktSentenceTokenizer()
 logger = get_logger(__name__)
@@ -134,7 +132,7 @@ def import_modules(modules_path: Union[List[str], None]):
                 sys.path.insert(0, module_parent)
                 importlib.import_module(module_name)
             elif module_path in sys.modules[module_name].__path__:
-                logger.info(f"{module_path} has already been imported.")
+                logger.info("%s has already been imported.", module_path)
             else:
                 raise ImportError(
                     f"Failed to import {module_path} because the corresponding module name "
