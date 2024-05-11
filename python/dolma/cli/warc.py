@@ -65,7 +65,7 @@ class WarcExtractorConfig:
         default=False,
         help="If true, only print the configuration and exit without running the pipieline.",
     )
-    check: bool = field(default=True, help="If true, check if input documents are valid paths before running the")
+    skip_checks: bool = field(default=False, help="If true, skip checks on paths (e.g. validation, globbing). Useful in case many paths are being evaluated.")
 
 
 class WarcExtractorCli(BaseCli):
@@ -84,7 +84,7 @@ class WarcExtractorCli(BaseCli):
             if not isinstance(source_name, str):
                 raise ValueError(f"source_name must be a string, not {source_name} ({type(source_name)})")
 
-            if parsed_config.check:
+            if not parsed_config.skip_checks:
                 # perform some path validation to make sure we don't call the warc
                 # extractor with an invalid config
                 total_matching_documents = 0
@@ -118,4 +118,5 @@ class WarcExtractorCli(BaseCli):
                 skip_no_post_taggers=parsed_config.post.skip,
                 store_html_in_metadata=parsed_config.store_html_in_metadata,
                 linearizer_name=parsed_config.linearizer,
+                skip_source_glob=parsed_config.skip_checks,
             )

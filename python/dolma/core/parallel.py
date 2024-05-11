@@ -70,6 +70,7 @@ class BaseParallelProcessor:
         seed: int = 0,
         pbar_timeout: float = 1e-3,
         ignore_existing: bool = False,
+        skip_source_glob: bool = False,
         include_paths: Optional[List[str]] = None,
         exclude_paths: Optional[List[str]] = None,
         files_regex_pattern: Optional[str] = None,
@@ -95,6 +96,7 @@ class BaseParallelProcessor:
             seed (int, optional): The random seed to use when shuffling input files. Defaults to 0.
             pbar_timeout (float, optional): How often to update progress bars in seconds.
                 Defaults to 0.01 seconds.
+            skip_source_glob (bool, optional): Do not glob source files. Off by default.
             ignore_existing (bool, optional): Whether to ignore files that have been already processed and
                 re-run the processor on all files from scratch. Defaults to False.
             include_paths (Optional[List[str]], optional): A list of paths to include. If provided, only files
@@ -168,6 +170,8 @@ class BaseParallelProcessor:
 
         if len(self.src_prefixes) == 0:
             raise ValueError("At least one source prefix must be provided.")
+
+        self.skip_source_glob = skip_source_glob
 
         if any("*" in p for p in itertools.chain(self.dst_prefixes, self.meta_prefixes)):
             raise ValueError("Destination and metadata prefixes cannot contain wildcards.")
@@ -468,7 +472,9 @@ class BaseParallelProcessor:
         for src_prefix, dst_prefix, meta_prefix, kwargs_prefix in zip(
             self.src_prefixes, self.dst_prefixes, self.meta_prefixes, self.process_single_kwargs
         ):
-            current_source_prefixes = sorted(glob_path(src_prefix))
+            current_source_prefixes = sorted(
+                [src_prefix] if self.skip_source_glob else glob_path(src_prefix)
+            )
 
             if len(current_source_prefixes) > 1:
                 # make relative only makes sense if there is more than one path; otherwise, it's unclear

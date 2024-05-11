@@ -176,7 +176,7 @@ class WarcProcessor(BaseParallelProcessor):
                 if record.http_charset:
                     try:
                         decoded_content = content.decode(record.http_charset).strip()
-                    except (UnicodeDecodeError, LookupError):
+                    except (UnicodeDecodeError, LookupError, UnicodeError):
                         decoded_content = ""
                 if not decoded_content and (encoding := detect(content)["encoding"]):
                     decoded_content = content.decode(str(encoding)).strip()
@@ -266,6 +266,7 @@ def create_and_run_warc_pipeline(
     store_html_in_metadata: bool = False,
     skip_no_pre_taggers: bool = False,
     skip_no_post_taggers: bool = False,
+    skip_source_glob: bool = False,
 ):
     with ExitStack() as stack:
         if metadata is None:
@@ -280,7 +281,8 @@ def create_and_run_warc_pipeline(
 
         if isinstance(destination, str) and isinstance(metadata, str):
             for src_pattern in [documents] if isinstance(documents, str) else documents:
-                all_src_paths.extend(list(glob_path(src_pattern)))
+                all_src_paths.extend([src_pattern] if skip_source_glob else list(glob_path(src_pattern)))
+
             all_dst_paths.extend(_make_paths_from_prefix(paths=all_src_paths, prefix=destination))
             all_meta_paths.extend(_make_paths_from_prefix(paths=all_src_paths, prefix=metadata))
 
@@ -295,7 +297,7 @@ def create_and_run_warc_pipeline(
                 raise ValueError("metadata and destination must have the same length")
 
             for src_pattern, dst_pattern, meta_pattern in zip(documents, destination, metadata):
-                src_paths = list(glob_path(src_pattern))
+                src_paths = [src_pattern] if skip_source_glob else list(glob_path(src_pattern))
                 all_src_paths.extend(src_paths)
                 all_dst_paths.extend(_make_paths_from_prefix(paths=src_paths, prefix=dst_pattern))
                 all_meta_paths.extend(_make_paths_from_prefix(paths=src_paths, prefix=meta_pattern))
@@ -308,6 +310,7 @@ def create_and_run_warc_pipeline(
             metadata_prefix=all_meta_paths,
             debug=debug,
             seed=seed,
+            skip_source_glob=skip_source_glob,
             ignore_existing=ignore_existing,
             retries_on_error=retries_on_error,
             num_processes=num_processes,

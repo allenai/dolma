@@ -32,17 +32,21 @@ class UrlNormalizer:
         self.www_subdomain_regex = re.compile(r"(^(www\d*\.))|(/+$)", re.IGNORECASE)
 
     def __call__(self, url: str) -> str:
-        # remove leading '<' or quotes and trailing '>', quotes, or slashes
-        clean_url = re.sub(r"(^['\"<]+)|([/'\">]+$)", "", url)
+        try:
+            # remove leading '<' or quotes and trailing '>', quotes, or slashes
+            clean_url = re.sub(r"(^['\"<]+)|([/'\">]+$)", "", url)
 
-        # canonicalize the URL
-        canonical = canonicalize_url(clean_url)
-        normalized = str(url_normalize(canonical))
+            # canonicalize the URL
+            canonical = canonicalize_url(clean_url)
 
-        # remove the protocol
-        _, normalized = normalized.split("://", 1)
+            normalized = str(url_normalize(canonical))
 
-        # remove the www subdomain
-        normalized = self.www_subdomain_regex.sub("", normalized)
+            # remove the protocol
+            _, normalized = normalized.split("://", 1)
+
+            # remove the www subdomain
+            normalized = self.www_subdomain_regex.sub("", normalized)
+        except UnicodeError:
+            normalized = ""
 
         return normalized

@@ -223,8 +223,13 @@ def glob_path(
     protocol, parsed_path = _pathify(path)
     fs = _get_fs(path)
 
-    if fs.isdir(path) and autoglob_dirs:
+    if autoglob_dirs and fs.isdir(path):
         path = join_path(protocol, _unescape_glob(parsed_path), "*")
+
+    if '*' not in str(path):
+        # nothing to glob
+        yield str(path)
+        return
 
     for gl in fs.glob(path):
         gl = str(gl)
