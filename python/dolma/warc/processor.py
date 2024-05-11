@@ -25,6 +25,8 @@ with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
             ArchiveIterator,
             WarcRecordType,
         )
+        from fastwarc.stream_io import GZipStream, LZ4Stream
+
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:
@@ -70,14 +72,11 @@ class WarcProcessor(BaseParallelProcessor):
         files: int = 0,
         records: int = 0,
         extracted: int = 0,
-        failed: int = 0,
     ) -> Dict[str, int]:
         """Records (documents) and records are the units we use to track progress."""
 
         # we call the super method to increment the progress bar
-        return super().increment_progressbar(
-            queue, files=files, records=records, extracted=extracted, failed=failed
-        )
+        return super().increment_progressbar(queue, files=files, records=records, extracted=extracted)
 
     @classmethod
     def process_single(
@@ -115,7 +114,6 @@ class WarcProcessor(BaseParallelProcessor):
         # hold the number of records processed in this variable
         records_cnt = 0
         extracted_cnt = 0
-        failed_cnt = 0
 
         # encoder
         encoder = msgspec.json.Encoder()
@@ -160,9 +158,18 @@ class WarcProcessor(BaseParallelProcessor):
             extension = extension.replace(f".{cpz_ext}", "").replace(".warc", "") + f".jsonl.{cpz_ext}"
             destination_path = join_path(prot, *base_dst[:-1], base_dst[-1] + extension)
 
-        with smart_open.open(source_path, "rb") as warc_file, smart_open.open(
-            destination_path, "wb"
-        ) as output_file:
+        with ExitStack() as stack:
+            output_file = stack.enter_context(smart_open.open(destination_path, "wb"))
+
+            if source_path.endswith(".lz4"):
+                warc_stream = stack.enter_context(smart_open.open(source_path, "rb", compression='disable'))
+                warc_file = LZ4Stream(warc_stream)
+            elif source_path.endswith(".gz"):
+                warc_stream = stack.enter_context(smart_open.open(source_path, "rb", compression='disable'))
+                warc_file = GZipStream(warc_stream)
+            else:
+                warc_file = stack.enter_context(smart_open.open(source_path, "rt"))
+
             it = ArchiveIterator(warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo)
             for record in it:
                 if record.record_type == WarcRecordType.warcinfo:
@@ -176,20 +183,6 @@ class WarcProcessor(BaseParallelProcessor):
                 # keep track of the number of records processed
                 records_cnt += 1
 
-                # # handling decoding here; we try to decode the content using the charset (fast),
-                # # and only if that fails, we use the chardet library to detect the encoding (slow)
-                # decoded_content = ""
-                # if record.http_charset:
-                #     try:
-                #         decoded_content = content.decode(record.http_charset).strip()
-                #     except (UnicodeDecodeError, LookupError, UnicodeError):
-                #         decoded_content = ""
-                # if not decoded_content and (encoding := detect(content)["encoding"]):
-                #     decoded_content = content.decode(str(encoding)).strip()
-                # if not decoded_content:
-                #     failed_cnt += 1
-                #     continue
-
                 # metadata
                 ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
                 date = cls._parse_warc_timestamp(record.http_headers.get("Date"))
@@ -198,7 +191,6 @@ class WarcProcessor(BaseParallelProcessor):
                 metadata = dict(
                     warc_url=target_uri,
                     url=url_normalizer(target_uri),
-                    # html=decoded_content,
                     html=content,
                     warc_date=cls._format_to_dolma_timestamp(warc_date),
                     warc_filename=warc_filename or "",
@@ -244,20 +236,17 @@ class WarcProcessor(BaseParallelProcessor):
 
                 if extracted_cnt % update_interval == 0:
                     # update the progress bar every update_interval documents to prevent buffering
-                    cls.increment_progressbar(
-                        queue, records=records_cnt, extracted=extracted_cnt, failed=failed_cnt
-                    )
+                    cls.increment_progressbar(queue, records=records_cnt, extracted=extracted_cnt)
 
                     # reset the counters
                     extracted_cnt = 0
                     records_cnt = 0
-                    failed_cnt = 0
 
                     if queue.qsize() >= multiprocessing.cpu_count():
                         # double the update interval if the queue is full
                         update_interval *= 2
 
-        cls.increment_progressbar(queue, files=1, records=records_cnt, extracted=extracted_cnt, failed=failed_cnt)
+        cls.increment_progressbar(queue, files=1, records=records_cnt, extracted=extracted_cnt)
 
 
 def create_and_run_warc_pipeline(
