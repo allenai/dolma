@@ -21,11 +21,11 @@ from .utils import UrlNormalizer, raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
     if FASTWARC_AVAILABLE or TYPE_CHECKING:
+        from fastwarc.stream_io import GZipStream, LZ4Stream
         from fastwarc.warc import (  # pylint: disable=no-name-in-module
             ArchiveIterator,
             WarcRecordType,
         )
-        from fastwarc.stream_io import GZipStream, LZ4Stream
 
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
@@ -162,10 +162,10 @@ class WarcProcessor(BaseParallelProcessor):
             output_file = stack.enter_context(smart_open.open(destination_path, "wb"))
 
             if source_path.endswith(".lz4"):
-                warc_stream = stack.enter_context(smart_open.open(source_path, "rb", compression='disable'))
+                warc_stream = stack.enter_context(smart_open.open(source_path, "rb", compression="disable"))
                 warc_file = LZ4Stream(warc_stream)
             elif source_path.endswith(".gz"):
-                warc_stream = stack.enter_context(smart_open.open(source_path, "rb", compression='disable'))
+                warc_stream = stack.enter_context(smart_open.open(source_path, "rb", compression="disable"))
                 warc_file = GZipStream(warc_stream)
             else:
                 warc_file = stack.enter_context(smart_open.open(source_path, "rt"))

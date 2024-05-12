@@ -182,6 +182,17 @@ class BaseParallelProcessor:
         return get_logger(cls.__name__)
 
     @classmethod
+    def process_multiple(
+        cls,
+        source_paths: List[str],
+        destination_path: str,
+        queue: QueueType,
+        **kwargs: Any,
+    ):
+        """Process multiple files. Naively calls process_single for each file, but can be overridden."""
+        raise NotImplementedError()
+
+    @classmethod
     def process_single(
         cls,
         source_path: str,
