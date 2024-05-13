@@ -1,3 +1,4 @@
+import functools
 import inspect
 import itertools
 import logging
@@ -9,6 +10,7 @@ import time
 from contextlib import ExitStack
 from datetime import datetime
 from functools import partial
+from hashlib import md5
 from queue import Queue
 from threading import Thread
 from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, TypeVar, Union
@@ -26,6 +28,7 @@ from .paths import (
     make_relative,
     mkdir_p,
     parent,
+    split_ext,
     split_path,
     sub_prefix,
 )
@@ -182,15 +185,38 @@ class BaseParallelProcessor:
         return get_logger(cls.__name__)
 
     @classmethod
+    def get_unified_path(cls, paths: List[str]) -> str:
+        """Get a unified path for a list of paths."""
+
+        if len(paths) == 1:
+            # if there is only one path, we don't need to unify anything
+            return paths[0]
+
+        # get shared root for all paths; we will put the unified path here
+        root, relative = make_relative(paths)
+
+        # get the extension from the first path; assume all paths have the same extension
+        _, _, ext = split_ext(relative[0])
+
+        # hash all the sorted relative paths in order to get a unique name
+        # the type: ignore is needed because mypy fails to infer the type of the lambda
+        # (the "or" ensures that the lambda returns the same type as the first argument, which is a hash)
+        h = functools.reduce(lambda h, p: h.update(p.encode()) or h, sorted(relative), md5())  # type: ignore
+
+        # return the unified path
+        return join_path(root, h.hexdigest() + ext)
+
+    @classmethod
     def process_multiple(
         cls,
         source_paths: List[str],
-        destination_path: str,
+        destination_paths: List[str],
         queue: QueueType,
         **kwargs: Any,
     ):
         """Process multiple files. Naively calls process_single for each file, but can be overridden."""
-        raise NotImplementedError()
+        for source_path, destination_path in zip(source_paths, destination_paths):
+            cls.process_single(source_path=source_path, destination_path=destination_path, queue=queue, **kwargs)
 
     @classmethod
     def process_single(

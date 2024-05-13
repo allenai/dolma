@@ -53,7 +53,7 @@ class BaseRegistry(Generic[T]):
             tagger_cls: Type[BaseRegistry] = cls,
         ) -> T:
             """Add a tagger to the registry using tagger_name as the name."""
-            if tagger_name in tagger_cls._get_storage() and tagger_cls._get_storage()[tagger_name] != tagger_self:
+            if tagger_name in tagger_cls._get_storage() and tagger_cls.get(tagger_name) != tagger_self:
                 if tagger_self.__module__ == "__main__":
                     return tagger_self
 

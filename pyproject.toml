@@ -24,7 +24,7 @@ dependencies = [
     "requests",
     "rich",
     "s3fs>=2023.6.0",
-    "smart-open>=7.0.4",
+    "smart-open",
     "tokenizers>=0.15.0,<1.0.0",
     "tqdm",
     "uniseg",
@@ -101,7 +101,7 @@ dolma = "dolma.cli.__main__:main"
 
 [project.optional-dependencies]
 dev = [
-    "black>=22.6.0",
+    "black[jupyter]>=22.6.0",
     "flake8>=5.0",
     "flake8-pyi>=22.8.1",
     "Flake8-pyproject>=1.1.0",

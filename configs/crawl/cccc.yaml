@@ -1,6 +1,6 @@
 documents:  ${d.stdin:}
 destination:
-    - ${oc.env:HOME}/cccc/CC-MAIN-2024-18/documents
+    - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2024-18
 processes: ${d.procs:}
 source_name: cccc_CC-MAIN-2024-18
 linearizer: resiliparse

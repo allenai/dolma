@@ -3,7 +3,7 @@ import os
 import re
 import string
 import sys
-from typing import TYPE_CHECKING, List, Union, cast
+from typing import List, Union, cast
 
 import nltk
 import uniseg.wordbreak
@@ -19,9 +19,12 @@ except LookupError:
 from .data_types import TextSlice
 from .loggers import get_logger
 
-with necessary("blingfire", soft=True) as BLINGFIRE_AVAILABLE:
-    if BLINGFIRE_AVAILABLE or TYPE_CHECKING:
-        import blingfire
+try:
+    import blingfire
+
+    BLINGFIRE_AVAILABLE = True
+except (ImportError, OSError):
+    BLINGFIRE_AVAILABLE = False
 
 
 sent_tokenizer = PunktSentenceTokenizer()
@@ -146,3 +149,24 @@ def dataclass_to_dict(dataclass_instance) -> dict:
 
     # force typecasting because a dataclass instance will always be a dict
     return cast(dict, om.to_object(om.structured(dataclass_instance)))
+
+
+with necessary(("smart_open", "7.0.4"), soft=True) as SMART_OPEN_NO_ZSTD:
+    if SMART_OPEN_NO_ZSTD:
+        import io
+
+        import zstandard  # type: ignore
+        from smart_open import register_compressor
+
+        def _handle_zstd(file_obj, mode):
+            result = zstandard.open(filename=file_obj, mode=mode)
+            # zstandard.open returns an io.TextIOWrapper in text mode, but otherwise
+            # returns a raw stream reader/writer, and we need the `io` wrapper
+            # to make FileLikeProxy work correctly.
+            if "b" in mode and "w" in mode:
+                result = io.BufferedWriter(result)
+            elif "b" in mode and "r" in mode:
+                result = io.BufferedReader(result)
+            return result
+
+        register_compressor(".zst", _handle_zstd)
