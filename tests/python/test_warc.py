@@ -36,6 +36,9 @@ class TestWarcExtractor(unittest.TestCase):
             linearizer_name="resiliparse",
             pre_taggers=["cc_re"],
             post_taggers=["lingua_1e2"],
+            backoff_max_time=0,
+            backoff_max_tries=1,
+            compression="gz",
         )
         outputs: Dict[str, List[dict]] = {}
         for fn in os.listdir(self.tempdir):

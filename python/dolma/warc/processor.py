@@ -267,6 +267,9 @@ def create_and_run_warc_pipeline(
     skip_no_pre_taggers: bool = False,
     skip_no_post_taggers: bool = False,
     skip_source_glob: bool = False,
+    backoff_max_time: Optional[int] = None,
+    backoff_max_tries: Optional[int] = None,
+    compression: Optional[str] = "zst",
 ):
     with ExitStack() as stack:
         if metadata is None:
@@ -325,4 +328,7 @@ def create_and_run_warc_pipeline(
             skip_no_pre_taggers=skip_no_pre_taggers,
             skip_no_post_taggers=skip_no_post_taggers,
             source_name=source_name,
+            backoff_max_time=backoff_max_time,
+            backoff_max_tries=backoff_max_tries,
+            compression=compression,
         )
