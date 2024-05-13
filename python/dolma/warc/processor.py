@@ -88,10 +88,15 @@ class WarcProcessor(BaseParallelProcessor):
     ):
         max_time = kwargs.pop("backoff_max_time", None) or 10**60
         max_tries = kwargs.pop("backoff_max_tries", None) or 10
+        debug = kwargs.get("debug", None) or False
         (logger := cls.get_logger()).setLevel(logging.WARNING)
-        fn = backoff.on_exception(backoff.expo, Exception, max_time=max_time, max_tries=max_tries, logger=logger)(
-            cls._process_single_without_backoff,
-        )
+
+        if not debug:
+            fn = backoff.on_exception(
+                backoff.expo, Exception, max_time=max_time, max_tries=max_tries, logger=logger
+            )(cls._process_single_without_backoff)
+        else:
+            fn = cls._process_single_without_backoff
         return fn(source_path, destination_path, queue, **kwargs)
 
     @classmethod
@@ -318,7 +323,6 @@ def create_and_run_warc_pipeline(
             retries_on_error=retries_on_error,
             num_processes=num_processes,
         )
-
         processor(
             skip_on_failure=skip_on_failure,
             store_html_in_metadata=store_html_in_metadata,
@@ -331,4 +335,5 @@ def create_and_run_warc_pipeline(
             backoff_max_time=backoff_max_time,
             backoff_max_tries=backoff_max_tries,
             compression=compression,
+            debug=debug,
         )
