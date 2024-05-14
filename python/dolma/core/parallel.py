@@ -578,6 +578,7 @@ class BaseParallelProcessor:
                 if not self.ignore_existing and exists(metadata_path):
                     # metadata file exists, which indicates that the file has already been processed
                     some_already_processed = True
+                    continue
 
                 # create new paths to pass to taggers
                 all_paths.src.append(add_suffix(prefix, path))
