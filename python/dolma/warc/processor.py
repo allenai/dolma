@@ -1,5 +1,4 @@
 import datetime
-import logging
 import multiprocessing
 import tempfile
 from contextlib import ExitStack
@@ -32,10 +31,6 @@ with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:
         import dateparser
 
-with necessary("backoff", soft=True) as BACKOFF_AVAILABLE:
-    if BACKOFF_AVAILABLE or TYPE_CHECKING:
-        import backoff
-
 
 DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
 
@@ -47,7 +42,6 @@ class WarcProcessor(BaseParallelProcessor):
         super().__init__(*args, **kwargs)
         assert FASTWARC_AVAILABLE, raise_warc_dependency_error("fastwarc")
         assert DATEPARSER_AVAILABLE, raise_warc_dependency_error("dateparser")
-        assert BACKOFF_AVAILABLE, raise_warc_dependency_error("backoff")
 
     @staticmethod
     def _format_to_dolma_timestamp(timestamp: Optional[datetime.datetime] = None) -> str:
@@ -80,27 +74,6 @@ class WarcProcessor(BaseParallelProcessor):
 
     @classmethod
     def process_single(
-        cls,
-        source_path: str,
-        destination_path: str,
-        queue: QueueType,
-        **kwargs,
-    ):
-        max_time = kwargs.pop("backoff_max_time", None) or 10**60
-        max_tries = kwargs.pop("backoff_max_tries", None) or 10
-        debug = kwargs.get("debug", None) or False
-        (logger := cls.get_logger()).setLevel(logging.WARNING)
-
-        if not debug:
-            fn = backoff.on_exception(
-                backoff.expo, Exception, max_time=max_time, max_tries=max_tries, logger=logger
-            )(cls._process_single_without_backoff)
-        else:
-            fn = cls._process_single_without_backoff
-        return fn(source_path, destination_path, queue, **kwargs)
-
-    @classmethod
-    def _process_single_without_backoff(
         cls,
         source_path: str,
         destination_path: str,
@@ -273,7 +246,7 @@ def create_and_run_warc_pipeline(
     skip_no_post_taggers: bool = False,
     skip_source_glob: bool = False,
     backoff_max_time: Optional[int] = None,
-    backoff_max_tries: Optional[int] = None,
+    backoff_max_tries: Optional[int] = 10,
     compression: Optional[str] = "zst",
 ):
     with ExitStack() as stack:
@@ -320,7 +293,9 @@ def create_and_run_warc_pipeline(
             seed=seed,
             skip_source_glob=skip_source_glob,
             ignore_existing=ignore_existing,
-            retries_on_error=retries_on_error,
+            backoff_max_tries=backoff_max_tries,
+            backoff_max_time=backoff_max_time,
+            backoff_exceptions=(Exception,),
             num_processes=num_processes,
         )
         processor(
@@ -332,8 +307,6 @@ def create_and_run_warc_pipeline(
             skip_no_pre_taggers=skip_no_pre_taggers,
             skip_no_post_taggers=skip_no_post_taggers,
             source_name=source_name,
-            backoff_max_time=backoff_max_time,
-            backoff_max_tries=backoff_max_tries,
             compression=compression,
             debug=debug,
         )

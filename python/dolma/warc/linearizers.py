@@ -50,7 +50,7 @@ class ResiliparseHtmlExtractor(BaseLinearizer):
         links: bool = False,
         form_fields: bool = False,
         noscript: bool = False,
-        comments: bool = True,
+        comments: bool = False,
         skip_elements: Optional[Iterable[str]] = None,
     ) -> None:
         assert RESILIPARSE_AVAILABLE, raise_warc_dependency_error("resiliparse")

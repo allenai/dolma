@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from time import sleep
 from typing import Any
 from unittest import TestCase
 
@@ -31,7 +32,24 @@ class MockProcessor(BaseParallelProcessor):
         queue.put((1,))
 
 
+class MockProcessorWithFail(MockProcessor):
+    @classmethod
+    def process_single(
+        cls,
+        source_path: str,
+        destination_path: str,
+        queue: QueueType,
+        **kwargs: Any,
+    ):
+        sleep(1)
+        raise ValueError(f"Failed on {source_path}")
+
+
 class TestParallel(TestCase):
+    def _read(self, path):
+        with smart_open.open(path, "rb") as f:
+            return f.read()
+
     def test_base_parallel_processor(self):
         with self.assertRaises(ValueError):
             MockProcessor(source_prefix=[], destination_prefix=[], metadata_prefix=[])
@@ -50,6 +68,12 @@ class TestParallel(TestCase):
             self.assertEqual(sorted(src), sorted(meta))
             self.assertEqual(sorted(src), sorted(dest))
 
+            for s, e in zip(src, dest):
+                s = LOCAL_DATA / "expected" / s
+                e = f"{d}/destination/{e}"
+                self.assertEqual(self._read(s), self._read(e))
+
+    def test_two_stages(self):
         with TemporaryDirectory() as d:
             proc = MockProcessor(
                 source_prefix=str(LOCAL_DATA / "expected" / "*-paragraphs.*"),
@@ -63,3 +87,33 @@ class TestParallel(TestCase):
             dest = [p for p in os.listdir(f"{d}/destination")]
             self.assertEqual(sorted(src), sorted(meta))
             self.assertEqual(sorted(src), sorted(dest))
+
+            proc = MockProcessor(
+                source_prefix=str(LOCAL_DATA / "expected" / "*"),
+                destination_prefix=f"{d}/destination",
+                metadata_prefix=f"{d}/metadata",
+                ignore_existing=False,
+            )
+            proc()
+
+            # the oldest two files are from the first stage
+            dest2 = sorted(
+                [p for p in os.listdir(f"{d}/destination")], key=lambda x: os.stat(f"{d}/destination/{x}").st_ctime
+            )
+            self.assertEqual(sorted(dest), sorted(dest2[:2]))
+
+    def test_failure(self):
+        with TemporaryDirectory() as d:
+            proc = MockProcessorWithFail(
+                source_prefix=str(LOCAL_DATA / "expected"),
+                destination_prefix=f"{d}/destination",
+                metadata_prefix=f"{d}/metadata",
+                ignore_existing=False,
+                backoff_exceptions=(ValueError,),
+                backoff_max_time=3,
+                backoff_max_tries=3,
+            )
+            with self.assertRaises(ValueError):
+                proc()
+            self.assertEqual(len(os.listdir(f"{d}/destination")), 0)
+            self.assertEqual(len(os.listdir(f"{d}/metadata")), 0)

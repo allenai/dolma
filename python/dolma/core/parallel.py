@@ -1,4 +1,3 @@
-import functools
 import inspect
 import itertools
 import logging
@@ -10,11 +9,11 @@ import time
 from contextlib import ExitStack
 from datetime import datetime
 from functools import partial
-from hashlib import md5
 from queue import Queue
 from threading import Thread
-from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, TypeVar, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Type, TypeVar, Union
 
+import backoff
 import smart_open
 import tqdm
 from typing_extensions import TypeAlias
@@ -23,14 +22,13 @@ from .errors import DolmaError, DolmaRetryableFailure
 from .loggers import get_logger
 from .paths import (
     add_suffix,
+    exists,
     glob_path,
     join_path,
     make_relative,
     mkdir_p,
     parent,
-    split_ext,
     split_path,
-    sub_prefix,
 )
 
 METADATA_SUFFIX = ".done.txt"
@@ -48,8 +46,27 @@ class AllPathsTuple(NamedTuple):
     kwargs: List[KwargsType]
 
     @classmethod
-    def empty(cls) -> "AllPathsTuple":
+    def new(cls) -> "AllPathsTuple":
         return AllPathsTuple([], [], [], [])
+
+    def __len__(self) -> int:
+        return len(self.src)
+
+    @property
+    def empty(self) -> bool:
+        return len(self.src) == 0
+
+    def partition(self, k: int = 1) -> List["AllPathsTuple"]:
+        """Partition the paths into k / n slices containing k files each."""
+        return [
+            AllPathsTuple(
+                src=self.src[i : i + k],
+                dst=self.dst[i : i + k],
+                meta=self.meta[i : i + k],
+                kwargs=self.kwargs[i : i + k],
+            )
+            for i in range(0, len(self.src), k)
+        ]
 
 
 class BaseParallelProcessor:
@@ -74,11 +91,15 @@ class BaseParallelProcessor:
         pbar_timeout: float = 1e-3,
         ignore_existing: bool = False,
         skip_source_glob: bool = False,
+        shuffle_src_paths: bool = True,
         include_paths: Optional[List[str]] = None,
         exclude_paths: Optional[List[str]] = None,
         files_regex_pattern: Optional[str] = None,
-        retries_on_error: int = 0,
+        # retries_on_error: int = 0,
         process_single_kwargs: Union[None, KwargsType, List[KwargsType]] = None,
+        backoff_max_time: Optional[float] = None,
+        backoff_max_tries: int = 1,
+        backoff_exceptions: Optional[Union[Type[Exception], Tuple[Type[Exception], ...]]] = None,
     ):
         """Initialize the parallel processor.
 
@@ -102,18 +123,22 @@ class BaseParallelProcessor:
             skip_source_glob (bool, optional): Do not glob source files. Off by default.
             ignore_existing (bool, optional): Whether to ignore files that have been already processed and
                 re-run the processor on all files from scratch. Defaults to False.
+            shuffle_src_paths (bool, optional): Whether to shuffle the source paths before processing them.
+                Defaults to True.
             include_paths (Optional[List[str]], optional): A list of paths to include. If provided, only files
                 that match one of the paths will be processed. Defaults to None.
             exclude_paths (Optional[List[str]], optional): A list of paths to exclude. If provided, files that
                 match one of the paths will be skipped. Defaults to None.
             files_regex_pattern (Optional[str], optional): A regex pattern to match files. If provided, only
                 files that match the pattern will be processed. Defaults to None.
-            retries_on_error (int, optional): The number of retries to attempt if an error occurs.
-                Defaults to 0.
             process_single_kwargs (Union[None, KwargsType, List[KwargsType]], optional): Additional kwargs to
                 pass to the process_single method. If a single dict is provided, it will be used for all source
                 prefixes. If a list of dicts is provided, each dict will be used for the corresponding source.
                 By default, no additional kwargs are passed.
+            backoff_max_time (Optional[float], optional): The maximum time to backoff. Defaults to None.
+            backoff_max_tries (int, optional): The maximum number of tries to backoff. Defaults to 1.
+            backoff_exceptions (Optional[Union[Type[Exception], Tuple[Type[Exception], ...]], optional): The
+                exceptions to backoff on. Defaults to `dolma.core.errors.DolmaRetryableFailure`.
         """
 
         self.src_prefixes = [source_prefix] if isinstance(source_prefix, str) else source_prefix
@@ -128,7 +153,16 @@ class BaseParallelProcessor:
         self.include_paths = set(include_paths) if include_paths is not None else None
         self.exclude_paths = set(exclude_paths) if exclude_paths is not None else None
         self.files_regex_pattern = re.compile(files_regex_pattern) if files_regex_pattern else None
-        self.retries_on_error = retries_on_error
+        self.shuffle_src_paths = shuffle_src_paths
+
+        # self.retries_on_error = retries_on_error
+        self.backoff_max_time: float = float(backoff_max_time or "inf")
+        self.backoff_max_tries: int = int(backoff_max_tries)
+        self.backoff_exceptions: Tuple[Type[Exception], ...] = (
+            (backoff_exceptions,)
+            if isinstance(backoff_exceptions, type)
+            else backoff_exceptions or (DolmaRetryableFailure,)
+        )
 
         # this are additional kwargs to pass to the process_single method
         process_single_kwargs = process_single_kwargs or {}
@@ -179,35 +213,58 @@ class BaseParallelProcessor:
         if any("*" in p for p in itertools.chain(self.dst_prefixes, self.meta_prefixes)):
             raise ValueError("Destination and metadata prefixes cannot contain wildcards.")
 
+    def __add__(self: BPP, other: BPP) -> BPP:
+        """Combine two parallel processors into one."""
+        if not type(self) is type(other):
+            raise TypeError(f"Cannot add {type(self)} and {type(other)}")
+
+        # we try combining the two list of include paths; if they are both None, then set the combo back to none
+        include_paths: Union[List[str], None] = [*(self.include_paths or []), *(other.include_paths or [])]
+        include_paths = sorted(set(include_paths or [])) if len(include_paths or []) else None
+
+        # do the same for exclude paths
+        exclude_paths: Union[List[str], None] = [*(self.exclude_paths or []), *(other.exclude_paths or [])]
+        exclude_paths = sorted(set(exclude_paths or [])) if len(exclude_paths or []) else None
+
+        # for the regex, do a simple or if both are set
+        regex_pattern: Union[str, None] = None
+        if self.files_regex_pattern and other.files_regex_pattern:
+            regex_pattern = "(" + self.files_regex_pattern.pattern + "|" + other.files_regex_pattern.pattern + ")"
+        elif self.files_regex_pattern:
+            regex_pattern = self.files_regex_pattern.pattern
+        elif other.files_regex_pattern:
+            regex_pattern = other.files_regex_pattern.pattern
+
+        return type(self)(
+            source_prefix=[*self.src_prefixes, *other.src_prefixes],
+            destination_prefix=[*self.dst_prefixes, *other.dst_prefixes],
+            metadata_prefix=[*self.meta_prefixes, *other.meta_prefixes],
+            num_processes=max(self.num_processes, other.num_processes),
+            debug=self.debug or other.debug,
+            seed=self.seed,
+            pbar_timeout=max(self.pbar_timeout, other.pbar_timeout),
+            ignore_existing=self.ignore_existing or other.ignore_existing,
+            include_paths=include_paths,
+            exclude_paths=exclude_paths,
+            files_regex_pattern=regex_pattern,
+            # retries_on_error=max(self.retries_on_error, other.retries_on_error),
+            process_single_kwargs=[*self.process_single_kwargs, *other.process_single_kwargs],
+            backoff_max_time=min(self.backoff_max_time, other.backoff_max_time),
+            backoff_max_tries=min(self.backoff_max_tries, other.backoff_max_tries),
+            backoff_exceptions=tuple(set(self.backoff_exceptions + other.backoff_exceptions)),
+        )
+
+    def __radd__(self: BPP, other: BPP) -> BPP:
+        """Combine two parallel processors into one."""
+        return other.__add__(self)
+
     @classmethod
     def get_logger(cls) -> logging.Logger:
         """Get the logger for the class."""
         return get_logger(cls.__name__)
 
     @classmethod
-    def get_unified_path(cls, paths: List[str]) -> str:
-        """Get a unified path for a list of paths."""
-
-        if len(paths) == 1:
-            # if there is only one path, we don't need to unify anything
-            return paths[0]
-
-        # get shared root for all paths; we will put the unified path here
-        root, relative = make_relative(paths)
-
-        # get the extension from the first path; assume all paths have the same extension
-        _, _, ext = split_ext(relative[0])
-
-        # hash all the sorted relative paths in order to get a unique name
-        # the type: ignore is needed because mypy fails to infer the type of the lambda
-        # (the "or" ensures that the lambda returns the same type as the first argument, which is a hash)
-        h = functools.reduce(lambda h, p: h.update(p.encode()) or h, sorted(relative), md5())  # type: ignore
-
-        # return the unified path
-        return join_path(root, h.hexdigest() + ext)
-
-    @classmethod
-    def process_multiple(
+    def process_batch(
         cls,
         source_paths: List[str],
         destination_paths: List[str],
@@ -240,13 +297,16 @@ class BaseParallelProcessor:
         raise NotImplementedError()
 
     @classmethod
-    def _process_single_and_save_status(
+    def _process_batch_and_save_status(
         cls,
         source_path: str,
         destination_path: str,
         metadata_path: str,
         queue: QueueType,
         serialized_kwargs: bytes,
+        backoff_max_time: float,
+        backoff_max_tries: int,
+        backoff_exceptions: Tuple[Type[Exception], ...],
     ):
         """A wrapper around process single that saves a metadata file if processing is successful."""
 
@@ -255,17 +315,25 @@ class BaseParallelProcessor:
         mkdir_p(parent(metadata_path))
 
         kwargs = pickle.loads(serialized_kwargs)
-        retries_on_error = kwargs.get("retries_on_error", 0) + 1
-        while True:
-            try:
-                cls.process_single(
-                    source_path=source_path, destination_path=destination_path, queue=queue, **kwargs
-                )
-                break
-            except DolmaRetryableFailure as exception:
-                retries_on_error -= 1
-                if retries_on_error == 0:
-                    raise DolmaError from exception
+        fn_with_backoff = backoff.on_exception(
+            backoff.expo,
+            exception=backoff_exceptions,
+            max_tries=backoff_max_tries,
+            max_time=backoff_max_time,
+        )(cls.process_single)
+        fn_with_backoff(source_path=source_path, destination_path=destination_path, queue=queue, **kwargs)
+
+        # retries_on_error = kwargs.get("retries_on_error", 0) + 1
+        # while True:
+        #     try:
+        #         cls.process_single(
+        #             source_path=source_path, destination_path=destination_path, queue=queue, **kwargs
+        #         )
+        #         break
+        #     except DolmaRetryableFailure as exception:
+        #         retries_on_error -= 1
+        #         if retries_on_error == 0:
+        #             raise DolmaError from exception
 
         # write the metadata file
         with smart_open.open(metadata_path, "wt") as f:
@@ -326,6 +394,9 @@ class BaseParallelProcessor:
         all_source_paths: List[str],
         all_destination_paths: List[str],
         all_metadata_paths: List[str],
+        backoff_max_time: float,
+        backoff_max_tries: int,
+        backoff_exceptions: Tuple[Type[Exception], ...],
         all_process_kwargs: Union[List[KwargsType], None] = None,
         **process_single_kwargs: Any,
     ):
@@ -354,64 +425,28 @@ class BaseParallelProcessor:
         thread.start()
 
         for source_path, destination_path, metadata_path, process_kwargs in arguments_iterator:
-            self._process_single_and_save_status(
+            self._process_batch_and_save_status(
                 source_path=source_path,
                 destination_path=destination_path,
                 metadata_path=metadata_path,
                 queue=pbar_queue,
                 serialized_kwargs=pickle.dumps({**process_kwargs, **process_single_kwargs}),
+                backoff_max_time=backoff_max_time,
+                backoff_max_tries=backoff_max_tries,
+                backoff_exceptions=backoff_exceptions,
             )
 
         pbar_queue.put(None)
         thread.join()
-
-    def __add__(self: BPP, other: BPP) -> BPP:
-        """Combine two parallel processors into one."""
-        if not type(self) is type(other):
-            raise TypeError(f"Cannot add {type(self)} and {type(other)}")
-
-        # we try combining the two list of include paths; if they are both None, then set the combo back to none
-        include_paths: Union[List[str], None] = [*(self.include_paths or []), *(other.include_paths or [])]
-        include_paths = sorted(set(include_paths or [])) if len(include_paths or []) else None
-
-        # do the same for exclude paths
-        exclude_paths: Union[List[str], None] = [*(self.exclude_paths or []), *(other.exclude_paths or [])]
-        exclude_paths = sorted(set(exclude_paths or [])) if len(exclude_paths or []) else None
-
-        # for the regex, do a simple or if both are set
-        regex_pattern: Union[str, None] = None
-        if self.files_regex_pattern and other.files_regex_pattern:
-            regex_pattern = "(" + self.files_regex_pattern.pattern + "|" + other.files_regex_pattern.pattern + ")"
-        elif self.files_regex_pattern:
-            regex_pattern = self.files_regex_pattern.pattern
-        elif other.files_regex_pattern:
-            regex_pattern = other.files_regex_pattern.pattern
-
-        return type(self)(
-            source_prefix=[*self.src_prefixes, *other.src_prefixes],
-            destination_prefix=[*self.dst_prefixes, *other.dst_prefixes],
-            metadata_prefix=[*self.meta_prefixes, *other.meta_prefixes],
-            num_processes=max(self.num_processes, other.num_processes),
-            debug=self.debug or other.debug,
-            seed=self.seed,
-            pbar_timeout=max(self.pbar_timeout, other.pbar_timeout),
-            ignore_existing=self.ignore_existing or other.ignore_existing,
-            include_paths=include_paths,
-            exclude_paths=exclude_paths,
-            files_regex_pattern=regex_pattern,
-            retries_on_error=max(self.retries_on_error, other.retries_on_error),
-            process_single_kwargs=[*self.process_single_kwargs, *other.process_single_kwargs],
-        )
-
-    def __radd__(self: BPP, other: BPP) -> BPP:
-        """Combine two parallel processors into one."""
-        return other.__add__(self)
 
     def _multiprocessing_run_all(
         self,
         all_source_paths: List[str],
         all_destination_paths: List[str],
         all_metadata_paths: List[str],
+        backoff_max_time: float,
+        backoff_max_tries: int,
+        backoff_exceptions: Tuple[Type[Exception], ...],
         all_process_kwargs: Union[List[KwargsType], None] = None,
         **process_single_kwargs: Any,
     ):
@@ -464,13 +499,16 @@ class BaseParallelProcessor:
 
             for source_path, destination_path, metadata_path, process_kwargs in arguments_iterator:
                 process_single_fn = partial(
-                    self._process_single_and_save_status,
+                    self._process_batch_and_save_status,
                     queue=pbar_queue,
                     source_path=source_path,
                     destination_path=destination_path,
                     metadata_path=metadata_path,
                     # we need to merge the process_single_kwargs with the additional kwargs
                     serialized_kwargs=pickle.dumps({**process_kwargs, **process_single_kwargs}),
+                    backoff_max_time=backoff_max_time,
+                    backoff_max_tries=backoff_max_tries,
+                    backoff_exceptions=backoff_exceptions,
                 )
                 result = pool.apply_async(process_single_fn)
                 results.append(result)
@@ -494,17 +532,17 @@ class BaseParallelProcessor:
             return False
         return True
 
-    def _get_existing_meta(self, *meta_prefixes: str) -> Set[str]:
-        """Get the existing metadata files for the given prefixes."""
-        existing_metadata = set()
-        for meta_prefix in meta_prefixes:
-            for path in glob_path(meta_prefix):
-                existing_metadata.add(re.sub(rf"{METADATA_SUFFIX}$", "", sub_prefix(path, meta_prefix)))
-        return existing_metadata
+    # def _get_existing_meta(self, *meta_prefixes: str) -> Set[str]:
+    #     """Get the existing metadata files for the given prefixes."""
+    #     existing_metadata = set()
+    #     for meta_prefix in meta_prefixes:
+    #         for path in glob_path(meta_prefix):
+    #             existing_metadata.add(re.sub(rf"{METADATA_SUFFIX}$", "", sub_prefix(path, meta_prefix)))
+    #     return existing_metadata
 
-    def _get_all_paths(self) -> AllPathsTuple:
+    def _get_all_paths(self) -> Tuple[AllPathsTuple, bool]:
         """Get all paths to process using prefixes provided"""
-        all_paths = AllPathsTuple.empty()
+        all_paths = AllPathsTuple.new()
 
         for src_prefix, dst_prefix, meta_prefix, kwargs_prefix in zip(
             self.src_prefixes, self.dst_prefixes, self.meta_prefixes, self.process_single_kwargs
@@ -523,26 +561,31 @@ class BaseParallelProcessor:
             else:
                 raise ValueError(f"Could not find any files matching {src_prefix}")
 
-            # shuffle the order of the files so time estimation in progress bars is more accurate
-            random.shuffle(rel_paths)
+            if self.shuffle_src_paths:
+                # shuffle the order of the files so time estimation in progress bars is more accurate
+                random.shuffle(rel_paths)
 
-            # get a list of which metadata files already exist
-            existing_metadata_names = self._get_existing_meta(meta_prefix)
+            # # get a list of which metadata files already exist
+            some_already_processed = False
 
             for path in rel_paths:
-                if not self.ignore_existing and path in existing_metadata_names:
-                    continue
+                metadata_path = add_suffix(meta_prefix, path) + METADATA_SUFFIX
 
                 if not self._valid_path(path):
+                    # invalid path; skip
                     continue
+
+                if not self.ignore_existing and exists(metadata_path):
+                    # metadata file exists, which indicates that the file has already been processed
+                    some_already_processed = True
 
                 # create new paths to pass to taggers
                 all_paths.src.append(add_suffix(prefix, path))
                 all_paths.dst.append(add_suffix(dst_prefix, path))
-                all_paths.meta.append(add_suffix(meta_prefix, path) + METADATA_SUFFIX)
+                all_paths.meta.append(metadata_path)
                 all_paths.kwargs.append(kwargs_prefix or {})
 
-        return all_paths
+        return all_paths, some_already_processed
 
     def __call__(self, **process_single_kwargs: Any):
         """Run the processor."""
@@ -552,14 +595,11 @@ class BaseParallelProcessor:
 
         random.seed(self.seed)
 
-        # in case the user wants to override the default kwargs for retries
-        process_single_kwargs.setdefault("retries_on_error", self.retries_on_error)
-
-        all_paths = self._get_all_paths()
+        all_paths, some_already_processed = self._get_all_paths()
         logger.info("Found %s files to process", len(all_paths.src))
 
-        if len(all_paths.src) == 0:
-            if len(self._get_existing_meta(*self.meta_prefixes)) > 0:
+        if all_paths.empty:
+            if some_already_processed:
                 logger.info("All files already processed; skipping.")
                 return
             else:
@@ -572,5 +612,8 @@ class BaseParallelProcessor:
             all_destination_paths=all_paths.dst,
             all_metadata_paths=all_paths.meta,
             all_process_kwargs=all_paths.kwargs,
+            backoff_max_time=self.backoff_max_time,
+            backoff_max_tries=self.backoff_max_tries,
+            backoff_exceptions=self.backoff_exceptions,
             **process_single_kwargs,
         )

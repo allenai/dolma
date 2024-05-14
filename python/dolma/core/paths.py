@@ -1,7 +1,7 @@
 import glob
 import os
 import re
-from functools import partial
+from functools import partial, reduce
 from hashlib import sha256
 from itertools import chain
 from pathlib import Path
@@ -542,3 +542,25 @@ def split_ext(path: str) -> Tuple[str, Tuple[str, ...], str]:
         extensions.append(ext)
 
     return prot, (*parts[:-1], filename), "".join(reversed(extensions))
+
+
+def get_unified_path(paths: List[str]) -> str:
+    """Get a unified path for a list of paths."""
+
+    if len(paths) == 1:
+        # if there is only one path, we don't need to unify anything
+        return paths[0]
+
+    # get shared root for all paths; we will put the unified path here
+    root, relative = make_relative(paths)
+
+    # get the extension from the first path; assume all paths have the same extension
+    _, _, ext = split_ext(relative[0])
+
+    # hash all the sorted relative paths in order to get a unique name
+    # the type: ignore is needed because mypy fails to infer the type of the lambda
+    # (the "or" ensures that the lambda returns the same type as the first argument, which is a hash)
+    h = reduce(lambda h, p: h.update(p.encode()) or h, sorted(relative), sha256())  # type: ignore
+
+    # return the unified path
+    return join_path(root, h.hexdigest() + ext)
