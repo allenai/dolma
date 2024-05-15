@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 
 import msgspec
 import smart_open
-from courlan import clean_url
+from courlan import clean_url   # pyright: ignore
 from necessary import necessary
 
 from ..core.data_types import InputSpecWithMetadataAndAttributes
@@ -275,7 +275,7 @@ def create_and_run_warc_pipeline(
     skip_no_pre_taggers: bool = False,
     skip_no_post_taggers: bool = False,
     skip_source_glob: bool = False,
-    backoff_max_time: Optional[int] = None,
+    backoff_max_time: Optional[float] = None,
     backoff_max_tries: Optional[int] = 10,
     compression: Optional[str] = "zst",
     skip_duplicate_urls: bool = False,
@@ -331,19 +331,16 @@ def create_and_run_warc_pipeline(
             shuffle_src_paths=False,
         )
 
-        from dolma.core.runtime import profiler
-
-        with profiler("temp/test.prof", human_readable=False):
-            processor(
-                skip_on_failure=skip_on_failure,
-                store_html_in_metadata=store_html_in_metadata,
-                linearizer_name=linearizer_name,
-                pre_taggers=pre_taggers,
-                post_taggers=post_taggers,
-                skip_no_pre_taggers=skip_no_pre_taggers,
-                skip_no_post_taggers=skip_no_post_taggers,
-                source_name=source_name,
-                compression=compression,
-                debug=debug,
-                skip_duplicate_urls=skip_duplicate_urls,
-            )
+        processor(
+            skip_on_failure=skip_on_failure,
+            store_html_in_metadata=store_html_in_metadata,
+            linearizer_name=linearizer_name,
+            pre_taggers=pre_taggers,
+            post_taggers=post_taggers,
+            skip_no_pre_taggers=skip_no_pre_taggers,
+            skip_no_post_taggers=skip_no_post_taggers,
+            source_name=source_name,
+            compression=compression,
+            debug=debug,
+            skip_duplicate_urls=skip_duplicate_urls,
+        )
