@@ -72,6 +72,10 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     }
 }
 
+fn in_partition(hash: u64, num_partitions: u64, partition_index: u64) -> bool {
+    hash % num_partitions == partition_index
+}
+
 // Write attributes for the documents in the given file:
 // For doc-level deduping, check the Bloom filter for existence of the configured key and set the configured attribute to true.
 // For paragraph-level deduping, check the Bloom filter for existence of a paragraph in the text and add a span to the configured attribute.
@@ -91,6 +95,8 @@ fn write_attributes(
         docs_location.replace("/documents/", &attr_prefix)
     };
     let local_output = cache.prepare_output(&attrs_location)?;
+    let mut num_processed = 0;
+    let mut num_observed = 0;
     if local_output.exists() {
         log::info!("Skipping {:?} because it already exists", attrs_location);
         return Ok(());
@@ -183,20 +189,35 @@ fn write_attributes(
                     attributes[&cfg.attribute_name] = Value::Array(Vec::new());
                 } else {
                     let dedupe_key = VecDeque::from([document_key.as_str()]);
-                    let hashes = bloom_filter.hashes(&dedupe_key);
-                    if bloom_filter.contains(&hashes) {
-                        // attributes[&cfg.attribute_name] = Value::Bool(true);
 
-                        let mut duplicate_docs_array = Vec::new();
-                        let attr = vec![
-                            Value::from(0),
-                            Value::Number(document_key.len().into()),
-                            Value::from(1),
-                        ];
-                        duplicate_docs_array.push(Value::Array(attr));
-                        attributes[&cfg.attribute_name] = Value::Array(duplicate_docs_array);
-                    } else if !bloom_filter.read_only {
-                        bloom_filter.insert(&hashes);
+                    //Just compute the first hash to see if it matches the partition
+                    let mut hashes = vec![bloom_filter.first_hash(&dedupe_key)];
+                    num_observed += 1;
+                    if in_partition(
+                        hashes[0],
+                        dedupe_config.num_partitions.unwrap_or(1),
+                        dedupe_config.partition_index.unwrap_or(0),
+                    ) {
+                        num_processed += 1;
+                        //Compute the remaining hashes
+                        hashes.extend(bloom_filter.remaining_hashes(&dedupe_key));
+                        if bloom_filter.contains(&hashes) {
+                            // attributes[&cfg.attribute_name] = Value::Bool(true);
+
+                            let mut duplicate_docs_array = Vec::new();
+                            let attr = vec![
+                                Value::from(0),
+                                Value::Number(document_key.len().into()),
+                                Value::from(1),
+                            ];
+                            duplicate_docs_array.push(Value::Array(attr));
+                            attributes[&cfg.attribute_name] = Value::Array(duplicate_docs_array);
+                        } else if !bloom_filter.read_only {
+                            bloom_filter.insert(&hashes);
+                        }
+                    } else {
+                        //The dedupe key doesn't belong to this partition
+                        attributes[&cfg.attribute_name] = Value::Array(Vec::new());
                     }
                 }
             }
@@ -244,19 +265,28 @@ fn write_attributes(
                                 if cfg.by_ngram.is_none()
                                     || cfg.by_ngram.as_ref().unwrap().ngram_length == 0
                                 {
-                                    // Dedupe the entire paragraph
                                     let dedupe_key = VecDeque::from([p]);
-                                    let hashes = bloom_filter.hashes(&dedupe_key);
-                                    if bloom_filter.contains(&hashes) {
-                                        let span = vec![
-                                            Value::Number(par_start.into()),
-                                            Value::Number(par_end.into()),
-                                            Value::from(1),
-                                        ];
-                                        // add span to duplicate_paragraph_spans
-                                        duplicate_paragraph_spans.push(Value::Array(span));
-                                    } else if !bloom_filter.read_only {
-                                        bloom_filter.insert(&hashes);
+                                    let mut hashes = vec![bloom_filter.first_hash(&dedupe_key)];
+                                    num_observed += 1;
+                                    if in_partition(
+                                        hashes[0],
+                                        dedupe_config.num_partitions.unwrap_or(1),
+                                        dedupe_config.partition_index.unwrap_or(0),
+                                    ) {
+                                        num_processed += 1;
+                                        // Dedupe the entire paragraph
+                                        hashes.extend(bloom_filter.remaining_hashes(&dedupe_key));
+                                        if bloom_filter.contains(&hashes) {
+                                            let span = vec![
+                                                Value::Number(par_start.into()),
+                                                Value::Number(par_end.into()),
+                                                Value::from(1),
+                                            ];
+                                            // add span to duplicate_paragraph_spans
+                                            duplicate_paragraph_spans.push(Value::Array(span));
+                                        } else if !bloom_filter.read_only {
+                                            bloom_filter.insert(&hashes);
+                                        }
                                     }
                                 } else {
                                     // Dedupe by ngram overlap
@@ -364,6 +394,13 @@ fn write_attributes(
             log::info!("Keeping local file {:?} after deduping...", local_input);
         }
     }
+
+    log::info!(
+        " Num processed: {} / Job total: {}",
+        num_processed,
+        num_observed
+    );
+
     cache.finalize_output(&attrs_location)?;
     Ok(())
 }
@@ -421,6 +458,8 @@ pub mod deduper_config {
         pub min_length: Option<usize>,
         pub min_words: Option<usize>,
         pub skip_empty: Option<bool>,
+        pub num_partitions: Option<u64>,
+        pub partition_index: Option<u64>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]

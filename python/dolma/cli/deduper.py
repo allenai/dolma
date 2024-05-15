@@ -88,6 +88,12 @@ class DedupeConfig:
     min_words: Optional[int] = field(
         default=0, help="Minimum number of uniseg word units in documents/paragraphs to be deduplicated"
     )
+    num_partitions: Optional[int] = field(
+        default=1, help="The total number of partitions the work is divided into."
+    )
+    partition_index: Optional[int] = field(
+        default=0, help="The index of the partition being processed, in the range [0, num_partitions)."
+    )
 
 
 @dataclass
@@ -123,6 +129,8 @@ class DeduperCli(BaseCli):
                 "skip_empty": parsed_config.dedupe.skip_empty,
                 "min_length": parsed_config.dedupe.min_length,
                 "min_words": parsed_config.dedupe.min_words,
+                "num_partitions": parsed_config.dedupe.num_partitions,
+                "partition_index": parsed_config.dedupe.partition_index,
             }
             try_name = parsed_config.dedupe.name if not om.is_missing(parsed_config.dedupe, "name") else None
 
@@ -148,6 +156,13 @@ class DeduperCli(BaseCli):
                 try_name = try_name or cfg["attribute_name"]
             else:
                 raise ValueError("Either dedupe.documents or dedupe.paragraphs must be specified")
+            if (
+                dedupe_dict_config["num_partitions"] > 1
+                and parsed_config.dedupe.paragraphs
+                and parsed_config.dedupe.paragraphs.by_ngram
+                and (parsed_config.dedupe.paragraphs.by_ngram.ngram_length or 0) > 0
+            ):
+                raise ValueError("Work partitioning is not available for n-gram deduplication")
 
             if try_name is None:
                 raise ValueError("dedupe.name must be specified")
