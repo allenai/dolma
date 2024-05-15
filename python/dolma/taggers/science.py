@@ -4,7 +4,7 @@ from necessary import necessary
 
 with necessary("acora", soft=True) as ACORA_AVAILABLE:
     if TYPE_CHECKING or ACORA_AVAILABLE:
-        from acora import AcoraBuilder
+        from acora import AcoraBuilder  # pyright: ignore
 
 
 with necessary("hyperscan", soft=True) as HYPERSCAN_AVAILABLE:
