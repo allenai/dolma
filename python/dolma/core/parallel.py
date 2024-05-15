@@ -404,9 +404,6 @@ class BaseParallelProcessor:
         all_source_paths: List[str],
         all_destination_paths: List[str],
         all_metadata_paths: List[str],
-        backoff_max_time: float,
-        backoff_max_tries: int,
-        backoff_exceptions: Tuple[Type[Exception], ...],
         all_process_kwargs: Union[List[KwargsType], None] = None,
         **process_single_kwargs: Any,
     ):
@@ -441,9 +438,9 @@ class BaseParallelProcessor:
                 metadata_path=metadata_path,
                 queue=pbar_queue,
                 serialized_kwargs=pickle.dumps({**process_kwargs, **process_single_kwargs}),
-                backoff_max_time=backoff_max_time,
-                backoff_max_tries=backoff_max_tries,
-                backoff_exceptions=backoff_exceptions,
+                backoff_max_time=self.backoff_max_time,
+                backoff_max_tries=self.backoff_max_tries,
+                backoff_exceptions=self.backoff_exceptions,
             )
 
         pbar_queue.put(None)
@@ -454,9 +451,6 @@ class BaseParallelProcessor:
         all_source_paths: List[str],
         all_destination_paths: List[str],
         all_metadata_paths: List[str],
-        backoff_max_time: float,
-        backoff_max_tries: int,
-        backoff_exceptions: Tuple[Type[Exception], ...],
         all_process_kwargs: Union[List[KwargsType], None] = None,
         **process_single_kwargs: Any,
     ):
@@ -516,9 +510,9 @@ class BaseParallelProcessor:
                     metadata_path=metadata_path,
                     # we need to merge the process_single_kwargs with the additional kwargs
                     serialized_kwargs=pickle.dumps({**process_kwargs, **process_single_kwargs}),
-                    backoff_max_time=backoff_max_time,
-                    backoff_max_tries=backoff_max_tries,
-                    backoff_exceptions=backoff_exceptions,
+                    backoff_max_time=self.backoff_max_time,
+                    backoff_max_tries=self.backoff_max_tries,
+                    backoff_exceptions=self.backoff_exceptions,
                 )
                 result = pool.apply_async(process_single_fn)
                 results.append(result)
@@ -615,8 +609,5 @@ class BaseParallelProcessor:
             all_destination_paths=all_paths.dst,
             all_metadata_paths=all_paths.meta,
             all_process_kwargs=all_paths.kwargs,
-            backoff_max_time=self.backoff_max_time,
-            backoff_max_tries=self.backoff_max_tries,
-            backoff_exceptions=self.backoff_exceptions,
             **process_single_kwargs,
         )
