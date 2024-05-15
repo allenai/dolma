@@ -11,7 +11,7 @@ pre:
 
 
 store_html_in_metadata: true
-check_duplicate_urls: true
+skip_duplicate_urls: true
 
 # work_dir:
 #     input: /tmp/cccc/CC-MAIN-2024-18/input
