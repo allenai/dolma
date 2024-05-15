@@ -58,10 +58,6 @@ class WarcProcessor(BaseParallelProcessor):
     @staticmethod
     def _parse_warc_timestamp(timestamp_str: Optional[str]) -> datetime.datetime:
         """Parse a WARC timestamp into a datetime object."""
-        # import sys
-        # sys.stdin = open("/dev/tty")
-        # import ipdb; ipdb.set_trace()
-
         if not timestamp_str:
             return datetime.datetime.now()
 
@@ -130,7 +126,7 @@ class WarcProcessor(BaseParallelProcessor):
         cpz_ext = kwargs.get("compression", None) or "zst"
 
         # check for duplicate URLs
-        check_duplicate_urls = bool(kwargs.get("check_duplicate_urls", None) or False)
+        skip_duplicate_urls = bool(kwargs.get("skip_duplicate_urls", None) or False)
         seen_urls: Set[str] = set()
 
         # keep track of the time it takes to process each document
@@ -187,7 +183,7 @@ class WarcProcessor(BaseParallelProcessor):
                 url = (clean_url(target_uri) or target_uri).split("//", 1)[-1]
 
                 # check for duplicate URLs
-                if check_duplicate_urls:
+                if skip_duplicate_urls:
                     if url in seen_urls:
                         continue
                     seen_urls.add(url)
@@ -282,7 +278,7 @@ def create_and_run_warc_pipeline(
     backoff_max_time: Optional[int] = None,
     backoff_max_tries: Optional[int] = 10,
     compression: Optional[str] = "zst",
-    check_duplicate_urls: bool = False,
+    skip_duplicate_urls: bool = False,
 ):
     with ExitStack() as stack:
         if metadata is None:
@@ -349,5 +345,5 @@ def create_and_run_warc_pipeline(
                 source_name=source_name,
                 compression=compression,
                 debug=debug,
-                check_duplicate_urls=check_duplicate_urls,
+                skip_duplicate_urls=skip_duplicate_urls,
             )

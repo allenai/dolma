@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig, make_workdirs
@@ -18,6 +18,18 @@ class TaggerConfig:
     skip: bool = field(
         default=False,
         help="Whether to skip if taggers returns no output.",
+    )
+
+
+@dataclass
+class BackoffConfig:
+    max_time: Optional[float] = field(
+        default=None,
+        help="Maximum time to wait between retries in seconds.",
+    )
+    max_tries: int = field(
+        default=10,
+        help="Maximum number of retries.",
     )
 
 
@@ -69,6 +81,11 @@ class WarcExtractorConfig:
         default=False,
         help="If true, skip checks on paths (e.g. validation, globbing). Useful in case many paths are being evaluated.",
     )
+    skip_duplicate_urls: bool = field(
+        default=False,
+        help="If true, skip documents with duplicate URLs within a single process.",
+    )
+    backoff: BackoffConfig = field(default=BackoffConfig(), help="Configuration for backoff retries.")
 
 
 class WarcExtractorCli(BaseCli):
@@ -122,4 +139,7 @@ class WarcExtractorCli(BaseCli):
                 store_html_in_metadata=parsed_config.store_html_in_metadata,
                 linearizer_name=parsed_config.linearizer,
                 skip_source_glob=parsed_config.skip_checks,
+                skip_duplicate_urls=parsed_config.skip_duplicate_urls,
+                backoff_max_time=parsed_config.backoff.max_time,
+                backoff_max_tries=parsed_config.backoff.max_tries,
             )
