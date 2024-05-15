@@ -1,4 +1,3 @@
-import io
 import multiprocessing
 import tempfile
 from contextlib import ExitStack, contextmanager
@@ -18,8 +17,6 @@ from typing import (
 import msgspec
 import smart_open
 
-from dolma.core.taggers import BaseTaggerWithMetadata
-
 from .data_types import (
     InputSpec,
     InputSpecWithMetadata,
@@ -29,7 +26,9 @@ from .data_types import (
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
 from .paths import delete_dir, join_path, make_relative, mkdir_p, split_glob, split_path
+from .profile import profiler
 from .registry import TaggerRegistry
+from .taggers import BaseTaggerWithMetadata
 from .utils import import_modules, make_variable_name
 
 # this placeholder gets used when a user has provided no experiment name, and we want to use taggers'
@@ -344,26 +343,6 @@ class TaggerProcessor(BaseParallelProcessor):
 
 
 @contextmanager
-def profiler(
-    output: Optional[str] = None,
-    sort_key: str = "tottime",
-    lines: int = 100,
-) -> Generator[None, None, None]:
-    import cProfile
-    import pstats
-
-    profile = cProfile.Profile()
-    profile.enable()
-    yield
-    profile.disable()
-
-    with ExitStack() as stack:
-        output_stream = io.StringIO() if output is None else stack.enter_context(smart_open.open(output, "w"))
-        ps = pstats.Stats(profile, stream=output_stream).sort_stats(sort_key)
-        ps.print_stats(lines)
-
-
-@contextmanager
 def delete_placeholder_attributes(tagger_destinations: List[str]) -> Generator[None, None, None]:
     try:
         yield
@@ -467,7 +446,7 @@ def create_and_run_tagger(
             debug=debug or profile_enable,  # if profile is true, debug must be true
             seed=seed,
             ignore_existing=ignore_existing,
-            retries_on_error=retries_on_error,
+            backoff_max_tries=retries_on_error,
             num_processes=num_processes,
         )
 

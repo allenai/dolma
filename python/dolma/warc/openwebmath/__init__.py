@@ -9,7 +9,6 @@ __all__ = ["Extractor", "Config"]
 
 
 class Extractor:
-
     def __init__(self, config: Optional[Config] = None):
         necessary("tabulate", message="{module_name} not available; please install dolma[openwebmath]")
         necessary("py_asciimath", message="{module_name} not available; please install dolma[openwebmath]")

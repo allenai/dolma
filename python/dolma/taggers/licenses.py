@@ -6,13 +6,18 @@ Filters.
 
 """
 
-from typing import List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import regex
+from necessary import necessary
 
 from ..core.data_types import DocResult, DocumentWithMetadata, Span
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTaggerWithMetadata
+
+with necessary("hyperscan", soft=True) as HYPERSCAN_AVAILABLE:
+    if TYPE_CHECKING or HYPERSCAN_AVAILABLE:
+        from hyperscan import Database
 
 
 @TaggerRegistry.add("cc_re")
@@ -32,6 +37,15 @@ class CreativeCommonsRegexLicenseExtractor(BaseTaggerWithMetadata):
     )
 
     def __init__(self):
+        assert HYPERSCAN_AVAILABLE, "Hyperscan is not available; please install with `pip install hyperscan`."
+        self.db = Database()
+        self.db.compile(
+            expressions=self.PRE_REGEX,
+            ids=list(range(len(self.PRE_REGEX))),
+            elements=len(self.PRE_REGEX),
+            flags=[0 for _ in self.PRE_REGEX],
+        )
+
         self.license_matcher = regex.compile(self.LICENSE_PATTERN.encode("utf-8"))
 
         self.has_type_group = "type" in self.license_matcher.groupindex
@@ -43,12 +57,17 @@ class CreativeCommonsRegexLicenseExtractor(BaseTaggerWithMetadata):
 
         super().__init__()
 
+    @staticmethod
+    def _on_match(id_: int, from_: int, to: int, flags: int, context: Optional[Any] = None) -> None:
+        if context is not None:
+            context.append((id_, from_, to, flags))
+
     def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
         html: Optional[bytes] = doc.metadata.get("html", None)
         if html is None:
             raise ValueError("Cannot find `html` key in metadata.")
 
-        if not any(p in html for p in self.PRE_REGEX):
+        if not self.db.scan(html, match_event_handler=self._on_match, context=[]):
             return DocResult(doc=doc, spans=[])
 
         spans: List[Span] = []

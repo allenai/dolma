@@ -305,7 +305,6 @@ def replace_math_tags_with_dollar_signs(text):
 
 
 def update_text_with_delimiters(text, delimiters, replacement_manager, info):
-
     def replace_itex(match):
         wrapped = wrap_math(match.group(1))
         tagged = replacement_manager.add_replacement(wrapped, tag="math")
@@ -445,7 +444,6 @@ def extract_math(tree, replacement_manager):
     # Find all .texerror
     texerrors = tree.document.query_selector_all(".texerror")
     for texerror in texerrors:
-
         # Find the text between {} (maximum length) and replace the texerror with that text
         match = re.search(r"\{(.{1,})\}", texerror.text)
         if match:
@@ -458,7 +456,6 @@ def extract_math(tree, replacement_manager):
     # how each source is handled.
     imgs = tree.document.query_selector_all("img")
     for img in imgs:
-
         class_attr = img.getattr("class")
         if class_attr is not None:
             class_list = class_attr.split(" ")

@@ -100,7 +100,6 @@ class TaggerCli(BaseCli):
         logger = get_logger("tagger")
 
         with make_workdirs(parsed_config.work_dir) as work_dirs:
-
             documents = [str(p) for p in parsed_config.documents]
             taggers = [str(p) for p in parsed_config.taggers]
 

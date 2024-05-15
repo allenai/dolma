@@ -32,6 +32,7 @@ dependencies = [
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
     "zstandard>=0.20.0",
+    "backoff",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -128,9 +129,7 @@ lang = [
 warc = [
     "fastwarc",
     "w3lib",
-    "url-normalize",
-    "dateparser",
-    "backoff"
+    "courlan",
 ]
 trafilatura = [
     # must include warc dependencies

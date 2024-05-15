@@ -3,10 +3,12 @@ import multiprocessing
 import tempfile
 from contextlib import ExitStack
 from itertools import chain
-from typing import TYPE_CHECKING, Dict, List, Optional, Union
+from time import time
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 
 import msgspec
 import smart_open
+from courlan import clean_url
 from necessary import necessary
 
 from ..core.data_types import InputSpecWithMetadataAndAttributes
@@ -16,11 +18,14 @@ from ..core.registry import TaggerRegistry
 from ..core.runtime import _make_paths_from_prefix
 from ..core.utils import make_variable_name
 from .linearizers import LinearizerRegistry
-from .utils import UrlNormalizer, raise_warc_dependency_error
+from .utils import raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
     if FASTWARC_AVAILABLE or TYPE_CHECKING:
-        from fastwarc.stream_io import GZipStream, LZ4Stream
+        from fastwarc.stream_io import (  # pylint: disable=no-name-in-module
+            GZipStream,
+            LZ4Stream,
+        )
         from fastwarc.warc import (  # pylint: disable=no-name-in-module
             ArchiveIterator,
             WarcRecordType,
@@ -53,10 +58,20 @@ class WarcProcessor(BaseParallelProcessor):
     @staticmethod
     def _parse_warc_timestamp(timestamp_str: Optional[str]) -> datetime.datetime:
         """Parse a WARC timestamp into a datetime object."""
+        # import sys
+        # sys.stdin = open("/dev/tty")
+        # import ipdb; ipdb.set_trace()
+
         if not timestamp_str:
             return datetime.datetime.now()
 
-        return dateparser.parse(date_string=timestamp_str, date_formats=DATE_FORMATS) or datetime.datetime.now()
+        for fmt in DATE_FORMATS:
+            try:
+                return datetime.datetime.strptime(timestamp_str, fmt)
+            except ValueError:
+                pass
+
+        return dateparser.parse(date_string=timestamp_str) or datetime.datetime.now()
 
     @classmethod
     def increment_progressbar(  # type: ignore
@@ -85,6 +100,7 @@ class WarcProcessor(BaseParallelProcessor):
         warc_date: Optional[datetime.datetime] = None
         warc_filename: Optional[str] = None
         date_now = datetime.datetime.now()
+        date_now_str = cls._format_to_dolma_timestamp(date_now)
 
         # interval at which to update the progress bar; will double if it gets too full
         update_interval = 1
@@ -113,8 +129,12 @@ class WarcProcessor(BaseParallelProcessor):
         # get compression format
         cpz_ext = kwargs.get("compression", None) or "zst"
 
-        # url normalizer
-        url_normalizer = UrlNormalizer()
+        # check for duplicate URLs
+        check_duplicate_urls = bool(kwargs.get("check_duplicate_urls", None) or False)
+        seen_urls: Set[str] = set()
+
+        # keep track of the time it takes to process each document
+        elapsed_time = time()
 
         # create any tagger that runs after html extraction
         post_taggers_names: List[str] = kwargs.get("post_taggers") or []
@@ -152,6 +172,7 @@ class WarcProcessor(BaseParallelProcessor):
             for record in it:
                 if record.record_type == WarcRecordType.warcinfo:
                     warc_date = record.record_date or None
+                    warc_timestamp = cls._format_to_dolma_timestamp(warc_date) or ""
                     warc_filename = record.record_id or None
                     continue
 
@@ -161,16 +182,28 @@ class WarcProcessor(BaseParallelProcessor):
                 # keep track of the number of records processed
                 records_cnt += 1
 
-                # metadata
-                ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
-                date = cls._parse_warc_timestamp(record.http_headers.get("Date"))
+                # url
                 target_uri = record.headers.get("WARC-Target-URI")
-                payload_id = record.headers.get("WARC-Payload-Digest").split(":")[1].lower()
+                url = (clean_url(target_uri) or target_uri).split("//", 1)[-1]
+
+                # check for duplicate URLs
+                if check_duplicate_urls:
+                    if url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+
+                # metadata
+                http_headers = record.http_headers.asdict()
+                ctype = http_headers.get("Content-Type", "").split(";", 1)[0]
+                header_date = cls._parse_warc_timestamp(t) if (t := http_headers.get("Date")) else None
+                payload_id = record.headers.get("WARC-Payload-Digest").split(":", 2)[1].lower()
+                header_timestamp = cls._format_to_dolma_timestamp(header_date) if header_date else warc_timestamp
+
                 metadata = dict(
                     warc_url=target_uri,
-                    url=url_normalizer(target_uri),
+                    url=url,
                     html=content,
-                    warc_date=cls._format_to_dolma_timestamp(warc_date),
+                    warc_date=warc_timestamp,
                     warc_filename=warc_filename or "",
                     content_type=ctype,
                     uncompressed_offset=record.stream_pos,
@@ -181,6 +214,8 @@ class WarcProcessor(BaseParallelProcessor):
                     id=payload_id,
                     text="",  # this will come later
                     metadata=metadata,
+                    added=date_now_str,
+                    created=header_timestamp,
                 )
 
                 # these are the properties extracted from
@@ -202,9 +237,6 @@ class WarcProcessor(BaseParallelProcessor):
                     for a_name, attr_values in attributes.items()
                 }
 
-                doc.created = cls._format_to_dolma_timestamp(date)
-                doc.added = cls._format_to_dolma_timestamp(date_now)
-
                 if not store_html_in_metadata:
                     doc.metadata.pop("html", None)  # type: ignore
 
@@ -216,11 +248,14 @@ class WarcProcessor(BaseParallelProcessor):
                     # update the progress bar every update_interval documents to prevent buffering
                     cls.increment_progressbar(queue, records=records_cnt, extracted=extracted_cnt)
 
+                    delta_time = -(elapsed_time - (elapsed_time := time()))
+
                     # reset the counters
                     extracted_cnt = 0
                     records_cnt = 0
 
-                    if queue.qsize() >= multiprocessing.cpu_count():
+                    # no need to update the progress bar if too full or frequency is above 10 Hz
+                    if queue.qsize() >= multiprocessing.cpu_count() or delta_time < 1e-1:
                         # double the update interval if the queue is full
                         update_interval *= 2
 
@@ -236,7 +271,6 @@ def create_and_run_warc_pipeline(
     seed: int = 0,
     ignore_existing: bool = False,
     skip_on_failure: bool = False,
-    retries_on_error: int = 0,
     num_processes: int = 1,
     pre_taggers: Optional[List[str]] = None,
     linearizer_name: str = "resiliparse",
@@ -248,6 +282,7 @@ def create_and_run_warc_pipeline(
     backoff_max_time: Optional[int] = None,
     backoff_max_tries: Optional[int] = 10,
     compression: Optional[str] = "zst",
+    check_duplicate_urls: bool = False,
 ):
     with ExitStack() as stack:
         if metadata is None:
@@ -297,16 +332,22 @@ def create_and_run_warc_pipeline(
             backoff_max_time=backoff_max_time,
             backoff_exceptions=(Exception,),
             num_processes=num_processes,
+            shuffle_src_paths=False,
         )
-        processor(
-            skip_on_failure=skip_on_failure,
-            store_html_in_metadata=store_html_in_metadata,
-            linearizer_name=linearizer_name,
-            pre_taggers=pre_taggers,
-            post_taggers=post_taggers,
-            skip_no_pre_taggers=skip_no_pre_taggers,
-            skip_no_post_taggers=skip_no_post_taggers,
-            source_name=source_name,
-            compression=compression,
-            debug=debug,
-        )
+
+        from dolma.core.runtime import profiler
+
+        with profiler("temp/test.prof", human_readable=False):
+            processor(
+                skip_on_failure=skip_on_failure,
+                store_html_in_metadata=store_html_in_metadata,
+                linearizer_name=linearizer_name,
+                pre_taggers=pre_taggers,
+                post_taggers=post_taggers,
+                skip_no_pre_taggers=skip_no_pre_taggers,
+                skip_no_post_taggers=skip_no_post_taggers,
+                source_name=source_name,
+                compression=compression,
+                debug=debug,
+                check_duplicate_urls=check_duplicate_urls,
+            )
