@@ -329,7 +329,11 @@ class BaseParallelProcessor:
         mkdir_p(parent(destination_path))
         mkdir_p(parent(metadata_path))
 
+        # we unpickle the serialized kwargs
         kwargs = pickle.loads(serialized_kwargs)
+
+        # use backoff library to retry on failure; function _log_backoff is called on backoff
+        # to inform the user of the backoff details.
         fn_with_backoff = backoff.on_exception(
             backoff.expo,
             exception=backoff_exceptions,
@@ -337,19 +341,9 @@ class BaseParallelProcessor:
             max_time=backoff_max_time,
             on_backoff=cls._log_backoff,
         )(cls.process_single)
-        fn_with_backoff(source_path=source_path, destination_path=destination_path, queue=queue, **kwargs)
 
-        # retries_on_error = kwargs.get("retries_on_error", 0) + 1
-        # while True:
-        #     try:
-        #         cls.process_single(
-        #             source_path=source_path, destination_path=destination_path, queue=queue, **kwargs
-        #         )
-        #         break
-        #     except DolmaRetryableFailure as exception:
-        #         retries_on_error -= 1
-        #         if retries_on_error == 0:
-        #             raise DolmaError from exception
+        # start processing the file here
+        fn_with_backoff(source_path=source_path, destination_path=destination_path, queue=queue, **kwargs)
 
         # write the metadata file
         with smart_open.open(metadata_path, "wt") as f:
@@ -547,14 +541,6 @@ class BaseParallelProcessor:
         if self.files_regex_pattern is not None and not self.files_regex_pattern.search(path):
             return False
         return True
-
-    # def _get_existing_meta(self, *meta_prefixes: str) -> Set[str]:
-    #     """Get the existing metadata files for the given prefixes."""
-    #     existing_metadata = set()
-    #     for meta_prefix in meta_prefixes:
-    #         for path in glob_path(meta_prefix):
-    #             existing_metadata.add(re.sub(rf"{METADATA_SUFFIX}$", "", sub_prefix(path, meta_prefix)))
-    #     return existing_metadata
 
     def _get_all_paths(self) -> Tuple[AllPathsTuple, bool]:
         """Get all paths to process using prefixes provided"""

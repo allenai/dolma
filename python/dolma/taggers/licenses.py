@@ -6,7 +6,7 @@ Filters.
 
 """
 
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import regex
 from necessary import necessary
@@ -24,7 +24,7 @@ with necessary("hyperscan", soft=True) as HYPERSCAN_AVAILABLE:
 class CreativeCommonsRegexLicenseExtractor(BaseTaggerWithMetadata):
     """Adapted from https://github.com/dkpro/dkpro-c4corpus/blob/da61281a8a77fad0d6a7d27c06b5e2fe3282e28f/dkpro-c4corpus-license/src/main/java/de/tudarmstadt/ukp/dkpro/c4corpus/license/impl/LicenseDetectorBasic.java"""  # noqa
 
-    PRE_REGEX = (b"creativecommons.org/licenses", b"creativecommons.org/publicdomain")
+    PRE_REGEX = (rb"creativecommons\.org/licenses", rb"creativecommons\.org/publicdomain")
     _LICENSE_TYPE = "by(-nc)?(-nd)?(-sa)?"
     _LICENSE_VERSION = r"\d+\.\d+"
     _LICENSE_LANG_PREFIX = r"\w{2}"
@@ -67,7 +67,9 @@ class CreativeCommonsRegexLicenseExtractor(BaseTaggerWithMetadata):
         if html is None:
             raise ValueError("Cannot find `html` key in metadata.")
 
-        if not self.db.scan(html, match_event_handler=self._on_match, context=[]):
+        content: List[Tuple[int, int, int, int]] = []
+        self.db.scan(html, match_event_handler=self._on_match, context=content)
+        if not content:
             return DocResult(doc=doc, spans=[])
 
         spans: List[Span] = []
