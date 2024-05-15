@@ -16,6 +16,7 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Type, TypeVar, 
 import backoff
 import smart_open
 import tqdm
+from backoff.types import Details
 from typing_extensions import TypeAlias
 
 from .errors import DolmaError, DolmaRetryableFailure
@@ -261,7 +262,7 @@ class BaseParallelProcessor:
     @classmethod
     def get_logger(cls) -> logging.Logger:
         """Get the logger for the class."""
-        return get_logger(cls.__name__)
+        return get_logger(cls.__name__, "info")
 
     @classmethod
     def process_batch(
@@ -297,6 +298,20 @@ class BaseParallelProcessor:
         raise NotImplementedError()
 
     @classmethod
+    def _log_backoff(cls, details: Details):
+        """Log backoff details."""
+        logger = cls.get_logger()
+
+        tries = details["tries"]
+        wait = details.get("wait", 0.0)
+        target = details["target"].__name__
+
+        msg = f"Backing off `{target}` after {tries:,} tries (wait: {wait:.2f}s)"
+        if exception := details.get("exception"):
+            msg += f" due to {exception.__class__.__name__}: {exception.args[0]}"
+        logger.warning(msg)
+
+    @classmethod
     def _process_batch_and_save_status(
         cls,
         source_path: str,
@@ -320,6 +335,7 @@ class BaseParallelProcessor:
             exception=backoff_exceptions,
             max_tries=backoff_max_tries,
             max_time=backoff_max_time,
+            on_backoff=cls._log_backoff,
         )(cls.process_single)
         fn_with_backoff(source_path=source_path, destination_path=destination_path, queue=queue, **kwargs)
 
