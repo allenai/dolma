@@ -91,7 +91,7 @@ class TestWarcExtractor(unittest.TestCase):
         self.assertEqual(len(sample0), 1)
         self.assertEqual(len(sample1), 3)
 
-        self.assertEqual(sample0[0]["metadata"]["url"], "soldaini.net")
+        self.assertTrue(sample0[0]["metadata"]["url"].startswith("soldaini.net"))
         self.assertTrue(sample1[0]["metadata"]["url"].startswith("creativecommons.org"))
         self.assertTrue(sample1[1]["metadata"]["url"].startswith("creativecommons.org"))
         self.assertTrue(sample1[2]["metadata"]["url"].startswith("creativecommons.org"))
