@@ -309,9 +309,9 @@ class BaseParallelProcessor:
     def _log_backoff(cls, details: Details):
         """Log backoff details."""
         message = (
-            f"Backing off `{details["target"].__name__}` "
-            f"after {details["tries"]:,} "
-            f"tries (wait: {details.get("wait", 0.0):.2f}s)"
+            f"Backing off `{details['target'].__name__}` "
+            f"after {details['tries']:,} "
+            f"tries (wait: {details.get('wait', 0.0):.2f}s)"
         )
         if exception := details.get("exception"):
             message += f' due to {exception.__class__.__name__}: "{exception.args[0]}"'
