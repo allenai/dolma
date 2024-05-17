@@ -10,7 +10,6 @@ use std::io::{BufReader, BufWriter, Write};
 use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
-
 mod bloom_test;
 // A thread-safe bloom filter.
 pub struct BloomFilter {
@@ -191,7 +190,7 @@ impl BloomFilter {
     }
 
     // No-op if read-only
-    pub fn insert_hashes(&self, hashes: &Vec<u64>) {
+    pub fn insert(&self, hashes: &Vec<u64>) {
         if !self.read_only {
             for hash in hashes {
                 let hash = *hash as usize;
@@ -202,13 +201,7 @@ impl BloomFilter {
         }
     }
 
-    // No-op if read-only
-    pub fn insert(&self, s: &VecDeque<&str>) {
-        let hashes = self.hashes(s);
-        self.insert_hashes(&hashes);
-    }
-
-    pub fn contains_hashes(&self, hashes: &Vec<u64>) -> bool {
+    pub fn contains(&self, hashes: &Vec<u64>) -> bool {
         for hash in hashes {
             let hash = *hash as usize;
             let index = hash / 32 % self.bits.len();
@@ -218,11 +211,6 @@ impl BloomFilter {
             }
         }
         true
-    }
-
-    pub fn contains(&self, s: &VecDeque<&str>) -> bool {
-        let hashes = self.hashes(s);
-        self.contains_hashes(&hashes)
     }
 
     pub fn initialize(config: &BloomFilterConfig) -> Result<BloomFilter, io::Error> {

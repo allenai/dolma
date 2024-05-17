@@ -102,7 +102,6 @@ fn write_attributes(
     );
 
     std::fs::create_dir_all(local_output.parent().unwrap())?;
-
     log::info!(
         "Writing attributes for {} to {}",
         docs_location,
@@ -184,7 +183,8 @@ fn write_attributes(
                     attributes[&cfg.attribute_name] = Value::Array(Vec::new());
                 } else {
                     let dedupe_key = VecDeque::from([document_key.as_str()]);
-                    if bloom_filter.contains(&dedupe_key) {
+                    let hashes = bloom_filter.hashes(&dedupe_key);
+                    if bloom_filter.contains(&hashes) {
                         // attributes[&cfg.attribute_name] = Value::Bool(true);
 
                         let mut duplicate_docs_array = Vec::new();
@@ -196,7 +196,7 @@ fn write_attributes(
                         duplicate_docs_array.push(Value::Array(attr));
                         attributes[&cfg.attribute_name] = Value::Array(duplicate_docs_array);
                     } else if !bloom_filter.read_only {
-                        bloom_filter.insert(&dedupe_key);
+                        bloom_filter.insert(&hashes);
                     }
                 }
             }
@@ -246,7 +246,8 @@ fn write_attributes(
                                 {
                                     // Dedupe the entire paragraph
                                     let dedupe_key = VecDeque::from([p]);
-                                    if bloom_filter.contains(&dedupe_key) {
+                                    let hashes = bloom_filter.hashes(&dedupe_key);
+                                    if bloom_filter.contains(&hashes) {
                                         let span = vec![
                                             Value::Number(par_start.into()),
                                             Value::Number(par_end.into()),
@@ -255,7 +256,7 @@ fn write_attributes(
                                         // add span to duplicate_paragraph_spans
                                         duplicate_paragraph_spans.push(Value::Array(span));
                                     } else if !bloom_filter.read_only {
-                                        bloom_filter.insert(&dedupe_key);
+                                        bloom_filter.insert(&hashes);
                                     }
                                 } else {
                                     // Dedupe by ngram overlap
@@ -278,10 +279,12 @@ fn write_attributes(
                                                 last_ngram_start = ngram_start;
                                                 ngram_count += 1;
                                                 let dedupe_key = VecDeque::from(ngram.clone());
-                                                if bloom_filter.contains(&dedupe_key) {
+                                                let hashes = bloom_filter.hashes(&dedupe_key);
+
+                                                if bloom_filter.contains(&hashes) {
                                                     duplicate_ngram_count += 1;
                                                 } else if !bloom_filter.read_only {
-                                                    bloom_filter.insert(&dedupe_key);
+                                                    bloom_filter.insert(&hashes);
                                                 }
                                             }
                                             ngram.pop_front();
@@ -293,14 +296,15 @@ fn write_attributes(
                                     {
                                         // Too few ngrams to dedupe by overlap. Just compare the whole thing
                                         let dedupe_key = VecDeque::from([p]);
+                                        let hashes = bloom_filter.hashes(&dedupe_key);
 
-                                        let span_score = match bloom_filter.contains(&dedupe_key) {
+                                        let span_score = match bloom_filter.contains(&hashes) {
                                             // we found a match! score is 1.0
                                             true => 1.0,
                                             false => {
                                                 // this is a new paragraph, push to bloom filter
                                                 if !bloom_filter.read_only {
-                                                    bloom_filter.insert(&dedupe_key);
+                                                    bloom_filter.insert(&hashes);
                                                 }
                                                 // score is 0.0 because it's not a duplicate
                                                 0.0
