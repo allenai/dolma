@@ -32,6 +32,7 @@ from .paths import (
     parent,
     split_path,
 )
+from .utils import batch_iterator
 
 METADATA_SUFFIX = ".done.txt"
 
@@ -275,11 +276,13 @@ class BaseParallelProcessor:
         source_paths: List[str],
         destination_paths: List[str],
         queue: QueueType,
-        **kwargs: Any,
+        kwargs: List[Any],
     ):
         """Process multiple files. Naively calls process_single for each file, but can be overridden."""
-        for source_path, destination_path in zip(source_paths, destination_paths):
-            cls.process_single(source_path=source_path, destination_path=destination_path, queue=queue, **kwargs)
+        for source_path, destination_path, single_kwargs in zip(source_paths, destination_paths, kwargs):
+            cls.process_single(
+                source_path=source_path, destination_path=destination_path, queue=queue, **single_kwargs
+            )
 
     @classmethod
     def process_single(
@@ -317,11 +320,11 @@ class BaseParallelProcessor:
     @classmethod
     def _process_batch_and_save_status(
         cls,
-        source_path: str,
-        destination_path: str,
-        metadata_path: str,
+        source_paths: List[str],
+        destination_paths: List[str],
+        metadata_paths: List[str],
         queue: QueueType,
-        serialized_kwargs: bytes,
+        serialized_kwargs: List[bytes],
         backoff_max_time: float,
         backoff_max_tries: int,
         backoff_exceptions: Tuple[Type[Exception], ...],
@@ -329,11 +332,14 @@ class BaseParallelProcessor:
         """A wrapper around process single that saves a metadata file if processing is successful."""
 
         # make destination directory if it doesn't exist for the destination and metadata paths
-        mkdir_p(parent(destination_path))
-        mkdir_p(parent(metadata_path))
+        for path in itertools.chain(destination_paths, metadata_paths):
+            mkdir_p(parent(path))
+
+        # mkdir_p(parent(destination_path))
+        # mkdir_p(parent(metadata_path))
 
         # we unpickle the serialized kwargs
-        kwargs = pickle.loads(serialized_kwargs)
+        deserialized_kwargs = [pickle.loads(kw) for kw in serialized_kwargs]
 
         # use backoff library to retry on failure; function _log_backoff is called on backoff
         # to inform the user of the backoff details.
@@ -343,14 +349,17 @@ class BaseParallelProcessor:
             max_tries=backoff_max_tries,
             max_time=backoff_max_time,
             on_backoff=cls._log_backoff,
-        )(cls.process_single)
+        )(cls.process_batch)
 
         # start processing the file here
-        fn_with_backoff(source_path=source_path, destination_path=destination_path, queue=queue, **kwargs)
+        fn_with_backoff(
+            source_paths=source_paths, destination_paths=destination_paths, queue=queue, kwargs=deserialized_kwargs
+        )
 
-        # write the metadata file
-        with smart_open.open(metadata_path, "wt") as f:
-            f.write(datetime.now().isoformat())
+        # write the metadata files
+        for path in metadata_paths:
+            with smart_open.open(path, "wt") as f:
+                f.write(datetime.now().isoformat())
 
     @classmethod
     def increment_progressbar(cls, queue: QueueType, /, **kwargs: int) -> Dict[str, int]:
@@ -402,53 +411,6 @@ class BaseParallelProcessor:
 
                 time.sleep(timeout)
 
-    def _debug_run_all(
-        self,
-        all_source_paths: List[str],
-        all_destination_paths: List[str],
-        all_metadata_paths: List[str],
-        all_process_kwargs: Union[List[KwargsType], None] = None,
-        **process_single_kwargs: Any,
-    ):
-        """Run files one by one on the main process
-
-        Args:
-            all_source_paths (List[MultiPath]): The list of source paths to process.
-            all_destination_paths (List[MultiPath]): The list of destination paths to save.
-            all_metadata_paths (List[MultiPath]): The locations where to save metadata.
-            all_process_kwargs (Union[List[KwargsType], None]): Additional kwargs to pass to the process_single
-        """
-
-        arguments_iterator = zip(
-            # source paths
-            all_source_paths,
-            # destination paths
-            all_destination_paths,
-            # this is where we save the metadata to keep track of which files have been processed
-            all_metadata_paths,
-            # additional kwargs to pass to the process_single; if not provided, we use an empty dict
-            # will be merged with the process_single_kwargs
-            all_process_kwargs or [{} for _ in all_source_paths],
-        )
-        pbar_queue: QueueType = Queue()
-        thread = Thread(target=self._run_threaded_progressbar, args=(pbar_queue, self.pbar_timeout), daemon=True)
-        thread.start()
-
-        for source_path, destination_path, metadata_path, process_kwargs in arguments_iterator:
-            self._process_batch_and_save_status(
-                source_path=source_path,
-                destination_path=destination_path,
-                metadata_path=metadata_path,
-                queue=pbar_queue,
-                serialized_kwargs=pickle.dumps({**process_kwargs, **process_single_kwargs}),
-                backoff_max_time=self.backoff_max_time,
-                backoff_max_tries=self.backoff_max_tries,
-                backoff_exceptions=self.backoff_exceptions,
-            )
-
-        pbar_queue.put(None)
-        thread.join()
-
     def _run_all(
         self,
         all_source_paths: List[str],
@@ -472,7 +434,19 @@ class BaseParallelProcessor:
 
         all_process_kwargs = all_process_kwargs or [{} for _ in all_source_paths]
 
-        arguments_iterator = zip(
+        # arguments_iterator = zip(
+        #     # source paths
+        #     all_source_paths,
+        #     # destination paths
+        #     all_destination_paths,
+        #     # this is where we save the metadata to keep track of which files have been processed
+        #     all_metadata_paths,
+        #     # additional kwargs to pass to the process_single; if not provided, we use an empty dict
+        #     # will be merged with the process_single_kwargs
+        #     all_process_kwargs,
+        # )
+
+        arguments_iterator = batch_iterator(
             # source paths
             all_source_paths,
             # destination paths
@@ -482,6 +456,8 @@ class BaseParallelProcessor:
             # additional kwargs to pass to the process_single; if not provided, we use an empty dict
             # will be merged with the process_single_kwargs
             all_process_kwargs,
+            # batch size is equal to 1 by default
+            batch_size=self.batch_size,
         )
 
         # no need to be wasteful with processes: we only need as many cores a the minimum of the number of
@@ -506,15 +482,16 @@ class BaseParallelProcessor:
             process_single_fn = partial(self.process_single, queue=pbar_queue)
             results = []
 
-            for source_path, destination_path, metadata_path, process_kwargs in arguments_iterator:
+            for source_paths, destination_paths, metadata_paths, process_kwargs in arguments_iterator:
+                # we need to merge the process_single_kwargs with the additional kwargs
+                serialized_kwargs = [pickle.dumps({**kw, **process_single_kwargs}) for kw in process_kwargs]
                 process_single_fn = partial(
                     self._process_batch_and_save_status,
                     queue=pbar_queue,
-                    source_path=source_path,
-                    destination_path=destination_path,
-                    metadata_path=metadata_path,
-                    # we need to merge the process_single_kwargs with the additional kwargs
-                    serialized_kwargs=pickle.dumps({**process_kwargs, **process_single_kwargs}),
+                    source_paths=source_paths,  # pyright: ignore
+                    destination_paths=destination_paths,  # pyright: ignore
+                    metadata_paths=metadata_paths,  # pyright: ignore
+                    serialized_kwargs=serialized_kwargs,
                     backoff_max_time=self.backoff_max_time,
                     backoff_max_tries=self.backoff_max_tries,
                     backoff_exceptions=self.backoff_exceptions,

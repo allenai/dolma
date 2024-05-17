@@ -159,6 +159,11 @@ def batch_iterator(
 ) -> Generator[List[Tuple[T, ...]], None, None]:
     """
     Group one or more iterables into batches of size `batch_size`.
+
+    Args:
+        iterables (Iterable[T]): One or more iterables to group into batches.
+        batch_size (int): The size of each batch. Defaults to 1.
+        drop_last (bool): Whether to drop the last batch if it is smaller than `batch_size`. Defaults to False.
     """
     grouped_iterator = iter(zip(*iterables))
     while True:

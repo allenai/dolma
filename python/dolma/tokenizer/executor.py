@@ -254,10 +254,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
             f"Tokenizing {sum(len(e) for e in grouped_source_prefixes):,} source files "
             f"into {len(grouped_source_prefixes):,} numpy destinations."
         )
-
-        # finally run the processors
-        fn = self._debug_run_all if self.debug else self._run_all
-        fn(
+        self._run_all(
             all_source_paths=source_indices,
             all_destination_paths=all_destination_paths,
             all_metadata_paths=all_metadata_path,
