@@ -1023,7 +1023,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "unicode-segmentation",
- "url",
 ]
 
 [[package]]

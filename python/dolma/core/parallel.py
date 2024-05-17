@@ -484,7 +484,10 @@ class BaseParallelProcessor:
 
             for source_paths, destination_paths, metadata_paths, process_kwargs in arguments_iterator:
                 # we need to merge the process_single_kwargs with the additional kwargs
-                serialized_kwargs = [pickle.dumps({**kw, **process_single_kwargs}) for kw in process_kwargs]
+                # mypy is confused by the type of process_kwargs; we need to ignore the error
+                serialized_kwargs = [
+                    pickle.dumps({**kw, **process_single_kwargs}) for kw in process_kwargs  # type: ignore
+                ]
                 process_single_fn = partial(
                     self._process_batch_and_save_status,
                     queue=pbar_queue,

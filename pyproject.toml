@@ -149,14 +149,6 @@ resiliparse = [
     "resiliparse",
 ]
 
-openwebmath = [
-    "dolma[warc]",
-    "resiliparse",
-    "tabulate",
-    "py_asciimath",
-    "lxml"
-]
-
 # all extensions
 all = [
     "dolma[dev]",
@@ -185,7 +177,7 @@ features = ["pyo3/extension-module"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-dolma = ["py.typed", "data/*", "warc/openwebmath/mmltex/*.xsl", "warc/openwebmath/configs/*.yaml"]
+dolma = ["py.typed", "data/*"]
 
 [tool.black]
 line-length = 115

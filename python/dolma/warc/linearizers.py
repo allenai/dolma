@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING, Iterable, Optional, Type
 from necessary import necessary
 
 from ..core.registry import BaseRegistry
-from .openwebmath import Extractor
 from .utils import raise_warc_dependency_error
 
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
@@ -135,7 +134,7 @@ class TrafilaturaHtmlExtractor(BaseLinearizer):
 
     def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:
         output = trafilatura.extract(
-            filecontent=content.decode(encoding or trafilatura.utils.detect_encoding(content)),
+            filecontent=content.decode(encoding or trafilatura.utils.detect_encoding(content)[0]),
             output_format="txt",
             include_comments=self.include_comments,
             include_links=self.include_links,
@@ -146,14 +145,4 @@ class TrafilaturaHtmlExtractor(BaseLinearizer):
             include_formatting=self.include_formatting,
         )
         self._flush()
-        return output or ""
-
-
-@LinearizerRegistry.add("openwebmath")
-class OpenWebMathExtractor(BaseLinearizer):
-    def __init__(self) -> None:
-        self.extractor = Extractor()
-
-    def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:
-        output = self.extractor.extract_text(content.decode(encoding or detect_encoding(content)))
         return output or ""
