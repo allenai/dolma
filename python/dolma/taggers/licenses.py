@@ -81,11 +81,22 @@ class CreativeCommonsRegexLicenseExtractor(BaseTaggerWithMetadata):
             if self.has_lang_group and (lang := match.group("lang")) is not None:
                 license_string += f"_{lang.decode('utf-8')}"
 
+            # get location of match in the document
+            match_start, match_end = match.span()
+
             # if multiple license matches are found, the confidence is lowered
             # for each match. The first match has a confidence of 1.0, the second
             # has a confidence of 0.75, the third 0.667, the fourth 0.625, etc.
             score = 0.5 + 0.5 / (i + 1.0)
-            spans.append(Span(start=0, end=len(doc.text), type=f"cc_{license_string}", score=score))
+            spans.append(
+                Span(
+                    start=match_start,
+                    end=match_end,
+                    type=f"cc_{license_string}",
+                    score=score,
+                    location="metadata.html",
+                )
+            )
 
         return DocResult(doc=doc, spans=spans)
 

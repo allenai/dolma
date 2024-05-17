@@ -37,8 +37,11 @@ class BaseHTMLKeywordLookupTagger(BaseTaggerWithMetadata):
         content = self._get_content(doc)
 
         # check if there's a match; if yes, return immediately
-        for _ in self.acora.finditer(content):
-            return DocResult(doc=doc, spans=[Span(start=0, end=len(content), type=self.TYPE, score=1)])
+        for kw, pos in self.acora.finditer(content):
+            return DocResult(
+                doc=doc,
+                spans=[Span(start=pos, end=pos + len(kw), type=self.TYPE, score=1, location="metadata.html")],
+            )
 
         # if no match, return empty spans
         return DocResult(doc=doc, spans=[])
@@ -269,7 +272,10 @@ class HyperscanHTMLKeywordLookupTagger(BaseTaggerWithMetadata):
         context: List[tuple] = []
         self.db.scan(content, match_event_handler=self._on_match, context=context)
         if context:
-            return DocResult(doc=doc, spans=[Span(start=0, end=len(content), type=self.TYPE, score=1)])
+            start, end = context[0][1], context[0][2]
+            return DocResult(
+                doc=doc, spans=[Span(start=start, end=end, type=self.TYPE, score=1, location="metadata.html")]
+            )
 
         # if no match, return empty spans
         return DocResult(doc=doc, spans=[])
