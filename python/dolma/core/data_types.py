@@ -171,7 +171,7 @@ class DocumentWithMetadataAndAttributes(DocumentWithMetadata):
 
 
 class Span:
-    __slots__ = "start", "end", "type", "score", "experiment", "tagger"
+    __slots__ = "start", "end", "type", "score", "experiment", "tagger", "location"
 
     def __init__(
         self,
@@ -181,6 +181,7 @@ class Span:
         score: float = 1.0,
         experiment: Optional[str] = None,
         tagger: Optional[str] = None,
+        location: str = "text",
     ):
         self.start = start
         self.end = end
@@ -188,6 +189,7 @@ class Span:
         self.score = float(score)
         self.experiment = experiment
         self.tagger = tagger
+        self.location = location
 
     def mention(self, text: str, window: int = 0) -> str:
         return text[max(0, self.start - window) : min(len(text), self.end + window)]

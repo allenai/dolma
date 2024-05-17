@@ -21,6 +21,7 @@ from typing_extensions import TypeAlias
 
 from .errors import DolmaError, DolmaRetryableFailure
 from .loggers import get_logger
+from .mp_tools import PoolWithDebug, get_manager
 from .paths import (
     add_suffix,
     exists,
@@ -96,7 +97,7 @@ class BaseParallelProcessor:
         include_paths: Optional[List[str]] = None,
         exclude_paths: Optional[List[str]] = None,
         files_regex_pattern: Optional[str] = None,
-        # retries_on_error: int = 0,
+        batch_size: int = 1,
         process_single_kwargs: Union[None, KwargsType, List[KwargsType]] = None,
         backoff_max_time: Optional[float] = None,
         backoff_max_tries: int = 1,
@@ -126,19 +127,20 @@ class BaseParallelProcessor:
                 re-run the processor on all files from scratch. Defaults to False.
             shuffle_src_paths (bool, optional): Whether to shuffle the source paths before processing them.
                 Defaults to True.
-            include_paths (Optional[List[str]], optional): A list of paths to include. If provided, only files
+            include_paths (List[str], optional): A list of paths to include. If provided, only files
                 that match one of the paths will be processed. Defaults to None.
-            exclude_paths (Optional[List[str]], optional): A list of paths to exclude. If provided, files that
+            exclude_paths (List[str], optional): A list of paths to exclude. If provided, files that
                 match one of the paths will be skipped. Defaults to None.
-            files_regex_pattern (Optional[str], optional): A regex pattern to match files. If provided, only
+            files_regex_pattern (str, optional): A regex pattern to match files. If provided, only
                 files that match the pattern will be processed. Defaults to None.
-            process_single_kwargs (Union[None, KwargsType, List[KwargsType]], optional): Additional kwargs to
+            batch_size: (int, optional): number of files to group in a single bat
+            process_single_kwargs (Union[None, KwargsType, List[KwargsType], optional): Additional kwargs to
                 pass to the process_single method. If a single dict is provided, it will be used for all source
                 prefixes. If a list of dicts is provided, each dict will be used for the corresponding source.
                 By default, no additional kwargs are passed.
-            backoff_max_time (Optional[float], optional): The maximum time to backoff. Defaults to None.
+            backoff_max_time (float, optional): The maximum time to backoff. Defaults to None.
             backoff_max_tries (int, optional): The maximum number of tries to backoff. Defaults to 1.
-            backoff_exceptions (Optional[Union[Type[Exception], Tuple[Type[Exception], ...]], optional): The
+            backoff_exceptions (Union[Type[Exception], Tuple[Type[Exception], ...]], optional): The
                 exceptions to backoff on. Defaults to `dolma.core.errors.DolmaRetryableFailure`.
         """
 
@@ -156,7 +158,10 @@ class BaseParallelProcessor:
         self.files_regex_pattern = re.compile(files_regex_pattern) if files_regex_pattern else None
         self.shuffle_src_paths = shuffle_src_paths
 
-        # self.retries_on_error = retries_on_error
+        # this manages how many files to pass to a single processor
+        self.batch_size = batch_size
+
+        # this controls backoff
         self.backoff_max_time: float = float(backoff_max_time or "inf")
         self.backoff_max_tries: int = int(backoff_max_tries)
         self.backoff_exceptions: Tuple[Type[Exception], ...] = (
@@ -248,7 +253,7 @@ class BaseParallelProcessor:
             include_paths=include_paths,
             exclude_paths=exclude_paths,
             files_regex_pattern=regex_pattern,
-            # retries_on_error=max(self.retries_on_error, other.retries_on_error),
+            batch_size=max(self.batch_size, other.batch_size),
             process_single_kwargs=[*self.process_single_kwargs, *other.process_single_kwargs],
             backoff_max_time=min(self.backoff_max_time, other.backoff_max_time),
             backoff_max_tries=min(self.backoff_max_tries, other.backoff_max_tries),
@@ -300,16 +305,14 @@ class BaseParallelProcessor:
     @classmethod
     def _log_backoff(cls, details: Details):
         """Log backoff details."""
-        logger = cls.get_logger()
-
-        tries = details["tries"]
-        wait = details.get("wait", 0.0)
-        target = details["target"].__name__
-
-        msg = f"Backing off `{target}` after {tries:,} tries (wait: {wait:.2f}s)"
+        message = (
+            f"Backing off `{details["target"].__name__}` "
+            f"after {details["tries"]:,} "
+            f"tries (wait: {details.get("wait", 0.0):.2f}s)"
+        )
         if exception := details.get("exception"):
-            msg += f" due to {exception.__class__.__name__}: {exception.args[0]}"
-        logger.warning(msg)
+            message += f' due to {exception.__class__.__name__}: "{exception.args[0]}"'
+        cls.get_logger().warning(message)
 
     @classmethod
     def _process_batch_and_save_status(
@@ -446,7 +449,7 @@ class BaseParallelProcessor:
         pbar_queue.put(None)
         thread.join()
 
-    def _multiprocessing_run_all(
+    def _run_all(
         self,
         all_source_paths: List[str],
         all_destination_paths: List[str],
@@ -491,8 +494,10 @@ class BaseParallelProcessor:
             len(all_process_kwargs),
         )
 
-        with multiprocessing.Pool(processes=num_processes) as pool:
-            pbar_queue: QueueType = (manager := multiprocessing.Manager()).Queue()
+        # with multiprocessing.Pool(processes=num_processes) as pool:
+        #   pbar_queue: QueueType = (manager := multiprocessing.Manager()).Queue()
+        with PoolWithDebug(processes=num_processes, debug=self.debug) as pool:
+            pbar_queue: QueueType = (manager := get_manager(pool)).Queue()
             thread = Thread(
                 target=self._run_threaded_progressbar, args=(pbar_queue, self.pbar_timeout), daemon=True
             )
@@ -588,8 +593,6 @@ class BaseParallelProcessor:
         """Run the processor."""
 
         logger = self.get_logger()
-        logger.setLevel(logging.INFO)
-
         random.seed(self.seed)
 
         all_paths, some_already_processed = self._get_all_paths()
@@ -602,9 +605,7 @@ class BaseParallelProcessor:
             else:
                 raise DolmaError("No files found to process.")
 
-        fn = self._debug_run_all if self.debug else self._multiprocessing_run_all
-
-        fn(
+        self._run_all(
             all_source_paths=all_paths.src,
             all_destination_paths=all_paths.dst,
             all_metadata_paths=all_paths.meta,

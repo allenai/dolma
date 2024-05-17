@@ -3,7 +3,8 @@ import os
 import re
 import string
 import sys
-from typing import List, Union, cast
+from itertools import islice
+from typing import Generator, Iterable, List, Tuple, TypeVar, Union, cast
 
 import nltk
 import uniseg.wordbreak
@@ -29,6 +30,8 @@ except (ImportError, OSError):
 
 sent_tokenizer = PunktSentenceTokenizer()
 logger = get_logger(__name__)
+
+T = TypeVar("T")
 
 
 def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> str:
@@ -149,6 +152,22 @@ def dataclass_to_dict(dataclass_instance) -> dict:
 
     # force typecasting because a dataclass instance will always be a dict
     return cast(dict, om.to_object(om.structured(dataclass_instance)))
+
+
+def batch_iterator(
+    *iterables: Iterable[T], batch_size: int = 1, drop_last: bool = False
+) -> Generator[List[Tuple[T, ...]], None, None]:
+    """
+    Group one or more iterables into batches of size `batch_size`.
+    """
+    grouped_iterator = iter(zip(*iterables))
+    while True:
+        batch = list(islice(grouped_iterator, batch_size))
+        if not batch:
+            break
+        if len(batch) < batch_size and drop_last:
+            break
+        yield list(zip(*batch))
 
 
 with necessary(("smart_open", "7.0.4"), soft=True) as SMART_OPEN_NO_ZSTD:

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Dict, List, Optional, Set, Union
 
 import msgspec
 import smart_open
-from courlan import clean_url   # pyright: ignore
+from courlan import clean_url  # pyright: ignore
 from necessary import necessary
 
 from ..core.data_types import InputSpecWithMetadataAndAttributes

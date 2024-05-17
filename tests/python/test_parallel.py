@@ -50,6 +50,30 @@ class TestParallel(TestCase):
         with smart_open.open(path, "rb") as f:
             return f.read()
 
+    def test_debug(self):
+        with self.assertRaises(ValueError):
+            MockProcessor(source_prefix=[], destination_prefix=[], metadata_prefix=[])
+
+        with TemporaryDirectory() as d:
+            proc = MockProcessor(
+                source_prefix=str(LOCAL_DATA / "expected"),
+                destination_prefix=f"{d}/destination",
+                metadata_prefix=f"{d}/metadata",
+                ignore_existing=False,
+                debug=True,
+            )
+            proc()
+            src = [p for p in os.listdir(LOCAL_DATA / "expected") if not p.startswith(".")]
+            meta = [p.rstrip(".done.txt") for p in os.listdir(f"{d}/metadata")]
+            dest = [p for p in os.listdir(f"{d}/destination") if not p.startswith(".")]
+            self.assertEqual(sorted(src), sorted(meta))
+            self.assertEqual(sorted(src), sorted(dest))
+
+            for s, e in zip(src, dest):
+                s = LOCAL_DATA / "expected" / s
+                e = f"{d}/destination/{e}"
+                self.assertEqual(self._read(s), self._read(e))
+
     def test_base_parallel_processor(self):
         with self.assertRaises(ValueError):
             MockProcessor(source_prefix=[], destination_prefix=[], metadata_prefix=[])
@@ -60,6 +84,7 @@ class TestParallel(TestCase):
                 destination_prefix=f"{d}/destination",
                 metadata_prefix=f"{d}/metadata",
                 ignore_existing=False,
+                num_processes=2,
             )
             proc()
             src = [p for p in os.listdir(LOCAL_DATA / "expected") if not p.startswith(".")]
