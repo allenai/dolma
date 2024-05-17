@@ -179,7 +179,7 @@ with necessary(("smart_open", "7.0.4"), soft=True) as SMART_OPEN_NO_ZSTD:
     if SMART_OPEN_NO_ZSTD:
         import io
 
-        import zstandard  # type: ignore
+        import zstandard
         from smart_open import register_compressor
 
         def _handle_zstd(file_obj, mode):
