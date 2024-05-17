@@ -18,7 +18,7 @@ dependencies = [
     "omegaconf>=2.3.0",
     # "pycld2==0.41",
     # "pycld3==0.22",       # does not install correctly
-    "hyperscan>=0.7.7",
+    "hyperscan>=0.7.0",
     "platformdirs>=4.2.0",
     "pyyaml",
     "requests",
@@ -32,7 +32,7 @@ dependencies = [
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
     "zstandard>=0.20.0",
-    "backoff",
+    "backoff>=2.0.0",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
