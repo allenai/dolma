@@ -139,6 +139,9 @@ class WarcProcessor(BaseParallelProcessor):
         # whether to store html in metadata after extraction
         store_html_in_metadata: bool = kwargs.get("store_html_in_metadata") or False
 
+        # whether to store attribute spans in metadata after extraction
+        store_attribute_spans_in_metadata = int(kwargs.get("store_attribute_spans_in_metadata", -1))
+
         # whether to skip this document if pre-taggers find nothing
         skip_no_pre_taggers: bool = kwargs.get("skip_no_pre_taggers") or False
 
@@ -233,6 +236,12 @@ class WarcProcessor(BaseParallelProcessor):
                     for a_name, attr_values in attributes.items()
                 }
 
+                # if store_attribute_spans_in_metadata >= 0:
+                #     doc.metadata['attribute_spans'] = {     # pyright: ignore
+                #         attr_name:
+
+                #     }
+
                 if not store_html_in_metadata:
                     doc.metadata.pop("html", None)  # type: ignore
 
@@ -272,6 +281,7 @@ def create_and_run_warc_pipeline(
     linearizer_name: str = "resiliparse",
     post_taggers: Optional[List[str]] = None,
     store_html_in_metadata: bool = False,
+    store_attribute_spans_in_metadata: int = -1,
     skip_no_pre_taggers: bool = False,
     skip_no_post_taggers: bool = False,
     skip_source_glob: bool = False,
@@ -280,6 +290,44 @@ def create_and_run_warc_pipeline(
     compression: Optional[str] = "zst",
     skip_duplicate_urls: bool = False,
 ):
+    """Create and run pipeline for extracting documents from WARC files.
+
+    Args:
+        documents (str | List[str]): One or more paths to WARC files. Can be a glob pattern.
+        destination (str | List[str]): One or more locations where the extracted documents will be saved;
+            if only one destination is provided, it will be used for all documents; otherwise, the number of
+            destinations must match the number of documents.
+        source_name (str): Name to assign to the source.
+        metadata (str | List[str], optional): One or more locations where the metadata will be saved;
+            if not provided, metadata will be saved in temporary directories. Defaults to None.
+        debug (bool, optional): Whether to run in debug mode. Defaults to False.
+        seed (int, optional): Seed for random number generation. Defaults to 0.
+        ignore_existing (bool, optional): Whether to ignore existing outputs and re-run the taggers.
+            Defaults to False, meaning that existing outputs will be skipped.
+        skip_on_failure (bool, optional): Whether to skip the document if taggers return no output.
+            Defaults to False.
+        num_processes (int, optional): Number of parallel processes to use. Defaults to 1.
+        pre_taggers (List[str], optional): List of taggers to run before HTML extraction.
+            These taggers will run on byte HTML content. Defaults to None.
+        linearizer_name (str, optional): Name of the HTML linearizer to use. Run `dolma list --filter linearizer`
+            to get a list of all available linearizers. Defaults to "resiliparse".
+        post_taggers (List[str], optional): List of taggers to run after HTML extraction. These taggers will run
+            on the extracted text from the linearizer. Defaults to None.
+        store_html_in_metadata (bool, optional): Whether to store the HTML content in the metadata field.
+            Defaults to False.
+        store_attribute_spans_in_metadata (int, optional): Whether to store the attribute spans in the metadata
+            field. Defaults to -1, meaning no attribute spans are stored. The exact attribute span is stored.
+            Any value N greater than 0 indicates that N characters before and after the tagged span should be
+            saved in metadata. Defaults to -1.
+        skip_no_pre_taggers (bool, optional): Wether to . Defaults to False.
+        skip_no_post_taggers (bool, optional): _description_. Defaults to False.
+        skip_source_glob (bool, optional): _description_. Defaults to False.
+        backoff_max_time (Optional[float], optional): _description_. Defaults to None.
+        backoff_max_tries (Optional[int], optional): _description_. Defaults to 10.
+        compression (Optional[str], optional): _description_. Defaults to "zst".
+        skip_duplicate_urls (bool, optional): _description_. Defaults to False.
+    """
+
     with ExitStack() as stack:
         if metadata is None:
             if isinstance(destination, str):
@@ -333,7 +381,6 @@ def create_and_run_warc_pipeline(
 
         processor(
             skip_on_failure=skip_on_failure,
-            store_html_in_metadata=store_html_in_metadata,
             linearizer_name=linearizer_name,
             pre_taggers=pre_taggers,
             post_taggers=post_taggers,
@@ -343,4 +390,6 @@ def create_and_run_warc_pipeline(
             compression=compression,
             debug=debug,
             skip_duplicate_urls=skip_duplicate_urls,
+            store_html_in_metadata=store_html_in_metadata,
+            store_attribute_spans_in_metadata=store_attribute_spans_in_metadata,
         )

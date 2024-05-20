@@ -34,6 +34,18 @@ class BackoffConfig:
 
 
 @dataclass
+class MetadataStorageConfig:
+    html: bool = field(
+        default=False,
+        help="Whether to store the HTML content in the metadata.",
+    )
+    attr_spans: bool = field(
+        default=False,
+        help="Whether to store the spans corresponding to attributes in the metadata.",
+    )
+
+
+@dataclass
 class WarcExtractorConfig:
     documents: List[str] = field(
         default=[],
@@ -67,9 +79,9 @@ class WarcExtractorConfig:
     )
     pre: TaggerConfig = field(default=TaggerConfig(), help="Configuration for pre-extraction taggers.")
     post: TaggerConfig = field(default=TaggerConfig(), help="Configuration for post-extraction taggers.")
-    store_html_in_metadata: bool = field(
-        default=False,
-        help="Whether to store the HTML content in the metadata.",
+    store: MetadataStorageConfig = field(
+        default=MetadataStorageConfig(),
+        help="Configuration for metadata storage."
     )
 
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
@@ -136,7 +148,8 @@ class WarcExtractorCli(BaseCli):
                 skip_no_pre_taggers=parsed_config.pre.skip,
                 post_taggers=parsed_config.post.taggers,
                 skip_no_post_taggers=parsed_config.post.skip,
-                store_html_in_metadata=parsed_config.store_html_in_metadata,
+                store_html_in_metadata=parsed_config.store.html,
+                store_attribute_spans_in_metadata=parsed_config.store.attr_spans,
                 linearizer_name=parsed_config.linearizer,
                 skip_source_glob=parsed_config.skip_checks,
                 skip_duplicate_urls=parsed_config.skip_duplicate_urls,

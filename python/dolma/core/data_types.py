@@ -118,6 +118,8 @@ class DocumentWithMetadata(Document):
 
 
 class DocumentWithMetadataAndAttributes(DocumentWithMetadata):
+    __slots__ = ("attributes",)
+
     def __init__(
         self, *args, attributes: Optional[Dict[str, List[Tuple[int, int, float]]]] = None, **kwargs
     ) -> None:
