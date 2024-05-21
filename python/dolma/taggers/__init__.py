@@ -8,6 +8,7 @@ from . import (
     licenses,
     pii,
     punctuation,
+    quality,
     repetitions,
     sampling,
     science,
