@@ -156,13 +156,6 @@ class DeduperCli(BaseCli):
                 try_name = try_name or cfg["attribute_name"]
             else:
                 raise ValueError("Either dedupe.documents or dedupe.paragraphs must be specified")
-            if (
-                dedupe_dict_config["num_partitions"] > 1
-                and parsed_config.dedupe.paragraphs
-                and parsed_config.dedupe.paragraphs.by_ngram
-                and (parsed_config.dedupe.paragraphs.by_ngram.ngram_length or 0) > 0
-            ):
-                raise ValueError("Work partitioning is not available for n-gram deduplication")
 
             if try_name is None:
                 raise ValueError("dedupe.name must be specified")

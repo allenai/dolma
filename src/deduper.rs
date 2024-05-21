@@ -72,8 +72,20 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     }
 }
 
-fn in_partition(hash: u64, num_partitions: u64, partition_index: u64) -> bool {
-    hash % num_partitions == partition_index
+//Use the first hash to check if this dedupe key belongs to the current partition.
+//If it does, return all hashes. If it doesn't, return an empty list.
+fn build_hashes(
+    bloom_filter: &Arc<BloomFilter>,
+    dedupe_key: &VecDeque<&str>,
+    num_partitions: u64,
+    partition_index: u64,
+) -> Vec<u64> {
+    let mut hashes = vec![bloom_filter.first_hash(&dedupe_key)];
+    if hashes[0] % num_partitions == partition_index {
+        hashes.extend(bloom_filter.remaining_hashes(&dedupe_key));
+        return hashes;
+    }
+    return Vec::new();
 }
 
 // Write attributes for the documents in the given file:
@@ -191,16 +203,17 @@ fn write_attributes(
                     let dedupe_key = VecDeque::from([document_key.as_str()]);
 
                     //Just compute the first hash to see if it matches the partition
-                    let mut hashes = vec![bloom_filter.first_hash(&dedupe_key)];
                     num_observed += 1;
-                    if in_partition(
-                        hashes[0],
+                    let hashes = build_hashes(
+                        &bloom_filter,
+                        &dedupe_key,
                         dedupe_config.num_partitions.unwrap_or(1),
                         dedupe_config.partition_index.unwrap_or(0),
-                    ) {
+                    );
+
+                    if !hashes.is_empty() {
                         num_processed += 1;
                         //Compute the remaining hashes
-                        hashes.extend(bloom_filter.remaining_hashes(&dedupe_key));
                         if bloom_filter.contains(&hashes) {
                             // attributes[&cfg.attribute_name] = Value::Bool(true);
 
@@ -266,16 +279,16 @@ fn write_attributes(
                                     || cfg.by_ngram.as_ref().unwrap().ngram_length == 0
                                 {
                                     let dedupe_key = VecDeque::from([p]);
-                                    let mut hashes = vec![bloom_filter.first_hash(&dedupe_key)];
-                                    num_observed += 1;
-                                    if in_partition(
-                                        hashes[0],
+                                    let hashes = build_hashes(
+                                        &bloom_filter,
+                                        &dedupe_key,
                                         dedupe_config.num_partitions.unwrap_or(1),
                                         dedupe_config.partition_index.unwrap_or(0),
-                                    ) {
+                                    );
+                                    num_observed += 1;
+                                    if !hashes.is_empty() {
                                         num_processed += 1;
                                         // Dedupe the entire paragraph
-                                        hashes.extend(bloom_filter.remaining_hashes(&dedupe_key));
                                         if bloom_filter.contains(&hashes) {
                                             let span = vec![
                                                 Value::Number(par_start.into()),
@@ -309,12 +322,18 @@ fn write_attributes(
                                                 last_ngram_start = ngram_start;
                                                 ngram_count += 1;
                                                 let dedupe_key = VecDeque::from(ngram.clone());
-                                                let hashes = bloom_filter.hashes(&dedupe_key);
-
-                                                if bloom_filter.contains(&hashes) {
-                                                    duplicate_ngram_count += 1;
-                                                } else if !bloom_filter.read_only {
-                                                    bloom_filter.insert(&hashes);
+                                                let hashes = build_hashes(
+                                                    &bloom_filter,
+                                                    &dedupe_key,
+                                                    dedupe_config.num_partitions.unwrap_or(1),
+                                                    dedupe_config.partition_index.unwrap_or(0),
+                                                );
+                                                if !hashes.is_empty() {
+                                                    if bloom_filter.contains(&hashes) {
+                                                        duplicate_ngram_count += 1;
+                                                    } else if !bloom_filter.read_only {
+                                                        bloom_filter.insert(&hashes);
+                                                    }
                                                 }
                                             }
                                             ngram.pop_front();
