@@ -7,8 +7,7 @@ from dolma.core.data_types import Document
 from dolma.taggers.quality import Dolma17QualityClassifier
 
 WIKIPEDIA_TEXT = """
-The Allen Institute for AI (abbreviated AI2) is a 501(c)(3) non-profit research institute founded by late Microsoft co-founder and philanthropist Paul Allen in 2014. The institute seeks to conduct high-impact AI research and engineering in service of the common good. Oren Etzioni was appointed by Paul Allenin September 2013 to direct the research at the institute. After leading the organization for nine years, Oren Etzioni stepped down from his role as CEO on September 30, 2022. He was replaced in an interim capacity by the leading researcher of the company's Aristo project, Peter Clark. On June 20, 2023, AI2 announced Ali Farhadi as its next CEO starting July 31, 2023.",
-The company's board formed a search committee for a new CEO. AI2 also has an active office in Tel Aviv, Israel.
+The Allen Institute for AI (abbreviated AI2) is a 501(c)(3) non-profit research institute founded by late Microsoft co-founder and philanthropist Paul Allen in 2014. The institute seeks to conduct high-impact AI research and engineering in service of the common good. Oren Etzioni was appointed by Paul Allenin September 2013 to direct the research at the institute. After leading the organization for nine years, Oren Etzioni stepped down from his role as CEO on September 30, 2022. He was replaced in an interim capacity by the leading researcher of the company's Aristo project, Peter Clark. On June 20, 2023, AI2 announced Ali Farhadi as its next CEO starting July 31, 2023. The company's board formed a search committee for a new CEO. AI2 also has an active office in Tel Aviv, Israel.
 """
 
 CREATIVE_COMMONS_BLOG_TEXT = """
