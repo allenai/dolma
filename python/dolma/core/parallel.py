@@ -440,18 +440,6 @@ class BaseParallelProcessor:
 
         all_process_kwargs = all_process_kwargs or [{} for _ in all_source_paths]
 
-        # arguments_iterator = zip(
-        #     # source paths
-        #     all_source_paths,
-        #     # destination paths
-        #     all_destination_paths,
-        #     # this is where we save the metadata to keep track of which files have been processed
-        #     all_metadata_paths,
-        #     # additional kwargs to pass to the process_single; if not provided, we use an empty dict
-        #     # will be merged with the process_single_kwargs
-        #     all_process_kwargs,
-        # )
-
         batches = list(
             batch_iterator(
                 # source paths

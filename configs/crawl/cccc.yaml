@@ -1,8 +1,8 @@
 documents:  ${d.stdin:}
 destination:
-    - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2023-23
+  - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/${oc.env:SNAPSHOT}
 processes: ${d.procs:}
-source_name: cccc_CC-MAIN-2023-23
+source_name: cccc_${oc.env:SNAPSHOT}
 linearizer: resiliparse
 pre:
     taggers:
@@ -23,5 +23,5 @@ skip_duplicate_urls: true
 batch_size: 100
 
 work_dir:
-    input: /tmp/cccc/CC-MAIN-2023-23/input
-    output: /tmp/cccc/CC-MAIN-2023-23/output
+  input: /tmp/cccc/${oc.env:SNAPSHOT}/input
+  output: /tmp/cccc/${oc.env:SNAPSHOT}/output
