@@ -470,7 +470,7 @@ class BaseParallelProcessor:
         self.logger.info("Processing in %s batches", len(batches))
 
         # no need to be wasteful with processes: we only need as many cores a the number of batches
-        num_processes = min(self.num_processes, max(len(batches) // self.batch_size, 1))
+        num_processes = min(self.num_processes, len(batches))
         self.logger.info("Using %s processes", num_processes)
 
         # with multiprocessing.Pool(processes=num_processes) as pool:
