@@ -6,6 +6,7 @@ Filters.
 
 """
 
+import re
 from typing import TYPE_CHECKING, Any, List, Optional, Tuple
 
 import regex
@@ -109,3 +110,80 @@ class CreativeCommonsFastRegexHtmlExtractor(CreativeCommonsRegexLicenseExtractor
         "http[s]?://creativecommons\\.org/licenses/"
         '(?P<type>by|by-sa|by-nd|by-nc|by-nc-sa|by-nc-nd|publicdomain)["/ >]'
     )
+
+
+@TaggerRegistry.add("copyright")
+class CopyrightTagger(BaseTaggerWithMetadata):
+    """Extracts copyright notices from HTML documents."""
+
+    COPYRIGHT_KEYWORDS = [
+        "©",
+        "Copyright",
+        "版权",
+        "Derechos de autor",
+        "حقوق النشر",
+        "Direitos autorais",
+        "著作権",
+        "Авторское право",
+        "Urheberrecht",
+        "Droit d'auteur",
+        "저작권",
+        "Diritto d'autore",
+        "Telif hakkı",
+        "Bản quyền",
+        "Prawo autorskie",
+        "Auteursrecht",
+        "Hak cipta",
+        "ลิขสิทธิ์",
+        "حق نشر",
+        "प्रतिलिप्यधिकार",
+        "কপিরাইট",
+        "Rights reserved",
+        "权利保留",
+        "Derechos reservados",
+        "الحقوق محفوظة",
+        "Direitos reservados",
+        "権利を保有する",
+        "Права защищены",
+        "Rechte vorbehalten",
+        "Droits réservés",
+        "권리 보유",
+        "Diritti riservati",
+        "Hakları saklıdır",
+        "Quyền được bảo lưu",
+        "Prawa zastrzeżone",
+        "Rechten voorbehouden",
+        "Hak dilindungi",
+        "สงวนสิทธิ์",
+        "حقوق محفوظ است",
+        "अधिकार सुरक्षित",
+        "স্বত্ব সংরক্ষিত",
+    ]
+
+    def __init__(self):
+        assert HYPERSCAN_AVAILABLE, "Hyperscan is not available; please install with `pip install hyperscan`."
+        self.db = Database()
+
+        all_expressions = [re.escape(keyword).encode("utf-8") for keyword in self.COPYRIGHT_KEYWORDS]
+        all_expressions += [exp.lower() for exp in all_expressions]
+        self.db.compile(
+            expressions=all_expressions,
+            ids=list(range(len(all_expressions))),
+            elements=len(all_expressions),
+            flags=[0 for _ in all_expressions],
+        )
+
+    @staticmethod
+    def _on_match(id_: int, from_: int, to: int, flags: int, context: Optional[Any] = None) -> None:
+        if context is not None:
+            context.append(Span(start=from_, end=to, type="copyright"))
+
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
+        html: Optional[bytes] = doc.metadata.get("html", None)
+        if html is None:
+            raise ValueError("Cannot find `html` key in metadata.")
+
+        # extract copyright notices
+        content: List[Span] = []
+        self.db.scan(html, match_event_handler=self._on_match, context=content)
+        return DocResult(doc=doc, spans=content)

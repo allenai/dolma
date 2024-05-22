@@ -9,9 +9,14 @@ pre:
         - cc_re
     skip: true
 
+post:
+    taggers:
+        - copyright
+    skip: false
+
 store:
     html: false
-    attr_spans: 100
+    attr_spans: 500
 
 skip_duplicate_urls: true
 
