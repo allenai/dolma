@@ -63,7 +63,7 @@ class Document:
 
     @classmethod
     def from_spec(cls, spec: InputSpec) -> Self:
-        return cls(**{k: v for k in cls.__slots__ if (v := getattr(spec, k))})
+        return cls(**{k: v for k in cls.__slots__ if (v := getattr(spec, k)) is not None})
 
     def to_spec(self) -> InputSpec:
         return self.spec_cls(**{k: v for k in self.__slots__ if (v := getattr(self, k)) is not None})
