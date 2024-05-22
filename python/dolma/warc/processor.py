@@ -317,7 +317,8 @@ class WarcProcessor(BaseParallelProcessor):
                             # double the update interval if the queue is full
                             update_interval *= 2
 
-            cls.increment_progressbar(queue, files=1, records=records_cnt, extracted=extracted_cnt)
+                # end of file
+                cls.increment_progressbar(queue, files=1, records=records_cnt, extracted=extracted_cnt)
 
 
 def create_and_run_warc_pipeline(
