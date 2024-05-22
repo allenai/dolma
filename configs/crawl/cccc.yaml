@@ -1,8 +1,8 @@
 documents:  ${d.stdin:}
 destination:
-    - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2024-18
+    - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2023-23
 processes: ${d.procs:}
-source_name: cccc_CC-MAIN-2024-18
+source_name: cccc_CC-MAIN-2023-23
 linearizer: resiliparse
 pre:
     taggers:
@@ -13,8 +13,11 @@ store:
     html: false
     attr_spans: 100
 
+store_html_in_metadata: true
 skip_duplicate_urls: true
 
-# work_dir:
-#     input: /tmp/cccc/CC-MAIN-2024-18/input
-#     output: /tmp/cccc/CC-MAIN-2024-18/output
+batch_size: 100
+
+work_dir:
+    input: /tmp/cccc/CC-MAIN-2023-23/input
+    output: /tmp/cccc/CC-MAIN-2023-23/output
