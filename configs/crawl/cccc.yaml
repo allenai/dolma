@@ -9,8 +9,10 @@ pre:
         - cc_re
     skip: true
 
+store:
+    html: false
+    attr_spans: 100
 
-store_html_in_metadata: true
 skip_duplicate_urls: true
 
 # work_dir:

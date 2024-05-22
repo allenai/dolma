@@ -154,6 +154,8 @@ class BaseParallelProcessor:
         self.pbar_timeout = pbar_timeout
         self.ignore_existing = ignore_existing
 
+        self.logger = self.get_logger()
+
         self.include_paths = set(include_paths) if include_paths is not None else None
         self.exclude_paths = set(exclude_paths) if exclude_paths is not None else None
         self.files_regex_pattern = re.compile(files_regex_pattern) if files_regex_pattern else None
@@ -276,13 +278,11 @@ class BaseParallelProcessor:
         source_paths: List[str],
         destination_paths: List[str],
         queue: QueueType,
-        kwargs: List[Any],
+        kwargs: List[Dict[str, Any]],
     ):
         """Process multiple files. Naively calls process_single for each file, but can be overridden."""
-        for source_path, destination_path, single_kwargs in zip(source_paths, destination_paths, kwargs):
-            cls.process_single(
-                source_path=source_path, destination_path=destination_path, queue=queue, **single_kwargs
-            )
+        for src_path, dst_path, single_kwargs in zip(source_paths, destination_paths, kwargs):
+            cls.process_single(source_path=src_path, destination_path=dst_path, queue=queue, **single_kwargs)
 
     @classmethod
     def process_single(
@@ -313,8 +313,14 @@ class BaseParallelProcessor:
             f"after {details['tries']:,} "
             f"tries (wait: {details.get('wait', 0.0):.2f}s)"
         )
-        if exception := details.get("exception"):
-            message += f' due to {exception.__class__.__name__}: "{exception.args[0]}"'
+        if ex := details.get("exception"):
+            # add details about the exception to the message
+
+            import traceback  # pylint: disable=import-outside-toplevel
+
+            traceback_str = "\n".join(traceback.format_exception(ex))
+            message += f" due to `{ex.__class__.__name__}`.\n{traceback_str}"
+
         cls.get_logger().warning(message)
 
     @classmethod
@@ -379,7 +385,7 @@ class BaseParallelProcessor:
         return kwargs
 
     @classmethod
-    def _run_threaded_progressbar(
+    def _run_progressbar(
         cls,
         queue: QueueType,
         timeout: float,
@@ -446,43 +452,38 @@ class BaseParallelProcessor:
         #     all_process_kwargs,
         # )
 
-        arguments_iterator = batch_iterator(
-            # source paths
-            all_source_paths,
-            # destination paths
-            all_destination_paths,
-            # this is where we save the metadata to keep track of which files have been processed
-            all_metadata_paths,
-            # additional kwargs to pass to the process_single; if not provided, we use an empty dict
-            # will be merged with the process_single_kwargs
-            all_process_kwargs,
-            # batch size is equal to 1 by default
-            batch_size=self.batch_size,
+        batches = list(
+            batch_iterator(
+                # source paths
+                all_source_paths,
+                # destination paths
+                all_destination_paths,
+                # this is where we save the metadata to keep track of which files have been processed
+                all_metadata_paths,
+                # additional kwargs to pass to the process_single; if not provided, we use an empty dict
+                # will be merged with the process_single_kwargs
+                all_process_kwargs,
+                # batch size is equal to 1 by default
+                batch_size=self.batch_size,
+            )
         )
+        self.logger.info("Processing in %s batches", len(batches))
 
-        # no need to be wasteful with processes: we only need as many cores a the minimum of the number of
-        # source paths, destination paths, metadata paths, and process kwargs.
-        num_processes = min(
-            self.num_processes,
-            len(all_source_paths),
-            len(all_destination_paths),
-            len(all_metadata_paths),
-            len(all_process_kwargs),
-        )
+        # no need to be wasteful with processes: we only need as many cores a the number of batches
+        num_processes = min(self.num_processes, max(len(batches) // self.batch_size, 1))
+        self.logger.info("Using %s processes", num_processes)
 
         # with multiprocessing.Pool(processes=num_processes) as pool:
         #   pbar_queue: QueueType = (manager := multiprocessing.Manager()).Queue()
         with PoolWithDebug(processes=num_processes, debug=self.debug) as pool:
             pbar_queue: QueueType = (manager := get_manager(pool)).Queue()
-            thread = Thread(
-                target=self._run_threaded_progressbar, args=(pbar_queue, self.pbar_timeout), daemon=True
-            )
+            thread = Thread(target=self._run_progressbar, args=(pbar_queue, self.pbar_timeout), daemon=True)
             thread.start()
 
             process_single_fn = partial(self.process_single, queue=pbar_queue)
             results = []
 
-            for source_paths, destination_paths, metadata_paths, process_kwargs in arguments_iterator:
+            for source_paths, destination_paths, metadata_paths, process_kwargs in batches:
                 # we need to merge the process_single_kwargs with the additional kwargs
                 # mypy is confused by the type of process_kwargs; we need to ignore the error
                 serialized_kwargs = [
@@ -572,15 +573,14 @@ class BaseParallelProcessor:
     def __call__(self, **process_single_kwargs: Any):
         """Run the processor."""
 
-        logger = self.get_logger()
         random.seed(self.seed)
 
         all_paths, some_already_processed = self._get_all_paths()
-        logger.info("Found %s files to process", len(all_paths.src))
+        self.logger.info("Found %s files to process", len(all_paths.src))
 
         if all_paths.empty:
             if some_already_processed:
-                logger.info("All files already processed; skipping.")
+                self.logger.info("All files already processed; skipping.")
                 return
             else:
                 raise DolmaError("No files found to process.")

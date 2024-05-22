@@ -39,8 +39,8 @@ class MetadataStorageConfig:
         default=False,
         help="Whether to store the HTML content in the metadata.",
     )
-    attr_spans: bool = field(
-        default=False,
+    attr_spans: int = field(
+        default=-1,
         help="Whether to store the spans corresponding to attributes in the metadata.",
     )
 
@@ -80,8 +80,7 @@ class WarcExtractorConfig:
     pre: TaggerConfig = field(default=TaggerConfig(), help="Configuration for pre-extraction taggers.")
     post: TaggerConfig = field(default=TaggerConfig(), help="Configuration for post-extraction taggers.")
     store: MetadataStorageConfig = field(
-        default=MetadataStorageConfig(),
-        help="Configuration for metadata storage."
+        default=MetadataStorageConfig(), help="Configuration for metadata storage."
     )
 
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
@@ -97,6 +96,7 @@ class WarcExtractorConfig:
         default=False,
         help="If true, skip documents with duplicate URLs within a single process.",
     )
+    batch_size: int = field(default=1, help="Number of files to process into a single output file.")
     backoff: BackoffConfig = field(default=BackoffConfig(), help="Configuration for backoff retries.")
 
 
@@ -155,4 +155,5 @@ class WarcExtractorCli(BaseCli):
                 skip_duplicate_urls=parsed_config.skip_duplicate_urls,
                 backoff_max_time=parsed_config.backoff.max_time,
                 backoff_max_tries=parsed_config.backoff.max_tries,
+                batch_size=parsed_config.batch_size,
             )

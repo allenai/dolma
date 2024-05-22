@@ -17,7 +17,7 @@ try:
 except LookupError:
     nltk.download("punkt")
 
-from .data_types import TextSlice
+from .data_types import Span, TextSlice
 from .loggers import get_logger
 
 try:
@@ -34,6 +34,10 @@ logger = get_logger(__name__)
 T = TypeVar("T")
 
 
+# digits after the decimal point
+TAGGER_SCORE_PRECISION = 5
+
+
 def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> str:
     # use underscores for any non-valid characters in variable name
     name = re.sub(r"[^a-zA-Z0-9_]", "_", name)
@@ -46,6 +50,16 @@ def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> 
         raise ValueError(f"Invalid variable name {name}")
 
     return name
+
+
+def format_span_output(span: Span) -> Tuple[int, int, float]:
+    """Formats a span for output."""
+    return (span.start, span.end, round(float(span.score), TAGGER_SCORE_PRECISION))
+
+
+def format_span_key(experiment: str, tagger: str, span: Span) -> str:
+    """Formats a span key for output."""
+    return f"{experiment}__{tagger}__{make_variable_name(span.type)}"
 
 
 def split_words(text: str, remove_empty: bool = True) -> List[TextSlice]:
