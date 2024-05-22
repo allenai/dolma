@@ -132,6 +132,15 @@ def _make_nested_dict(key: str, value: Any, d: Optional[Dict[str, Any]] = None) 
     return d
 
 
+def to_native_types(
+    obj: Any, resolve: bool = True, throw_on_missing: bool = True, enum_to_str: bool = True
+) -> Any:
+    """Converts an OmegaConf object to native types (dicts, lists, etc.)"""
+    if isinstance(obj, DictConfig) or isinstance(obj, ListConfig):
+        return om.to_container(obj, resolve=resolve, throw_on_missing=throw_on_missing, enum_to_str=enum_to_str)
+    return obj
+
+
 def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: Optional[dict] = None) -> T:
     nested_config_dict: Dict[str, Any] = {}
     for key, value in vars(args).items():

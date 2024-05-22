@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-from dolma.cli import BaseCli, field, print_config
+from dolma.cli import BaseCli, field, print_config, to_native_types
 from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
@@ -137,16 +137,16 @@ class WarcExtractorCli(BaseCli):
                 return
 
             create_and_run_warc_pipeline(
-                documents=(documents[0] if len(documents) == 1 else documents),
-                destination=(destination[0] if len(destination) == 1 else destination),
+                documents=to_native_types(documents[0] if len(documents) == 1 else documents),
+                destination=to_native_types(destination[0] if len(destination) == 1 else destination),
                 metadata=work_dirs.output,
                 num_processes=parsed_config.processes,
                 ignore_existing=parsed_config.ignore_existing,
                 debug=parsed_config.debug,
                 source_name=source_name,
-                pre_taggers=parsed_config.pre.taggers,
+                pre_taggers=to_native_types(parsed_config.pre.taggers),
                 skip_no_pre_taggers=parsed_config.pre.skip,
-                post_taggers=parsed_config.post.taggers,
+                post_taggers=to_native_types(parsed_config.post.taggers),
                 skip_no_post_taggers=parsed_config.post.skip,
                 store_html_in_metadata=parsed_config.store.html,
                 store_attribute_spans_in_metadata=parsed_config.store.attr_spans,

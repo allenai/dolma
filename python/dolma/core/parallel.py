@@ -489,6 +489,7 @@ class BaseParallelProcessor:
                 serialized_kwargs = [
                     pickle.dumps({**kw, **process_single_kwargs}) for kw in process_kwargs  # type: ignore
                 ]
+
                 process_single_fn = partial(
                     self._process_batch_and_save_status,
                     queue=pbar_queue,
