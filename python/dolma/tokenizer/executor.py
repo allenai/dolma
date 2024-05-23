@@ -7,9 +7,10 @@ from math import ceil, log10
 from queue import Queue  # pylint: disable=unused-import
 from typing import Any, Generator, List, Optional
 
-from dolma.core.progressbar import BaseProgressBar
 import numpy as np
 from typing_extensions import TypeAlias
+
+from dolma.core.progressbar import BaseProgressBar
 
 from ..core.loggers import get_logger
 from ..core.parallel import BaseParallelProcessor, QueueType
