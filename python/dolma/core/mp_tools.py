@@ -87,7 +87,7 @@ class PoolWithDebug:
     def Manager(self):
         if self._manager is None:
             self._manager = (
-                ManagerWithDebug()  # type: ignore
+                ManagerWithDebug()  # pyright: ignore
                 if self.debug
                 else self.stack.enter_context(multiprocessing.Manager())
             )

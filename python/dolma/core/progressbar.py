@@ -5,7 +5,7 @@ from contextlib import ExitStack
 from functools import reduce
 from hashlib import sha1
 from inspect import Parameter
-from inspect import signature as get_signature  # type: ignore
+from inspect import signature as get_signature
 from queue import Queue
 from threading import Thread
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type

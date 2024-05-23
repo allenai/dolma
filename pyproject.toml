@@ -161,7 +161,7 @@ all = [
 
 [build-system]
 requires = [
-    "maturin>=1.1,<2.0",
+    "maturin>=1.5,<2.0",
     "setuptools >= 61.0.0",
     "wheel"
 ]
