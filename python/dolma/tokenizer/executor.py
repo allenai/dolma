@@ -256,8 +256,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
         )
 
         # finally run the processors
-        fn = self._debug_run_all if self.debug else self._multiprocessing_run_all
-        fn(
+        self._run_all(
             all_source_paths=source_indices,
             all_destination_paths=all_destination_paths,
             all_metadata_paths=all_metadata_path,
