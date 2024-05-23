@@ -1,10 +1,11 @@
-import inspect
 import multiprocessing
 import time
 import warnings
 from contextlib import ExitStack
 from functools import reduce
 from hashlib import sha1
+from inspect import Parameter
+from inspect import signature as get_signature
 from queue import Queue
 from threading import Thread
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type
@@ -125,13 +126,13 @@ class BaseProgressBar:
         warnings.warn(msg, category=DeprecationWarning, stacklevel=2)
 
         # checking that the increment_progressbar method is subclassed correctly
-        sig = inspect.signature(processor.increment_progressbar)
-        if "queue" not in sig.parameters or sig.parameters["queue"].kind != inspect.Parameter.POSITIONAL_ONLY:
+        sig = get_signature(processor.increment_progressbar)
+        if "queue" not in sig.parameters or sig.parameters["queue"].kind != Parameter.POSITIONAL_ONLY:
             raise AttributeError(
                 "increment_progressbar must have a positional-only argument named 'queue'; "
                 "Check that you have subclassed BaseParallelProcessor correctly!"
             )
-        if "kwargs" in sig.parameters and sig.parameters["kwargs"].kind == inspect.Parameter.VAR_KEYWORD:
+        if "kwargs" in sig.parameters and sig.parameters["kwargs"].kind == Parameter.VAR_KEYWORD:
             raise AttributeError(
                 "increment_progressbar must not have a **kwargs argument; "
                 "Check that you have subclassed BaseParallelProcessor correctly!"
@@ -141,8 +142,8 @@ class BaseProgressBar:
                 "increment_progressbar must have a default value of 0 for all arguments except 'queue'; "
                 "Check that you have subclassed BaseParallelProcessor correctly!"
             )
-        params = sorted(k for k, p in sig.parameters.items() if k != "queue" and p.kind != inspect.Parameter.empty)
-        h = reduce(lambda h, e: h.update(e.encode()) or h, params, sha1()).hexdigest()
+        params = sorted(k for k, p in sig.parameters.items() if k != "queue" and p.kind != Parameter.empty)
+        h = reduce(lambda h, e: h.update(e.encode()) or h, params, sha1()).hexdigest()  # type: ignore
 
         # create a new class
         cls_dict = {"__annotations__": {k: int for k in params}, **{p: 0 for p in params}}
@@ -160,14 +161,16 @@ class BaseProgressBar:
         Returns:
             Tuple[str, ...]: A tuple of field names.
         """
-        if "__fields__" not in cls.__dict__:
-            annotations = inspect.get_annotations(cls)
-            cls.__fields__ = tuple(sorted(n for n, t in annotations.items() if issubclass(t, int)))
+        fields: Optional[Tuple[str, ...]] = cls.__dict__.get("__fields__")
 
-        if not cls.__fields__:
+        if fields is None:
+            fields = tuple(sorted(n for n, t in cls.__annotations__.items() if issubclass(t, int)))
+            setattr(cls, "__fields__", fields)
+
+        if len(fields) == 0:
             raise ValueError(f"Class {cls.__name__} must have at least one field of type int.")
 
-        return cls.__fields__
+        return fields
 
     @classmethod
     def parse(cls, values: Optional[Tuple[int, ...]]) -> Dict[str, int]:

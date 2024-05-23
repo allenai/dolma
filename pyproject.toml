@@ -161,7 +161,7 @@ all = [
 
 [build-system]
 requires = [
-    "maturin[patchelf]>=1.1,<2.0",
+    "maturin>=1.5,<2.0",
     "setuptools >= 61.0.0",
     "wheel"
 ]
@@ -177,7 +177,7 @@ features = ["pyo3/extension-module"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-dolma = ["py.typed", "data/*"]
+dolma = ["py.typed", "data/*", "*.pyi"]
 
 [tool.black]
 line-length = 115
