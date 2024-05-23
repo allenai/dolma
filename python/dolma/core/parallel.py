@@ -33,7 +33,7 @@ from .utils import batch_iterator
 METADATA_SUFFIX = ".done.txt"
 
 # we need to quote the type alias because we want to support Python 3.8
-QueueType: TypeAlias = Queue[Union[None, Tuple[int, ...]]]
+QueueType: TypeAlias = "Queue[Union[None, Tuple[int, ...]]]"
 KwargsType: TypeAlias = Dict[str, Any]
 BPP = TypeVar("BPP", bound="BaseParallelProcessor")
 
