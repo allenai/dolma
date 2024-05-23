@@ -4,7 +4,7 @@ import warnings
 from contextlib import ExitStack
 from functools import reduce
 from hashlib import sha1
-from inspect import Parameter, get_annotations
+from inspect import Parameter
 from inspect import signature as get_signature  # type: ignore
 from queue import Queue
 from threading import Thread
@@ -164,8 +164,7 @@ class BaseProgressBar:
         fields: Optional[Tuple[str, ...]] = cls.__dict__.get("__fields__")
 
         if fields is None:
-            annotations = get_annotations(cls)
-            fields = tuple(sorted(n for n, t in annotations.items() if issubclass(t, int)))
+            fields = tuple(sorted(n for n, t in cls.__annotations__.items() if issubclass(t, int)))
             setattr(cls, "__fields__", fields)
 
         if len(fields) == 0:
