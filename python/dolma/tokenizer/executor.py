@@ -1,13 +1,13 @@
 import hashlib
-import multiprocessing
 import os
 import random
 import tempfile
 from contextlib import ExitStack
 from math import ceil, log10
 from queue import Queue  # pylint: disable=unused-import
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Generator, List, Optional
 
+from dolma.core.progressbar import BaseProgressBar
 import numpy as np
 from typing_extensions import TypeAlias
 
@@ -26,20 +26,15 @@ def sizes_to_probs(sizes: List[int]) -> np.ndarray:
     return np.array(sizes) / sum(sizes)
 
 
+class MemMapParallelProgressbar(BaseProgressBar):
+    files: int = 0
+    documents: int = 0
+    tokens: int = 0
+    memmaps: int = 0
+
+
 class MemMapParallelWriter(BaseParallelProcessor):
-    @classmethod
-    def increment_progressbar(  # type: ignore[override]    # pylint: disable=arguments-differ
-        cls,
-        queue: QueueType,
-        /,
-        files: int = 0,
-        documents: int = 0,
-        tokens: int = 0,
-        memmaps: int = 0,
-    ) -> Dict[str, int]:
-        return super().increment_progressbar(
-            queue, files=files, documents=documents, tokens=tokens, memmaps=memmaps
-        )
+    PROGRESS_BAR_CLS = MemMapParallelProgressbar
 
     @classmethod
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
@@ -79,12 +74,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
         # flag to control whether to segment the documents before tokenization
         tokenizer_kwargs["segment_before_tokenization"] = kwargs.pop("segment_before_tokenization", None) or False
 
-        # this is useful for making sure the queue does not grows too much
-        cpu_count = multiprocessing.cpu_count()
-
-        # these are used to keep track of the progress
-        documents_cnt = tokens_cnt = 0
-        update_interval = 1
+        # these are used to keep track of the numbers of memmaps created and increment the progress bar
         mm_cnt = 0
 
         # create the tokenizer from file if it exists, otherwise from pretrained
@@ -106,10 +96,11 @@ class MemMapParallelWriter(BaseParallelProcessor):
         accumulator = []
 
         with ExitStack() as stack:
+            pbar = MemMapParallelProgressbar(queue)
             memwriter = stack.enter_context(
                 MemmapWriter(path=destination_path + f"-{mm_cnt:05d}", dtype=dtype, max_tokens=max_size)
             )
-            cls.increment_progressbar(queue, memmaps=1)
+            pbar.memmaps += 1
 
             while len(source_paths) > 0 or len(tokenizer_ring) > 0:
                 for i in range(local_shuffle):
@@ -128,11 +119,11 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         accumulator.append(content)
 
                         # count the number of tokens and documents
-                        tokens_cnt += content.end - content.start
-                        documents_cnt += 1
+                        pbar.tokens += content.end - content.start
+                        pbar.documents += 1
                     except StopIteration:
                         # we have reached the end of one of the file; move to the next!
-                        cls.increment_progressbar(queue, files=1)
+                        pbar.files += 1
                         tokenizer_ring.pop(j)
                         tokenizer_sizes.pop(j)
 
@@ -147,20 +138,11 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         # wether a file is added or not to the ring, we must re-balance probabilities
                         tokenizer_probs = sizes_to_probs(tokenizer_sizes)
 
-                    # check if it time to update the progress bar!
-                    if documents_cnt >= update_interval:
-                        cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
-                        tokens_cnt = documents_cnt = 0
-
-                        if queue.qsize() >= cpu_count:
-                            # double the update interval if the queue is full
-                            update_interval *= 2
-
                 # shuffle sequence order to ensure that the sequences are well mixed
                 random.shuffle(accumulator)
 
                 # try to write all the sequences, collect the ones that don't fit in remaining
-                remaining = memwriter.write_many(outputs=accumulator, flush=documents_cnt == 0)
+                remaining = memwriter.write_many(outputs=accumulator, flush=pbar.documents == 0)
 
                 if remaining:
                     # if we have remaining sequences, we need to close the current memwriter and open a new one
@@ -173,16 +155,13 @@ class MemMapParallelWriter(BaseParallelProcessor):
                             max_tokens=max_size,
                         )
                     )
-                    cls.increment_progressbar(queue, memmaps=1)
+                    pbar.memmaps += 1
 
                     # finally, write the remaining sequences
                     memwriter.write_many(outputs=remaining, flush=True)
 
                 accumulator = []
-
                 memwriter.flush()
-
-        cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
 
     def __call__(self, num_readers: Optional[int] = None, **process_single_kwargs: Any):
         """Run the processor."""

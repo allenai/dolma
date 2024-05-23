@@ -10,6 +10,7 @@ from unittest import TestCase
 import smart_open
 
 from dolma.core.parallel import BaseParallelProcessor, QueueType
+from dolma.core.progressbar import BaseProgressBar
 
 LOCAL_DATA = Path(__file__).parent.parent / "data"
 
@@ -32,6 +33,28 @@ class MockProcessor(BaseParallelProcessor):
         queue.put((1,))
 
 
+class MockPbar(BaseProgressBar):
+    a: int = 0
+    b: int = 0
+
+
+class NewStyleMockProcessor(BaseParallelProcessor):
+    PROGRESS_BAR_CLS = MockPbar
+
+    @classmethod
+    def process_single(
+        cls,
+        source_path: str,
+        destination_path: str,
+        queue: QueueType,
+        **kwargs: Any,
+    ):
+        with MockPbar(queue) as pbar:
+            for _ in range(10):
+                pbar.a += 1
+                pbar.b += 5
+
+
 class MockProcessorWithFail(MockProcessor):
     @classmethod
     def process_single(
@@ -49,6 +72,16 @@ class TestParallel(TestCase):
     def _read(self, path):
         with smart_open.open(path, "rb") as f:
             return f.read()
+
+    def test_new_style(self):
+        with TemporaryDirectory() as d:
+            proc = NewStyleMockProcessor(
+                source_prefix=str(LOCAL_DATA / "expected"),
+                destination_prefix=f"{d}/destination",
+                metadata_prefix=f"{d}/metadata",
+                ignore_existing=False,
+            )
+            proc()
 
     def test_debug(self):
         with self.assertRaises(ValueError):
@@ -70,9 +103,9 @@ class TestParallel(TestCase):
             self.assertEqual(sorted(src), sorted(dest))
 
             for s, e in zip(src, dest):
-                s = LOCAL_DATA / "expected" / s
-                e = f"{d}/destination/{e}"
-                self.assertEqual(self._read(s), self._read(e))
+                s_ = LOCAL_DATA / "expected" / s
+                e_ = f"{d}/destination/{e}"
+                self.assertEqual(self._read(s_), self._read(e_))
 
     def test_base_parallel_processor(self):
         with self.assertRaises(ValueError):
@@ -94,9 +127,9 @@ class TestParallel(TestCase):
             self.assertEqual(sorted(src), sorted(dest))
 
             for s, e in zip(src, dest):
-                s = LOCAL_DATA / "expected" / s
-                e = f"{d}/destination/{e}"
-                self.assertEqual(self._read(s), self._read(e))
+                s_ = LOCAL_DATA / "expected" / s
+                e_ = f"{d}/destination/{e}"
+                self.assertEqual(self._read(s_), self._read(e_))
 
     def test_two_stages(self):
         with TemporaryDirectory() as d:
@@ -137,6 +170,7 @@ class TestParallel(TestCase):
                 backoff_exceptions=(ValueError,),
                 backoff_max_time=3,
                 backoff_max_tries=3,
+                debug=True,
             )
             with self.assertRaises(ValueError):
                 proc()

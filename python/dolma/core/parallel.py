@@ -1,21 +1,16 @@
-import inspect
 import itertools
 import logging
 import multiprocessing
 import pickle
 import random
 import re
-import time
-from contextlib import ExitStack
 from datetime import datetime
 from functools import partial
 from queue import Queue
-from threading import Thread
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Type, TypeVar, Union
 
 import backoff
 import smart_open
-import tqdm
 from backoff.types import Details
 from typing_extensions import TypeAlias
 
@@ -32,12 +27,13 @@ from .paths import (
     parent,
     split_path,
 )
+from .progressbar import BaseProgressBar
 from .utils import batch_iterator
 
 METADATA_SUFFIX = ".done.txt"
 
 # we need to quote the type alias because we want to support Python 3.8
-QueueType: TypeAlias = "Queue[Union[None, Tuple[int, ...]]]"
+QueueType: TypeAlias = Queue[Union[None, Tuple[int, ...]]]
 KwargsType: TypeAlias = Dict[str, Any]
 BPP = TypeVar("BPP", bound="BaseParallelProcessor")
 
@@ -82,6 +78,8 @@ class BaseParallelProcessor:
 
     See documentation of both methods for more details on how to implement them correctly.
     """
+
+    PROGRESS_BAR_CLS: Type[BaseProgressBar]
 
     def __init__(
         self,
@@ -144,7 +142,6 @@ class BaseParallelProcessor:
             backoff_exceptions (Union[Type[Exception], Tuple[Type[Exception], ...]], optional): The
                 exceptions to backoff on. Defaults to `dolma.core.errors.DolmaRetryableFailure`.
         """
-
         self.src_prefixes = [source_prefix] if isinstance(source_prefix, str) else source_prefix
         self.dst_prefixes = [destination_prefix] if isinstance(destination_prefix, str) else destination_prefix
         self.meta_prefixes = [metadata_prefix] if isinstance(metadata_prefix, str) else metadata_prefix
@@ -180,23 +177,8 @@ class BaseParallelProcessor:
         else:
             self.process_single_kwargs = process_single_kwargs
 
-        # checking that the increment_progressbar method is subclassed correctly
-        sig = inspect.signature(self.increment_progressbar)
-        if "queue" not in sig.parameters or sig.parameters["queue"].kind != inspect.Parameter.POSITIONAL_ONLY:
-            raise AttributeError(
-                "increment_progressbar must have a positional-only argument named 'queue'; "
-                "Check that you have subclassed BaseParallelProcessor correctly!"
-            )
-        if "kwargs" in sig.parameters and sig.parameters["kwargs"].kind == inspect.Parameter.VAR_KEYWORD:
-            raise AttributeError(
-                "increment_progressbar must not have a **kwargs argument; "
-                "Check that you have subclassed BaseParallelProcessor correctly!"
-            )
-        if any(p.name != "queue" and p.default != 0 for p in sig.parameters.values()):
-            raise AttributeError(
-                "increment_progressbar must have a default value of 0 for all arguments except 'queue'; "
-                "Check that you have subclassed BaseParallelProcessor correctly!"
-            )
+        if not hasattr(self, "PROGRESS_BAR_CLS"):
+            self.PROGRESS_BAR_CLS = BaseProgressBar.from_increment_function(self)
 
         if len(self.src_prefixes) != len(self.dst_prefixes):
             raise ValueError(
@@ -221,6 +203,9 @@ class BaseParallelProcessor:
 
         if any("*" in p for p in itertools.chain(self.dst_prefixes, self.meta_prefixes)):
             raise ValueError("Destination and metadata prefixes cannot contain wildcards.")
+
+        if not hasattr(self, "PROGRESS_BAR_CLS"):
+            raise AttributeError("BaseParallelProcessor subclasses must define the PROGRESS_BAR_CLS attribute.")
 
     def __add__(self: BPP, other: BPP) -> BPP:
         """Combine two parallel processors into one."""
@@ -315,11 +300,9 @@ class BaseParallelProcessor:
         )
         if ex := details.get("exception"):
             # add details about the exception to the message
-
             import traceback  # pylint: disable=import-outside-toplevel
 
-            traceback_str = "\n".join(traceback.format_exception(ex))
-            message += f" due to `{ex.__class__.__name__}`.\n{traceback_str}"
+            message += " due to " + "\n".join(traceback.format_exception(ex)).strip()
 
         cls.get_logger().warning(message)
 
@@ -340,9 +323,6 @@ class BaseParallelProcessor:
         # make destination directory if it doesn't exist for the destination and metadata paths
         for path in itertools.chain(destination_paths, metadata_paths):
             mkdir_p(parent(path))
-
-        # mkdir_p(parent(destination_path))
-        # mkdir_p(parent(metadata_path))
 
         # we unpickle the serialized kwargs
         deserialized_kwargs = [pickle.loads(kw) for kw in serialized_kwargs]
@@ -383,39 +363,6 @@ class BaseParallelProcessor:
         """
         queue.put(tuple(kwargs.get(k, 0) for k in kwargs))
         return kwargs
-
-    @classmethod
-    def _run_progressbar(
-        cls,
-        queue: QueueType,
-        timeout: float,
-    ):
-        """Run a progress bar in a separate thread.
-
-        Args:
-            queue (QueueType): The queue to increment the progress bars.
-            timeout (float): How often to update the progress bars in seconds.
-        """
-
-        sample_queue_output = cls.increment_progressbar(queue)
-
-        with ExitStack() as stack:
-            pbars = [
-                stack.enter_context(
-                    tqdm.tqdm(desc=str(k), unit=str(k)[:1], position=i, unit_scale=True)  # pyright: ignore
-                )
-                for i, k in enumerate(sample_queue_output)
-            ]
-
-            while True:
-                item = queue.get()
-                if item is None:
-                    break
-
-                for pbar, value in zip(pbars, item):
-                    pbar.update(value)
-
-                time.sleep(timeout)
 
     def _run_all(
         self,
@@ -461,12 +408,9 @@ class BaseParallelProcessor:
         num_processes = min(self.num_processes, len(batches))
         self.logger.info("Using %s processes", num_processes)
 
-        # with multiprocessing.Pool(processes=num_processes) as pool:
-        #   pbar_queue: QueueType = (manager := multiprocessing.Manager()).Queue()
         with PoolWithDebug(processes=num_processes, debug=self.debug) as pool:
             pbar_queue: QueueType = (manager := get_manager(pool)).Queue()
-            thread = Thread(target=self._run_progressbar, args=(pbar_queue, self.pbar_timeout), daemon=True)
-            thread.start()
+            (pbar := self.PROGRESS_BAR_CLS(pbar_queue)).start()
 
             process_single_fn = partial(self.process_single, queue=pbar_queue)
             results = []
@@ -497,9 +441,7 @@ class BaseParallelProcessor:
 
             pool.close()
             pool.join()
-
-            pbar_queue.put(None)
-            thread.join()
+            pbar.stop()
             manager.shutdown()
 
     def _valid_path(self, path: str) -> bool:
