@@ -311,7 +311,8 @@ class BaseParallelProcessor:
         if ex := details.get("exception"):
             # add details about the exception to the message
             import traceback  # pylint: disable=import-outside-toplevel
-            message += " due to " + "".join(traceback.format_exception_only(type(ex), ex)).strip()  # type: ignore
+
+            message += " due to " + "".join(traceback.format_exception_only(type(ex), ex)).strip()
 
         cls.get_logger().warning(message)
 
