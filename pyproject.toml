@@ -125,30 +125,6 @@ lang = [
     "langdetect>=1.0.9"
 ]
 
-# extension to parse warc files
-warc = [
-    "fastwarc",
-    "w3lib",
-    "courlan",
-]
-trafilatura = [
-    # must include warc dependencies
-    "dolma[warc]",
-    # core package
-    "trafilatura>=1.6.1",
-    # following are all for speeding up trafilatura
-    "brotli",
-    "cchardet >= 2.1.7; python_version < '3.11'",  # build issue
-    "faust-cchardet >= 2.1.18; python_version >= '3.11'",  # fix for build
-    "htmldate[speed] >= 1.4.3",
-    "py3langid >= 0.2.2",
-]
-
-resiliparse = [
-    "dolma[warc]",
-    "resiliparse",
-]
-
 # all extensions
 all = [
     "dolma[dev]",
