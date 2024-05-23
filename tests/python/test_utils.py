@@ -2,14 +2,14 @@
 
 Tests for the utils module.
 
-@kylel
+@kylel, @soldni
 
 """
 
 from unittest import TestCase
 
 from dolma.core.data_types import TextSlice
-from dolma.core.utils import split_paragraphs, split_sentences
+from dolma.core.utils import batch_iterator, split_paragraphs, split_sentences
 
 
 class TestUtils(TestCase):
@@ -84,3 +84,44 @@ class TestUtils(TestCase):
         self.assertEqual(text[sentences[0].start : sentences[0].end], sentences[0].text)
         self.assertEqual(sentences[1].text, "This is another sentence.")
         self.assertEqual(text[sentences[1].start : sentences[1].end], sentences[1].text)
+
+
+class TestBatching(TestCase):
+    def test_batching(self):
+        a = [1, 2, 3, 4, 5]
+        b = [6, 7, 8, 9, 0]
+
+        output = list(batch_iterator(a, b, batch_size=2))
+        self.assertEqual(len(output), 3)
+        self.assertEqual(output[0], [(1, 2), (6, 7)])
+        self.assertEqual(output[1], [(3, 4), (8, 9)])
+        self.assertEqual(output[2], [(5,), (0,)])
+
+    def test_single_batching(self):
+        a = [1, 2, 3, 4, 5]
+
+        output = list(batch_iterator(a, batch_size=2))
+
+        self.assertEqual(len(output), 3)
+        self.assertEqual(output[0], [(1, 2)])
+        self.assertEqual(output[1], [(3, 4)])
+        self.assertEqual(output[2], [(5,)])
+
+    def test_longer_batch_than_slice(self):
+        a = list(range(3))
+        b = list(range(3, 6))
+        c = list(range(6, 9))
+
+        output = list(batch_iterator(a, b, c, batch_size=4))
+
+        self.assertEqual(len(output), 1)
+        self.assertEqual(output[0], [(0, 1, 2), (3, 4, 5), (6, 7, 8)])
+
+    def test_drop_last(self):
+        a = [1, 2, 3, 4, 5]
+        b = [6, 7, 8, 9, 0]
+
+        output = list(batch_iterator(a, b, batch_size=2, drop_last=True))
+        self.assertEqual(len(output), 2)
+        self.assertEqual(output[0], [(1, 2), (6, 7)])
+        self.assertEqual(output[1], [(3, 4), (8, 9)])
