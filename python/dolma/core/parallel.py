@@ -100,6 +100,7 @@ class BaseParallelProcessor:
         process_single_kwargs: Union[None, KwargsType, List[KwargsType]] = None,
         backoff_max_time: Optional[float] = None,
         backoff_max_tries: int = 1,
+        retries_on_error: Optional[int] = None,
         backoff_exceptions: Optional[Union[Type[Exception], Tuple[Type[Exception], ...]]] = None,
     ):
         """Initialize the parallel processor.
@@ -141,6 +142,8 @@ class BaseParallelProcessor:
             backoff_max_tries (int, optional): The maximum number of tries to backoff. Defaults to 1.
             backoff_exceptions (Union[Type[Exception], Tuple[Type[Exception], ...]], optional): The
                 exceptions to backoff on. Defaults to `dolma.core.errors.DolmaRetryableFailure`.
+            retries_on_error (int, optional): Deprecated. The number of retries to attempt on error.
+                Defaults to None.
         """
         self.src_prefixes = [source_prefix] if isinstance(source_prefix, str) else source_prefix
         self.dst_prefixes = [destination_prefix] if isinstance(destination_prefix, str) else destination_prefix
@@ -160,6 +163,13 @@ class BaseParallelProcessor:
 
         # this manages how many files to pass to a single processor
         self.batch_size = batch_size
+
+        if retries_on_error is not None:
+            self.logger.warning(
+                "The `retries_on_error` parameter is deprecated and will be removed in a future release. "
+                "Please use `backoff_max_tries` instead."
+            )
+            backoff_max_tries = retries_on_error + 1
 
         # this controls backoff
         self.backoff_max_time: float = float(backoff_max_time or "inf")
