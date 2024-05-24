@@ -81,8 +81,8 @@ class BaseProgressBar:
         """
         self._logger = get_logger(self.__class__.__name__, "warn")
         self._queue = queue
-        self._last_update_time = 0
-        self._last_update_delta_step = 0
+        self._last_update_time = time.time()
+        self._last_update_step = 0
 
         self._update_every_seconds = min_time
         self._update_every_steps = min_step
@@ -142,7 +142,7 @@ class BaseProgressBar:
                 "increment_progressbar must have a default value of 0 for all arguments except 'queue'; "
                 "Check that you have subclassed BaseParallelProcessor correctly!"
             )
-        params = sorted(k for k, p in sig.parameters.items() if k != "queue" and p.kind != Parameter.empty)
+        params = [k for k, p in sig.parameters.items() if k != "queue" and p.kind != Parameter.empty]
         h = reduce(lambda h, e: h.update(e.encode()) or h, params, sha1()).hexdigest()  # type: ignore
 
         # create a new class
@@ -164,7 +164,7 @@ class BaseProgressBar:
         fields: Optional[Tuple[str, ...]] = cls.__dict__.get("__fields__")
 
         if fields is None:
-            fields = tuple(sorted(n for n, t in cls.__annotations__.items() if issubclass(t, int)))
+            fields = tuple(n for n, t in cls.__annotations__.items() if issubclass(t, int))
             setattr(cls, "__fields__", fields)
 
         if len(fields) == 0:
@@ -195,7 +195,7 @@ class BaseProgressBar:
         self._queue.put_nowait(update)
 
         # reset the steps
-        self._last_update_delta_step = 0
+        self._last_update_step = 0
         self._last_update_time = time.time()
 
         # reset the steps
@@ -204,9 +204,9 @@ class BaseProgressBar:
 
     def update(self):
         # update the number of steps since the last update
-        self._last_update_delta_step += 1
+        self._last_update_step += 1
 
-        if self._update_every_steps > self._last_update_delta_step:
+        if self._update_every_steps > self._last_update_step:
             return
 
         time_before_update = self._last_update_time

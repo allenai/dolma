@@ -19,7 +19,6 @@ class TestProgressbar(TestCase):
         updater.documents += 1
         updater.files += 1
 
-        # was pushed to the queue
         self.assertEqual(updater.documents, 0)
 
         # hasn't been pushed yet cuz delta time is small

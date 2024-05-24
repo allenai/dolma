@@ -35,10 +35,10 @@ DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
 
 
 class WarcProgressBar(BaseProgressBar):
-    files: int = 0
     records: int = 0
+    duplicates: int = 0
     extracted: int = 0
-    url_duplicates: int = 0
+    files: int = 0
     attempts: int = 0
 
 
@@ -211,10 +211,11 @@ class WarcProcessor(BaseParallelProcessor):
                     url = (clean_url(target_uri) or target_uri).split("//", 1)[-1]
 
                     # check for duplicate URLs
-                    if skip_duplicate_urls and url in seen_urls:
-                        pbar.url_duplicates += 1
+                    if skip_duplicate_urls:
+                        if url in seen_urls:
+                            pbar.duplicates += 1
+                            continue
                         seen_urls.add(url)
-                        continue
 
                     # metadata
                     http_headers = record.http_headers.asdict()
