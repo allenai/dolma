@@ -39,7 +39,7 @@ class WarcProgressBar(BaseProgressBar):
     duplicates: int = 0
     extracted: int = 0
     files: int = 0
-    attempts: int = 0
+    # attempts: int = 0
 
 
 class WarcProcessor(BaseParallelProcessor):
@@ -275,7 +275,7 @@ class WarcProcessor(BaseParallelProcessor):
                     output_file.write(encoder.encode(doc.to_spec()) + b"\n")  # pyright: ignore
                     pbar.extracted += 1
                 pbar.files += 1
-                pbar.attempts += 1
+                # pbar.attempts += 1
 
 
 def create_and_run_warc_pipeline(
