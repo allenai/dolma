@@ -81,7 +81,7 @@ class BaseProgressBar:
         """
         self._logger = get_logger(self.__class__.__name__, "warn")
         self._queue = queue
-        self._last_update_delta_time = 0
+        self._last_update_time = 0
         self._last_update_delta_step = 0
 
         self._update_every_seconds = min_time
@@ -196,6 +196,7 @@ class BaseProgressBar:
 
         # reset the steps
         self._last_update_delta_step = 0
+        self._last_update_time = time.time()
 
         # reset the steps
         for k in self.fields():
@@ -208,6 +209,7 @@ class BaseProgressBar:
         if self._update_every_steps > self._last_update_delta_step:
             return
 
+        time_before_update = self._last_update_time
         self._update()
 
         # check if we wanna update frequency based on steps
@@ -216,8 +218,7 @@ class BaseProgressBar:
             return
 
         # check if we wanna update frequency based on time
-        self._last_update_delta_time = -(time.time() - self._last_update_delta_time)
-        if self._last_update_delta_time < self._update_every_seconds:
+        if (self._last_update_time - time_before_update) < self._update_every_seconds:
             self._update_every_steps *= 2
             return
 

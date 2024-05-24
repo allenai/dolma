@@ -1,11 +1,9 @@
 import datetime
 import hashlib
-import multiprocessing
 import tempfile
 from contextlib import ExitStack
 from functools import reduce
 from itertools import chain
-from time import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
 
 import msgspec
@@ -14,25 +12,19 @@ from courlan import clean_url  # pyright: ignore
 from necessary import necessary
 
 from ..core.data_types import DocumentWithMetadataAndAttributes
-from ..core.parallel import BaseParallelProcessor, QueueType
+from ..core.parallel import BaseParallelProcessor
 from ..core.paths import glob_path, join_path, make_relative, split_ext, split_path
+from ..core.progressbar import BaseProgressBar, QueueType
 from ..core.registry import TaggerRegistry
 from ..core.runtime import _make_paths_from_prefix
 from ..core.utils import format_span_key, format_span_output, make_variable_name
+from .iterator import BackoffWarcIterator
 from .linearizers import LinearizerRegistry
 from .utils import raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
     if FASTWARC_AVAILABLE or TYPE_CHECKING:
-        from fastwarc.stream_io import (  # pylint: disable=no-name-in-module
-            GZipStream,
-            LZ4Stream,
-        )
-        from fastwarc.warc import (  # pylint: disable=no-name-in-module
-            ArchiveIterator,
-            WarcRecordType,
-        )
-
+        from fastwarc.warc import WarcRecordType  # pylint: disable=no-name-in-module
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:
@@ -42,8 +34,18 @@ with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
 DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
 
 
+class WarcProgressBar(BaseProgressBar):
+    files: int = 0
+    records: int = 0
+    extracted: int = 0
+    duplicate: int = 0
+    retries: int = 0
+
+
 class WarcProcessor(BaseParallelProcessor):
     """Processes WARC files, like the ones used by Common Crawl, in parallel."""
+
+    PROGRESS_BAR_CLS = WarcProgressBar
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -70,20 +72,6 @@ class WarcProcessor(BaseParallelProcessor):
                 pass
 
         return dateparser.parse(date_string=timestamp_str) or datetime.datetime.now()
-
-    @classmethod
-    def increment_progressbar(  # type: ignore
-        cls,
-        queue: QueueType,  # queue must be the first argument, and it should be a positional-only argument
-        /,
-        files: int = 0,
-        records: int = 0,
-        extracted: int = 0,
-    ) -> Dict[str, int]:
-        """Records (documents) and records are the units we use to track progress."""
-
-        # we call the super method to increment the progress bar
-        return super().increment_progressbar(queue, files=files, records=records, extracted=extracted)
 
     @staticmethod
     def _get_destination_path(paths: List[str], new_ext: Optional[str] = None) -> str:
@@ -143,17 +131,12 @@ class WarcProcessor(BaseParallelProcessor):
         date_now = datetime.datetime.now()
         date_now_str = cls._format_to_dolma_timestamp(date_now)
 
-        # interval at which to update the progress bar; will double if it gets too full
-        update_interval = 1
-
-        # hold the number of records processed in this variable
-        records_cnt = 0
-        extracted_cnt = 0
-
         # encoder
         encoder = msgspec.json.Encoder()
 
         with ExitStack() as stack:
+            pbar = WarcProgressBar(queue)
+
             # get compression format; it's slightly awkward that we have to check that is the same for all
             # the single kwargs, but decent sanity check.
             all_compression_ext = {kw.get("compression", None) or "zst" for kw in kwargs}
@@ -186,9 +169,6 @@ class WarcProcessor(BaseParallelProcessor):
                 skip_duplicate_urls = bool(src_kwargs.get("skip_duplicate_urls", None) or False)
                 seen_urls: Set[str] = set()
 
-                # keep track of the time it takes to process each document
-                elapsed_time = time()
-
                 # create any tagger that runs after html extraction
                 post_taggers_names: List[str] = src_kwargs.get("post_taggers") or []
                 post_taggers = {
@@ -207,16 +187,12 @@ class WarcProcessor(BaseParallelProcessor):
                 # whether to skip this document if post-taggers find nothing
                 skip_no_post_taggers: bool = src_kwargs.get("skip_no_post_taggers") or False
 
-                if src_path.endswith(".lz4"):
-                    warc_stream = stack.enter_context(smart_open.open(src_path, "rb", compression="disable"))
-                    warc_file = LZ4Stream(warc_stream)
-                elif src_path.endswith(".gz"):
-                    warc_stream = stack.enter_context(smart_open.open(src_path, "rb", compression="disable"))
-                    warc_file = GZipStream(warc_stream)
-                else:
-                    warc_file = stack.enter_context(smart_open.open(src_path, "rt"))
+                backoff_max_time: Optional[float] = src_kwargs.get("backoff_max_time") or None
+                backoff_max_tries: int = src_kwargs.get("backoff_max_tries") or 10
+                it = stack.enter_context(
+                    BackoffWarcIterator(path=src_path, max_time=backoff_max_time, max_tries=backoff_max_tries)
+                )
 
-                it = ArchiveIterator(warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo)
                 for record in it:
                     if record.record_type == WarcRecordType.warcinfo:
                         warc_date = record.record_date or None
@@ -228,17 +204,17 @@ class WarcProcessor(BaseParallelProcessor):
                     ct = record.reader.read()
 
                     # keep track of the number of records processed
-                    records_cnt += 1
+                    pbar.records += 1
 
                     # url
                     target_uri = record.headers.get("WARC-Target-URI")
                     url = (clean_url(target_uri) or target_uri).split("//", 1)[-1]
 
                     # check for duplicate URLs
-                    if skip_duplicate_urls:
-                        if url in seen_urls:
-                            continue
+                    if skip_duplicate_urls and url in seen_urls:
+                        pbar.duplicate += 1
                         seen_urls.add(url)
+                        continue
 
                     # metadata
                     http_headers = record.http_headers.asdict()
@@ -299,26 +275,8 @@ class WarcProcessor(BaseParallelProcessor):
                         doc.metadata.pop("html", None)  # type: ignore
 
                     output_file.write(encoder.encode(doc.to_spec()) + b"\n")  # pyright: ignore
-
-                    extracted_cnt += 1
-
-                    if extracted_cnt % update_interval == 0:
-                        # update the progress bar every update_interval documents to prevent buffering
-                        cls.increment_progressbar(queue, records=records_cnt, extracted=extracted_cnt)
-
-                        delta_time = -(elapsed_time - (elapsed_time := time()))
-
-                        # reset the counters
-                        extracted_cnt = 0
-                        records_cnt = 0
-
-                        # no need to update the progress bar if too full or frequency is above 10 Hz
-                        if queue.qsize() >= multiprocessing.cpu_count() or delta_time < 1e-1:
-                            # double the update interval if the queue is full
-                            update_interval *= 2
-
-                # end of file
-                cls.increment_progressbar(queue, files=1, records=records_cnt, extracted=extracted_cnt)
+                    pbar.extracted += 1
+                pbar.files += 1
 
 
 def create_and_run_warc_pipeline(
@@ -453,4 +411,6 @@ def create_and_run_warc_pipeline(
             skip_duplicate_urls=skip_duplicate_urls,
             store_html_in_metadata=store_html_in_metadata,
             store_attribute_spans_in_metadata=store_attribute_spans_in_metadata,
+            backoff_max_time=backoff_max_time,
+            backoff_max_tries=backoff_max_tries,
         )
