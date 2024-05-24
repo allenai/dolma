@@ -81,8 +81,8 @@ class BaseProgressBar:
         """
         self._logger = get_logger(self.__class__.__name__, "warn")
         self._queue = queue
-        self._last_update_time = 0
-        self._last_update_delta_step = 0
+        self._last_update_time = time.time()
+        self._last_update_step = 0
 
         self._update_every_seconds = min_time
         self._update_every_steps = min_step
@@ -195,7 +195,7 @@ class BaseProgressBar:
         self._queue.put_nowait(update)
 
         # reset the steps
-        self._last_update_delta_step = 0
+        self._last_update_step = 0
         self._last_update_time = time.time()
 
         # reset the steps
@@ -204,9 +204,9 @@ class BaseProgressBar:
 
     def update(self):
         # update the number of steps since the last update
-        self._last_update_delta_step += 1
+        self._last_update_step += 1
 
-        if self._update_every_steps > self._last_update_delta_step:
+        if self._update_every_steps > self._last_update_step:
             return
 
         time_before_update = self._last_update_time
