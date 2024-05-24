@@ -115,3 +115,35 @@ class BackoffWarcIterator:
 
                 self.wait()
                 self._open()
+
+
+class SimpleWarcIterator:
+    def __init__(self, path: str, record_types: Optional[List[Union[str, WarcRecordType]]] = None):
+        self.path = path
+        self.record_types = [
+            WarcRecordType[r] if isinstance(r, str) else r for r in (record_types or ["response", "warcinfo"])
+        ]
+        self._fobj = None
+        self._it = None
+
+    def __enter__(self):
+        if self.path.endswith(".lz4"):
+            warc_stream = smart_open.open(self.path, "rb", compression="disable")
+            self._fobj = LZ4Stream(warc_stream)
+        elif self.path.endswith(".gz"):
+            warc_stream = smart_open.open(self.path, "rb", compression="disable")
+            self._fobj = GZipStream(warc_stream)
+        else:
+            self._fobj = smart_open.open(self.path, "rt")
+        self._it = ArchiveIterator(self._fobj, record_types=reduce(lambda a, b: a | b, self.record_types))
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self._fobj:
+            self._fobj.close()
+        self._fobj = None
+        self._it = None
+
+    def __iter__(self) -> Generator[WarcRecord, None, None]:
+        assert self._it is not None, "File object must be opened before iterating."
+        yield from self._it

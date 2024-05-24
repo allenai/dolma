@@ -18,7 +18,7 @@ from ..core.progressbar import BaseProgressBar, QueueType
 from ..core.registry import TaggerRegistry
 from ..core.runtime import _make_paths_from_prefix
 from ..core.utils import format_span_key, format_span_output, make_variable_name
-from .iterator import BackoffWarcIterator
+from .iterator import SimpleWarcIterator
 from .linearizers import LinearizerRegistry
 from .utils import raise_warc_dependency_error
 
@@ -187,11 +187,8 @@ class WarcProcessor(BaseParallelProcessor):
                 # whether to skip this document if post-taggers find nothing
                 skip_no_post_taggers: bool = src_kwargs.get("skip_no_post_taggers") or False
 
-                backoff_max_time: Optional[float] = src_kwargs.get("backoff_max_time") or None
-                backoff_max_tries: int = src_kwargs.get("backoff_max_tries") or 10
-                it = stack.enter_context(
-                    BackoffWarcIterator(path=src_path, max_time=backoff_max_time, max_tries=backoff_max_tries)
-                )
+                # open the WARC file
+                it = stack.enter_context(SimpleWarcIterator(path=src_path))
 
                 for record in it:
                     if record.record_type == WarcRecordType.warcinfo:
@@ -413,6 +410,4 @@ def create_and_run_warc_pipeline(
             skip_duplicate_urls=skip_duplicate_urls,
             store_html_in_metadata=store_html_in_metadata,
             store_attribute_spans_in_metadata=store_attribute_spans_in_metadata,
-            backoff_max_time=backoff_max_time,
-            backoff_max_tries=backoff_max_tries,
         )
