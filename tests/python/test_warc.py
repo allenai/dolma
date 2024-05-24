@@ -143,15 +143,18 @@ class TestWarcExtractor(unittest.TestCase):
 
 class TestBackoffWarcIterator(unittest.TestCase):
     def setUp(self):
-        self.path = "tests/data/warc/sample-0001.warc.gz"
-        self.response_cnt = 22
-        self.info_cnt = 1
+        self.path_0 = "tests/data/warc/sample-0000.warc.gz"
+        self.path_1 = "tests/data/warc/sample-0001.warc.gz"
+        self.response_cnt_0 = 22
+        self.info_cnt_0 = 1
+        self.response_cnt_1 = 15
+        self.info_cnt_1 = 1
 
     def test_backoff(self):
         elements = []
         offset = 0
 
-        with BackoffWarcIterator(path=self.path, max_tries=1) as it:
+        with BackoffWarcIterator(path=self.path_0, max_tries=1) as it:
             for i, record in enumerate(it):
                 elements.append(record)
                 if i:
@@ -159,8 +162,8 @@ class TestBackoffWarcIterator(unittest.TestCase):
                 offset = it._location
 
         self.assertGreater(len(elements), 0)
-        self.assertGreater(os.path.getsize(self.path), offset)
-        self.assertEqual(len(elements), self.response_cnt + self.info_cnt)
+        self.assertGreater(os.path.getsize(self.path_0), offset)
+        self.assertEqual(len(elements), self.response_cnt_0 + self.info_cnt_0)
 
     def test_seek_mechanism(self):
         elements = []
@@ -171,11 +174,10 @@ class TestBackoffWarcIterator(unittest.TestCase):
         expected_order = URL_LIST[: LOC_B + 1] + URL_LIST[LOC_A + 1 :]
         self.assertEqual(len(expected_order), 20)
 
-        with BackoffWarcIterator(path=self.path, max_tries=2, record_types=["response"]) as it:
+        with BackoffWarcIterator(path=self.path_1, max_tries=2, record_types=["response"]) as it:
             for i, record in enumerate(it):
                 url = record.headers.get("WARC-Target-URI").rstrip(">").lstrip("<")
                 elements.append(url)
-                print(i, url)
                 self.assertEqual(url, expected_order[i])
                 if i == LOC_A:
                     offset_fifth_elem = it._location
