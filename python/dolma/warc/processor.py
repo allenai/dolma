@@ -38,8 +38,8 @@ class WarcProgressBar(BaseProgressBar):
     files: int = 0
     records: int = 0
     extracted: int = 0
-    duplicate: int = 0
-    retries: int = 0
+    url_duplicates: int = 0
+    attempts: int = 0
 
 
 class WarcProcessor(BaseParallelProcessor):
@@ -135,7 +135,7 @@ class WarcProcessor(BaseParallelProcessor):
         encoder = msgspec.json.Encoder()
 
         with ExitStack() as stack:
-            pbar = WarcProgressBar(queue)
+            pbar = stack.enter_context(WarcProgressBar(queue))
 
             # get compression format; it's slightly awkward that we have to check that is the same for all
             # the single kwargs, but decent sanity check.
@@ -212,7 +212,7 @@ class WarcProcessor(BaseParallelProcessor):
 
                     # check for duplicate URLs
                     if skip_duplicate_urls and url in seen_urls:
-                        pbar.duplicate += 1
+                        pbar.url_duplicates += 1
                         seen_urls.add(url)
                         continue
 
@@ -277,6 +277,7 @@ class WarcProcessor(BaseParallelProcessor):
                     output_file.write(encoder.encode(doc.to_spec()) + b"\n")  # pyright: ignore
                     pbar.extracted += 1
                 pbar.files += 1
+                pbar.attempts += 1
 
 
 def create_and_run_warc_pipeline(

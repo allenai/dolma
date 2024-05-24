@@ -103,12 +103,9 @@ class BackoffWarcIterator:
 
         while True:
             try:
-                # it = ArchiveIterator(self._file_object, record_types=reduce(lambda a, b: a | b, self.record_types))
-                it = ArchiveIterator(
-                    self._file_object, record_types=WarcRecordType.response | WarcRecordType.warcinfo
-                )
+                it = ArchiveIterator(self._file_object, record_types=reduce(lambda a, b: a | b, self.record_types))
                 for record in it:
-                    # self._location = self._file_object.tell()
+                    self._location = self._file_object.tell()
                     yield record
                 return
             except Exception as exp:

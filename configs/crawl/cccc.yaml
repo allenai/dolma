@@ -19,6 +19,7 @@ store:
     attr_spans: 500
 
 skip_duplicate_urls: true
+skip_checks: true
 
 batch_size: 100
 
