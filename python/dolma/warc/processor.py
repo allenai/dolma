@@ -4,7 +4,7 @@ import tempfile
 from contextlib import ExitStack
 from functools import reduce
 from itertools import chain
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Union
 
 import msgspec
 import smart_open
@@ -303,7 +303,7 @@ def create_and_run_warc_pipeline(
     compression: str = "zst",
     skip_duplicate_urls: bool = False,
     batch_size: int = 1,
-    logging_progress_bar: bool = False,
+    progress_bar_mode: Literal["tqdm", "logger"] = "tqdm",
 ):
     """Create and run pipeline for extracting documents from WARC files.
 
@@ -346,6 +346,7 @@ def create_and_run_warc_pipeline(
         compression (str, optional): Compression format to use for the output files. Defaults to "zst".
         skip_duplicate_urls (bool, optional): Whether to skip duplicate URLs. Defaults to False.
         batch_size (int, optional): Number of documents to process in each batch. Defaults to 1.
+        progress_bar_mode ("tqdm" | "logger", optional): Mode for the progress bar. Defaults to "tqdm".
     """
 
     with ExitStack() as stack:
@@ -398,6 +399,7 @@ def create_and_run_warc_pipeline(
             num_processes=num_processes,
             shuffle_src_paths=False,
             batch_size=batch_size,
+            progress_bar_mode=progress_bar_mode,
         )
 
         processor(
