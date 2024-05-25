@@ -131,6 +131,7 @@ warc = [
     "fastwarc",
     "w3lib",
     "courlan",
+    "dateparser",
 ]
 trafilatura = [
     # must include warc dependencies

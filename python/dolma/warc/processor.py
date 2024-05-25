@@ -97,7 +97,9 @@ class WarcProcessor(BaseParallelProcessor):
         _, _, extension = split_ext(rest[0])
 
         # create the destination path
-        hash_str = reduce(lambda h, p: h.update(p.encode()) or h, paths, hashlib.sha1()).hexdigest()
+        hash_str = reduce(
+            lambda h, p: h.update(p.encode()) or h, paths, hashlib.sha1()  # type: ignore
+        ).hexdigest()
         destination_path = join_path(common_prot, *common_parts, f"{hash_str}{extension}")
 
         return destination_path
@@ -301,6 +303,7 @@ def create_and_run_warc_pipeline(
     compression: str = "zst",
     skip_duplicate_urls: bool = False,
     batch_size: int = 1,
+    logging_progress_bar: bool = False,
 ):
     """Create and run pipeline for extracting documents from WARC files.
 

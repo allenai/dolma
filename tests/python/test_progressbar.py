@@ -1,8 +1,9 @@
+import re
 from queue import Queue
 from time import sleep
 from unittest import TestCase
 
-from pytest import CaptureFixture
+from pytest import CaptureFixture, LogCaptureFixture
 
 from dolma.core.parallel import BaseProgressBar, QueueType
 
@@ -49,10 +50,29 @@ class TestProgressbar(TestCase):
             _ = BaseProgressBar(queue)
 
 
+def test_progressbar_with_logging(caplog: LogCaptureFixture):
+    queue: QueueType = Queue()
+    with CustomProgressbar(queue, server="logger") as pbar:
+        for _ in range(10):
+            pbar.documents += 100000
+            pbar.files += 300
+
+    sleep(1.0)
+    assert queue.empty(), "Queue should be empty"
+
+    assert len(caplog.records) == 5, "5 log messages should have been printed"
+    for record in caplog.records:
+        assert record.levelname == "INFO", "All messages should be INFO level"
+        pattern = r"documents: (\d+|\d+\.\d\w) \(\+(\d{0,3},?)*\), files: (\d+|\d+\.\d\w) \(\+(\d{0,3},?)*\)"
+        match = re.match(pattern, record.message)
+        assert match, "Log message should be in the format: 'documents: 100.00k (+100), files: 300.00 (+300)'"
+        assert record.name == "main.dolma.progress", "Logger name should be 'main.dolma.progress'"
+
+
 def test_progressbar_in_thread(capsys: CaptureFixture):
     queue: QueueType = Queue()
 
-    with CustomProgressbar(queue, thread=True) as pbar:
+    with CustomProgressbar(queue, server="tqdm") as pbar:
         for _ in range(5):
             pbar.documents += 1
             pbar.files += 1
