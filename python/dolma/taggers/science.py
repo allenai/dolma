@@ -1,4 +1,5 @@
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any, Iterable, List, Optional
+from dolma.core.ft_tagger import Prediction
 
 from necessary import necessary
 
@@ -11,9 +12,10 @@ with necessary("hyperscan", soft=True) as HYPERSCAN_AVAILABLE:
     if TYPE_CHECKING or HYPERSCAN_AVAILABLE:
         from hyperscan import Database
 
-from ..core.data_types import DocResult, DocumentWithMetadata, Span
+from ..core.data_types import DocResult, DocumentWithMetadata, Span, TextSlice
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTaggerWithMetadata
+from ..core.ft_tagger import BaseFastTextTagger
 
 
 class BaseHTMLKeywordLookupTagger(BaseTaggerWithMetadata):
@@ -472,3 +474,40 @@ class HyperscanScienceKeywordsTagger(HyperscanHTMLKeywordLookupTagger):
         rb"wave",
         rb"waves",
     ]
+
+
+@TaggerRegistry.add("ft_science_v1")
+class FastTextScienceTagger(BaseFastTextTagger):
+    MODEL_PATH = "https://dolma-artifacts.org/fasttext_models/scipile/model_exp_20000_0.3_owm_10000_syn_5000_wiki_5000_pretrained.bin"  # noqa: E501
+
+    def __init__(self):
+        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+        preds = {
+            label: float(score) for label, score in
+            zip(*self.classifier.predict(text_slice.text.replace("\n", " ").strip(), k=-1))
+        }
+        return [Prediction(label="science", score=preds["__label__"])]
+
+
+@TaggerRegistry.add("owm_math_latex_ft-science_combined")
+class OwmMathLatexFtScienceCombined(HyperscanHTMLKeywordLookupTagger, BaseFastTextTagger):
+    TYPE = "owm_math_latex"
+    MODEL_PATH = FastTextScienceTagger.MODEL_PATH   # pyright: ignore
+    KEYWORDS = (
+        HyperscanOpenWebMathContainsMathTagger.KEYWORDS     # pyright: ignore
+        + HyperscanOpenWebMathContainsLatexTagger.KEYWORDS  # pyright: ignore
+    )
+
+    def __init__(self):
+        HyperscanHTMLKeywordLookupTagger.__init__(self)
+        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:      # type: ignore
+        keyword_result = HyperscanHTMLKeywordLookupTagger.predict(self, doc)
+
+        if keyword_result.spans:
+            return keyword_result
+
+        return BaseFastTextTagger.predict(self, doc)
