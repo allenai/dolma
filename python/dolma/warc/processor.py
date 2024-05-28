@@ -192,6 +192,10 @@ class WarcProcessor(BaseParallelProcessor):
                 # open the WARC file
                 it = stack.enter_context(SimpleWarcIterator(path=src_path))
 
+                # in case there's no warcinfo record, we will set these to None
+                warc_date = warc_filename = None
+                warc_timestamp = ""
+
                 for record in it:
                     if record.record_type == WarcRecordType.warcinfo:
                         warc_date = record.record_date or None

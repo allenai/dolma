@@ -488,12 +488,12 @@ class FastTextScienceTagger(BaseFastTextTagger):
             label: float(score) for label, score in
             zip(*self.classifier.predict(text_slice.text.replace("\n", " ").strip(), k=-1))
         }
-        return [Prediction(label="science", score=preds["__label__"])]
+        return [Prediction(label="science", score=preds["__label__1"])]
 
 
-@TaggerRegistry.add("owm_math_latex_ft-science_combined")
-class OwmMathLatexFtScienceCombined(HyperscanHTMLKeywordLookupTagger, BaseFastTextTagger):
-    TYPE = "owm_math_latex"
+@TaggerRegistry.add("owmV2_FTsciV1_comb")
+class OwmMathLatexFtScienceCombined(HyperscanHTMLKeywordLookupTagger, FastTextScienceTagger):
+    TYPE = "math-latex"
     MODEL_PATH = FastTextScienceTagger.MODEL_PATH   # pyright: ignore
     KEYWORDS = (
         HyperscanOpenWebMathContainsMathTagger.KEYWORDS     # pyright: ignore
@@ -502,7 +502,7 @@ class OwmMathLatexFtScienceCombined(HyperscanHTMLKeywordLookupTagger, BaseFastTe
 
     def __init__(self):
         HyperscanHTMLKeywordLookupTagger.__init__(self)
-        BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+        FastTextScienceTagger.__init__(self)
 
     def predict(self, doc: DocumentWithMetadata) -> DocResult:      # type: ignore
         keyword_result = HyperscanHTMLKeywordLookupTagger.predict(self, doc)
@@ -510,4 +510,4 @@ class OwmMathLatexFtScienceCombined(HyperscanHTMLKeywordLookupTagger, BaseFastTe
         if keyword_result.spans:
             return keyword_result
 
-        return BaseFastTextTagger.predict(self, doc)
+        return FastTextScienceTagger.predict(self, doc)
