@@ -99,9 +99,10 @@ class BackoffWarcIterator:
         self._attempt = 0
 
     def __iter__(self) -> Generator[WarcRecord, None, None]:
-        assert self._file_object is not None, "File object must be opened before iterating."
+        if self._file_object is None:
+            raise OSError("File object must be opened before iterating.")
 
-        while True:
+        while True:  # type: ignore
             try:
                 it = ArchiveIterator(self._file_object, record_types=reduce(lambda a, b: a | b, self.record_types))
                 for record in it:
@@ -145,5 +146,6 @@ class SimpleWarcIterator:
         self._it = None
 
     def __iter__(self) -> Generator[WarcRecord, None, None]:
-        assert self._it is not None, "File object must be opened before iterating."
-        yield from self._it
+        if self._it is None:
+            raise OSError("File object must be opened before iterating.")
+        yield from self._it  # type: ignore

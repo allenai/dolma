@@ -11,7 +11,6 @@ import smart_open
 
 from dolma.warc import create_and_run_warc_pipeline
 
-
 DATA_PATH = Path(__file__).parent.parent / "data/science"
 
 
@@ -51,7 +50,7 @@ class TestScienceWarcExtractor(unittest.TestCase):
     def test_science_filter_pipeline(self):
         outputs = self._run_pipeline()
         self.assertEqual(len(outputs), 2)
-        documents = {d['metadata']['url']: d for d in itertools.chain.from_iterable(outputs.values())}
+        documents = {d["metadata"]["url"]: d for d in itertools.chain.from_iterable(outputs.values())}
 
         taylor = documents["localhost:8000/taylor.html"]
         science = documents["localhost:8000/science.html"]

@@ -151,13 +151,15 @@ class TrafilaturaHtmlExtractor(BaseLinearizer):
 @LinearizerRegistry.add("trafilatura-precision")
 class TrafilaturaPrecisionHtmlExtractor(TrafilaturaHtmlExtractor):
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, favor_precision=True, **kwargs)  # pyright: ignore
+        kwargs["favor_precision"] = True
+        super().__init__(*args, **kwargs)
 
 
 @LinearizerRegistry.add("trafilatura-recall")
 class TrafilaturaRecallHtmlExtractor(TrafilaturaHtmlExtractor):
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, favor_recall=True, **kwargs)  # pyright: ignore
+        kwargs["favor_recall"] = True
+        super().__init__(*args, **kwargs)
 
 
 @LinearizerRegistry.add("fast-p")
