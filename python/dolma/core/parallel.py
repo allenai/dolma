@@ -7,7 +7,18 @@ import re
 from datetime import datetime
 from functools import partial
 from queue import Queue
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Type, TypeVar, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    NamedTuple,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import backoff
 import smart_open
@@ -102,6 +113,7 @@ class BaseParallelProcessor:
         backoff_max_tries: int = 1,
         retries_on_error: Optional[int] = None,
         backoff_exceptions: Optional[Union[Type[Exception], Tuple[Type[Exception], ...]]] = None,
+        progress_bar_mode: Literal["tqdm", "logger"] = "tqdm",
     ):
         """Initialize the parallel processor.
 
@@ -144,6 +156,8 @@ class BaseParallelProcessor:
                 exceptions to backoff on. Defaults to `dolma.core.errors.DolmaRetryableFailure`.
             retries_on_error (int, optional): Deprecated. The number of retries to attempt on error.
                 Defaults to None.
+            progress_bar_mode ("tqdm" or "logger", optional): The mode to use for the progress bar.
+                Defaults to "tqdm".
         """
         self.src_prefixes = [source_prefix] if isinstance(source_prefix, str) else source_prefix
         self.dst_prefixes = [destination_prefix] if isinstance(destination_prefix, str) else destination_prefix
@@ -153,6 +167,7 @@ class BaseParallelProcessor:
         self.seed = seed
         self.pbar_timeout = pbar_timeout
         self.ignore_existing = ignore_existing
+        self.progress_bar_mode = progress_bar_mode
 
         self.logger = self.get_logger()
 
@@ -179,6 +194,9 @@ class BaseParallelProcessor:
             if isinstance(backoff_exceptions, type)
             else backoff_exceptions or (DolmaRetryableFailure,)
         )
+
+        if progress_bar_mode not in ("tqdm", "logger"):
+            raise ValueError("Progress bar mode must be either 'tqdm' or 'logger'")
 
         # this are additional kwargs to pass to the process_single method
         process_single_kwargs = process_single_kwargs or {}
@@ -420,7 +438,7 @@ class BaseParallelProcessor:
 
         with PoolWithDebug(processes=num_processes, debug=self.debug) as pool:
             pbar_queue: QueueType = (manager := get_manager(pool)).Queue()
-            (pbar := self.PROGRESS_BAR_CLS(pbar_queue, thread=True)).start()
+            (pbar := self.PROGRESS_BAR_CLS(pbar_queue, server=self.progress_bar_mode)).start()
 
             process_single_fn = partial(self.process_single, queue=pbar_queue)
             results = []

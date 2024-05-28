@@ -2,6 +2,7 @@ import multiprocessing
 import time
 import warnings
 from contextlib import ExitStack
+from enum import Enum
 from functools import reduce
 from hashlib import sha1
 from inspect import Parameter
@@ -11,6 +12,7 @@ from threading import Thread
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, Type
 
 import tqdm
+from rich.progress import filesize
 from typing_extensions import TypeAlias, Union
 
 from .loggers import get_logger
@@ -20,6 +22,12 @@ if TYPE_CHECKING:
 
 
 QueueType: TypeAlias = "Queue[Union[None, Tuple[int, ...]]]"
+
+
+class ServerType(Enum):
+    tqdm = "tqdm"
+    logger = "logger"
+    null = "null"
 
 
 class BaseProgressBar:
@@ -69,7 +77,13 @@ class BaseProgressBar:
     ```
     """
 
-    def __init__(self, queue: QueueType, min_step: int = 1, min_time: float = 1e-1, thread: bool = False):
+    def __init__(
+        self,
+        queue: QueueType,
+        min_step: int = 1,
+        min_time: float = 1e-1,
+        server: Union[ServerType, str] = "null",
+    ):
         """
         Initialize the ProgressBar object.
 
@@ -90,15 +104,21 @@ class BaseProgressBar:
         for field in self.fields():
             setattr(self, field, 0)
 
-        self._thread = (
-            Thread(
-                target=self._run,
+        server_mode = ServerType[server] if isinstance(server, str) else server
+        if server_mode == ServerType.tqdm:
+            self._thread: Optional[Thread] = Thread(
+                target=self._run_tqdm,
                 kwargs={"queue": queue, "update_every_seconds": min_time, "fields": self.fields()},
                 daemon=True,
             )
-            if thread
-            else None
-        )
+        elif server_mode == ServerType.logger:
+            self._thread = Thread(
+                target=self._run_logger,
+                kwargs={"queue": queue, "update_every_seconds": min_time, "fields": self.fields()},
+                daemon=True,
+            )
+        else:
+            self._thread = None
 
     def __repr__(self) -> str:
         return (
@@ -223,7 +243,7 @@ class BaseProgressBar:
             return
 
     @staticmethod
-    def _run(queue: QueueType, update_every_seconds: float, fields: Tuple[str, ...]):
+    def _run_tqdm(queue: QueueType, update_every_seconds: float, fields: Tuple[str, ...]):
         """
         Runs the progress bar.
 
@@ -250,6 +270,40 @@ class BaseProgressBar:
                     pbar.update(value)
 
                 time.sleep(update_every_seconds)
+
+    @staticmethod
+    def _run_logger(queue: QueueType, update_every_seconds: float, fields: Tuple[str, ...]):
+        """
+        Run the progress bar update loop.
+
+        Args:
+            queue (QueueType): The queue to retrieve items from.
+            update_every_seconds (float): The interval between each update in seconds.
+            fields (Tuple[str, ...]): The fields to track and display in the progress bar.
+
+        Returns:
+            None
+        """
+        total_counters = {k: 0 for k in fields}
+        logger = get_logger("progress", "info")
+
+        while True:
+            # loop until we get a None
+            item = queue.get()
+            if item is None:
+                break
+
+            messages = []
+            for k, v in zip(fields, item):
+                total_counters[k] += v
+                unit, suffix = filesize.pick_unit_and_suffix(
+                    total_counters[k], ["", "K", "M", "G", "T", "P", "E", "Z", "Y"], 1000
+                )
+                precision = 1 if suffix else 0
+                messages.append(f"{k}: {total_counters[k] / unit:,.{precision}f}{suffix} (+{v:,})")
+
+            logger.info(", ".join(messages))
+            time.sleep(update_every_seconds)
 
     def start(self):
         """Run the progress bar in a separate thread."""
