@@ -151,13 +151,13 @@ class TrafilaturaHtmlExtractor(BaseLinearizer):
 @LinearizerRegistry.add("trafilatura-precision")
 class TrafilaturaPrecisionHtmlExtractor(TrafilaturaHtmlExtractor):
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, favor_precision=True, **kwargs)     # pyright: ignore
+        super().__init__(*args, favor_precision=True, **kwargs)  # pyright: ignore
 
 
 @LinearizerRegistry.add("trafilatura-recall")
 class TrafilaturaRecallHtmlExtractor(TrafilaturaHtmlExtractor):
     def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, favor_recall=True, **kwargs)     # pyright: ignore
+        super().__init__(*args, favor_recall=True, **kwargs)  # pyright: ignore
 
 
 @LinearizerRegistry.add("fast-p")
@@ -166,6 +166,6 @@ class FastPHtmlExtractor(BaseLinearizer):
         encoding = encoding or detect_encoding(content)
         tree = HTMLTree.parse_from_bytes(document=content, encoding=encoding)
         if tree.body:
-            paragraphs = tree.body.get_elements_by_tag_name('p')
+            paragraphs = tree.body.get_elements_by_tag_name("p")
             return " ".join(p.text for p in paragraphs)
         return ""
