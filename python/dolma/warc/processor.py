@@ -266,7 +266,7 @@ class WarcProcessor(BaseParallelProcessor):
                         for attr_span in attr_result.spans:
                             attr_key = format_span_key(attr_name, attr_name, attr_span)
                             attr_val = format_span_output(attr_span)
-                            doc.attributes.setdefault(attr_key, []).append(attr_val)  # type: ignore
+                            doc.attributes.setdefault(attr_key, []).append(attr_val)
 
                             # in case we want to store the exact attribute span
                             if store_spans_in_meta >= 0:
@@ -276,12 +276,11 @@ class WarcProcessor(BaseParallelProcessor):
                                 doc.metadata.setdefault("attribute_spans", {}).setdefault(attr_key, []).append(ct)
 
                     if not store_html_in_meta:
-                        doc.metadata.pop("html", None)  # type: ignore
+                        doc.metadata.pop("html", None)
 
                     output_file.write(encoder.encode(doc.to_spec()) + b"\n")  # pyright: ignore
                     pbar.extracted += 1
                 pbar.files += 1
-                # pbar.attempts += 1
 
 
 def create_and_run_warc_pipeline(

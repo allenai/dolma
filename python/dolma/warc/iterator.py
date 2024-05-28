@@ -1,3 +1,4 @@
+from io import TextIOWrapper, BytesIO
 import random
 import time
 from functools import reduce
@@ -38,7 +39,7 @@ class BackoffWarcIterator:
         self.min_wait = min_wait
         self.logger = get_logger(self.__class__.__name__)
 
-        self._file_object = None
+        self._file_object: Optional[Union[TextIOWrapper, BytesIO]] = None
         self._start_time = float("-inf")
         self._attempt = 0
         self._location = 0
@@ -61,11 +62,12 @@ class BackoffWarcIterator:
             warc_stream.seek(self._location)
             self._file_object = GZipStream(warc_stream)
         else:
-            self._file_object = smart_open.open(self.path, "rt")
-            self._file_object.seek(self._location)
+            obj = smart_open.open(self.path, "rt")
+            obj.seek(self._location)
+            self._file_object = obj
 
     def close(self):
-        if self._file_object:
+        if self._file_object is not None:
             self._file_object.close()
 
     def wait(self):
@@ -102,7 +104,7 @@ class BackoffWarcIterator:
         if self._file_object is None:
             raise OSError("File object must be opened before iterating.")
 
-        while True:  # type: ignore
+        while True:
             try:
                 it = ArchiveIterator(self._file_object, record_types=reduce(lambda a, b: a | b, self.record_types))
                 for record in it:
@@ -124,8 +126,8 @@ class SimpleWarcIterator:
         self.record_types = [
             WarcRecordType[r] if isinstance(r, str) else r for r in (record_types or ["response", "warcinfo"])
         ]
-        self._fobj = None
-        self._it = None
+        self._fobj: Optional[Union[BytesIO, TextIOWrapper]] = None
+        self._it: Optional[ArchiveIterator] = None
 
     def __enter__(self):
         if self.path.endswith(".lz4"):
@@ -140,7 +142,7 @@ class SimpleWarcIterator:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if self._fobj:
+        if self._fobj is not None:
             self._fobj.close()
         self._fobj = None
         self._it = None
@@ -148,4 +150,4 @@ class SimpleWarcIterator:
     def __iter__(self) -> Generator[WarcRecord, None, None]:
         if self._it is None:
             raise OSError("File object must be opened before iterating.")
-        yield from self._it  # type: ignore
+        yield from self._it

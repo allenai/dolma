@@ -9,7 +9,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--destination", required=True)
     ap.add_argument("--tokenizer-id", type=str, default="allenai/eleuther-ai-gpt-neox-20b-pii-special")
     ap.add_argument("--metadata-dir", type=str, default=None)
-    ap.add_argument("--num-tokenizers", type=int, default=1)
+    ap.add_argument("--num-readers", type=int, default=1)
     ap.add_argument("--num-writers", type=int, default=1)
     ap.add_argument("--max-size", type=int, default=1024 * 1024 * 1024)
     return ap.parse_args()
@@ -22,7 +22,7 @@ def main():
         destination=args.destination,
         tokenizer_name_or_path=args.tokenizer_id,
         metadata_dir=args.metadata_dir,
-        num_tokenizers=args.num_tokenizers,
+        num_readers=args.num_readers,
         num_writers=args.num_writers,
         max_size=args.max_size,
     )
