@@ -14,7 +14,7 @@ pre:    # these run before HTML linearization
 
 post:
     taggers:
-        - owmV2_FTsciV1_comb_lth    # this is the tag that either looks for math/latex, or runs the fasttext science model
+        - owmV2_FTsciV1_comb_lth_qt    # this is the tag that either looks for math/latex, or runs the fasttext science model (quantized)
     skip: true  # if the tagger above does not return any tags, skip the document
 
 skip_checks: true   # this skips checking if the paths in `documents` exist

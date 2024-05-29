@@ -525,3 +525,23 @@ class OwmMathLatexFtScienceCombinedLowThreshold(OwmMathLatexFtScienceCombined):
 @TaggerRegistry.add("owmV2_FTsciV1_comb_hth")
 class OwmMathLatexFtScienceCombinedHighThreshold(OwmMathLatexFtScienceCombined):
     FT_THRESHOLD = 0.50
+
+
+@TaggerRegistry.add("ft_science_v1_qt")
+class FastTextScienceTaggerQuantized(FastTextScienceTagger):
+    MODEL_PATH = "https://dolma-artifacts.org/fasttext_models/scipile/model_exp_20000_0.3_owm_10000_syn_5000_wiki_5000_pretrained_dimreduced_quantized.ftz"  # noqa: E501
+
+
+@TaggerRegistry.add("owmV2_FTsciV1_comb_qt")
+class OwmMathLatexFtScienceCombinedQuantized(OwmMathLatexFtScienceCombined):
+    MODEL_PATH = FastTextScienceTaggerQuantized.MODEL_PATH  # pyright: ignore
+
+
+@TaggerRegistry.add("owmV2_FTsciV1_comb_lth_qt")
+class OwmMathLatexFtScienceCombinedLowThresholdQuantized(OwmMathLatexFtScienceCombinedLowThreshold):
+    MODEL_PATH = FastTextScienceTaggerQuantized.MODEL_PATH  # pyright: ignore
+
+
+@TaggerRegistry.add("owmV2_FTsciV1_comb_hth_qt")
+class OwmMathLatexFtScienceCombinedHighThresholdQuantized(OwmMathLatexFtScienceCombinedHighThreshold):
+    MODEL_PATH = FastTextScienceTaggerQuantized.MODEL_PATH  # pyright: ignore
