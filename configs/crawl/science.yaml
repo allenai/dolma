@@ -1,8 +1,8 @@
 documents: "${d.sed:${d.split:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}}},crawl-data@s3://commoncrawl/crawl-data@,@}"
 destination:
-    - ${oc.env:HOME}/science/${${oc.env:SNAPSHOT_ID}/documents
+    - ${oc.env:HOME}/science/${oc.env:SNAPSHOT_ID}/documents
 processes: ${d.procs:}
-source_name: science_${${oc.env:SNAPSHOT_ID}
+source_name: science_${oc.env:SNAPSHOT_ID}
 linearizer: fast-p
 
 pre:
@@ -24,5 +24,5 @@ store:
     html: true
 
 work_dir:
-    input: /tmp/science/${${oc.env:SNAPSHOT_ID}/input
-    output: /tmp/science/${${oc.env:SNAPSHOT_ID}/output
+    input: /tmp/science/${oc.env:SNAPSHOT_ID}/input
+    output: /tmp/science/${oc.env:SNAPSHOT_ID}/output
