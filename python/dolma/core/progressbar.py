@@ -184,7 +184,7 @@ class BaseProgressBar:
         fields: Optional[Tuple[str, ...]] = cls.__dict__.get("__fields__")
 
         if fields is None:
-            fields = tuple(n for n, t in cls.__annotations__.items() if issubclass(t, int))
+            fields = tuple(n for n, t in getattr(cls, "__annotations__", {}).items() if issubclass(t, int))
             setattr(cls, "__fields__", fields)
 
         if len(fields) == 0:
