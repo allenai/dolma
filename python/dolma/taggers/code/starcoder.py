@@ -50,7 +50,7 @@ def parse_docstrings(source):
 
     for node in ast.walk(tree):
         if isinstance(node, tuple(NODE_TYPES)):
-            docstring = ast.get_docstring(node)     # pyright: ignore
+            docstring = ast.get_docstring(node)  # pyright: ignore
 
             yield (node, getattr(node, "name", None), docstring)
 
