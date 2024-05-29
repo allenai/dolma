@@ -20,6 +20,7 @@ permissions:
 env:
   DOLMA_TESTS_SKIP_AWS: ${{ secrets.AWS_ACCESS_KEY_ID == '' && 'true' || 'false' }}
   DOLMA_TEST_S3_PREFIX: s3://dolma-tests
+  DOLMA_TEST_SKIP_LARGE_MODELS: "true"
   RUST_CHANNEL: stable
 
 

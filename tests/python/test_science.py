@@ -11,7 +11,7 @@ import smart_open
 
 from dolma.warc import create_and_run_warc_pipeline
 
-from .utils import skip_aws_tests
+from .utils import skip_large_models
 
 DATA_PATH = Path(__file__).parent.parent / "data/science"
 
@@ -50,8 +50,8 @@ class TestScienceWarcExtractor(unittest.TestCase):
         return outputs
 
     def test_science_filter_pipeline(self):
-        if skip_aws_tests() is None:
-            return self.skipTest("Skipping AWS tests")
+        if skip_large_models():
+            return self.skipTest("Skipping tests that require large models")
 
         outputs = self._run_pipeline()
         self.assertEqual(len(outputs), 2)
