@@ -11,6 +11,8 @@ import smart_open
 
 from dolma.warc import create_and_run_warc_pipeline
 
+from .utils import skip_aws_tests
+
 DATA_PATH = Path(__file__).parent.parent / "data/science"
 
 
@@ -48,6 +50,9 @@ class TestScienceWarcExtractor(unittest.TestCase):
         return outputs
 
     def test_science_filter_pipeline(self):
+        if skip_aws_tests() is None:
+            return self.skipTest("Skipping AWS tests")
+
         outputs = self._run_pipeline()
         self.assertEqual(len(outputs), 2)
         documents = {d["metadata"]["url"]: d for d in itertools.chain.from_iterable(outputs.values())}

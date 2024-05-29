@@ -1,27 +1,27 @@
-documents: "${d.sed:${d.split:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}}},crawl-data@s3://commoncrawl/crawl-data@,@}"
+documents: "${d.sed:${d.split:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}}},crawl-data@s3://commoncrawl/crawl-data@,@}" # download list of warc files from Common Crawl (d.cache), read the file (d.file), split the file into lines (d.split), and add the bucket prefix by replacing the string "crawl-data" with "s3://commoncrawl/crawl-data" (d.sed)
 destination:
-    - ${oc.env:HOME}/science/${oc.env:SNAPSHOT_ID}/documents
-processes: ${d.procs:}
+    - ${oc.env:HOME}/science/${oc.env:SNAPSHOT_ID}/documents    # save the documents in the specified directory; note that you have to provide SNAPSHOT_ID as an environment variable
+processes: ${d.procs:}  # use the number of processors available on the machine; in practice, I override this value in the command line by using 40 processes on a machine with 370GB of RAM because each process consumes around 9GB of RAM
 source_name: science_${oc.env:SNAPSHOT_ID}
-linearizer: fast-p
+linearizer: fast-p  # this is the fast linearizer
 
-pre:
+pre:    # these run before HTML linearization
     taggers:
-        - owm_math_v2
-        - owm_latex_v2
-        - science_kw_v2
-    skip: true
+        - owm_math_v2   # extract math tags from html documents
+        - owm_latex_v2  # extract latex tags from html documents
+        - science_kw_v2 # extract the science keywords from the documents
+    skip: true  # if none of the three taggers above returns any tags, skip the document
 
 post:
     taggers:
-        - owmV2_FTsciV1_comb_lth
-    skip: true
+        - owmV2_FTsciV1_comb_lth    # this is the tag that either looks for math/latex, or runs the fasttext science model
+    skip: true  # if the tagger above does not return any tags, skip the document
 
-skip_checks: true
-batch_size: 100
+skip_checks: true   # this skips checking if the paths in `documents` exist
+batch_size: 100     # each process does 100 files at a time
 
 store:
-    html: true
+    html: true      # keep the html in metadata
 
 work_dir:
     input: /tmp/science/${oc.env:SNAPSHOT_ID}/input
