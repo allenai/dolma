@@ -1,7 +1,7 @@
-from io import TextIOWrapper, BytesIO
 import random
 import time
 from functools import reduce
+from io import BytesIO, TextIOWrapper
 from typing import TYPE_CHECKING, Generator, List, Optional, Union
 
 import smart_open

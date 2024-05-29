@@ -1,12 +1,12 @@
 import multiprocessing
+import re
 import sys
-from typing import Callable, List, Optional, TypeVar
+from typing import Callable, List, Optional, TypeVar, Union
 
 import smart_open
-from cached_path import cached_path
 from omegaconf.omegaconf import OmegaConf as om
 
-from ..core.paths import glob_path
+from ..core.paths import cached_path, glob_path
 from ..core.registry import BaseRegistry
 
 C = TypeVar("C", bound=Callable)
@@ -52,9 +52,19 @@ def stdin() -> List[str]:
 
 
 @ResolverRegistry.add("d.file", "Read from a file and return contents.")
-def file_(path: str) -> str:
-    with smart_open.open(path, "rt") as f:
+def file_(path: str, mode: str = "rt", encoding: str = "utf-8") -> str:
+    with smart_open.open(path, mode=mode, encoding=encoding) as f:
         return str(f.read())
+
+
+@ResolverRegistry.add("d.sed", "Perform a sed-like substitution on a string.")
+def sed(data: Union[str, List[str]], expression: str, separator: str = "/") -> Union[str, List[str]]:
+    if isinstance(data, list):
+        return [str(sed(d, expression, separator)) for d in data]
+
+    pattern, replacement = expression.strip(separator).split(separator)
+    modified_data = re.sub(pattern, replacement, data)
+    return modified_data
 
 
 @ResolverRegistry.add("d.split", "Split string into list of strings on symbol.")

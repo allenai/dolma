@@ -1,24 +1,25 @@
-documents:  ${d.stdin:}
+# documents: ${d.sed:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}},^@s3://commoncrawl/@,@}
+documents: "${d.sed:${d.split:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}}},crawl-data@s3://commoncrawl/crawl-data@,@}"
 destination:
     - ${oc.env:HOME}/science/CC-MAIN-2024-18/documents
 processes: ${d.procs:}
 source_name: cccc_CC-MAIN-2024-18
-# linearizer: openwebmath
-linearizer: resiliparse
+linearizer: fast-p
 
 pre:
     taggers:
-        - owm_math_v1
-        - owm_latex_v1
-        - science_kw_v1
+        - owm_math_v2
+        - owm_latex_v2
+        - science_kw_v2
     skip: true
 
 post:
     taggers:
-        - ft_dolma_doc_eng
+        - owmV2_FTsciV1_comb_lth
     skip: true
 
-store_html_in_metadata: true
+store:
+    html: true
 
 work_dir:
     input: /tmp/science/CC-MAIN-2024-18/input
