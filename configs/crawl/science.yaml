@@ -1,6 +1,6 @@
 documents: "${d.sed:${d.split:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}}},crawl-data@s3://commoncrawl/crawl-data@,@}" # download list of warc files from Common Crawl (d.cache), read the file (d.file), split the file into lines (d.split), and add the bucket prefix by replacing the string "crawl-data" with "s3://commoncrawl/crawl-data" (d.sed)
 destination:
-    - s3://ai2-llm/pretraining-data/sources/cc-science/v0/documents/${oc.env:SNAPSHOT} # save the documents in the S3 path; note that you have to provide SNAPSHOT_ID as an environment variable
+    - s3://ai2-llm/pretraining-data/sources/cc-science/v0/documents/${oc.env:SNAPSHOT_ID} # save the documents in the S3 path; note that you have to provide SNAPSHOT_ID as an environment variable
 processes: ${d.procs:}  # use the number of processors available on the machine; in practice, I override this value in the command line by using 40 processes on a machine with 370GB of RAM because each process consumes around 9GB of RAM
 source_name: science_${oc.env:SNAPSHOT_ID}
 linearizer: fast-p  # this is the fast linearizer
