@@ -388,6 +388,11 @@ def create_and_run_warc_pipeline(
         else:
             raise ValueError("destination must be a string or a list of strings")
 
+        for tagger_name in chain(pre_taggers or [], post_taggers or []):
+            # cache taggers
+            tagger = TaggerRegistry.get(tagger_name)()
+            del tagger
+
         processor = WarcProcessor(
             source_prefix=all_src_paths,
             destination_prefix=all_dst_paths,

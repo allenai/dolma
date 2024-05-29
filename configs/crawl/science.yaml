@@ -17,6 +17,9 @@ post:
         - owmV2_FTsciV1_comb_lth
     skip: true
 
+skip_checks: true
+batch_size: 100
+
 store:
     html: true
 
