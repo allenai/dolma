@@ -1,9 +1,8 @@
-# documents: ${d.sed:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}},^@s3://commoncrawl/@,@}
 documents: "${d.sed:${d.split:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}}},crawl-data@s3://commoncrawl/crawl-data@,@}"
 destination:
-    - ${oc.env:HOME}/science/CC-MAIN-2024-18/documents
+    - ${oc.env:HOME}/science/${${oc.env:SNAPSHOT_ID}/documents
 processes: ${d.procs:}
-source_name: cccc_CC-MAIN-2024-18
+source_name: science_${${oc.env:SNAPSHOT_ID}
 linearizer: fast-p
 
 pre:
@@ -22,5 +21,5 @@ store:
     html: true
 
 work_dir:
-    input: /tmp/science/CC-MAIN-2024-18/input
-    output: /tmp/science/CC-MAIN-2024-18/output
+    input: /tmp/science/${${oc.env:SNAPSHOT_ID}/input
+    output: /tmp/science/${${oc.env:SNAPSHOT_ID}/output
