@@ -151,6 +151,11 @@ resiliparse = [
     "resiliparse",
 ]
 
+openwebmath = [
+    "dolma[warc]",
+    "openwebmath-text-extract",
+]
+
 # all extensions
 all = [
     "dolma[dev]",

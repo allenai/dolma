@@ -1,0 +1,34 @@
+documents: "${d.sed:${d.split:${d.file:${d.cache:https://data.commoncrawl.org/crawl-data/${oc.env:SNAPSHOT_ID}/warc.paths.gz}}},crawl-data@s3://commoncrawl/crawl-data@,@}" # download list of warc files from Common Crawl (d.cache), read the file (d.file), split the file into lines (d.split), and add the bucket prefix by replacing the string "crawl-data" with "s3://commoncrawl/crawl-data" (d.sed)
+destination:
+    - s3://ai2-llm/pretraining-data/sources/cc-science/v0/documents/${oc.env:SNAPSHOT_ID} # save the documents in the S3 path; note that you have to provide SNAPSHOT_ID as an environment variable
+processes: ${d.procs:}  # use the number of processors available on the machine; in practice, I override this value in the command line by using 40 processes on a machine with 370GB of RAM because each process consumes around 9GB of RAM
+source_name: science_${oc.env:SNAPSHOT_ID}
+fast_linearizer: fast-p  # this is the fast linearizer
+linearizer: openwebmath  # this is the openwebmath linearizer (final text)
+
+min_text_length: 50     # minimum text length to keep the document
+
+pre:    # these run before HTML linearization
+    taggers:
+        - owm_math_v2   # extract math tags from html documents
+        - owm_latex_v2  # extract latex tags from html documents
+        - science_kw_v2 # extract the science keywords from the documents
+    skip: true  # if none of the three taggers above returns any tags, skip the document
+
+post:
+    taggers:
+        - owmV2_FTsciV1_comb_lth_qt    # this is the tag that either looks for math/latex, or runs the fasttext science model (quantized)
+        - ft_dolma_doc_eng  # language filter
+    skip: true  # if the tagger above does not return any tags, skip the document
+    mode: all   # filter out documents that do not have any tags
+
+skip_checks: true   # this skips checking if the paths in `documents` exist
+skip_duplicate_urls: true   # this skips checking if the URLs in the documents are unique
+batch_size: 100     # each process does 100 files at a time
+
+store:
+    html: false      # do not keep the html in metadata
+
+work_dir:
+    input: /tmp/science/${oc.env:SNAPSHOT_ID}/input
+    output: /tmp/science/${oc.env:SNAPSHOT_ID}/output

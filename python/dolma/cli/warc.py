@@ -19,6 +19,13 @@ class TaggerConfig:
         default=False,
         help="Whether to skip if taggers returns no output.",
     )
+    mode: str = field(
+        default="any",
+        help=(
+            "Mode to use for taggers: If 'any', any tagger output is enough; "
+            "if 'all', all taggers must output. Ignore if skip is False. Defaults to 'any'."
+        ),
+    )
 
 
 @dataclass
@@ -76,6 +83,21 @@ class WarcExtractorConfig:
     linearizer: str = field(
         default="resiliparse",
         help="Name of the HTML linearizer to use.",
+    )
+    fast_linearizer: Optional[str] = field(
+        default=None,
+        help=(
+            "If provided, use this linearizer to get approximate representation of document "
+            "to cheaply run post taggers. If not provide, the regular linearizer will be used."
+        ),
+    )
+    min_raw_length: int = field(
+        default=0,
+        help="Minimum length of HTML content to process.",
+    )
+    min_text_length: int = field(
+        default=0,
+        help="Minimum length of text content to process.",
     )
     pre: TaggerConfig = field(default=TaggerConfig(), help="Configuration for pre-extraction taggers.")
     post: TaggerConfig = field(default=TaggerConfig(), help="Configuration for post-extraction taggers.")
@@ -145,15 +167,20 @@ class WarcExtractorCli(BaseCli):
                 debug=parsed_config.debug,
                 source_name=source_name,
                 pre_taggers=to_native_types(parsed_config.pre.taggers),
+                pre_taggers_mode=parsed_config.pre.mode,
                 skip_no_pre_taggers=parsed_config.pre.skip,
                 post_taggers=to_native_types(parsed_config.post.taggers),
+                post_taggers_mode=parsed_config.post.mode,
                 skip_no_post_taggers=parsed_config.post.skip,
                 store_html_in_metadata=parsed_config.store.html,
                 store_attribute_spans_in_metadata=parsed_config.store.attr_spans,
                 linearizer_name=parsed_config.linearizer,
+                fast_linearizer_name=parsed_config.fast_linearizer,
                 skip_source_glob=parsed_config.skip_checks,
                 skip_duplicate_urls=parsed_config.skip_duplicate_urls,
                 backoff_max_time=parsed_config.backoff.max_time,
                 backoff_max_tries=parsed_config.backoff.max_tries,
                 batch_size=parsed_config.batch_size,
+                min_raw_length=parsed_config.min_raw_length,
+                min_text_length=parsed_config.min_text_length,
             )

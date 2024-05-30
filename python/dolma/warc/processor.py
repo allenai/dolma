@@ -162,10 +162,20 @@ class WarcProcessor(BaseParallelProcessor):
                 # create any tagger that runs before html extraction
                 pre_taggers_names: List[str] = src_kwargs.get("pre_taggers") or []
                 pre_taggers = {make_variable_name(name): TaggerRegistry.get(name)() for name in pre_taggers_names}
+                pre_taggers_mode = src_kwargs.get("pre_taggers_mode") or "any"
+                assert pre_taggers_mode in ["any", "all"], "pre_mode must be 'any' or 'all'"
 
                 # create the html extractor
                 linearizer_name: str = src_kwargs.get("linearizer_name") or "resiliparse"
                 linearizer = LinearizerRegistry.get(linearizer_name)()
+
+                # faster extractor for first stage
+                fast_linearizer_name: str = src_kwargs.get("fast_linearizer_name") or linearizer_name
+                fast_linearizer = LinearizerRegistry.get(fast_linearizer_name)()
+
+                # minimum content lengths
+                min_raw_length = int(src_kwargs.get("min_raw_length") or 0)
+                min_text_length = int(src_kwargs.get("min_text_length") or 0)
 
                 # check for duplicate URLs
                 skip_duplicate_urls = bool(src_kwargs.get("skip_duplicate_urls", None) or False)
@@ -176,6 +186,8 @@ class WarcProcessor(BaseParallelProcessor):
                 post_taggers = {
                     make_variable_name(name): TaggerRegistry.get(name)() for name in post_taggers_names
                 }
+                post_taggers_mode = src_kwargs.get("post_taggers_mode") or "any"
+                assert post_taggers_mode in ["any", "all"], "post_mode must be 'any' or 'all'"
 
                 # whether to store html in metadata after extraction
                 store_html_in_meta: bool = src_kwargs.get("store_html_in_metadata") or False
@@ -208,6 +220,10 @@ class WarcProcessor(BaseParallelProcessor):
 
                     # keep track of the number of records processed
                     pbar.records += 1
+
+                    # below min length
+                    if len(ct) < min_raw_length:
+                        continue
 
                     # url
                     target_uri = record.headers.get("WARC-Target-URI")
@@ -251,15 +267,27 @@ class WarcProcessor(BaseParallelProcessor):
 
                     # these are the properties extracted from the HTML content
                     pre_attributes = {name: tagger.predict(doc) for name, tagger in pre_taggers.items()}
-                    if skip_no_pre_taggers and not any(r.spans for r in pre_attributes.values()):
+                    if not skip_no_pre_taggers:
+                        pass
+                    elif pre_taggers_mode == "any" and not any(r.spans for r in pre_attributes.values()):
+                        continue
+                    elif pre_taggers_mode == "all" and not all(r.spans for r in pre_attributes.values()):
                         continue
 
                     # extract text
-                    doc.text = linearizer.linearize(content=ct, encoding=record.http_charset)
+                    doc.text = fast_linearizer.linearize(content=ct, encoding=record.http_charset)
+
+                    # below min length
+                    if len(doc.text) < min_text_length:
+                        continue
 
                     # these are the properties extracted from the HTML content
                     post_attributes = {name: tagger.predict(doc) for name, tagger in post_taggers.items()}
-                    if skip_no_post_taggers and not any(r.spans for r in post_attributes.values()):
+                    if not skip_no_post_taggers:
+                        pass
+                    elif post_taggers_mode == "any" and not any(r.spans for r in post_attributes.values()):
+                        continue
+                    elif post_taggers_mode == "all" and not all(r.spans for r in post_attributes.values()):
                         continue
 
                     for attr_name, attr_result in chain(pre_attributes.items(), post_attributes.items()):
@@ -270,13 +298,21 @@ class WarcProcessor(BaseParallelProcessor):
 
                             # in case we want to store the exact attribute span
                             if store_spans_in_meta >= 0:
-                                ct = attr_span.select(doc, left=store_spans_in_meta, right=store_spans_in_meta)
+                                mct = attr_span.select(doc, left=store_spans_in_meta, right=store_spans_in_meta)
                                 # if it is a bunch of bytes, we decode to a string else we keep it as is
-                                ct = ct.decode("utf-8", errors="ignore") if isinstance(ct, bytes) else ct
-                                doc.metadata.setdefault("attribute_spans", {}).setdefault(attr_key, []).append(ct)
+                                mct = mct.decode("utf-8", errors="ignore") if isinstance(mct, bytes) else mct
+                                doc.metadata.setdefault("attribute_spans", {}).setdefault(attr_key, []).append(mct)
 
                     if not store_html_in_meta:
                         doc.metadata.pop("html", None)
+
+                    if fast_linearizer_name != linearizer_name:
+                        doc.metadata["fast_linearizer_text"] = doc.text
+                        doc.text = linearizer.linearize(content=ct, encoding=record.http_charset)
+
+                        if len(doc.text) < min_text_length:
+                            # check again if the text is below the minimum length
+                            continue
 
                     output_file.write(encoder.encode(doc.to_spec()) + b"\n")  # pyright: ignore
                     pbar.extracted += 1
@@ -293,20 +329,25 @@ def create_and_run_warc_pipeline(
     ignore_existing: bool = False,
     skip_on_failure: bool = False,
     num_processes: int = 1,
-    pre_taggers: Optional[List[str]] = None,
-    linearizer_name: str = "resiliparse",
-    post_taggers: Optional[List[str]] = None,
-    store_html_in_metadata: bool = False,
-    store_attribute_spans_in_metadata: int = -1,
-    skip_no_pre_taggers: bool = False,
-    skip_no_post_taggers: bool = False,
-    skip_source_glob: bool = False,
     backoff_max_time: Optional[float] = None,
     backoff_max_tries: int = 10,
-    compression: str = "zst",
-    skip_duplicate_urls: bool = False,
     batch_size: int = 1,
+    compression: str = "zst",
+    fast_linearizer_name: Optional[str] = None,
+    linearizer_name: str = "resiliparse",
+    min_raw_length: int = 0,
+    min_text_length: int = 0,
+    post_taggers_mode: str = "any",
+    post_taggers: Optional[List[str]] = None,
+    pre_taggers_mode: str = "any",
+    pre_taggers: Optional[List[str]] = None,
     progress_bar_mode: Literal["tqdm", "logger"] = "tqdm",
+    skip_duplicate_urls: bool = False,
+    skip_no_post_taggers: bool = False,
+    skip_no_pre_taggers: bool = False,
+    skip_source_glob: bool = False,
+    store_attribute_spans_in_metadata: int = -1,
+    store_html_in_metadata: bool = False,
 ):
     """Create and run pipeline for extracting documents from WARC files.
 
@@ -325,31 +366,33 @@ def create_and_run_warc_pipeline(
         skip_on_failure (bool, optional): Whether to skip the document if taggers return no output.
             Defaults to False.
         num_processes (int, optional): Number of parallel processes to use. Defaults to 1.
-        pre_taggers (List[str], optional): List of taggers to run before HTML extraction.
-            These taggers will run on byte HTML content. Defaults to None.
+        backoff_max_time (float, optional): How long to wait until retrying succeeds. Defaults to None, meaning
+            that the maximum time is dictated by the maximum number of tries.
+        backoff_max_tries (int, optional): Maximum number of tries before giving up. Defaults to 10.
+        batch_size (int, optional): Number of documents to process in each batch. Defaults to 1.
+        compression (str, optional): Compression format to use for the output files. Defaults to "zst".
+        fast_linearizer_name (str, optional): If provided, this linearizer will be used for first stage of
+            extraction. Defaults to None, meaning that the same linearizer will be used for both stages.
         linearizer_name (str, optional): Name of the HTML linearizer to use. Run `dolma list --filter linearizer`
             to get a list of all available linearizers. Defaults to "resiliparse".
         post_taggers (List[str], optional): List of taggers to run after HTML extraction. These taggers will run
             on the extracted text from the linearizer. Defaults to None.
-        store_html_in_metadata (bool, optional): Whether to store the HTML content in the metadata field.
+        pre_taggers (List[str], optional): List of taggers to run before HTML extraction. These taggers will run
+            on byte HTML content. Defaults to None.
+        progress_bar_mode ("tqdm" | "logger", optional): Mode for the progress bar. Defaults to "tqdm".
+        skip_duplicate_urls (bool, optional): Whether to skip duplicate URLs. Defaults to False.
+        skip_no_post_taggers (bool, optional): Wether to skip the document if post-taggers find nothing.
             Defaults to False.
+        skip_no_pre_taggers (bool, optional): Wether to skip the document if pre-taggers find nothing.
+            Defaults to False.
+        skip_source_glob (bool, optional): Whether to skip globbing the source path in case documents are paths
+            to individual files. Defaults to False.
         store_attribute_spans_in_metadata (int, optional): Whether to store the attribute spans in the metadata
             field. Defaults to -1, meaning no attribute spans are stored. The exact attribute span is stored.
             Any value N greater than 0 indicates that N characters before and after the tagged span should be
             saved in metadata. Defaults to -1.
-        skip_no_pre_taggers (bool, optional): Wether to skip the document if pre-taggers find nothing.
+        store_html_in_metadata (bool, optional): Whether to store the HTML content in the metadata field.
             Defaults to False.
-        skip_no_post_taggers (bool, optional): Wether to skip the document if post-taggers find nothing.
-            Defaults to False.
-        skip_source_glob (bool, optional): Whether to skip globbing the source path in case documents are
-            paths to individual files. Defaults to False.
-        backoff_max_time (float, optional): How long to wait until retrying succeeds. Defaults to None,
-            meaning that the maximum time is dictated by the maximum number of tries.
-        backoff_max_tries (int, optional): Maximum number of tries before giving up. Defaults to 10.
-        compression (str, optional): Compression format to use for the output files. Defaults to "zst".
-        skip_duplicate_urls (bool, optional): Whether to skip duplicate URLs. Defaults to False.
-        batch_size (int, optional): Number of documents to process in each batch. Defaults to 1.
-        progress_bar_mode ("tqdm" | "logger", optional): Mode for the progress bar. Defaults to "tqdm".
     """
 
     with ExitStack() as stack:
@@ -411,16 +454,21 @@ def create_and_run_warc_pipeline(
         )
 
         processor(
-            skip_on_failure=skip_on_failure,
-            linearizer_name=linearizer_name,
-            pre_taggers=pre_taggers,
-            post_taggers=post_taggers,
-            skip_no_pre_taggers=skip_no_pre_taggers,
-            skip_no_post_taggers=skip_no_post_taggers,
-            source_name=source_name,
             compression=compression,
             debug=debug,
+            fast_linearizer_name=fast_linearizer_name,
+            linearizer_name=linearizer_name,
+            min_raw_length=min_raw_length,
+            min_text_length=min_text_length,
+            post_taggers_mode=post_taggers_mode,
+            post_taggers=post_taggers,
+            pre_taggers_mode=pre_taggers_mode,
+            pre_taggers=pre_taggers,
             skip_duplicate_urls=skip_duplicate_urls,
-            store_html_in_metadata=store_html_in_metadata,
+            skip_no_post_taggers=skip_no_post_taggers,
+            skip_no_pre_taggers=skip_no_pre_taggers,
+            skip_on_failure=skip_on_failure,
+            source_name=source_name,
             store_attribute_spans_in_metadata=store_attribute_spans_in_metadata,
+            store_html_in_metadata=store_html_in_metadata,
         )

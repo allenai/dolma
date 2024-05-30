@@ -25,6 +25,15 @@ with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
             HTMLTree,
         )
 
+with necessary("text_extract", soft=True) as OPENWEBMATH_AVAILABLE:
+    if OPENWEBMATH_AVAILABLE or TYPE_CHECKING:
+        from text_extract.extract import (
+            extract_text as owm_extract_text,  # pylint: disable=import-error  # pyright:ignore
+        )
+        from text_extract.utils import (
+            Config as OpenWebMathConfig,  # pylint: disable=import-error  # pyright:ignore
+        )
+
 
 class BaseLinearizer:
     """A base class for linearizers, i.e. tools to turn HTML into text."""
@@ -171,3 +180,35 @@ class FastPHtmlExtractor(BaseLinearizer):
             paragraphs = tree.body.get_elements_by_tag_name("p")
             return " ".join(p.text for p in paragraphs)
         return ""
+
+
+@LinearizerRegistry.add("openwebmath")
+class OpenWebMathExtractor(BaseLinearizer):
+    def __init__(self, fast: bool = False) -> None:
+        assert OPENWEBMATH_AVAILABLE, raise_warc_dependency_error("openwebmath-text-extract")
+        self.config = OpenWebMathConfig().sample()
+        self.fast = fast
+
+    def _extract(self, content: bytes, encoding: Optional[str] = None) -> str:
+        try:
+            html = content.decode(encoding or "utf-8")
+        except UnicodeDecodeError:
+            try:
+                html = content.decode(detect_encoding(content))
+            except UnicodeDecodeError:
+                return ""
+
+        extracted = owm_extract_text(html=html, config=self.config, fast=self.fast)
+        if isinstance(extracted, tuple):
+            return str(extracted[0])
+        return ""
+
+    def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:
+        return self._extract(content=content, encoding=encoding)
+
+
+@LinearizerRegistry.add("openwebmath-fast")
+class OpenWebMathFastExtractor(OpenWebMathExtractor):
+    def __init__(self, *args, **kwargs) -> None:
+        kwargs["fast"] = True
+        super().__init__(*args, **kwargs)
