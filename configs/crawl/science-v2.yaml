@@ -30,5 +30,5 @@ store:
     html: false      # do not keep the html in metadata
 
 work_dir:
-    input: /tmp/science/${oc.env:SNAPSHOT_ID}/input
-    output: /tmp/science/${oc.env:SNAPSHOT_ID}/output
+    input: ${oc.env:HOME}/progress-science/${oc.env:SNAPSHOT_ID}/input
+    output: ${oc.env:HOME}/progress-science/${oc.env:SNAPSHOT_ID}/output
