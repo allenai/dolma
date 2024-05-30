@@ -70,7 +70,9 @@ class TestScienceWarcExtractor(unittest.TestCase):
         self.assertNotIn("science_kw_v2__science_kw_v2__science", taylor["attributes"])
 
         self.assertIn("owmV2_FTsciV1_comb_qt__owmV2_FTsciV1_comb_qt__science", science["attributes"])
-        self.assertGreater(science["attributes"]["owmV2_FTsciV1_comb_qt__owmV2_FTsciV1_comb_qt__science"][0][-1], 0.5)
+        self.assertGreater(
+            science["attributes"]["owmV2_FTsciV1_comb_qt__owmV2_FTsciV1_comb_qt__science"][0][-1], 0.5
+        )
         self.assertNotIn("owm_math_v2__owm_math_v2__math", science["attributes"])
         self.assertNotIn("owm_latex_v2__owm_latex_v2__latex", science["attributes"])
         self.assertNotIn("owmV2_FTsciV1_comb_qt__owmV2_FTsciV1_comb_qt__math_latex", science["attributes"])
