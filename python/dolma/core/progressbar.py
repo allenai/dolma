@@ -81,7 +81,7 @@ class BaseProgressBar:
         self,
         queue: QueueType,
         min_step: int = 1,
-        min_time: float = 1e-1,
+        min_time: float = 1e-3,
         server: Union[ServerType, str] = "null",
     ):
         """

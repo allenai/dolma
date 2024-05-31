@@ -438,7 +438,10 @@ class BaseParallelProcessor:
 
         with PoolWithDebug(processes=num_processes, debug=self.debug) as pool:
             pbar_queue: QueueType = (manager := get_manager(pool)).Queue()
-            (pbar := self.PROGRESS_BAR_CLS(pbar_queue, server=self.progress_bar_mode)).start()
+            pbar = self.PROGRESS_BAR_CLS(
+                queue=pbar_queue, min_time=self.pbar_timeout, server=self.progress_bar_mode
+            )
+            pbar.start()
 
             process_single_fn = partial(self.process_single, queue=pbar_queue)
             results = []
