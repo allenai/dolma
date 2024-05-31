@@ -69,7 +69,7 @@ class BaseProgressBar:
     ```
     """
 
-    def __init__(self, queue: QueueType, min_step: int = 1, min_time: float = 1e-1, thread: bool = False):
+    def __init__(self, queue: QueueType, min_step: int = 1, min_time: float = 1e-3, thread: bool = False):
         """
         Initialize the ProgressBar object.
 
