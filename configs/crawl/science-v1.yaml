@@ -24,7 +24,7 @@ post:
 
 skip_checks: true   # this skips checking if the paths in `documents` exist
 skip_duplicate_urls: true   # this skips checking if the URLs in the documents are unique
-batch_size: 100     # each process does 100 files at a time
+batch_size: 10      # each process does 100 files at a time
 
 store:
     html: false      # do not keep the html in metadata
