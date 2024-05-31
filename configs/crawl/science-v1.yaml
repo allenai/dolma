@@ -6,7 +6,7 @@ source_name: science_${oc.env:SNAPSHOT_ID}
 fast_linearizer: fast-p  # this is the fast linearizer
 linearizer: openwebmath  # this is the openwebmath linearizer (final text)
 
-min_text_length: 50     # minimum text length to keep the document
+min_text_length: 150     # minimum text length to keep the document
 
 pre:    # these run before HTML linearization
     taggers:
@@ -17,7 +17,7 @@ pre:    # these run before HTML linearization
 
 post:
     taggers:
-        - owmV2_FTsciV1_comb_lth_qt    # this is the tag that either looks for math/latex, or runs the fasttext science model (quantized)
+        - owmV2_FTsciV1_comb_hth_qt    # this is the tag that either looks for math/latex, or runs the fasttext science model (quantized)
         - ft_dolma_doc_eng  # language filter
     skip: true  # if the tagger above does not return any tags, skip the document
     mode: all   # filter out documents that do not have any tags
@@ -30,5 +30,5 @@ store:
     html: false      # do not keep the html in metadata
 
 work_dir:
-    input: ${oc.env:HOME}/progress-science/${oc.env:SNAPSHOT_ID}/input
-    output: ${oc.env:HOME}/progress-science/${oc.env:SNAPSHOT_ID}/output
+    input: ${oc.env:HOME}/progress-science-v1/${oc.env:SNAPSHOT_ID}/input
+    output: ${oc.env:HOME}/progress-science-v1/${oc.env:SNAPSHOT_ID}/output
