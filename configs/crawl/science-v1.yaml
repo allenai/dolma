@@ -3,7 +3,7 @@ destination:
     - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/${oc.env:SNAPSHOT_ID} # save the documents in the S3 path; note that you have to provide SNAPSHOT_ID as an environment variable
 processes: ${d.procs:}  # use the number of processors available on the machine; in practice, I override this value in the command line by using 40 processes on a machine with 370GB of RAM because each process consumes around 9GB of RAM
 source_name: science_${oc.env:SNAPSHOT_ID}
-fast_linearizer: fast-p  # this is the fast linearizer
+fast_linearizer: fast-p-less-space  # this is the fast linearizer
 linearizer: openwebmath  # this is the openwebmath linearizer (final text)
 
 min_text_length: 150     # minimum text length to keep the document

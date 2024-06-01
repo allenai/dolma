@@ -1,4 +1,5 @@
 import logging
+import re
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Iterable, Optional, Type
 
@@ -180,6 +181,14 @@ class FastPHtmlExtractor(BaseLinearizer):
             paragraphs = tree.body.get_elements_by_tag_name("p")
             return " ".join(p.text for p in paragraphs).strip()
         return ""
+
+
+@LinearizerRegistry.add("fast-p-less-space")
+class FastPNoSpaceHtmlExtractor(FastPHtmlExtractor):
+    def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:
+        text = super().linearize(content=content, encoding=encoding)
+        text = re.sub(r"\s+\n\s+", "\n", text)
+        return text
 
 
 @LinearizerRegistry.add("openwebmath")
