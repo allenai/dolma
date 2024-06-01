@@ -178,7 +178,7 @@ class FastPHtmlExtractor(BaseLinearizer):
         tree = HTMLTree.parse_from_bytes(document=content, encoding=encoding)
         if tree.body:
             paragraphs = tree.body.get_elements_by_tag_name("p")
-            return " ".join(p.text for p in paragraphs)
+            return " ".join(p.text for p in paragraphs).strip()
         return ""
 
 
@@ -198,9 +198,12 @@ class OpenWebMathExtractor(BaseLinearizer):
             except UnicodeDecodeError:
                 return ""
 
-        extracted = owm_extract_text(html=html, config=self.config, fast=self.fast)
-        if isinstance(extracted, tuple):
-            return str(extracted[0])
+        try:
+            extracted = owm_extract_text(html=html, config=self.config, fast=self.fast)
+            if isinstance(extracted, tuple):
+                return str(extracted[0])
+        except Exception:
+            pass
         return ""
 
     def linearize(self, content: bytes, encoding: Optional[str] = None) -> str:

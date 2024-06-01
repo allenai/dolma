@@ -1,3 +1,4 @@
+import re
 from typing import TYPE_CHECKING, Any, Iterable, List, Optional
 
 from necessary import necessary
@@ -486,10 +487,8 @@ class FastTextScienceTagger(BaseFastTextTagger):
         BaseFastTextTagger.__init__(self, model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
 
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
-        preds = {
-            label: float(score)
-            for label, score in zip(*self.classifier.predict(text_slice.text.replace("\n", " ").strip(), k=-1))
-        }
+        text = re.sub(r"\s+", " ", text_slice.text).strip()
+        preds = {label: float(score) for label, score in zip(*self.classifier.predict(text, k=-1))}
         if preds["__label__1"] > self.FT_THRESHOLD:
             return [Prediction(label="science", score=preds["__label__1"])]
         return []
@@ -519,7 +518,7 @@ class OwmMathLatexFtScienceCombined(HyperscanHTMLKeywordLookupTagger, FastTextSc
 
 @TaggerRegistry.add("owmV2_FTsciV1_comb_lth")
 class OwmMathLatexFtScienceCombinedLowThreshold(OwmMathLatexFtScienceCombined):
-    FT_THRESHOLD = 0.15
+    FT_THRESHOLD = 0.20
 
 
 @TaggerRegistry.add("owmV2_FTsciV1_comb_hth")
