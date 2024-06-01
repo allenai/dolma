@@ -201,7 +201,7 @@ class OpenWebMathExtractor(BaseLinearizer):
     def _extract(self, content: bytes, encoding: Optional[str] = None) -> str:
         try:
             html = content.decode(encoding or "utf-8")
-        except UnicodeDecodeError:
+        except (UnicodeDecodeError, LookupError):
             try:
                 html = content.decode(detect_encoding(content))
             except UnicodeDecodeError:
