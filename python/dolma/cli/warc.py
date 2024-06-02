@@ -79,6 +79,10 @@ class WarcExtractorConfig:
         default=False,
         help="Whether to run in debug mode.",
     )
+    compression: str = field(
+        default="zst",
+        help="Compression to use for the outputs. Defaults to zst. Must be supported in smart_open library.",
+    )
     source_name: str = field(help="Name to assign to the source.")
     linearizer: str = field(
         default="resiliparse",
@@ -166,6 +170,7 @@ class WarcExtractorCli(BaseCli):
                 ignore_existing=parsed_config.ignore_existing,
                 debug=parsed_config.debug,
                 source_name=source_name,
+                compression=parsed_config.compression,
                 pre_taggers=to_native_types(parsed_config.pre.taggers),
                 pre_taggers_mode=parsed_config.pre.mode,
                 skip_no_pre_taggers=parsed_config.pre.skip,
