@@ -354,6 +354,7 @@ def tokenize_file(
     file, each containing a field named `text`.
     """
     tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
+    dtype = deepcopy(tokenizer.dtype)
     decoder = msgspec.json.Decoder(InputSpec)
     with smart_open.open(path, mode="rt") as input_stream:
         for i, line in enumerate(input_stream, start=1):
@@ -364,7 +365,7 @@ def tokenize_file(
                     tokens = tokenizer.encode(text, add_special_tokens=True)
                     if refresh_tokenizer_every:
                         # extra copy to prevent memory leaks
-                        tokens = np.array(tokens, dtype=tokenizer.dtype)
+                        tokens = np.array(tokens, dtype=dtype)
                     yield TokenizerOutput.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)  # pyright: ignore
                 i += 1
 

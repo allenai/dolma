@@ -43,6 +43,8 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
     @classmethod
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
         logger = get_logger(__name__)
 
         max_size: int = kwargs.pop("max_size", None) or 1024 * 1024 * 1024
