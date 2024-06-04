@@ -71,6 +71,12 @@ class MemMapParallelWriter(BaseParallelProcessor):
                 "At least one of them should be provided; otherwise, documents will not be properly separated."
             )
 
+        # Controls whether to use the fast tokenizer or not
+        use_fast = kwargs.pop("use_fast_tokenizer", None) or True
+
+        # Controls whether to refresh the tokenizer at the end of each batch
+        refresh_tokenizer = kwargs.pop("refresh_tokenizer", None) or -1
+
         tokenizer_kwargs["pad_token_id"] = kwargs.pop("pad_token_id", None)
         if tokenizer_kwargs["pad_token_id"] is None:
             logger.warning("pad_token_id not provided, using eos_token_id")
@@ -83,15 +89,15 @@ class MemMapParallelWriter(BaseParallelProcessor):
         cpu_count = multiprocessing.cpu_count()
 
         # these are used to keep track of the progress
-        documents_cnt = tokens_cnt = 0
+        documents_cnt = tokens_cnt = refresh_tokenizer_cnt = 0
         update_interval = 1
         mm_cnt = 0
 
         # create the tokenizer from file if it exists, otherwise from pretrained
         if os.path.exists(tokenizer_name_or_path) and os.path.isfile(tokenizer_name_or_path):
-            tokenizer = Tokenizer.from_file(tokenizer_name_or_path, **tokenizer_kwargs)
+            tokenizer = Tokenizer.from_file(tokenizer_name_or_path, use_fast=use_fast, **tokenizer_kwargs)
         else:
-            tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path, **tokenizer_kwargs)
+            tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path, use_fast=use_fast, **tokenizer_kwargs)
 
         tokenizer_ring: List[Generator[TokenizerOutput, None, None]] = []
         tokenizer_sizes: List[int] = []
@@ -147,6 +153,12 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         # wether a file is added or not to the ring, we must re-balance probabilities
                         tokenizer_probs = sizes_to_probs(tokenizer_sizes)
 
+                    # refresh the tokenizer if needed
+                    refresh_tokenizer_cnt += 1
+                    if 0 < refresh_tokenizer <= refresh_tokenizer_cnt:
+                        tokenizer.refresh()
+                        refresh_tokenizer_cnt = 0
+
                     # check if it time to update the progress bar!
                     if documents_cnt >= update_interval:
                         cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
@@ -169,7 +181,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
                     memwriter = stack.enter_context(
                         MemmapWriter(
                             path=destination_path + f"-{mm_cnt:05d}",
-                            dtype=np.dtype("uint16"),  # pyright: ignore
+                            dtype=dtype,
                             max_tokens=max_size,
                         )
                     )
@@ -284,6 +296,8 @@ def tokenize_in_parallel(
     dtype: str = "uint16",
     debug: bool = False,
     sample_ring_prop: bool = False,
+    refresh_tokenizer: int = 0,
+    use_fast_tokenizer: bool = True,
 ):
     """
     Tokenizes the input sources in parallel using multiple writers and readers.
@@ -310,6 +324,9 @@ def tokenize_in_parallel(
         debug (bool, optional): Whether to enable debug mode. Defaults to False.
         sample_ring_prop (bool, optional): Whether to sample from the ring buffer proportionally to the size
             of files. Otherwise, it will go round-robin. Defaults to False.
+        refresh_tokenizer (int, optional): Number of batches after which to refresh the tokenizer.
+            Defaults to 0, which means the tokenizer will not be refreshed.
+        use_fast_tokenizer (bool, optional): Whether to use the fast tokenizer. Defaults to True.
     """
     # variables to avoid issues with parallelism
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -321,6 +338,7 @@ def tokenize_in_parallel(
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
             pad_token_id=pad_token_id,
+            use_fast=use_fast_tokenizer,
         )
 
     # get a run hash
@@ -352,4 +370,6 @@ def tokenize_in_parallel(
         segment_before_tokenization=segment_before_tokenization,
         tokenizer_name_or_path=tokenizer_name_or_path,
         sample_ring_prop=sample_ring_prop,
+        use_fast_tokenizer=use_fast_tokenizer,
+        refresh_tokenizer=refresh_tokenizer,
     )
