@@ -137,7 +137,7 @@ class TestTokenizerCli(TestCase):
                 for row in reader
             ]
 
-        size = max(m["end"] for m in metadata)
+        size = max(int(m["end"]) for m in metadata)
         memmap = numpy.memmap(
             f"{config['destination']}/part-0-00000.npy", dtype=numpy.uint16, mode="r", shape=(size,)
         )
@@ -147,7 +147,7 @@ class TestTokenizerCli(TestCase):
 
         for doc_metadata in metadata:
             original_text = documents[doc_metadata["pos"] - 1]["text"]
-            tokens = memmap[doc_metadata["start"] : doc_metadata["end"]]
+            tokens = memmap[int(doc_metadata["start"]) : int(doc_metadata["end"])]
             tokenized_text = tokenizer.decode(tokens)
 
             self.assertEqual(tokens[0], LLAMA_TOKENIZER["bos_token_id"])
@@ -200,7 +200,7 @@ class TestTokenizerCli(TestCase):
                 for row in reader
             ]
 
-        size = max(m["end"] for m in metadata)
+        size = max(int(m["end"]) for m in metadata)
         memmap = numpy.memmap(
             f"{config['destination']}/part-0-00000.npy", dtype=numpy.uint16, mode="r", shape=(size,)
         )
@@ -210,7 +210,7 @@ class TestTokenizerCli(TestCase):
 
         for doc_metadata in metadata:
             original_text = documents[doc_metadata["pos"] - 1]["text"]
-            tokens = memmap[doc_metadata["start"] : doc_metadata["end"]]
+            tokens = memmap[int(doc_metadata["start"]) : int(doc_metadata["end"])]
             tokenized_text = tokenizer.decode(tokens)
 
             self.assertEqual(tokens[-1], GPT_NEO_TOKENIZER["eos_token_id"])
@@ -262,7 +262,7 @@ class TestTokenizerCli(TestCase):
                 for row in reader
             ]
 
-        size = max(m["end"] for m in metadata)
+        size = max(int(m["end"]) for m in metadata)
         memmap = numpy.memmap(
             f"{config['destination']}/part-0-00000.npy", dtype=numpy.uint32, mode="r", shape=(size,)
         )
@@ -272,7 +272,7 @@ class TestTokenizerCli(TestCase):
 
         for doc_metadata in metadata:
             original_text = documents[doc_metadata["pos"] - 1]["text"]
-            tokens = memmap[doc_metadata["start"] : doc_metadata["end"]]
+            tokens = memmap[int(doc_metadata["start"]) : int(doc_metadata["end"])]
             tokenized_text = tokenizer.decode(tokens)
 
             self.assertEqual(tokens[-1], LLAMA3_TOKENIZER["eos_token_id"])

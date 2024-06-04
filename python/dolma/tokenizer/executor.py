@@ -70,12 +70,11 @@ class MemMapParallelWriter(BaseParallelProcessor):
                 "Neither eos_token_id nor bos_token_id specified. "
                 "At least one of them should be provided; otherwise, documents will not be properly separated."
             )
-
-        # Controls whether to use the fast tokenizer or not
-        use_fast = kwargs.pop("use_fast_tokenizer", None) or True
-
         # Controls whether to refresh the tokenizer at the end of each batch
         refresh_tokenizer = kwargs.pop("refresh_tokenizer", None) or -1
+
+        # Controls whether to use the fast tokenizer or not
+        tokenizer_kwargs["use_fast"] = bool(kwargs.pop("use_fast_tokenizer", True))
 
         tokenizer_kwargs["pad_token_id"] = kwargs.pop("pad_token_id", None)
         if tokenizer_kwargs["pad_token_id"] is None:
@@ -89,21 +88,22 @@ class MemMapParallelWriter(BaseParallelProcessor):
         cpu_count = multiprocessing.cpu_count()
 
         # these are used to keep track of the progress
-        documents_cnt = tokens_cnt = refresh_tokenizer_cnt = 0
+        documents_cnt = tokens_cnt = 0
         update_interval = 1
         mm_cnt = 0
-
-        # create the tokenizer from file if it exists, otherwise from pretrained
-        if os.path.exists(tokenizer_name_or_path) and os.path.isfile(tokenizer_name_or_path):
-            tokenizer = Tokenizer.from_file(tokenizer_name_or_path, use_fast=use_fast, **tokenizer_kwargs)
-        else:
-            tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path, use_fast=use_fast, **tokenizer_kwargs)
 
         tokenizer_ring: List[Generator[TokenizerOutput, None, None]] = []
         tokenizer_sizes: List[int] = []
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
-            tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
+            tokenizer_ring.append(
+                tokenize_file(
+                    tokenizer_name_or_path=tokenizer_name_or_path,
+                    path=path,
+                    refresh_tokenizer_every=refresh_tokenizer,
+                    **tokenizer_kwargs,
+                )
+            )
             tokenizer_sizes.append(get_size(path))
 
         # this is the probabilities with which we sample from the ring buffer if sample_ring_prop is True
@@ -147,17 +147,18 @@ class MemMapParallelWriter(BaseParallelProcessor):
                             break
                         if len(source_paths) > 0:
                             path = source_paths.pop()
-                            tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
+                            tokenizer_ring.append(
+                                tokenize_file(
+                                    tokenizer_name_or_path=tokenizer_name_or_path,
+                                    path=path,
+                                    refresh_tokenizer_every=refresh_tokenizer,
+                                    **tokenizer_kwargs,
+                                )
+                            )
                             tokenizer_sizes.append(get_size(path))
 
                         # wether a file is added or not to the ring, we must re-balance probabilities
                         tokenizer_probs = sizes_to_probs(tokenizer_sizes)
-
-                    # refresh the tokenizer if needed
-                    refresh_tokenizer_cnt += 1
-                    if 0 < refresh_tokenizer <= refresh_tokenizer_cnt:
-                        tokenizer.refresh()
-                        refresh_tokenizer_cnt = 0
 
                     # check if it time to update the progress bar!
                     if documents_cnt >= update_interval:
