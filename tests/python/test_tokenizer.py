@@ -104,7 +104,7 @@ class TestTokenizer(TestCase):
 
 
 class TestTokenizerCli(TestCase):
-    def test_llama_segment_e2e(self):
+    def test_llama_segment_e2e(self, segment: bool = True, fast: bool = True, refresh: int = 0):
         config = {
             "destination": f"{TEST_DIR}/work/tokenizer/llama-segment",
             "documents": [
@@ -117,7 +117,9 @@ class TestTokenizerCli(TestCase):
                 "bos_token_id": LLAMA_TOKENIZER["bos_token_id"],
                 "eos_token_id": LLAMA_TOKENIZER["eos_token_id"],
                 "pad_token_id": LLAMA_TOKENIZER["pad_token_id"],
-                "segment_before_tokenization": True,
+                "segment_before_tokenization": segment,
+                "refresh": refresh,
+                "fast": fast,
             },
             "debug": True,
         }
@@ -165,7 +167,7 @@ class TestTokenizerCli(TestCase):
             )
             self.assertEqual(special_tokens, 2)
 
-    def test_gpt_neo_e2e(self):
+    def test_gpt_neo_e2e(self, segment: bool = True, fast: bool = True, refresh: int = 0):
         config = {
             "destination": f"{TEST_DIR}/work/tokenizer/gpt-neo-segment",
             "documents": [
@@ -178,7 +180,9 @@ class TestTokenizerCli(TestCase):
                 "bos_token_id": GPT_NEO_TOKENIZER["bos_token_id"],
                 "eos_token_id": GPT_NEO_TOKENIZER["eos_token_id"],
                 "pad_token_id": GPT_NEO_TOKENIZER["pad_token_id"],
-                "segment_before_tokenization": True,
+                "segment_before_tokenization": segment,
+                "refresh": refresh,
+                "fast": fast,
             },
             "debug": True,
         }
@@ -224,7 +228,7 @@ class TestTokenizerCli(TestCase):
             )
             self.assertEqual(special_tokens, 1)
 
-    def test_llama3_e2e(self):
+    def test_llama3_e2e(self, segment: bool = True, fast: bool = True, refresh: int = 0):
         config = {
             "destination": f"{TEST_DIR}/work/tokenizer/gpt-neo-segment",
             "documents": [
@@ -238,7 +242,9 @@ class TestTokenizerCli(TestCase):
                 "bos_token_id": LLAMA3_TOKENIZER["bos_token_id"],
                 "eos_token_id": LLAMA3_TOKENIZER["eos_token_id"],
                 "pad_token_id": LLAMA3_TOKENIZER["pad_token_id"],
-                "segment_before_tokenization": True,
+                "segment_before_tokenization": segment,
+                "refresh": refresh,
+                "fast": fast,
             },
             "debug": True,
         }
@@ -283,6 +289,18 @@ class TestTokenizerCli(TestCase):
                 }
             )
             self.assertEqual(special_tokens, 1)
+
+    def test_llama_segment_e2e_no_segment(self):
+        self.test_llama_segment_e2e(segment=False)
+
+    def test_gpt_neo_segment_e2e_no_segment(self):
+        self.test_gpt_neo_e2e(segment=False)
+
+    def test_llama_segment_e2e_refresh(self):
+        self.test_llama_segment_e2e(refresh=1)
+
+    def test_gpt_neo_segment_e2e_refresh(self):
+        self.test_gpt_neo_e2e(refresh=1)
 
 
 class TestShufflingTokenizer(TestCase):
