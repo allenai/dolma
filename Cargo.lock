@@ -1021,6 +1021,7 @@ dependencies = [
  "serde_json",
  "simple_logger",
  "structopt",
+ "tempfile",
  "thousands",
  "threadpool",
  "tokenizers",
