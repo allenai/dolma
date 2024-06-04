@@ -1,6 +1,7 @@
 use std::fs::OpenOptions;
 use flate2::{read::MultiGzDecoder, write::GzEncoder};
 use flate2::Compression;
+use zstd::stream::AutoFinishEncoder;
 use zstd::{Encoder, Decoder};
 use std::path::PathBuf;
 use std::io::{BufReader, BufWriter, Write};
@@ -53,7 +54,7 @@ impl ZstdStream {
         let level = level.unwrap_or(3);
         Self { path, size, level }
     }
-    pub fn reader (&self) -> BufReader<Decoder> {
+    pub fn reader (&self) -> BufReader<Decoder<'static, BufReader<File>>> {
         let file = OpenOptions::new()
             .read(true)
             .write(false)
@@ -64,7 +65,7 @@ impl ZstdStream {
         return out;
     }
 
-    pub fn writer (&self) -> BufWriter<Encoder<File>> {
+    pub fn writer (&self) -> BufWriter<AutoFinishEncoder<File>> {
         let file = OpenOptions::new()
             .read(false)
             .write(true)
@@ -72,7 +73,9 @@ impl ZstdStream {
             .truncate(true)
             .open(&self.path)
             .unwrap();
-        BufWriter::with_capacity(self.size as usize, Encoder::new(file, self.level).unwrap())
+        let encoder = Encoder::new(file, self.level).unwrap();
+        let auto_finish_encoder = encoder.auto_finish();
+        BufWriter::with_capacity(self.size as usize, auto_finish_encoder)
     }
 }
 
@@ -110,8 +113,68 @@ impl FileStream {
 }
 
 
-pub enum FileStream {
-    Gz(GzFileStream),
-    Zstd(ZstdStream),
-    File(FileStream),
+#[cfg(test)]
+pub mod io_tests {
+
+    use serde_json::json;
+    use std::io::BufRead;
+    use super::*;
+
+    // rest of the code
+
+    #[test]
+    fn test_decompress_gz() {
+        let path = PathBuf::from("tests/data/formats/test.jsonl.gz");
+        let expected = vec![json!({"message": "this is a test"})];
+
+        // create the stream and reader
+        let stream = GzFileStream::new(path, None, None);
+        let reader = stream.reader();
+
+        // read each line, parse it and compare with the expected
+        let lines = reader.lines();
+        for (i, line) in lines.enumerate() {
+            let line = line.unwrap();
+            let parsed = serde_json::from_str::<serde_json::Value>(&line).unwrap();
+            assert_eq!(parsed, expected[i]);
+        }
+    }
+
+    #[test]
+    fn test_decompress_zst() {
+        let path = PathBuf::from("tests/data/formats/test.jsonl.zst");
+        let expected = vec![json!({"message": "this is a test"})];
+
+        // create the stream and reader
+        let stream = ZstdStream::new(path, None, None);
+        let reader = stream.reader();
+
+        // read each line, parse it and compare with the expected
+        let lines = reader.lines();
+        for (i, line) in lines.enumerate() {
+            println!("{:?}", line);
+            let line = line.unwrap();
+            let parsed = serde_json::from_str::<serde_json::Value>(&line).unwrap();
+            assert_eq!(parsed, expected[i]);
+        }
+    }
+
+    #[test]
+    fn test_read_plain() {
+        let path = PathBuf::from("tests/data/formats/test.jsonl");
+        let expected = vec![json!({"message": "this is a test"})];
+
+        // create the stream and reader
+        let stream = FileStream::new(path, None);
+        let reader = stream.reader();
+
+        // read each line, parse it and compare with the expected
+        let lines = reader.lines();
+        for (i, line) in lines.enumerate() {
+            let line = line.unwrap();
+            let parsed = serde_json::from_str::<serde_json::Value>(&line).unwrap();
+            assert_eq!(parsed, expected[i]);
+        }
+    }
+
 }
