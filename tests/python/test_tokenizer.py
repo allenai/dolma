@@ -7,6 +7,7 @@ from unittest import TestCase
 import numpy
 import smart_open
 from tokenizers import Tokenizer as BaseTokenizer
+from typing_extensions import TypedDict
 
 from dolma.cli.__main__ import main
 from dolma.tokenizer import Tokenizer, tokenize_in_parallel
@@ -51,6 +52,14 @@ TEXT_NEWLINE_START = {
     "llama": [1, 29871, 13, 15427, 1574, 411, 8236, 25899, 29889, 2],
     "gpt_neo": [187, 21595, 5474, 342, 4283, 747, 1282, 15, 50279],
 }
+
+
+class MetadataDict(TypedDict):
+    start: int
+    end: int
+    id: str
+    src: str
+    pos: int
 
 
 class TestTokenizer(TestCase):
@@ -133,11 +142,11 @@ class TestTokenizerCli(TestCase):
         with smart_open.open(f"{config['destination']}/part-0-00000.csv.gz") as f:
             reader = csv.reader(f)
             metadata = [
-                {"start": int(row[0]), "end": int(row[1]), "id": row[2], "src": row[3], "pos": int(row[4])}
+                MetadataDict(start=int(row[0]), end=int(row[1]), id=row[2], src=row[3], pos=int(row[4]))
                 for row in reader
             ]
 
-        size = max(int(m["end"]) for m in metadata)
+        size = max(m["end"] for m in metadata)
         memmap = numpy.memmap(
             f"{config['destination']}/part-0-00000.npy", dtype=numpy.uint16, mode="r", shape=(size,)
         )
@@ -147,7 +156,7 @@ class TestTokenizerCli(TestCase):
 
         for doc_metadata in metadata:
             original_text = documents[doc_metadata["pos"] - 1]["text"]
-            tokens = memmap[int(doc_metadata["start"]) : int(doc_metadata["end"])]
+            tokens = memmap[doc_metadata["start"] : doc_metadata["end"]]
             tokenized_text = tokenizer.decode(tokens)
 
             self.assertEqual(tokens[0], LLAMA_TOKENIZER["bos_token_id"])
@@ -196,11 +205,11 @@ class TestTokenizerCli(TestCase):
         with smart_open.open(f"{config['destination']}/part-0-00000.csv.gz") as f:
             reader = csv.reader(f)
             metadata = [
-                {"start": int(row[0]), "end": int(row[1]), "id": row[2], "src": row[3], "pos": int(row[4])}
+                MetadataDict(start=int(row[0]), end=int(row[1]), id=row[2], src=row[3], pos=int(row[4]))
                 for row in reader
             ]
 
-        size = max(int(m["end"]) for m in metadata)
+        size = max(m["end"] for m in metadata)
         memmap = numpy.memmap(
             f"{config['destination']}/part-0-00000.npy", dtype=numpy.uint16, mode="r", shape=(size,)
         )
@@ -210,7 +219,7 @@ class TestTokenizerCli(TestCase):
 
         for doc_metadata in metadata:
             original_text = documents[doc_metadata["pos"] - 1]["text"]
-            tokens = memmap[int(doc_metadata["start"]) : int(doc_metadata["end"])]
+            tokens = memmap[doc_metadata["start"] : doc_metadata["end"]]
             tokenized_text = tokenizer.decode(tokens)
 
             self.assertEqual(tokens[-1], GPT_NEO_TOKENIZER["eos_token_id"])
@@ -258,11 +267,11 @@ class TestTokenizerCli(TestCase):
         with smart_open.open(f"{config['destination']}/part-0-00000.csv.gz") as f:
             reader = csv.reader(f)
             metadata = [
-                {"start": int(row[0]), "end": int(row[1]), "id": row[2], "src": row[3], "pos": int(row[4])}
+                MetadataDict(start=int(row[0]), end=int(row[1]), id=row[2], src=row[3], pos=int(row[4]))
                 for row in reader
             ]
 
-        size = max(int(m["end"]) for m in metadata)
+        size = max(m["end"] for m in metadata)
         memmap = numpy.memmap(
             f"{config['destination']}/part-0-00000.npy", dtype=numpy.uint32, mode="r", shape=(size,)
         )
@@ -272,7 +281,7 @@ class TestTokenizerCli(TestCase):
 
         for doc_metadata in metadata:
             original_text = documents[doc_metadata["pos"] - 1]["text"]
-            tokens = memmap[int(doc_metadata["start"]) : int(doc_metadata["end"])]
+            tokens = memmap[doc_metadata["start"] : doc_metadata["end"]]
             tokenized_text = tokenizer.decode(tokens)
 
             self.assertEqual(tokens[-1], LLAMA3_TOKENIZER["eos_token_id"])
