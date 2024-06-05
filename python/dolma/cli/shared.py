@@ -15,6 +15,12 @@ class WorkDirConfig:
     output: Optional[str] = field(default=None, help="Path to the output directory.")
 
 
+@dataclass
+class CompressionConfig:
+    input: Optional[str] = field(default=None, help="Compression algorithm to use for input files")
+    output: Optional[str] = field(default=None, help="Compression algorithm to use for output files")
+
+
 @contextmanager
 def get_path_to_temp_file(prefix="dolma-", suffix=None) -> Generator[Path, None, None]:
     with tempfile.NamedTemporaryFile(prefix=prefix, suffix=suffix, delete=True) as f:

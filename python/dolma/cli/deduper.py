@@ -8,7 +8,12 @@ from omegaconf import OmegaConf as om
 
 from dolma import deduper
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, get_path_to_temp_file, make_workdirs
+from dolma.cli.shared import (
+    CompressionConfig,
+    WorkDirConfig,
+    get_path_to_temp_file,
+    make_workdirs,
+)
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path, is_local
@@ -75,12 +80,6 @@ class BloomFilterConfig:
 
 
 @dataclass
-class CompressionConfig:
-    input: Optional[str] = field(default=None, help="Compression algorithm to use for input files")
-    output: Optional[str] = field(default=None, help="Compression algorithm to use for output files")
-
-
-@dataclass
 class DedupeConfig:
     name: str = field(help="Name of the deduper. Required.")
     documents: Optional[DocumentDedupeConfig] = field(
@@ -106,7 +105,11 @@ class DeduperConfig:
         default=1, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
     )
     compression: CompressionConfig = field(
-        default=CompressionConfig(), help="Configuration for input/output compression."
+        default=CompressionConfig(),
+        help=(
+            "Configuration for input/output compression. By default, compression of files is inferred "
+            "from the file extension."
+        ),
     )
     dryrun: bool = field(
         default=False,
