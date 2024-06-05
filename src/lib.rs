@@ -6,6 +6,7 @@ use std::env;
 pub mod bloom_filter;
 pub mod deduper;
 pub mod filters;
+pub mod io;
 pub mod mixer;
 pub mod s3_util;
 pub mod shard;

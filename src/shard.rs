@@ -1,17 +1,14 @@
 use std::fs::OpenOptions;
-use std::io;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, Error as IoError, ErrorKind as IoErrorKind};
 use std::path::{Path, PathBuf};
 
 use aws_sdk_s3::Client as S3Client;
-use flate2::read::MultiGzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use glob::glob;
 use rayon::prelude::*;
 use serde_json::Value;
 
 use crate::filters::DocFilter;
+use crate::io::MultiStream;
 use crate::s3_util;
 use crate::shard::shard_config::*;
 
@@ -25,6 +22,7 @@ pub struct Shard {
     pub span_replacements: Option<Vec<SpanReplacementConfig>>,
     pub discard_fields: Option<Vec<String>>,
     pub min_text_length: Option<usize>,
+    pub compression: Option<CompressionConfig>,
 }
 
 // A collection of paths to a document file and corresponding attribute files.
@@ -39,7 +37,7 @@ impl Shard {
     // Try to respect the max_size_in_bytes in the configuration, but this is approximate
     // since it doesn't account for the size of any attributes to merged,
     // or documents dropped by the filter.
-    pub fn split_streams(streams: &Vec<StreamConfig>) -> Result<Vec<Shard>, io::Error> {
+    pub fn split_streams(streams: &Vec<StreamConfig>) -> Result<Vec<Shard>, IoError> {
         let mut shards: Vec<Shard> = Vec::new();
         for stream_config in streams {
             let mut stream_shard_count = 0;
@@ -66,6 +64,20 @@ impl Shard {
                 .collect::<Vec<(DocumentPaths, usize)>>();
             let mut shard_size = inputs_with_sizes[0].1;
             let mut shard_inputs: Vec<DocumentPaths> = vec![inputs_with_sizes[0].0.clone()];
+            let output_ext = match stream_config
+                .compression
+                .clone()
+                .unwrap_or(CompressionConfig::infer())
+                .output
+            {
+                // empty string means no compression
+                Some(ext) if ext.is_empty() => "".to_string(),
+                // if there is an extension, add a dot
+                Some(ext) => format!(".{}", ext),
+                // default to .gz
+                None => ".gz".to_string(),
+            };
+
             for (input, size) in inputs_with_sizes[1..].iter() {
                 if *size == 0 {
                     log::warn!(
@@ -77,8 +89,11 @@ impl Shard {
                 shard_size += size;
                 if shard_size > stream_config.output.max_size_in_bytes {
                     let output = format!(
-                        "{}/{}-{:04}.json.gz",
-                        stream_config.output.path, stream_config.name, stream_shard_count
+                        "{}/{}-{:04}.json{}",
+                        stream_config.output.path,
+                        stream_config.name,
+                        stream_shard_count,
+                        output_ext
                     );
                     let shard: Shard = Shard {
                         inputs: shard_inputs.clone(),
@@ -87,6 +102,7 @@ impl Shard {
                         span_replacements: stream_config.span_replacement.clone(),
                         discard_fields: stream_config.output.discard_fields.clone(),
                         min_text_length: stream_config.output.min_text_length.clone(),
+                        compression: stream_config.compression.clone(),
                     };
                     shards.push(shard);
                     stream_shard_count += 1;
@@ -107,6 +123,7 @@ impl Shard {
                     span_replacements: stream_config.span_replacement.clone(),
                     discard_fields: stream_config.output.discard_fields.clone(),
                     min_text_length: stream_config.output.min_text_length.clone(),
+                    compression: stream_config.compression.clone(),
                 };
                 shards.push(shard);
                 stream_shard_count += 1;
@@ -128,49 +145,99 @@ impl Shard {
     // Apply filters
     // Apply span replacements
     // Upload the output file to S3.
-    pub fn process(&self, work_dirs: WorkDirConfig) -> Result<(), io::Error> {
-        let cache = FileCache {
+    pub fn process(&self, work_dirs: WorkDirConfig) -> Result<(), IoError> {
+        let cache: FileCache = FileCache {
             s3_client: Box::new(s3_util::new_client(None)?),
             work: work_dirs.clone(),
         };
         let min_text_length = self.min_text_length.clone().unwrap_or(0);
 
-        let output_path: PathBuf = cache.prepare_output(&self.output)?;
-        {
-            let output_file = OpenOptions::new()
-                .read(false)
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(output_path.clone())?;
+        // parse compression config out; if not provided, infer compression from
+        let compression = match self.compression.clone() {
+            Some(c) => c,
+            None => CompressionConfig::infer(),
+        };
 
-            let mut writer = BufWriter::with_capacity(
-                1024 * 1024,
-                GzEncoder::new(output_file, Compression::default()),
+        let output_path: PathBuf = cache.prepare_output(&self.output)?;
+
+        // compression is either provided by user or we infer from the temp file
+        let output_compression = match compression.output {
+            Some(ref input) => input.clone(),
+            None => MultiStream::infer_compression_from_temp(output_path.clone()),
+        };
+        {
+            let output_stream = MultiStream::new(
+                output_path.clone(),
+                Some(output_compression),
+                Some(1024 * 1024),
+                None,
+                None,
             );
+            let mut writer = output_stream.writer()?;
+            // let output_file = OpenOptions::new()
+            //     .read(false)
+            //     .write(true)
+            //     .create(true)
+            //     .truncate(true)
+            //     .open(output_path.clone())?;
+
+            // let mut writer = BufWriter::with_capacity(
+            //     1024 * 1024,
+            //     GzEncoder::new(output_file, Compression::default()),
+            // );
 
             for input_path in self.inputs.iter() {
                 log::info!("Merging {} into {}", input_path.doc_path, self.output);
                 let local_docs_file = cache.prepare_input(&input_path.doc_path)?;
                 let mut local_attr_readers = Vec::new();
                 let mut attr_reader_failure_counts = Vec::new();
+
                 for attr in &input_path.attribute_paths {
                     let local_attr_file = cache.prepare_input(attr)?;
-                    let f = OpenOptions::new()
-                        .read(true)
-                        .write(false)
-                        .create(false)
-                        .open(&local_attr_file)?;
-                    let attr_reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(f));
+                    let attr_compression = match compression.input {
+                        Some(ref input) => input.clone(),
+                        None => MultiStream::infer_compression_from_temp(local_attr_file.clone()),
+                    };
+                    let attr_reader: Box<dyn BufRead> = MultiStream::new(
+                        local_attr_file.clone(),
+                        Some(attr_compression),
+                        Some(1024 * 1024),
+                        None,
+                        None,
+                    )
+                    .reader()?;
+
                     local_attr_readers.push((local_attr_file, attr_reader.lines()));
                     attr_reader_failure_counts.push(0);
+
+                    // let f = OpenOptions::new()
+                    //     .read(true)
+                    //     .write(false)
+                    //     .create(false)
+                    //     .open(&local_attr_file)?;
+                    // let attr_reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(f));
+                    // local_attr_readers.push((local_attr_file, attr_reader.lines()));
                 }
-                let input_file = OpenOptions::new()
-                    .read(true)
-                    .write(false)
-                    .create(false)
-                    .open(&local_docs_file)?;
-                let reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(input_file));
+
+                let doc_compression = match compression.input {
+                    Some(ref input) => input.clone(),
+                    None => MultiStream::infer_compression_from_temp(local_docs_file.clone()),
+                };
+                let doc_reader = MultiStream::new(
+                    local_docs_file.clone(),
+                    Some(doc_compression),
+                    Some(1024 * 1024),
+                    None,
+                    None,
+                )
+                .reader()?;
+
+                // let input_file = OpenOptions::new()
+                //     .read(true)
+                //     .write(false)
+                //     .create(false)
+                //     .open(&local_docs_file)?;
+                // let reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(input_file));
 
                 let mut line_number = 0;
                 let mut lines_written = 0;
@@ -188,7 +255,7 @@ impl Shard {
                     .map(|cfg| SpanReplacer::new(cfg))
                     .collect::<Vec<SpanReplacer>>();
 
-                for line in reader.lines() {
+                for line in doc_reader.lines() {
                     match line {
                         Ok(_) => {}
                         Err(e) => {
@@ -215,8 +282,8 @@ impl Shard {
                                 // raise an error if there if the id from attributes and the id from
                                 // the data do not match
                                 if attr_data["id"] != data["id"] {
-                                    return Err(io::Error::new(
-                                        io::ErrorKind::Other,
+                                    return Err(IoError::new(
+                                        IoErrorKind::Other,
                                         format!(
                                             "Mismatched ids for line {} of {}: {} != {}",
                                             line_number,
@@ -229,8 +296,8 @@ impl Shard {
 
                                 // raise an error if there is no attribute key
                                 if !attr_data["attributes"].is_object() {
-                                    return Err(io::Error::new(
-                                        io::ErrorKind::Other,
+                                    return Err(IoError::new(
+                                        IoErrorKind::Other,
                                         format!(
                                             "Missing attributes for line {} of {}",
                                             line_number, &input_path.doc_path
@@ -281,7 +348,7 @@ impl Shard {
 
                     let should_write = doc_filters
                         .should_keep(&data)
-                        .map_err(|s| io::Error::new(io::ErrorKind::Other, s))?;
+                        .map_err(|s| IoError::new(IoErrorKind::Other, s))?;
 
                     if should_write {
                         // if self.span_replacements.is_some() {
@@ -296,7 +363,7 @@ impl Shard {
                         let mut replacements = span_replacers
                             .iter()
                             .map(|replacer| replacer.find_spans_to_replace(&data))
-                            .collect::<Result<Vec<Vec<SpanReplacement>>, io::Error>>()?
+                            .collect::<Result<Vec<Vec<SpanReplacement>>, IoError>>()?
                             .into_iter()
                             .flatten()
                             .collect::<Vec<SpanReplacement>>();
@@ -429,7 +496,7 @@ pub mod shard_config {
     use jsonpath_rust::JsonPathFinder;
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
-    use std::io;
+    use std::io::{Error as IoError, ErrorKind as IoErrorKind};
 
     #[derive(Serialize, Deserialize, Clone)]
     pub struct StreamConfig {
@@ -443,6 +510,22 @@ pub mod shard_config {
         // span replacement
         pub span_replacement: Option<Vec<SpanReplacementConfig>>,
         pub output: StreamOutputConfig,
+        pub compression: Option<CompressionConfig>,
+    }
+
+    #[derive(Serialize, Deserialize, Clone)]
+    pub struct CompressionConfig {
+        pub input: Option<String>,
+        pub output: Option<String>,
+    }
+
+    impl CompressionConfig {
+        pub fn infer() -> CompressionConfig {
+            CompressionConfig {
+                input: None,
+                output: None,
+            }
+        }
     }
 
     #[derive(Serialize, Deserialize, Clone)]
@@ -502,10 +585,7 @@ pub mod shard_config {
         // Search for the configured attribute name in the given json
         // Attribute must contains a list of [start, end, score] spans.
         // Return a list of spans to be replaced.
-        pub fn find_spans_to_replace(
-            &self,
-            json: &Value,
-        ) -> Result<Vec<SpanReplacement>, io::Error> {
+        pub fn find_spans_to_replace(&self, json: &Value) -> Result<Vec<SpanReplacement>, IoError> {
             match self.selector.select(json) {
                 // we found an array of spans; we process them one by one
                 Ok(Value::Array(spans)) => {
@@ -533,8 +613,8 @@ pub mod shard_config {
                 // we found no spans, so it's okay to return empty array
                 Ok(Value::Null) => Ok(Vec::new()),
                 Err(e) => Err(e),
-                Ok(spans) => Err(io::Error::new(
-                    io::ErrorKind::Other,
+                Ok(spans) => Err(IoError::new(
+                    IoErrorKind::Other,
                     format!("Invalid span type: {}; expected array or null.", spans),
                 )),
             }
@@ -586,7 +666,7 @@ macro_rules! cached_s3_location {
 impl FileCache {
     // If "location" is a path to a local file that exists, return it
     // If it is an S3 URL, download the contents to the working input directory, and return the path
-    pub fn prepare_input(&self, location: &str) -> Result<PathBuf, io::Error> {
+    pub fn prepare_input(&self, location: &str) -> Result<PathBuf, IoError> {
         if location.starts_with("s3://") {
             let (bucket, key, path) = cached_s3_location!(location, &self.work.input);
             log::info!("Downloading {} to {}", location, path.display());
@@ -608,8 +688,8 @@ impl FileCache {
             if path.exists() {
                 Ok(path.to_path_buf())
             } else {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
+                Err(IoError::new(
+                    IoErrorKind::Other,
                     format!("File not found: {}", location),
                 ))
             }
@@ -618,7 +698,7 @@ impl FileCache {
 
     // If input was downloaded from S3, delete the local cache
     // Otherwise, do nothing
-    pub fn finalize_input(&self, location: &str) -> Result<(), io::Error> {
+    pub fn finalize_input(&self, location: &str) -> Result<(), IoError> {
         if location.starts_with("s3://") {
             let (_, _, path) = cached_s3_location!(location, &self.work.input);
             std::fs::remove_file(path)?;
@@ -630,7 +710,7 @@ impl FileCache {
 
     // If output is an S3 URL, return a path to a new temporary location in the working output directory
     // If it is a local path, return a ".tmp" path in the same directory
-    pub fn prepare_output(&self, location: &str) -> Result<PathBuf, io::Error> {
+    pub fn prepare_output(&self, location: &str) -> Result<PathBuf, IoError> {
         if location.starts_with("s3://") {
             let (_, _, path) = cached_s3_location!(location, &self.work.output);
             std::fs::create_dir_all(path.parent().unwrap())?;
@@ -646,7 +726,7 @@ impl FileCache {
     // If "output" is an S3 URL, upload contents from the temporary file,
     //      then replace the temporary file with an empty one as a checkpoint
     // If "output" is a local path, rename the ".tmp" file to the original name
-    pub fn finalize_output(&self, location: &str) -> Result<(), io::Error> {
+    pub fn finalize_output(&self, location: &str) -> Result<(), IoError> {
         if location.starts_with("s3://") {
             let (bucket, key, path) = cached_s3_location!(location, &self.work.output);
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -674,7 +754,7 @@ impl FileCache {
     }
 }
 
-pub fn find_objects_matching_patterns(patterns: &Vec<String>) -> Result<Vec<String>, io::Error> {
+pub fn find_objects_matching_patterns(patterns: &Vec<String>) -> Result<Vec<String>, IoError> {
     let s3_url_count = patterns.iter().filter(|p| p.starts_with("s3://")).count();
     if s3_url_count == 0 {
         let mut matches = Vec::new();
@@ -690,15 +770,15 @@ pub fn find_objects_matching_patterns(patterns: &Vec<String>) -> Result<Vec<Stri
         let s3_client = s3_util::new_client(None)?;
         s3_util::find_objects_matching_patterns(&s3_client, patterns)
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
+        Err(IoError::new(
+            IoErrorKind::Other,
             "Cannot mix S3 and local paths",
         ))
     }
 }
 
 // Get the size in bytes of a list of objects, either S3 urls or local file paths
-pub fn get_object_sizes(locations: &Vec<String>) -> Result<Vec<usize>, io::Error> {
+pub fn get_object_sizes(locations: &Vec<String>) -> Result<Vec<usize>, IoError> {
     let s3_url_count = locations.iter().filter(|p| p.starts_with("s3://")).count();
     if s3_url_count == 0 {
         let sizes: Vec<usize> = locations
@@ -727,8 +807,8 @@ pub fn get_object_sizes(locations: &Vec<String>) -> Result<Vec<usize>, io::Error
             .collect();
         Ok(sizes)
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
+        Err(IoError::new(
+            IoErrorKind::Other,
             "Cannot mix S3 and local paths",
         ))
     }
