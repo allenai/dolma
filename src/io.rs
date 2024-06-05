@@ -1,5 +1,6 @@
 use flate2::Compression;
 use flate2::{read::MultiGzDecoder, write::GzEncoder};
+use std::ffi::OsStr;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, BufWriter, Error as IoError, Write};
@@ -126,33 +127,53 @@ pub enum MultiStream {
 impl MultiStream {
     pub fn new(
         path: PathBuf,
-        size: Option<u64>,
-        compression: Option<Compression>,
-        level: Option<i32>,
+        extension: Option<String>,
+        buffer_size: Option<u64>,
+        gz_compression: Option<Compression>,
+        zst_level: Option<i32>,
     ) -> Self {
-        let ext = match path.extension() {
-            Some(ext) => ext.to_str().unwrap(),
+        let extension = extension.unwrap_or(MultiStream::infer_compression(&path, None));
+        match extension.as_str() {
+            "gz" => MultiStream::Gz(GzFileStream::new(path, buffer_size, gz_compression)),
+            "zst" => MultiStream::Zst(ZstdFileStream::new(path, buffer_size, zst_level)),
+            _ => MultiStream::Plain(FileStream::new(path, buffer_size)),
+        }
+    }
+
+    pub fn infer_compression_from_temp(path: PathBuf) -> String {
+        MultiStream::infer_compression(&path, Some(".tmp"))
+    }
+
+    pub fn infer_compression(path: &PathBuf, suffix_to_ignore: Option<&str>) -> String {
+        let file_name = path.file_name().unwrap_or(OsStr::new("")).to_str().unwrap();
+        let extension = match file_name.split_once(".") {
+            Some((_, ext)) => ext,
             None => "",
         };
 
-        match ext {
-            "gz" => MultiStream::Gz(GzFileStream::new(path, size, compression)),
-            "zst" => MultiStream::Zst(ZstdFileStream::new(path, size, level)),
-            _ => MultiStream::Plain(FileStream::new(path, size)),
+        let extension = match suffix_to_ignore {
+            Some(ignore) => extension.strip_suffix(ignore).unwrap_or(extension),
+            None => extension,
+        };
+
+        match extension.rsplit_once(".") {
+            Some((_, ext)) => ext.to_string(),
+            None => extension.to_string(),
+        }
+    }
+
+    pub fn get_compression(&self) -> String {
+        match self {
+            MultiStream::Gz(_) => String::from("gz"),
+            MultiStream::Zst(_) => String::from("zst"),
+            MultiStream::Plain(_) => String::from(""),
         }
     }
 
     pub fn with_default(path: PathBuf) -> Self {
-        Self::new(path, None, None, None)
+        Self::new(path, None, None, None, None)
     }
 
-    // async fn launch_worker(worker_type: &str)-> Result<Box<dyn Worker>, Box<dyn Error>>{
-    //     match worker_type {
-    //         "WorkerA" => Ok(Box::new(WorkerA::new()) as Box<dyn Worker>),
-    //         "WorkerB" => Ok(Box::new(WorkerB::new()) as Box<dyn Worker>),
-    //         _ => panic!("worker type not found")
-    //     }
-    // }
     pub fn reader(&self) -> Result<Box<dyn BufRead>, IoError> {
         let reader = match self {
             MultiStream::Gz(stream) => Box::new(stream.reader()?) as Box<dyn BufRead>,
@@ -170,24 +191,6 @@ impl MultiStream {
         };
         Ok(writer)
     }
-
-    // pub fn reader(&self) -> Result<MultiReader, IoError> {
-    //     let reader = match self {
-    //         MultiStream::Gz(stream) => MultiReader::Gz(stream.reader()?),
-    //         MultiStream::Zst(stream) => MultiReader::Zst(stream.reader()?),
-    //         MultiStream::Plain(stream) => MultiReader::Plain(stream.reader()?),
-    //     };
-    //     Ok(reader)
-    // }
-
-    // pub fn writer(&self) -> Result<MultiWriter, IoError> {
-    //     let writer = match self {
-    //         MultiStream::Gz(stream) => MultiWriter::Gz(stream.writer()?),
-    //         MultiStream::Zst(stream) => MultiWriter::Zst(stream.writer()?),
-    //         MultiStream::Plain(stream) => MultiWriter::Plain(stream.writer()?),
-    //     };
-    //     Ok(writer)
-    // }
 }
 
 #[cfg(test)]
@@ -196,9 +199,55 @@ pub mod io_tests {
     use super::*;
     use serde_json::json;
     use std::io::{BufRead, Read, Write};
-    use tempfile::NamedTempFile;
+    use tempfile::{NamedTempFile, TempDir};
 
-    // rest of the code
+    #[test]
+    fn test_infer_compression() {
+        let path = PathBuf::from("tests/data/formats/test.jsonl.gz");
+        let expected = "gz";
+        let got = MultiStream::infer_compression(&path, None);
+        assert_eq!(got, expected);
+
+        let path = PathBuf::from("tests/data/formats/test.jsonl.zst");
+        let expected = "zst";
+        let got = MultiStream::infer_compression(&path, None);
+        assert_eq!(got, expected);
+
+        let path = PathBuf::from("tests/data/formats/test.jsonl");
+        let expected = "jsonl";
+        let got = MultiStream::infer_compression(&path, None);
+        assert_eq!(got, expected);
+
+        let path = PathBuf::from("tests/data/formats/test.jsonl.tmp");
+        let expected = "tmp";
+        let got = MultiStream::infer_compression(&path, None);
+        assert_eq!(got, expected);
+
+        let path = PathBuf::from("tests/data/formats/test.jsonl.gz.tmp");
+        let expected = "gz";
+        let got = MultiStream::infer_compression(&path, Some(".tmp"));
+        assert_eq!(got, expected);
+
+        let path = PathBuf::from("tests/data/formats/test");
+        let expected = "";
+        let got = MultiStream::infer_compression(&path, None);
+        assert_eq!(got, expected);
+
+        let path = PathBuf::from("tests/data/formats/test.tmp");
+        let expected = "";
+        let got = MultiStream::infer_compression(&path, Some("tmp"));
+        assert_eq!(got, expected);
+
+        let path = PathBuf::from("tests/data/formats/test.");
+        let expected = "";
+        let got = MultiStream::infer_compression(&path, Some("tmp"));
+        assert_eq!(got, expected);
+
+        let path = PathBuf::from("tests/data/formats/test.gz");
+        let expected = "gz";
+        let got = MultiStream::infer_compression(&path, Some(".tmp"));
+        assert_eq!(got, expected);
+    }
 
     #[test]
     fn test_read_gz() {
@@ -257,7 +306,7 @@ pub mod io_tests {
 
     #[test]
     fn test_infer_read() {
-        let path = PathBuf::from("tests/data/formats/test.jsonl");
+        let path = PathBuf::from("tests/data/formats/test.jsonl.zst");
         let expected = vec![json!({"message": "this is a test"})];
 
         // create the stream and reader
@@ -377,35 +426,46 @@ pub mod io_tests {
         assert_eq!(got_data, expected[0]);
     }
 
-    #[test]
-    fn test_multi_write() {
-        let temp_path = NamedTempFile::new().unwrap().into_temp_path().to_path_buf();
-        let got_path = temp_path.clone();
-        let to_write = vec![json!({"message": "this is a test"})];
-        let expected = to_write.clone();
-
-        let stream = MultiStream::with_default(temp_path);
+    fn _write_multi(path: PathBuf, values: Vec<serde_json::Value>) {
+        let stream = MultiStream::with_default(path);
         let mut writer = stream.writer().unwrap();
 
         // write each line
-        for line in to_write {
+        for line in values {
             serde_json::to_writer(&mut writer, &line).unwrap();
         }
         writer.flush().unwrap();
+    }
 
-        let got_file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(got_path)
-            .unwrap();
-        let mut got_stream = BufReader::new(got_file);
+    #[test]
+    fn test_multi_write() {
+        let temp_dir = TempDir::new().unwrap();
 
-        let mut got_string = String::new();
-        got_stream
-            .read_to_string(&mut got_string)
-            .expect("Failed to read produced file");
-        let got_data = serde_json::from_str::<serde_json::Value>(&got_string).unwrap();
-        assert_eq!(got_data, expected[0]);
+        // test with a zst file
+        let temp_path = temp_dir.path().join("test.jsonl.zst");
+        let to_write = vec![json!({"message": "this is a test"})];
+
+        // this function ensures that the file is closed
+        _write_multi(temp_path.clone(), to_write.clone());
+
+        let reader = ZstdFileStream::new(temp_path, None, None).reader().unwrap();
+        let lines = reader.lines();
+        for (i, line) in lines.enumerate() {
+            let line = line.unwrap();
+            let parsed = serde_json::from_str::<serde_json::Value>(&line).unwrap();
+            assert_eq!(parsed, to_write[i]);
+        }
+
+        // same test but with a gz file
+        let temp_path = temp_dir.path().join("test.jsonl.gz");
+        _write_multi(temp_path.clone(), to_write.clone());
+
+        let reader = GzFileStream::new(temp_path, None, None).reader().unwrap();
+        let lines = reader.lines();
+        for (i, line) in lines.enumerate() {
+            let line = line.unwrap();
+            let parsed = serde_json::from_str::<serde_json::Value>(&line).unwrap();
+            assert_eq!(parsed, to_write[i]);
+        }
     }
 }

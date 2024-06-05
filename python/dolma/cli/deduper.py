@@ -75,6 +75,12 @@ class BloomFilterConfig:
 
 
 @dataclass
+class CompressionConfig:
+    input: Optional[str] = field(default=None, help="Compression algorithm to use for input files")
+    output: Optional[str] = field(default=None, help="Compression algorithm to use for output files")
+
+
+@dataclass
 class DedupeConfig:
     name: str = field(help="Name of the deduper. Required.")
     documents: Optional[DocumentDedupeConfig] = field(
@@ -98,6 +104,9 @@ class DeduperConfig:
     bloom_filter: BloomFilterConfig = field(help="Bloom filter configuration. Required.")
     processes: int = field(
         default=1, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
+    )
+    compression: CompressionConfig = field(
+        default=CompressionConfig(), help="Configuration for input/output compression."
     )
     dryrun: bool = field(
         default=False,
@@ -208,6 +217,11 @@ class DeduperCli(BaseCli):
 
             dict_config["work_dir"] = {"input": str(work_dirs.input), "output": str(work_dirs.output)}
             dict_config["processes"] = int(parsed_config.processes)
+
+            dict_config["compression"] = {
+                "input": str(i) if (i := parsed_config.compression.input) is not None else None,
+                "output": str(o) if (o := parsed_config.compression.output) is not None else None,
+            }
 
             if len(dict_config["documents"]) == 0:
                 raise ValueError("At least one document must be specified")
