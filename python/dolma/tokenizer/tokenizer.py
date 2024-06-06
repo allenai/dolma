@@ -367,7 +367,6 @@ def tokenize_file(
                         # extra copy to prevent memory leaks
                         tokens = np.array(tokens, dtype=dtype)
                     yield TokenizerOutput.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)  # pyright: ignore
-                i += 1
 
                 if refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0:
                     # to prevent memory leaks, we refresh the tokenizer every so often
