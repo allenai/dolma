@@ -174,17 +174,6 @@ impl Shard {
                 None,
             );
             let mut writer = output_stream.writer()?;
-            // let output_file = OpenOptions::new()
-            //     .read(false)
-            //     .write(true)
-            //     .create(true)
-            //     .truncate(true)
-            //     .open(output_path.clone())?;
-
-            // let mut writer = BufWriter::with_capacity(
-            //     1024 * 1024,
-            //     GzEncoder::new(output_file, Compression::default()),
-            // );
 
             for input_path in self.inputs.iter() {
                 log::info!("Merging {} into {}", input_path.doc_path, self.output);
@@ -209,14 +198,6 @@ impl Shard {
 
                     local_attr_readers.push((local_attr_file, attr_reader.lines()));
                     attr_reader_failure_counts.push(0);
-
-                    // let f = OpenOptions::new()
-                    //     .read(true)
-                    //     .write(false)
-                    //     .create(false)
-                    //     .open(&local_attr_file)?;
-                    // let attr_reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(f));
-                    // local_attr_readers.push((local_attr_file, attr_reader.lines()));
                 }
 
                 let doc_compression = match compression.input {
