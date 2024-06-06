@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import uuid
 from itertools import chain
 from pathlib import Path
@@ -142,9 +143,11 @@ class TestCasePipeline(TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
-    def readUnits(self, paths: List[Union[Path, str]]) -> List[dict]:
+    def readUnits(self, paths: List[Union[Path, str]], sort: bool = True) -> List[dict]:
         units = chain.from_iterable(load_jsonl(fp) for fp in paths)
-        return sorted(units, key=lambda x: int(x["id"]))
+        if sort:
+            return sorted(units, key=lambda x: int(x["id"]) if re.match(r"^\d+(\.0)?$", x["id"]) else x["id"])
+        return list(units)
 
     def writeUnits(
         self, units: List[dict], unit_type: str, partitions: int = 1, ext_dir: Optional[Path] = None
@@ -195,3 +198,11 @@ class TestCasePipeline(TestCase):
 
     def combineIntoDoc(self, *lines: str, join: str = "\n") -> str:
         return join.join(lines)
+
+    def makeDocsCopy(self, path: Union[str, Path]) -> str:
+        path = Path(path)
+        dest = Path(self.makeUniquePath()) / "documents"
+        dest.mkdir(parents=True)
+        for fp in path.iterdir():
+            shutil.copy(fp, dest / fp.name)
+        return str(dest)

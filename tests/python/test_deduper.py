@@ -22,9 +22,10 @@ from .utils import (
     upload_s3_prefix,
 )
 
-DEDUPE_BY_URL = Path(__file__).parent.parent / "config/dedupe-by-url.json"
-DEDUPE_PARAGRAPHS = Path(__file__).parent.parent / "config/dedupe-paragraphs.json"
-DEDUPE_PARAGRAPH_NGRAMS = Path(__file__).parent.parent / "config/dedupe-paragraph-ngrams.json"
+TEST_DIR = Path(__file__).parent.parent
+DEDUPE_BY_URL = TEST_DIR / "config/dedupe-by-url.json"
+DEDUPE_PARAGRAPHS = TEST_DIR / "config/dedupe-paragraphs.json"
+DEDUPE_PARAGRAPH_NGRAMS = TEST_DIR / "config/dedupe-paragraph-ngrams.json"
 
 
 D = TypeVar("D", bound="DedupeAttributesDict")
