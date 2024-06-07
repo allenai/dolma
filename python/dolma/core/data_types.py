@@ -20,8 +20,6 @@ class InputSpec(Struct):
     id: str
     text: str
     source: str = ""
-    created: str = ""
-    added: str = ""
     version: Optional[str] = None
 
 
