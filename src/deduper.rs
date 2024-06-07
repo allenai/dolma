@@ -112,9 +112,9 @@ fn write_attributes(
     {
         let local_input = cache.prepare_input(&docs_location)?;
 
-        // the input_compression is either provided by the user or inferred from the file extension
-        // note that we have to use the path from docs_location to infer the compression type, not
-        // the local_input path, because the local_input path could be a temporary with suffix ".tmp"
+        // The input_compression is either provided by the user or inferred from the file extension.
+        // We use `infer_compression_from_temp` to deal with local files potentially including `.tmp`
+        // at the end when they are cached version of S3 files.
         let input_compression: String = match compression.input {
             Some(ref input) => input.clone(),
             None => MultiStream::infer_compression_from_temp(local_input.clone()),
