@@ -30,7 +30,7 @@ class BackoffWarcIterator:
         min_wait: float = 1.0,
         max_tries: int = 10,
         max_wait: Optional[float] = None,
-        record_types: Optional[List[Union[str, WarcRecordType]]] = None,
+        record_types: Optional[List[Union[str, "WarcRecordType"]]] = None,
     ):
         self.path = path
         self.max_time = max_time
@@ -121,7 +121,7 @@ class BackoffWarcIterator:
 
 
 class SimpleWarcIterator:
-    def __init__(self, path: str, record_types: Optional[List[Union[str, WarcRecordType]]] = None):
+    def __init__(self, path: str, record_types: Optional[List[Union[str, "WarcRecordType"]]] = None):
         self.path = path
         self.record_types = [
             WarcRecordType[r] if isinstance(r, str) else r for r in (record_types or ["response", "warcinfo"])

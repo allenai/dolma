@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Union
 
 import msgspec
 import smart_open
-from courlan import clean_url  # pyright: ignore
 from necessary import necessary
 
 from ..core.data_types import DocumentWithMetadataAndAttributes
@@ -29,6 +28,10 @@ with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:
         import dateparser
+
+with necessary("courlan", soft=True) as COURLAN_AVAILABLE:
+    if COURLAN_AVAILABLE or TYPE_CHECKING:
+        from courlan import clean_url  # pyright: ignore
 
 
 DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
@@ -51,6 +54,7 @@ class WarcProcessor(BaseParallelProcessor):
         super().__init__(*args, **kwargs)
         assert FASTWARC_AVAILABLE, raise_warc_dependency_error("fastwarc")
         assert DATEPARSER_AVAILABLE, raise_warc_dependency_error("dateparser")
+        assert COURLAN_AVAILABLE, raise_warc_dependency_error("courlan")
 
     @staticmethod
     def _format_to_dolma_timestamp(timestamp: Optional[datetime.datetime] = None) -> str:
