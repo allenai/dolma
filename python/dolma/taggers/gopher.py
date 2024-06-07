@@ -5,6 +5,7 @@ from statistics import median
 from typing import Counter as CounterType
 from typing import List, Tuple, Union
 
+from .. import dolma as _dolma  # type: ignore   # noqa: E402
 from ..core.data_types import DocResult, Document, Span
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
@@ -218,3 +219,13 @@ class GopherTagger(BaseTagger):
         attrs = get_attributes(doc.text)
         result = DocResult(doc=doc, spans=attrs.as_spans())
         return result
+
+
+@TaggerRegistry.add("gopher_v2")
+class RustGopherTagger(BaseTagger):
+    def predict(self, doc: Document) -> DocResult:
+        spans: List[Span] = []
+        gopher_statistics = _dolma.gopher_statistics(doc.text)
+        for type_, score in gopher_statistics.items():
+            spans.append(Span(0, len(doc.text), type=type_, score=score))
+        return DocResult(doc=doc, spans=spans)

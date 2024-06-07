@@ -8,6 +8,7 @@ use adblock::Engine;
 pub mod bloom_filter;
 pub mod deduper;
 pub mod filters;
+pub mod gopher;
 pub mod io;
 pub mod mixer;
 pub mod s3_util;
@@ -115,6 +116,7 @@ impl UrlBlocker {
 fn dolma(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(deduper_entrypoint, m)?)?;
     m.add_function(wrap_pyfunction!(mixer_entrypoint, m)?)?;
+    m.add_function(wrap_pyfunction!(gopher::gopher_statistics, m)?)?;
     m.add_class::<UrlBlocker>()?;
 
     if env::var("RUST_LOG").is_err() {

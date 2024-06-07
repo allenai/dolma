@@ -9,12 +9,14 @@ Unit tests for taggers/*.py
 from unittest import TestCase
 
 from dolma.core.data_types import Document
-from dolma.taggers.gopher import GopherTagger
+from dolma.taggers.gopher import GopherTagger, RustGopherTagger
 
 
 class TestGopherTagger(TestCase):
+    TAGGER_CLS = GopherTagger
+
     def test_predict_short(self):
-        tagger = GopherTagger()
+        tagger = self.TAGGER_CLS()
         doc = Document(source="", version="", id="", text="This is a test.")
         doc_result = tagger.predict(doc=doc)
         d = doc_result.to_json()
@@ -121,11 +123,12 @@ class TestGopherTagger(TestCase):
         )
 
     def test_predict_multiline(self):
-        tagger = GopherTagger()
+        tagger = self.TAGGER_CLS()
         text = "This is a sentence. \n  \n This is another sentence.\n\n  This is a third sentence."
         doc = Document(source="", version="", id="", text=text)
         doc_result = tagger.predict(doc=doc)
         d = doc_result.to_json()
+        print("\n".join(sorted(s.type for s in doc_result.spans)))
         self.assertEqual(len(d["spans"]), 19)
         self.assertEqual(
             d["spans"][0],
@@ -278,7 +281,7 @@ class TestGopherTagger(TestCase):
         )
 
     def test_word_count_is_whitespace_sep(self):
-        tagger = GopherTagger()
+        tagger = self.TAGGER_CLS()
         text = "T h i s \n    \n\n\n    isoneword !!!"
         doc = Document(source="", version="", id="", text=text)
         doc_result = tagger.predict(doc=doc)
@@ -287,7 +290,7 @@ class TestGopherTagger(TestCase):
         self.assertEqual(d["spans"][6]["score"], 6.0)
 
     def test_required_word_count(self):
-        tagger = GopherTagger()
+        tagger = self.TAGGER_CLS()
         text = "The.and.that"
         doc = Document(source="", version="", id="", text=text)
         doc_result = tagger.predict(doc=doc)
@@ -301,3 +304,7 @@ class TestGopherTagger(TestCase):
         d = doc_result.to_json()
         self.assertEqual(d["spans"][7]["type"], "required_word_count")
         self.assertEqual(d["spans"][7]["score"], 2.0)
+
+
+class TestRustGopherTagger(TestGopherTagger):
+    TAGGER_CLS = RustGopherTagger
