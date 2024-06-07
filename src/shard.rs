@@ -332,15 +332,6 @@ impl Shard {
                         .map_err(|s| IoError::new(IoErrorKind::Other, s))?;
 
                     if should_write {
-                        // if self.span_replacements.is_some() {
-                        // let mut replacements = self
-                        //     .span_replacements
-                        //     .as_ref()
-                        //     .unwrap()
-                        //     .iter()
-                        //     .flat_map(|r| r.find_spans_to_replace(&data).unwrap())
-                        //     .collect::<Vec<SpanReplacement>>();
-
                         let mut replacements = span_replacers
                             .iter()
                             .map(|replacer| replacer.find_spans_to_replace(&data))
