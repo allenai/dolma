@@ -654,11 +654,12 @@ streams:
       path: s3://ai2-llm/pretraining-data/sources/cccc/v1/documents/CC-MAIN-2018-22
       min_text_length: 25   # matches wikipedia
     filter:
+      syntax: jq
       include:
         # Only English
         - >-
           (.attributes.ft_lang_id_1e2__ft_lang_id_1e2__en != null) and
-          (.attributes.ft_lang_id_1e2__ft_lang_id_1e2__en[0][2] >= 0.5)
+          (.attributes.ft_lang_id_1e2__ft_lang_id_1e2__en[0][2] > 0.5)
       exclude:
         # Duplicated URLs
         - (.attributes.dedupe_url | length > 1)

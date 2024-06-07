@@ -636,7 +636,7 @@ mod filter_tests {
             exclude: vec![
                 ".attributes.paloma_documents != null".to_string(),
                 "(.attributes.paloma_paragraphs | length) > 0".to_string(),
-                "(.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and (.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)".to_string(),
+                "(.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)".to_string(),
                 ".attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01".to_string(),
                 ".attributes.pii_regex_with_counts_fast_v2__pii_regex_with_counts_fast_v2__doc_count[0][-1] > 5".to_string(),
             ],
