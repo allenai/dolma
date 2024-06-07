@@ -34,6 +34,18 @@ class TokenizerConfig:
             "Might not be needed once this bugfix is merged https://github.com/huggingface/tokenizers/pull/1413"
         ),
     )
+    refresh: int = field(
+        default=0,
+        help=(
+            "Whether to refresh the tokenizer after a certain number of tokenizations. Useful due to memory leaks"
+            "in the tokenizers library (https://github.com/huggingface/tokenizers/issues/1495). If set to 0, "
+            "(default), the tokenizer will not be refreshed."
+        ),
+    )
+    fast: bool = field(
+        default=True,
+        help="Whether to use the fast tokenizer. If False, it requires the transformers library to be installed.",
+    )
 
     def __post__init__(self):
         logger = get_logger(__file__)
@@ -202,4 +214,6 @@ class TokenizerCli(BaseCli):
                 max_size=parsed_config.max_size,
                 debug=parsed_config.debug,
                 sample_ring_prop=parsed_config.sample_ring_prop,
+                use_fast_tokenizer=parsed_config.tokenizer.fast,
+                refresh_tokenizer=parsed_config.tokenizer.refresh,
             )

@@ -43,6 +43,8 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
     @classmethod
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs: Any):
+        os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
         logger = get_logger(__name__)
 
         max_size: int = kwargs.pop("max_size", None) or 1024 * 1024 * 1024
@@ -70,6 +72,11 @@ class MemMapParallelWriter(BaseParallelProcessor):
                 "Neither eos_token_id nor bos_token_id specified. "
                 "At least one of them should be provided; otherwise, documents will not be properly separated."
             )
+        # Controls whether to refresh the tokenizer at the end of each batch
+        refresh_tokenizer = kwargs.pop("refresh_tokenizer", None) or -1
+
+        # Controls whether to use the fast tokenizer or not
+        tokenizer_kwargs["use_fast"] = bool(kwargs.pop("use_fast_tokenizer", True))
 
         tokenizer_kwargs["pad_token_id"] = kwargs.pop("pad_token_id", None)
         if tokenizer_kwargs["pad_token_id"] is None:
@@ -87,17 +94,18 @@ class MemMapParallelWriter(BaseParallelProcessor):
         update_interval = 1
         mm_cnt = 0
 
-        # create the tokenizer from file if it exists, otherwise from pretrained
-        if os.path.exists(tokenizer_name_or_path) and os.path.isfile(tokenizer_name_or_path):
-            tokenizer = Tokenizer.from_file(tokenizer_name_or_path, **tokenizer_kwargs)
-        else:
-            tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path, **tokenizer_kwargs)
-
         tokenizer_ring: List[Generator[TokenizerOutput, None, None]] = []
         tokenizer_sizes: List[int] = []
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
-            tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
+            tokenizer_ring.append(
+                tokenize_file(
+                    tokenizer_name_or_path=tokenizer_name_or_path,
+                    path=path,
+                    refresh_tokenizer_every=refresh_tokenizer,
+                    **tokenizer_kwargs,
+                )
+            )
             tokenizer_sizes.append(get_size(path))
 
         # this is the probabilities with which we sample from the ring buffer if sample_ring_prop is True
@@ -141,7 +149,14 @@ class MemMapParallelWriter(BaseParallelProcessor):
                             break
                         if len(source_paths) > 0:
                             path = source_paths.pop()
-                            tokenizer_ring.append(tokenize_file(tokenizer=tokenizer, path=path))
+                            tokenizer_ring.append(
+                                tokenize_file(
+                                    tokenizer_name_or_path=tokenizer_name_or_path,
+                                    path=path,
+                                    refresh_tokenizer_every=refresh_tokenizer,
+                                    **tokenizer_kwargs,
+                                )
+                            )
                             tokenizer_sizes.append(get_size(path))
 
                         # wether a file is added or not to the ring, we must re-balance probabilities
@@ -169,7 +184,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
                     memwriter = stack.enter_context(
                         MemmapWriter(
                             path=destination_path + f"-{mm_cnt:05d}",
-                            dtype=np.dtype("uint16"),  # pyright: ignore
+                            dtype=dtype,
                             max_tokens=max_size,
                         )
                     )
@@ -284,6 +299,8 @@ def tokenize_in_parallel(
     dtype: str = "uint16",
     debug: bool = False,
     sample_ring_prop: bool = False,
+    refresh_tokenizer: int = 0,
+    use_fast_tokenizer: bool = True,
 ):
     """
     Tokenizes the input sources in parallel using multiple writers and readers.
@@ -310,6 +327,9 @@ def tokenize_in_parallel(
         debug (bool, optional): Whether to enable debug mode. Defaults to False.
         sample_ring_prop (bool, optional): Whether to sample from the ring buffer proportionally to the size
             of files. Otherwise, it will go round-robin. Defaults to False.
+        refresh_tokenizer (int, optional): Number of batches after which to refresh the tokenizer.
+            Defaults to 0, which means the tokenizer will not be refreshed.
+        use_fast_tokenizer (bool, optional): Whether to use the fast tokenizer. Defaults to True.
     """
     # variables to avoid issues with parallelism
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -321,6 +341,7 @@ def tokenize_in_parallel(
             bos_token_id=bos_token_id,
             eos_token_id=eos_token_id,
             pad_token_id=pad_token_id,
+            use_fast=use_fast_tokenizer,
         )
 
     # get a run hash
@@ -352,4 +373,6 @@ def tokenize_in_parallel(
         segment_before_tokenization=segment_before_tokenization,
         tokenizer_name_or_path=tokenizer_name_or_path,
         sample_ring_prop=sample_ring_prop,
+        use_fast_tokenizer=use_fast_tokenizer,
+        refresh_tokenizer=refresh_tokenizer,
     )
