@@ -1,23 +1,32 @@
 from __future__ import annotations
 
+import gc
 import json
+import os
 import re
+from copy import deepcopy
 from enum import Enum
 from functools import cached_property
 from itertools import chain
 from os import PathLike
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from typing import Generator, List, Optional, Tuple, Union
+from tempfile import TemporaryDirectory
+from typing import TYPE_CHECKING, Generator, List, Optional, Tuple, Union
 
 import msgspec
+import numpy as np
 import smart_open
+from necessary import necessary
 from omegaconf import DictConfig
 from tokenizers import Tokenizer as BaseTokenizer
 
 from ..core.errors import DolmaConfigError
 from ..core.loggers import get_logger
 from .data_types import InputSpec, TokenizerOutput
+
+with necessary("transformers", soft=True) as TRANSFORMERS_AVAILABLE:
+    if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
+        from transformers import AutoTokenizer  # pylint: disable=import-error
 
 PathOrStr = Union[str, PathLike]
 
@@ -68,13 +77,16 @@ class Tokenizer:
         segment_before_tokenization: bool = False,
     ):
         self.base_tokenizer = base_tokenizer
-        self.base_tokenizer.no_truncation()
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
+        self.is_fast = isinstance(self.base_tokenizer, BaseTokenizer)
+
+        if self.is_fast:
+            self.base_tokenizer.no_truncation()
 
         if self.pad_token_id is None:
-            logger.warning(f"No pad token ID provided; using EOS token ID {eos_token_id}.")
+            logger.warning("No pad token ID provided; using EOS token ID %s.", eos_token_id)
             self.pad_token_id = eos_token_id
 
         self.truncate_to = truncate_to
@@ -82,6 +94,7 @@ class Tokenizer:
         self.segment_before_tokenization = segment_before_tokenization
 
         self.config = self.get_base_tokenizer_config()
+        self.dtype = np.min_scalar_type(self.vocab_size - 1)
 
     @cached_property
     def tokenizer_has_prefix(self) -> bool:
@@ -116,16 +129,24 @@ class Tokenizer:
     def get_base_tokenizer_config(self) -> dict:
         # Rust HuggingFace tokenizers don't have a way to get the full configuration through Python bindings,
         # so we hack around it by saving the tokenizer to a temporary file and reading the config.
-        with NamedTemporaryFile() as f:
-            self.base_tokenizer.save(f.name)
-            f.flush()
-            f.seek(0)
-            config = json.load(f)
+
+        with TemporaryDirectory() as temp_dir:
+            config_path = f"{temp_dir}/tokenizer"
+            self.save(config_path)
+            if not self.is_fast:
+                config_path += "/tokenizer_config.json"
+
+            with open(config_path, mode="r", encoding="utf-8") as f:
+                config = json.load(f)
+
         return config
 
     @property
     def vocab_size(self) -> int:
-        return self.base_tokenizer.get_vocab_size()
+        if self.is_fast:
+            return self.base_tokenizer.get_vocab_size()
+        else:
+            return self.base_tokenizer.vocab_size  # pyright: ignore
 
     @classmethod
     def from_train_config(cls, config: DictConfig) -> "Tokenizer":
@@ -147,7 +168,7 @@ class Tokenizer:
         return tokenizer
 
     @classmethod
-    def from_pretrained(cls, identifier: str, **kwargs) -> "Tokenizer":
+    def from_pretrained(cls, identifier: str, use_fast: bool = True, **kwargs) -> "Tokenizer":
         """
         Initialize a tokenizer from a pretrained tokenizer on the HuggingFace Hub.
 
@@ -155,11 +176,34 @@ class Tokenizer:
             ``tokenizer.json`` file.
         :param kwargs: Other key word arguments passed to :class:`Tokenizer`.
         """
-        base_tokenizer = BaseTokenizer.from_pretrained(identifier)
-        return cls(base_tokenizer=base_tokenizer, **kwargs)
+        if use_fast:
+            base_tokenizer = BaseTokenizer.from_pretrained(identifier)
+        else:
+            assert TRANSFORMERS_AVAILABLE, "Cannot use slow tokenizers without transformers library installed."
+            base_tokenizer = AutoTokenizer.from_pretrained(identifier, use_fast=False)
+            cls._check_slow_kwargs(base_tokenizer, kwargs)  # pyright: ignore
+
+        return cls(base_tokenizer=base_tokenizer, **kwargs)  # pyright: ignore
+
+    def save(self, filename: PathOrStr) -> None:
+        """Save the tokenizer to a file."""
+        if self.is_fast:
+            self.base_tokenizer.save(filename)
+        else:
+            assert TRANSFORMERS_AVAILABLE, "Cannot save slow tokenizers without transformers library installed."
+            self.base_tokenizer.save_pretrained(filename)  # pyright: ignore
 
     @classmethod
-    def from_file(cls, filename: PathOrStr, **kwargs) -> "Tokenizer":
+    def _check_slow_kwargs(cls, tokenizer: "AutoTokenizer", kwargs: dict) -> None:
+        if tokenizer.bos_token_id != (id_ := kwargs.get("bos_token_id", None)):  # pyright: ignore
+            logger.warning("bos_token_id mismatch: %s != %s", tokenizer.bos_token_id, id_)  # pyright: ignore
+        if tokenizer.eos_token_id != (id_ := kwargs.get("eos_token_id", None)):  # pyright: ignore
+            logger.warning("eos_token_id mismatch: %s != %s", tokenizer.eos_token_id, id_)  # pyright: ignore
+        if tokenizer.pad_token_id != (id_ := kwargs.get("pad_token_id", None)):  # pyright: ignore
+            logger.warning("pad_token_id mismatch: %s != %s", tokenizer.pad_token_id, id_)  # pyright: ignore
+
+    @classmethod
+    def from_file(cls, filename: PathOrStr, use_fast: bool = True, **kwargs) -> "Tokenizer":
         """
         Initialize a tokenizer from a file.
 
@@ -168,30 +212,14 @@ class Tokenizer:
         :param filename: The name of a file containing a tokenizer specification.
         :param kwargs: Other key word arguments passed to :class:`Tokenizer`.
         """
-        base_tokenizer = BaseTokenizer.from_file(filename)
-        return cls(base_tokenizer=base_tokenizer, **kwargs)
+        if use_fast:
+            base_tokenizer = BaseTokenizer.from_file(filename)
+        else:
+            assert TRANSFORMERS_AVAILABLE, "Cannot use slow tokenizers without transformers library installed."
+            base_tokenizer = AutoTokenizer.from_pretrained(filename, use_fast=False)
+            cls._check_slow_kwargs(base_tokenizer, kwargs)  # pyright: ignore
 
-    # @classmethod
-    # def from_checkpoint(cls, checkpoint_dir: PathOrStr) -> "Tokenizer":
-    #     """
-    #     Load a tokenizer from a checkpoint.
-    #     """
-    #     from cached_path import cached_path
-
-    #     # Load configs.
-    #     config_path = cached_path(os.path.join(checkpoint_dir, "config.yaml"))
-    #     tokenizer_config = om.load(config_path).tokenizer
-    #     model_config = om.load(config_path).model
-
-    #     # Initialize tokenizer and validate vocab size.
-    #     tokenizer = cls.from_pretrained(
-    #         tokenizer_config.identifier,
-    #         eos_token_id=model_config.eos_token_id,
-    #         pad_token_id=model_config.pad_token_id,
-    #     )
-    #     if model_config.vocab_size != tokenizer.vocab_size:
-    #         raise DolmaConfigError("vocab size mismatch between config and tokenizer")
-    #     return tokenizer
+        return cls(base_tokenizer=base_tokenizer, **kwargs)  # pyright: ignore
 
     def add_special_tokens(self, input_ids: List[int]) -> List[int]:
         """
@@ -259,7 +287,11 @@ class Tokenizer:
             merged.append(list(chain.from_iterable(encoded_slice_iter)))
         return merged
 
-    def encode_batch(self, inputs: List[str], add_special_tokens: bool = True) -> List[List[int]]:
+    def encode_batch(
+        self,
+        inputs: List[str],
+        add_special_tokens: bool = True,
+    ) -> List[List[int]]:
         """
         Encode a batch of strings into token IDs.
         """
@@ -269,12 +301,21 @@ class Tokenizer:
 
         if self.segment_before_tokenization:
             sliced_inputs, slice_locs = self.split_into_paragraphs(inputs)
-            sliced_batch_encoding = [
-                e.ids for e in self.base_tokenizer.encode_batch(sliced_inputs, add_special_tokens=False)
-            ]
-            batch_encoding = self.merge_paragraphs(sliced_batch_encoding, slice_locs)
+            if self.is_fast:
+                fast_seq = self.base_tokenizer.encode_batch(sliced_inputs, add_special_tokens=False)
+                slice_encoding = [e.ids for e in fast_seq]
+            else:
+                slow_seq = self.base_tokenizer(sliced_inputs, add_special_tokens=False)  # pyright: ignore
+                slice_encoding = slow_seq.input_ids
+
+            batch_encoding = self.merge_paragraphs(slice_encoding, slice_locs)
         else:
-            batch_encoding = [e.ids for e in self.base_tokenizer.encode_batch(inputs, add_special_tokens=False)]
+            if self.is_fast:
+                fast_batch = self.base_tokenizer.encode_batch(inputs, add_special_tokens=False)
+                batch_encoding = [e.ids for e in fast_batch]
+            else:
+                slow_batch = self.base_tokenizer(inputs, add_special_tokens=False)  # pyright: ignore
+                batch_encoding = slow_batch.input_ids
 
         all_input_ids = []
         for encoding in batch_encoding:
@@ -282,7 +323,6 @@ class Tokenizer:
             if add_special_tokens:
                 input_ids = self.add_special_tokens(input_ids)
             all_input_ids.append(input_ids)
-
         return all_input_ids
 
     def decode(self, token_ids: List[int], skip_special_tokens: bool = True) -> str:
@@ -292,10 +332,29 @@ class Tokenizer:
         return self.base_tokenizer.decode(token_ids, skip_special_tokens=skip_special_tokens)
 
 
-def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[TokenizerOutput, None, None]:
+def make_tokenizer(
+    tokenizer_name_or_path: str,
+    **tokenizer_kwargs,
+) -> Tokenizer:
+    tokenizer = (
+        Tokenizer.from_file(tokenizer_name_or_path, **tokenizer_kwargs)
+        if os.path.exists(tokenizer_name_or_path) and os.path.isfile(tokenizer_name_or_path)
+        else Tokenizer.from_pretrained(tokenizer_name_or_path, **tokenizer_kwargs)
+    )
+    return tokenizer
+
+
+def tokenize_file(
+    tokenizer_name_or_path: str,
+    path: str,
+    refresh_tokenizer_every: int = 0,
+    **tokenizer_kwargs,
+) -> Generator[TokenizerOutput, None, None]:
     """Tokenize a file of documents using the provided tokenizer; file is expected to be a gzipped JSON lines
     file, each containing a field named `text`.
     """
+    tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
+    dtype = deepcopy(tokenizer.dtype)
     decoder = msgspec.json.Decoder(InputSpec)
     with smart_open.open(path, mode="rt") as input_stream:
         for i, line in enumerate(input_stream, start=1):
@@ -304,7 +363,16 @@ def tokenize_file(tokenizer: Tokenizer, path: str) -> Generator[TokenizerOutput,
                 if text := row.text.strip():
                     # skip empty docs
                     tokens = tokenizer.encode(text, add_special_tokens=True)
-                    yield TokenizerOutput.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)
-                i += 1
+                    if refresh_tokenizer_every:
+                        # extra copy to prevent memory leaks
+                        tokens = np.array(tokens, dtype=dtype)
+                    yield TokenizerOutput.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)  # pyright: ignore
+
+                if refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0:
+                    # to prevent memory leaks, we refresh the tokenizer every so often
+                    del tokenizer
+                    gc.collect()
+                    tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
+
             except Exception as ex:
                 logger.error("Error processing %s:%d", path, i, exc_info=ex)
