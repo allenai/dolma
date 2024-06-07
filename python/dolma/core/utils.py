@@ -1,4 +1,5 @@
 import importlib
+import io
 import os
 import re
 import string
@@ -8,9 +9,11 @@ from typing import Generator, Iterable, List, Tuple, TypeVar, Union, cast
 
 import nltk
 import uniseg.wordbreak
+import zstandard
 from necessary import necessary
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 from omegaconf import OmegaConf as om
+from smart_open import register_compressor
 
 try:
     nltk.data.find("tokenizers/punkt")
@@ -196,11 +199,6 @@ def add_compression():
     This function registers a custom compressor for the .zst file extension in the smart_open library.
     The compressor uses the zstandard library to handle zstandard compression.
     """
-
-    import io
-
-    import zstandard
-    from smart_open import register_compressor
 
     def _handle_zstd(file_obj, mode):
         result = zstandard.open(filename=file_obj, mode=mode)

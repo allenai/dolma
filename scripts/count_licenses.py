@@ -7,6 +7,7 @@ from dolma.core.parallel import BaseParallelProcessor, BaseProgressBar, QueueTyp
 from dolma.core.data_types import InputSpecWithMetadataAndAttributes
 from dolma.core.paths import glob_path
 from dolma.core.utils import add_compression
+from typing import Counter as CounterType
 import msgspec
 import json
 import smart_open
@@ -16,8 +17,8 @@ class LicensePbar(BaseProgressBar):
     documents: int = 0
     files: int = 0
     nc: int = 0
+    nd: int = 0
     yc: int = 0
-    copyright: int = 0
 
 
 class LicenseCounter(BaseParallelProcessor):
@@ -27,10 +28,10 @@ class LicenseCounter(BaseParallelProcessor):
     def process_single(cls, source_path: str, destination_path: str, queue: QueueType, **kwargs):
         add_compression()
 
-        counter = Counter()
+        counter: "CounterType[str]" = Counter()
         decoder = msgspec.json.Decoder(InputSpecWithMetadataAndAttributes)
 
-        with smart_open.open(source_path, "rb", compression=".zst") as f_in, LicensePbar(queue) as pbar:
+        with smart_open.open(source_path, "rb") as f_in, LicensePbar(queue) as pbar:
             for line in f_in:
                 data = decoder.decode(line)
                 pbar.documents += 1
@@ -38,14 +39,15 @@ class LicenseCounter(BaseParallelProcessor):
                 if not data.attributes:
                     continue
 
-                licenses = {t.rsplit('__', 1)[-1] for t in data.attributes.keys()}
-                counter.update(licenses)
+                licenses = {t.rsplit("__", 1)[-1] for t in data.attributes.keys() if t.startswith("cc_re")}
                 if any("nc" in ln for ln in licenses):
                     pbar.nc += 1
+                elif any("nd" in ln for ln in licenses):
+                    pbar.nd += 1
                 else:
                     pbar.yc += 1
-                    if "copyright" in licenses:
-                        pbar.copyright += 1
+
+                counter.update(licenses)
 
             pbar.files += 1
 
@@ -57,27 +59,27 @@ class LicenseCounter(BaseParallelProcessor):
 
 
 def main():
-    base_path = "s3://ai2-llm/pretraining-data/sources/cccc/v0/documents"
-    base_dst = "s3://ai2-llm/stats/cccc"
+    base_path = "s3://ai2-llm/pretraining-data/sources/cccc/v1/documents"
+    base_dst = "s3://ai2-llm/stats/cccc/v1"
 
-    glob_params = dict(autoglob_dirs=False, recursive_dirs=False, yield_dirs=False)
-    it = itertools.chain(
-        glob_path(f"{base_path}/CC-MAIN-*/*.jsonl.zst", **glob_params),
-        glob_path(f"{base_path}/CC-MAIN-*/*/warc/*.jsonl.zst", **glob_params)
-    )
+    # glob_params = dict(autoglob_dirs=False, recursive_dirs=False, yield_dirs=False)
+    # it = itertools.chain(
+    #     glob_path(f"{base_path}/CC-MAIN-*/*.jsonl.zst", **glob_params),
+    #     glob_path(f"{base_path}/CC-MAIN-*/*/warc/*.jsonl.zst", **glob_params)
+    # )
     # it = itertools.chain(
     #     glob_path(f"{base_path}/CC-MAIN-2021-17/*.jsonl.zst", **glob_params),
     # )
 
     with TemporaryDirectory() as tmpdir:
         src_paths, dst_paths, meta_paths = [], [], []
-        for path in it:
+        for path in glob_path(base_path + '/*/*.gz'):
             snapshot = path.replace(base_path, "").lstrip("/").split("/")[0]
             src_paths.append(path)
             dst_paths.append(f"{base_dst}/{snapshot}")
             meta_paths.append(f"{tmpdir}/{snapshot}")
 
-        print(f'Found {len(src_paths):,} files to process')
+        print(f"Found {len(src_paths):,} files to process")
 
         counter = LicenseCounter(
             source_prefix=src_paths,
@@ -91,7 +93,7 @@ def main():
         counter()
 
     collated = Counter()
-    for path in glob_path(f"{base_dst}/*/*.json", **glob_params):
+    for path in glob_path(f"{base_dst}/*/*.json"):
         with smart_open.open(path, "rt") as f:
             collated.update(json.load(f))
 
@@ -103,5 +105,5 @@ def main():
     print(json.dumps(sorted_collated, indent=2))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
