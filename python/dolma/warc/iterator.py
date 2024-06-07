@@ -100,7 +100,7 @@ class BackoffWarcIterator:
         self._start_time = float("-inf")
         self._attempt = 0
 
-    def __iter__(self) -> Generator[WarcRecord, None, None]:
+    def __iter__(self) -> Generator["WarcRecord", None, None]:
         if self._file_object is None:
             raise OSError("File object must be opened before iterating.")
 
@@ -127,7 +127,7 @@ class SimpleWarcIterator:
             WarcRecordType[r] if isinstance(r, str) else r for r in (record_types or ["response", "warcinfo"])
         ]
         self._fobj: Optional[Union[BytesIO, TextIOWrapper]] = None
-        self._it: Optional[ArchiveIterator] = None
+        self._it: Optional["ArchiveIterator"] = None
 
     def __enter__(self):
         if self.path.endswith(".lz4"):
@@ -147,7 +147,7 @@ class SimpleWarcIterator:
         self._fobj = None
         self._it = None
 
-    def __iter__(self) -> Generator[WarcRecord, None, None]:
+    def __iter__(self) -> Generator["WarcRecord", None, None]:
         if self._it is None:
             raise OSError("File object must be opened before iterating.")
         yield from self._it
