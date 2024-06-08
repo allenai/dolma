@@ -22,8 +22,8 @@ class InputSpec(Struct):
     id: str
     text: str
     source: str = ""
-    # created: str = ""
-    # added: str = ""
+    created: Optional[Any] = ""
+    added: Optional[Any] = ""
     version: Optional[str] = None
 
 
