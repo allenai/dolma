@@ -48,10 +48,10 @@ documents:
   - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2021-39/*.zst
 
 taggers:
-  - whitespace_tokenizer_v1
-  - ft_lang_id_1e2
-  - tokenizer_repetitions_v2r2
-  - c4_v2
+  # - whitespace_tokenizer_v1
+  # - ft_lang_id_1e2
+  # - tokenizer_repetitions_v2r2
+  # - c4_v2
   - gopher_v2
 
 processes: ${d.procs:}

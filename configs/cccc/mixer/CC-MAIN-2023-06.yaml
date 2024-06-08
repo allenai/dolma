@@ -886,7 +886,7 @@ streams:
       - c4_v2
       - dedupe_url
       - ft_lang_id_1e2
-      - gopher_v1
+      - gopher_v2
       - tokenizer_repetitions_v2r2
       - whitespace_tokenizer_v1
     output:
@@ -917,65 +917,65 @@ streams:
 
         # Gopher Rules
         - >-
-          (.attributes.gopher_v1__gopher_v1__word_count != null) and
-          (.attributes.gopher_v1__gopher_v1__word_count[0][2] < 50)
+          (.attributes.gopher_v2__gopher_v2__word_count != null) and
+          (.attributes.gopher_v2__gopher_v2__word_count[0][2] < 50)
         - >-
-          (.attributes.gopher_v1__gopher_v1__word_count != null) and
-          (.attributes.gopher_v1__gopher_v1__word_count[0][2] > 100000)
+          (.attributes.gopher_v2__gopher_v2__word_count != null) and
+          (.attributes.gopher_v2__gopher_v2__word_count[0][2] > 100000)
         - >-
-          (.attributes.gopher_v1__gopher_v1__median_word_length != null) and
-          (.attributes.gopher_v1__gopher_v1__median_word_length[0][2] < 3)
+          (.attributes.gopher_v2__gopher_v2__median_word_length != null) and
+          (.attributes.gopher_v2__gopher_v2__median_word_length[0][2] < 3)
         - >-
-          (.attributes.gopher_v1__gopher_v1__median_word_length != null) and
-          (.attributes.gopher_v1__gopher_v1__median_word_length[0][2] > 10)
+          (.attributes.gopher_v2__gopher_v2__median_word_length != null) and
+          (.attributes.gopher_v2__gopher_v2__median_word_length[0][2] > 10)
         - >-
-          (.attributes.gopher_v1__gopher_v1__symbol_to_word_ratio != null) and
-          (.attributes.gopher_v1__gopher_v1__symbol_to_word_ratio[0][2] > 0.1)
+          (.attributes.gopher_v2__gopher_v2__symbol_to_word_ratio != null) and
+          (.attributes.gopher_v2__gopher_v2__symbol_to_word_ratio[0][2] > 0.1)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_words_with_alpha_character != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_words_with_alpha_character[0][2] < 0.8)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_words_with_alpha_character != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_words_with_alpha_character[0][2] < 0.8)
         - >-
-          (.attributes.gopher_v1__gopher_v1__required_word_count != null) and
-          (.attributes.gopher_v1__gopher_v1__required_word_count[0][2] < 2)
+          (.attributes.gopher_v2__gopher_v2__required_word_count != null) and
+          (.attributes.gopher_v2__gopher_v2__required_word_count[0][2] < 2)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_lines_starting_with_bullet_point != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_lines_starting_with_bullet_point[0][2] > 0.9)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_lines_starting_with_bullet_point != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_lines_starting_with_bullet_point[0][2] > 0.9)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_lines_ending_with_ellipsis != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_lines_ending_with_ellipsis[0][2] > 0.3)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_lines_ending_with_ellipsis != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_lines_ending_with_ellipsis[0][2] > 0.3)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_duplicate_lines != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_duplicate_lines[0][2] > 0.3)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_duplicate_lines != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_duplicate_lines[0][2] > 0.3)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_lines != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_lines[0][2] > 0.3)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_lines != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_lines[0][2] > 0.3)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_2gram != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_2gram[0][2] > 0.2)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_2gram != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_2gram[0][2] > 0.2)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_3gram != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_3gram[0][2] > 0.18)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_3gram != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_3gram[0][2] > 0.18)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_4gram != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_most_common_4gram[0][2] > 0.16)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_4gram != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_4gram[0][2] > 0.16)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_5grams != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_5grams[0][2] > 0.15)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_5grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_5grams[0][2] > 0.15)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_6grams != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_6grams[0][2] > 0.14)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_6grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_6grams[0][2] > 0.14)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_7grams != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_7grams[0][2] > 0.13)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_7grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_7grams[0][2] > 0.13)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_8grams != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_8grams[0][2] > 0.12)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_8grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_8grams[0][2] > 0.12)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_9grams != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_9grams[0][2] > 0.11)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_9grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_9grams[0][2] > 0.11)
         - >-
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_10grams != null) and
-          (.attributes.gopher_v1__gopher_v1__fraction_of_characters_in_duplicate_10grams[0][2] > 0.10)
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_10grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_10grams[0][2] > 0.10)
 
         # Remove repetitions
         - >-
