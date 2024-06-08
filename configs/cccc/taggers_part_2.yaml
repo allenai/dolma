@@ -52,6 +52,6 @@ taggers:
   - ft_lang_id_1e2
   - tokenizer_repetitions_v2r2
   - c4_v2
-  - gopher_v1
+  - gopher_v2
 
 processes: ${d.procs:}
