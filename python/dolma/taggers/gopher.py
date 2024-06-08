@@ -1,6 +1,7 @@
 import logging
 from collections import Counter
 from dataclasses import dataclass
+import re
 from statistics import median
 from typing import Counter as CounterType
 from typing import List, Tuple, Union
@@ -135,7 +136,7 @@ class GopherAttributes:
         return spans
 
 
-def get_attributes(text: str) -> GopherAttributes:
+def get_attributes(text: str, ignore_empty_lines: bool = False) -> GopherAttributes:
     attrs = GopherAttributes([], [])
     attrs.character_count = len(text)
     if attrs.character_count == 0:
@@ -173,7 +174,11 @@ def get_attributes(text: str) -> GopherAttributes:
                 ) / max(ng_char_count, 1)
                 attrs.fraction_of_characters_in_duplicate_ngrams.append((n, value))
 
-        lines = text.split("\n")
+        if ignore_empty_lines:
+            lines = re.split(r"\n+", text)
+        else:
+            lines = text.split("\n")
+
         line_count = len(lines)
         for line in lines:
             if any(line.startswith(s) for s in BULLET_POINTS):
@@ -216,5 +221,13 @@ def all_ngram_counts_alt(words: List[str]) -> List[Tuple[int, CounterType[Tuple[
 class GopherTagger(BaseTagger):
     def predict(self, doc: Document) -> DocResult:
         attrs = get_attributes(doc.text)
+        result = DocResult(doc=doc, spans=attrs.as_spans())
+        return result
+
+
+@TaggerRegistry.add("gopher_v2")
+class GopherTaggerV2(GopherTagger):
+    def predict(self, doc: Document) -> DocResult:
+        attrs = get_attributes(doc.text, ignore_empty_lines=True)
         result = DocResult(doc=doc, spans=attrs.as_spans())
         return result
