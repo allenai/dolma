@@ -191,4 +191,5 @@ class WarcExtractorCli(BaseCli):
                 batch_size=parsed_config.batch_size,
                 min_raw_length=parsed_config.min_raw_length,
                 min_text_length=parsed_config.min_text_length,
+                delay_start=parsed_config.delay_start,
             )

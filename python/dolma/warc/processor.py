@@ -146,7 +146,8 @@ class WarcProcessor(BaseParallelProcessor):
             pbar = stack.enter_context(WarcProgressBar(queue))
 
             # delay start if requested
-            if delay := kwargs[0].get("delay_start", 0):
+            delay: float = kwargs[0].get("delay_start", 0.0)
+            if delay > 0:
                 time.sleep(random.random() * delay)
 
             # get compression format; it's slightly awkward that we have to check that is the same for all
@@ -358,7 +359,7 @@ def create_and_run_warc_pipeline(
     skip_source_glob: bool = False,
     store_attribute_spans_in_metadata: int = -1,
     store_html_in_metadata: bool = False,
-    delay_start: int = 0,
+    delay_start: float = 0.0,
 ):
     """Create and run pipeline for extracting documents from WARC files.
 
