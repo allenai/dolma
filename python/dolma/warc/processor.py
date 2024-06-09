@@ -1,9 +1,11 @@
 import datetime
 import hashlib
+import random
 import tempfile
 from contextlib import ExitStack
 from functools import reduce
 from itertools import chain
+import time
 from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional, Set, Union
 
 import msgspec
@@ -142,6 +144,10 @@ class WarcProcessor(BaseParallelProcessor):
 
         with ExitStack() as stack:
             pbar = stack.enter_context(WarcProgressBar(queue))
+
+            # delay start if requested
+            if delay := kwargs[0].get("delay_start", 0):
+                time.sleep(random.random() * delay)
 
             # get compression format; it's slightly awkward that we have to check that is the same for all
             # the single kwargs, but decent sanity check.
@@ -352,6 +358,7 @@ def create_and_run_warc_pipeline(
     skip_source_glob: bool = False,
     store_attribute_spans_in_metadata: int = -1,
     store_html_in_metadata: bool = False,
+    delay_start: int = 0,
 ):
     """Create and run pipeline for extracting documents from WARC files.
 
@@ -397,6 +404,7 @@ def create_and_run_warc_pipeline(
             saved in metadata. Defaults to -1.
         store_html_in_metadata (bool, optional): Whether to store the HTML content in the metadata field.
             Defaults to False.
+        delay_start (int, optional): Delay in seconds before starting the pipeline. Defaults to 0.
     """
 
     with ExitStack() as stack:
@@ -475,4 +483,5 @@ def create_and_run_warc_pipeline(
             source_name=source_name,
             store_attribute_spans_in_metadata=store_attribute_spans_in_metadata,
             store_html_in_metadata=store_html_in_metadata,
+            delay_start=delay_start,
         )

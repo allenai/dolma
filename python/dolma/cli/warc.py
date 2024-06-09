@@ -108,7 +108,10 @@ class WarcExtractorConfig:
     store: MetadataStorageConfig = field(
         default=MetadataStorageConfig(), help="Configuration for metadata storage."
     )
-
+    delay_start: float = field(
+        default=0,
+        help="Delay in seconds to wait before starting the pipeline. Random delay is picked from 0 to this value.",
+    )
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
     dryrun: bool = field(
         default=False,
