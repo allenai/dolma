@@ -51,6 +51,11 @@ def stdin() -> List[str]:
     return [stripped_line for line in sys.stdin if (stripped_line := line.strip())]
 
 
+@ResolverRegistry.add("d.unescape", "Unescape a Unicode sequence.")
+def unescape(expr: str) -> str:
+    return expr.encode().decode("unicode_escape")
+
+
 @ResolverRegistry.add("d.file", "Read from a file and return contents.")
 def file_(path: str, mode: str = "rt", encoding: str = "utf-8") -> str:
     with smart_open.open(path, mode=mode, encoding=encoding) as f:
