@@ -1,0 +1,23 @@
+
+documents:
+
+
+
+dedupe:
+  name: dedupe_doc
+  documents:
+    attribute_name: dedupe_doc
+    key: $.text
+  skip_empty: true
+
+
+bloom_filter:
+  file: /tmp/dedupe-doc/cccc-CC-MAIN-2020-24/filter.bloom
+  read_only: false
+  estimated_doc_count: 100_000_000
+  desired_false_positive_rate: 1e-05
+
+processes: 188
+work_dir:
+  input: /tmp/dedupe-doc-v1/cccc-CC-MAIN-2020-24/input
+  output: /tmp/dedupe-doc-v1/cccc-CC-MAIN-2020-24/output
