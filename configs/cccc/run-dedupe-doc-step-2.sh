@@ -16,14 +16,12 @@ dolma -c configs/cccc/dedupe-doc/CC-MAIN-2015-14.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2015-18.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2015-22.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2015-27.yaml dedupe
-dolma -c configs/cccc/dedupe-doc/CC-MAIN-2016-26.yaml dedupe
-dolma -c configs/cccc/dedupe-doc/CC-MAIN-2016-30.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2017-04.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2017-13.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2017-17.yaml dedupe
-dolma -c configs/cccc/dedupe-doc/CC-MAIN-2018-09.yaml dedupe
+dolma -c configs/cccc/dedupe-doc/CC-MAIN-2017-51.yaml dedupe
+dolma -c configs/cccc/dedupe-doc/CC-MAIN-2018-34.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2018-47.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2018-51.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2019-30.yaml dedupe
-dolma -c configs/cccc/dedupe-doc/CC-MAIN-2020-24.yaml dedupe
 dolma -c configs/cccc/dedupe-doc/CC-MAIN-2021-39.yaml dedupe
