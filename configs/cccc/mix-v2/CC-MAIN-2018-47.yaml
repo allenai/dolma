@@ -39,6 +39,8 @@ streams:
     output:
       max_size_in_bytes: 2_000_000_000
       path: s3://ai2-llm/pretraining-data/sources/cccc/v2/documents/CC-MAIN-2018-47
+      discard_fields:
+        - attributes
     filter:
       syntax: jq
       exclude:
