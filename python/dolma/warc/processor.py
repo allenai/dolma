@@ -138,6 +138,7 @@ class WarcProcessor(BaseParallelProcessor):
         warc_filename: Optional[str] = None
         date_now = datetime.datetime.now()
         date_now_str = cls._format_to_dolma_timestamp(date_now)
+        logger = cls.get_logger()
 
         # encoder
         encoder = msgspec.json.Encoder()
@@ -148,7 +149,9 @@ class WarcProcessor(BaseParallelProcessor):
             # delay start if requested
             delay: float = kwargs[0].get("delay_start", 0.0)
             if delay > 0:
-                time.sleep(random.random() * delay)
+                delay_with_jitter = random.random() * delay
+                logger.info("Delaying start by %.2f seconds", delay_with_jitter)
+                time.sleep(delay_with_jitter)
 
             # get compression format; it's slightly awkward that we have to check that is the same for all
             # the single kwargs, but decent sanity check.
