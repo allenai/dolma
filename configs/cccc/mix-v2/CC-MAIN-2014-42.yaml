@@ -1,6 +1,7 @@
 
-documents:
-
+streams:
+  - name: cccc-CC-MAIN-2014-42
+    documents:
     - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0000.json.gz
     - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0001.json.gz
     - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0002.json.gz
@@ -66,22 +67,27 @@ documents:
     - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0062.json.gz
     - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0063.json.gz
     - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0064.json.gz
+    attributes:
+      - dedupe_doc
+      - dedupe_para
+    output:
+      max_size_in_bytes: 2_000_000_000
+      path: s3://ai2-llm/pretraining-data/sources/cccc/v2/documents/CC-MAIN-2014-42
+    filter:
+      syntax: jq
+      include:
 
-dedupe:
-  name: dedupe_doc
-  documents:
-    attribute_name: dedupe_doc
-    key: $.text
-  skip_empty: true
+      exclude:
+        # Exact duplicates
+        - .attributes.dedupe_doc != null
 
+        # Fuzzy duplicates with above 0.5 of shared ngrams (TO CHANGE)
+        - >-
+          (.attributes.dedupe_para | length > 0) and
+          ((.attributes.dedupe_para | map(.[2] * (.[1] - .[0])) | add) / (.text | length) >= 0.8)
 
-bloom_filter:
-  file: /tmp/dedupe-doc/cccc-CC-MAIN-2014-42/filter.bloom
-  read_only: false
-  estimated_doc_count: 100_000_000
-  desired_false_positive_rate: 1e-05
-
-processes: 188
 work_dir:
-  input: /tmp/dedupe-doc-v1/cccc-CC-MAIN-2014-42/input
-  output: /tmp/dedupe-doc-v1/cccc-CC-MAIN-2014-42/output
+  input: "/tmp/cccc-CC-MAIN-2014-42/mix-v2/input"
+  output: "/tmp/cccc-CC-MAIN-2014-42/mix-v2/output"
+
+processes: 100
