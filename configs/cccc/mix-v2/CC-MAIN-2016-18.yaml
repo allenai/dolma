@@ -36,8 +36,6 @@ streams:
       path: s3://ai2-llm/pretraining-data/sources/cccc/v2/documents/CC-MAIN-2016-18
     filter:
       syntax: jq
-      include:
-
       exclude:
         # Exact duplicates
         - .attributes.dedupe_doc != null
