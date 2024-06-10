@@ -24,5 +24,5 @@ skip_checks: true
 batch_size: 100
 
 work_dir:
-  input: /tmp/cccc/${oc.env:SNAPSHOT}/input
-  output: /tmp/cccc/${oc.env:SNAPSHOT}/output
+  input: ${oc.env:HOME}/cccc/${oc.env:SNAPSHOT}/input
+  output: ${oc.env:HOME}/cccc/${oc.env:SNAPSHOT}/output
