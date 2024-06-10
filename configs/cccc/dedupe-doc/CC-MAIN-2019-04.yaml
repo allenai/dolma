@@ -53,5 +53,5 @@ bloom_filter:
 
 processes: 188
 work_dir:
-  input: /tmp/dedupe-doc-v1/cccc-CC-MAIN-2019-04/input
-  output: /tmp/dedupe-doc-v1/cccc-CC-MAIN-2019-04/output
+  input: "${oc.env:HOME}/status/dedupe-doc-v1/cccc-CC-MAIN-2019-04/input"
+  output: "${oc.env:HOME}/status/dedupe-doc-v1/cccc-CC-MAIN-2019-04/output"

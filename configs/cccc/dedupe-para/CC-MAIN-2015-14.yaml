@@ -51,5 +51,5 @@ bloom_filter:
 
 processes: 188
 work_dir:
-  input: /tmp/dedupe-para-v1/cccc-CC-MAIN-2015-14/input
-  output: /tmp/dedupe-para-v1/cccc-CC-MAIN-2015-14/output
+  input: "${oc.env:HOME}/status/dedupe-para-v1/cccc-CC-MAIN-2015-14/input"
+  output: "${oc.env:HOME}/status/dedupe-para-v1/cccc-CC-MAIN-2015-14/output"
