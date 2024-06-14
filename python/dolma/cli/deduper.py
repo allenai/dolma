@@ -169,9 +169,6 @@ class DeduperCli(BaseCli):
             for document in parsed_config.documents:
                 dict_config.setdefault("documents", []).append(str(document))
 
-                if document.count("*") > 1:
-                    raise DolmaConfigError("Only one wildcard is allowed in the document path")
-
                 current_matching_documents = sum(1 for _ in glob_path(document))
                 if current_matching_documents == 0:
                     # only raise a warning if no documents are found for a single path

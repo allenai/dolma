@@ -154,8 +154,9 @@ impl Shard {
                 let local_docs_file = cache.prepare_input(&input_path.doc_path)?;
                 let mut local_attr_readers = Vec::new();
                 let mut attr_reader_failure_counts = Vec::new();
-                for attr in &input_path.attribute_paths {
-                    let local_attr_file = cache.prepare_input(attr)?;
+                let paths = find_objects_matching_patterns(&input_path.attribute_paths);
+                for attr in paths.unwrap() {
+                    let local_attr_file = cache.prepare_input(&attr)?;
                     let f = OpenOptions::new()
                         .read(true)
                         .write(false)
@@ -399,8 +400,8 @@ impl Shard {
                         }
                     }
                 }
-                cache.finalize_input(&input_path.doc_path)?;
-                for (index, attribute_path) in input_path.attribute_paths.iter().enumerate() {
+                cache.finalize_input(local_docs_file.to_str().unwrap())?;
+                for (index, attribute_path) in find_objects_matching_patterns(&input_path.attribute_paths).unwrap().iter().enumerate() {
                     let failure_count = attr_reader_failure_counts[index];
                     if failure_count > 0 {
                         log::warn!(
@@ -409,7 +410,9 @@ impl Shard {
                             failure_count
                         );
                     }
+
                     cache.finalize_input(attribute_path)?;
+
                 }
                 log::info!(
                     "Dropped {} of {} documents from {}",
@@ -620,8 +623,10 @@ impl FileCache {
     // Otherwise, do nothing
     pub fn finalize_input(&self, location: &str) -> Result<(), io::Error> {
         if location.starts_with("s3://") {
+
             let (_, _, path) = cached_s3_location!(location, &self.work.input);
-            std::fs::remove_file(path)?;
+            std::fs::remove_file(&path)?;
+
             Ok(())
         } else {
             Ok(())

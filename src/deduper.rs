@@ -102,8 +102,17 @@ fn write_attributes(
         work: work_dirs.clone(),
     };
 
+    let mut attr_key = dedupe_config.name.clone();
+    if dedupe_config.num_partitions.unwrap_or(1) > 1 {
+        attr_key = format!(
+            "{}_{}",
+            attr_key,
+            dedupe_config.partition_index.unwrap_or(0)
+        );
+    }
+
     let attrs_location = {
-        let attr_prefix = format!("/attributes/{}/", &dedupe_config.name);
+        let attr_prefix = format!("/attributes/{}/", attr_key);
         docs_location.replace("/documents/", &attr_prefix)
     };
     let local_output = cache.prepare_output(&attrs_location)?;
@@ -183,22 +192,34 @@ fn write_attributes(
                         .to_string()
                 };
 
+                let attr_name_with_index;
+                let attr_name = if dedupe_config.num_partitions.unwrap_or(1) > 1 {
+                    attr_name_with_index = format!(
+                        "{}_{}",
+                        cfg.attribute_name,
+                        dedupe_config.partition_index.unwrap_or(0)
+                    );
+                    &attr_name_with_index
+                } else {
+                    &cfg.attribute_name
+                };
+
                 if min_word_count > 0 {
                     // Split the text into words and check the number of words.
                     let words = tokenize(&document_key);
                     if words.count() < min_word_count {
                         // skip documents with fewer than min_word_count words
-                        attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                        attributes[attr_name] = Value::Array(Vec::new());
                     }
                 } else if document_key.len() < min_content_length {
                     // skip length 0 documents
-                    attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                    attributes[attr_name] = Value::Array(Vec::new());
                 } else if dedupe_config.skip_empty.unwrap_or(false)
                     && document_key.trim().is_empty()
                 {
                     // skip empty documents if dedupe_config.skip_empty is true
                     // and the document key is empty after trimming (i.e., removing whitespace)
-                    attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                    attributes[attr_name] = Value::Array(Vec::new());
                 } else {
                     let dedupe_key = VecDeque::from([document_key.as_str()]);
 
@@ -224,13 +245,13 @@ fn write_attributes(
                                 Value::from(1),
                             ];
                             duplicate_docs_array.push(Value::Array(attr));
-                            attributes[&cfg.attribute_name] = Value::Array(duplicate_docs_array);
+                            attributes[attr_name] = Value::Array(duplicate_docs_array);
                         } else if !bloom_filter.read_only {
                             bloom_filter.insert(&hashes);
                         }
                     } else {
                         //The dedupe key doesn't belong to this partition
-                        attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                        attributes[attr_name] = Value::Array(Vec::new());
                     }
                 }
             }
@@ -328,7 +349,9 @@ fn write_attributes(
                                                     dedupe_config.num_partitions.unwrap_or(1),
                                                     dedupe_config.partition_index.unwrap_or(0),
                                                 );
+                                                num_observed += 1;
                                                 if !hashes.is_empty() {
+                                                    num_processed += 1;
                                                     if bloom_filter.contains(&hashes) {
                                                         duplicate_ngram_count += 1;
                                                     } else if !bloom_filter.read_only {
@@ -375,6 +398,7 @@ fn write_attributes(
                                     } else {
                                         let overlap_fraction =
                                             duplicate_ngram_count as f32 / ngram_count as f32;
+
                                         if overlap_fraction >= by_ngram.overlap_threshold {
                                             let span = vec![
                                                 Value::Number(par_start.into()),
@@ -388,10 +412,23 @@ fn write_attributes(
                                 }
                             }
                         }
-                        attributes[&cfg.attribute_name] = Value::Array(duplicate_paragraph_spans);
+
+                        let attr_name_with_index;
+                        let attr_name = if dedupe_config.num_partitions.unwrap_or(1) > 1 {
+                            attr_name_with_index = format!(
+                                "{}_{}",
+                                cfg.attribute_name,
+                                dedupe_config.partition_index.unwrap_or(0)
+                            );
+                            &attr_name_with_index
+                        } else {
+                            &cfg.attribute_name
+                        };
+                        attributes[attr_name] = Value::Array(duplicate_paragraph_spans);
                     }
                 }
             }
+
             let mut output_object = json!({});
             output_object["id"] = data["id"].clone();
             output_object["attributes"] = attributes;
