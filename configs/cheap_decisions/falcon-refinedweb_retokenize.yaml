@@ -1,0 +1,13 @@
+destination: /mnt/tank-tmp/ai2-llm/preprocessed/falcon-refinedweb/v0-0.05-heldout-complement_decon_ppl_suite_v3/gpt-neox-olmo-dolma-v1_5-tokenizers-0-19-1
+documents:
+- s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement_decon_ppl_suite_v3/*.gz
+processes: 224
+seed: 3920
+tokenizer:
+  name_or_path: allenai/gpt-neox-olmo-dolma-v1_5
+  eos_token_id: 50279
+  pad_token_id: 1
+max_size: 2_147_483_648
+work_dir:
+  input: /mnt/tank-tmp/tmp/falcon_input
+  output: /mnt/tank-tmp/tmp/falcon_output
