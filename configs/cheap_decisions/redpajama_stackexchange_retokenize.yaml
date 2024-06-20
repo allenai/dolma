@@ -1,6 +1,6 @@
-destination: /mnt/tank-tmp/ai2-llm/preprocessed/redpajama_stackexchange_only/v1_decontaminated/gpt-neox-olmo-dolma-v1_5-tokenizers-0-19-1
+destination: /mnt/tank-tmp/ai2-llm/preprocessed/redpajama/v1_decon_fix/stackexchange/gpt-neox-olmo-dolma-v1_5-tokenizers-0-19-1
 documents:
-- s3://ai2-llm/pretraining-data/sources/redpajama/v1_decontaminated/documents/stackexchange-*.gz
+- s3://ai2-llm/pretraining-data/sources/redpajama/v1_decon_fix/documents/train/stackexchange/*.gz
 processes: 224
 seed: 3920
 tokenizer:
@@ -9,5 +9,5 @@ tokenizer:
   pad_token_id: 1
 max_size: 2_147_483_648
 work_dir:
-  input: /mnt/tank-tmp/tmp/redpajama_stackexchange_only-in
-  output: /mnt/tank-tmp/tmp/redpajama_stackexchange_only-out
+  input: /mnt/tank-tmp/tmp/redpajama_stackexchange_v1_decon_fix_only-in
+  output: /mnt/tank-tmp/tmp/redpajama_stackexchange_v1_decon_fix_only-out
