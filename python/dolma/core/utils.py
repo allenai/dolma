@@ -212,8 +212,14 @@ def add_compression():
         return result
 
     register_compressor(".zst", _handle_zstd)
+    register_compressor(".zstd", _handle_zstd)
 
 
-with necessary(("smart_open", "7.0.4"), soft=True) as SMART_OPEN_NO_ZSTD:
-    if SMART_OPEN_NO_ZSTD:
+with necessary(("smart_open", "7.0.4"), soft=True) as SMART_OPEN_HAS_ZSTD:
+    if SMART_OPEN_HAS_ZSTD:
+        # add additional extension for smart_open
+        from smart_open.compression import _handle_zstd
+        register_compressor(".zstd", _handle_zstd)
+    else:
+        # add zstd compression
         add_compression()
