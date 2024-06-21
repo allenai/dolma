@@ -1,0 +1,13 @@
+destination: /mnt/tank-tmp/ai2-llm/preprocessed/olmo-mix/v1_7_dd_ngram_docpara_le030_decontam/cc_en_head/gpt-neox-olmo-dolma-v1_5-tokenizers-0-19-1
+documents:
+- s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_docpara_le030_decontam/documents/cc_en_head/*.json.gz
+processes: 224
+seed: 3920
+tokenizer:
+  name_or_path: allenai/gpt-neox-olmo-dolma-v1_5
+  eos_token_id: 50279
+  pad_token_id: 1
+max_size: 2_147_483_648
+work_dir:
+  input: /mnt/tank-tmp/tmp/dolma_cc_head_docpara_dedup_input
+  output: /mnt/tank-tmp/tmp/dolma_cc_head_docpara_dedup_output
