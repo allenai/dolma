@@ -109,6 +109,9 @@ class DeduperConfig:
         default=False,
         help="If true, only print the configuration and exit without running the deduper.",
     )
+    mounted: bool = field(
+        default=False, help="Set true if the command is being run on files in a mounted S3 directory"
+    )
 
 
 class DeduperCli(BaseCli):
@@ -211,6 +214,7 @@ class DeduperCli(BaseCli):
                     "bloom_filter.desired_false_positive_rate must be specified"
                 )
 
+            dict_config["mounted"] = parsed_config.mounted
             dict_config["work_dir"] = {"input": str(work_dirs.input), "output": str(work_dirs.output)}
             dict_config["processes"] = int(parsed_config.processes)
 

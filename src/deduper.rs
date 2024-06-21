@@ -43,7 +43,13 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
         let bloom_filter = bloom_filter.clone();
         let failed_shard_count_ref = failed_shard_count_ref.clone();
         threadpool.execute(move || {
-            let result = write_attributes(path, work_dirs, dedupe, bloom_filter);
+            let result = write_attributes(
+                path,
+                work_dirs,
+                dedupe,
+                bloom_filter,
+                !config.mounted.unwrap_or(false),
+            );
             if let Err(e) = result {
                 log::error!("Failed to process {:?}: {}", p, e);
                 failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
@@ -96,6 +102,7 @@ fn write_attributes(
     work_dirs: WorkDirConfig,
     dedupe_config: DedupeConfig,
     bloom_filter: Arc<BloomFilter>,
+    label_temp: bool,
 ) -> Result<(), io::Error> {
     let cache = FileCache {
         s3_client: Box::new(s3_util::new_client(None)?),
@@ -115,7 +122,7 @@ fn write_attributes(
         let attr_prefix = format!("/attributes/{}/", attr_key);
         docs_location.replace("/documents/", &attr_prefix)
     };
-    let local_output = cache.prepare_output(&attrs_location)?;
+    let local_output = cache.prepare_output(&attrs_location, label_temp)?;
     let mut num_processed = 0;
     let mut num_observed = 0;
     if local_output.exists() {
@@ -456,8 +463,10 @@ fn write_attributes(
         num_processed,
         num_observed
     );
-
-    cache.finalize_output(&attrs_location)?;
+    if label_temp {
+        //Finalize output performs a rename operation, which isn't implemented in mountpoint-s3 (https://github.com/awslabs/mountpoint-s3/issues/506)
+        cache.finalize_output(&attrs_location)?;
+    }
     Ok(())
 }
 
@@ -525,6 +534,7 @@ pub mod deduper_config {
         pub dedupe: DedupeConfig,
         pub bloom_filter: BloomFilterConfig,
         pub processes: usize,
+        pub mounted: Option<bool>,
     }
 
     impl DeduperConfig {

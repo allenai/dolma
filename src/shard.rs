@@ -135,7 +135,7 @@ impl Shard {
         };
         let min_text_length = self.min_text_length.clone().unwrap_or(0);
 
-        let output_path: PathBuf = cache.prepare_output(&self.output)?;
+        let output_path: PathBuf = cache.prepare_output(&self.output, true)?;
         {
             let output_file = OpenOptions::new()
                 .read(false)
@@ -401,7 +401,12 @@ impl Shard {
                     }
                 }
                 cache.finalize_input(local_docs_file.to_str().unwrap())?;
-                for (index, attribute_path) in find_objects_matching_patterns(&input_path.attribute_paths).unwrap().iter().enumerate() {
+                for (index, attribute_path) in
+                    find_objects_matching_patterns(&input_path.attribute_paths)
+                        .unwrap()
+                        .iter()
+                        .enumerate()
+                {
                     let failure_count = attr_reader_failure_counts[index];
                     if failure_count > 0 {
                         log::warn!(
@@ -412,7 +417,6 @@ impl Shard {
                     }
 
                     cache.finalize_input(attribute_path)?;
-
                 }
                 log::info!(
                     "Dropped {} of {} documents from {}",
@@ -623,7 +627,6 @@ impl FileCache {
     // Otherwise, do nothing
     pub fn finalize_input(&self, location: &str) -> Result<(), io::Error> {
         if location.starts_with("s3://") {
-
             let (_, _, path) = cached_s3_location!(location, &self.work.input);
             std::fs::remove_file(&path)?;
 
@@ -635,13 +638,17 @@ impl FileCache {
 
     // If output is an S3 URL, return a path to a new temporary location in the working output directory
     // If it is a local path, return a ".tmp" path in the same directory
-    pub fn prepare_output(&self, location: &str) -> Result<PathBuf, io::Error> {
+    pub fn prepare_output(&self, location: &str, label_temp: bool) -> Result<PathBuf, io::Error> {
         if location.starts_with("s3://") {
             let (_, _, path) = cached_s3_location!(location, &self.work.output);
             std::fs::create_dir_all(path.parent().unwrap())?;
             Ok(path.clone())
         } else {
-            let tmp_location = location.to_owned() + ".tmp";
+            let tmp_location = if label_temp {
+                location.to_owned() + ".tmp"
+            } else {
+                location.to_owned()
+            };
             let path = Path::new(tmp_location.as_str());
             std::fs::create_dir_all(path.parent().unwrap())?;
             Ok(path.to_path_buf())
