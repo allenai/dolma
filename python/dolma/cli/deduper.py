@@ -8,7 +8,12 @@ from omegaconf import OmegaConf as om
 
 from dolma import deduper
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, get_path_to_temp_file, make_workdirs
+from dolma.cli.shared import (
+    CompressionConfig,
+    WorkDirConfig,
+    get_path_to_temp_file,
+    make_workdirs,
+)
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path, is_local
@@ -104,6 +109,13 @@ class DeduperConfig:
     bloom_filter: BloomFilterConfig = field(help="Bloom filter configuration. Required.")
     processes: int = field(
         default=1, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
+    )
+    compression: CompressionConfig = field(
+        default=CompressionConfig(),
+        help=(
+            "Configuration for input/output compression. By default, compression of files is inferred "
+            "from the file extension."
+        ),
     )
     dryrun: bool = field(
         default=False,
@@ -217,6 +229,11 @@ class DeduperCli(BaseCli):
             dict_config["mounted"] = parsed_config.mounted
             dict_config["work_dir"] = {"input": str(work_dirs.input), "output": str(work_dirs.output)}
             dict_config["processes"] = int(parsed_config.processes)
+
+            dict_config["compression"] = {
+                "input": str(i) if (i := parsed_config.compression.input) is not None else None,
+                "output": str(o) if (o := parsed_config.compression.output) is not None else None,
+            }
 
             if len(dict_config["documents"]) == 0:
                 raise ValueError("At least one document must be specified")

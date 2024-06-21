@@ -1,20 +1,17 @@
 use std::collections::VecDeque;
-use std::fs::OpenOptions;
 use std::io;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
-use flate2::read::MultiGzDecoder;
-use flate2::write::GzEncoder;
-use flate2::Compression;
 use serde_json::{json, Value};
 use threadpool::ThreadPool;
 
 use crate::bloom_filter::BloomFilter;
+use crate::io::MultiStream;
 use crate::s3_util;
-use crate::shard::shard_config::WorkDirConfig;
+use crate::shard::shard_config::{CompressionConfig, WorkDirConfig};
 use crate::shard::{find_objects_matching_patterns, FileCache};
 use crate::wimbd::tokens::tokenize;
 
@@ -42,6 +39,10 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
         let dedupe = config.dedupe.clone();
         let bloom_filter = bloom_filter.clone();
         let failed_shard_count_ref = failed_shard_count_ref.clone();
+        let compression = match config.compression.clone() {
+            Some(c) => c,
+            None => CompressionConfig::infer(),
+        };
         threadpool.execute(move || {
             let result = write_attributes(
                 path,
@@ -101,6 +102,7 @@ fn write_attributes(
     docs_location: String,
     work_dirs: WorkDirConfig,
     dedupe_config: DedupeConfig,
+    compression: CompressionConfig,
     bloom_filter: Arc<BloomFilter>,
     label_temp: bool,
 ) -> Result<(), io::Error> {
@@ -144,24 +146,40 @@ fn write_attributes(
     {
         let local_input = cache.prepare_input(&docs_location)?;
 
-        let input_file = OpenOptions::new()
-            .read(true)
-            .write(false)
-            .create(false)
-            .open(local_input.clone())?;
-        let reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(input_file));
+        // The input_compression is either provided by the user or inferred from the file extension.
+        // We use `infer_compression_from_temp` to deal with local files potentially including `.tmp`
+        // at the end when they are cached version of S3 files.
+        let input_compression: String = match compression.input {
+            Some(ref input) => input.clone(),
+            None => MultiStream::infer_compression_from_temp(local_input.clone()),
+        };
 
-        let tmp_output = OpenOptions::new()
-            .read(false)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&local_output)?;
+        // for the output_compression, it is either provided by the user or we use
+        // the same compression type as the input.
+        let output_compression = match compression.output {
+            Some(ref output) => output.clone(),
+            None => input_compression.clone(),
+        };
 
-        let mut writer = BufWriter::with_capacity(
-            1024 * 1024,
-            GzEncoder::new(tmp_output, Compression::default()),
-        );
+        // let's open a stream to read the input file
+        let reader = MultiStream::new(
+            local_input.clone(),
+            Some(input_compression),
+            Some(1024 * 1024),
+            None,
+            None,
+        )
+        .reader()?;
+
+        // this is the stream we use to write the output file
+        let mut writer_stream = MultiStream::new(
+            local_output.clone(),
+            Some(output_compression),
+            Some(1024 * 1024),
+            None,
+            None,
+        )
+        .writer()?;
 
         let min_content_length = dedupe_config.min_length.unwrap_or(0);
         let min_word_count = dedupe_config.min_words.unwrap_or(0);
@@ -439,8 +457,8 @@ fn write_attributes(
             let mut output_object = json!({});
             output_object["id"] = data["id"].clone();
             output_object["attributes"] = attributes;
-            serde_json::to_writer(&mut writer, &output_object)?;
-            writer.write_all(b"\n")?;
+            serde_json::to_writer(&mut writer_stream, &output_object)?;
+            writer_stream.write_all(b"\n")?;
         }
 
         // only remove the local_input file if it is different from docs_location
@@ -472,10 +490,11 @@ fn write_attributes(
 
 pub mod deduper_config {
     use serde::{Deserialize, Serialize};
-    use std::fs::File;
     use std::io;
+    use std::path::PathBuf;
 
     use crate::bloom_filter::BloomFilterConfig;
+    use crate::io::MultiStream;
     use crate::shard::shard_config::*;
 
     #[derive(Serialize, Deserialize, Clone)]
@@ -535,12 +554,13 @@ pub mod deduper_config {
         pub bloom_filter: BloomFilterConfig,
         pub processes: usize,
         pub mounted: Option<bool>,
+        pub compression: Option<CompressionConfig>,
     }
 
     impl DeduperConfig {
         pub fn read_from_file(path: &str) -> Result<DeduperConfig, io::Error> {
-            let file = File::open(path)?;
-            let reader = io::BufReader::new(file);
+            let config_path = PathBuf::from(path);
+            let reader = MultiStream::with_default(config_path).reader()?;
             let config: DeduperConfig = serde_json::from_reader(reader)?;
             Ok(config)
         }

@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 
 from dolma import mixer
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, make_workdirs
+from dolma.cli.shared import CompressionConfig, WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
@@ -59,6 +59,13 @@ class StreamConfig:
         default=None, help="Configuration for filtering documents."
     )
     span_replacement: List[SpanReplacementConfig] = field(default=[], help="Configuration for replacing spans.")
+    compression: CompressionConfig = field(
+        default=CompressionConfig(),
+        help=(
+            "Configuration for input/output compression. By default, compression of files is inferred "
+            "from the file extension."
+        ),
+    )
 
 
 @dataclass
@@ -155,6 +162,12 @@ class MixerCli(BaseCli):
                 stream_config_dict["output"] = {
                     "path": str(stream_config.output.path),
                     "max_size_in_bytes": int(stream_config.output.max_size_in_bytes),
+                }
+
+                # add compression config to the stream config dict
+                stream_config_dict["compression"] = {
+                    "input": str(i) if (i := stream_config.compression.input) is not None else None,
+                    "output": str(o) if (o := stream_config.compression.output) is not None else None,
                 }
 
                 if stream_config.output.min_text_length:
