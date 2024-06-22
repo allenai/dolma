@@ -158,7 +158,7 @@ impl Shard {
             None => CompressionConfig::infer(),
         };
 
-        let output_path: PathBuf = cache.prepare_output(&self.output)?;
+        let output_path: PathBuf = cache.prepare_output(&self.output, true)?;
 
         // compression is either provided by user or we infer from the temp file
         let output_compression = match compression.output {
@@ -182,7 +182,7 @@ impl Shard {
                 let mut attr_reader_failure_counts = Vec::new();
                 let paths = find_objects_matching_patterns(&input_path.attribute_paths);
                 for attr in paths.unwrap() {
-                    let local_attr_file = cache.prepare_input(attr)?;
+                    let local_attr_file = cache.prepare_input(&attr)?;
                     let attr_compression = match compression.input {
                         Some(ref input) => input.clone(),
                         None => MultiStream::infer_compression_from_temp(local_attr_file.clone()),
@@ -698,7 +698,7 @@ impl FileCache {
 
     // If output is an S3 URL, return a path to a new temporary location in the working output directory
     // If it is a local path, return a ".tmp" path in the same directory
-    pub fn prepare_output(&self, location: &str, label_temp: bool) -> Result<PathBuf, io::Error> {
+    pub fn prepare_output(&self, location: &str, label_temp: bool) -> Result<PathBuf, IoError> {
         if location.starts_with("s3://") {
             let (_, _, path) = cached_s3_location!(location, &self.work.output);
             std::fs::create_dir_all(path.parent().unwrap())?;

@@ -48,6 +48,7 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
                 path,
                 work_dirs,
                 dedupe,
+                compression,
                 bloom_filter,
                 !config.mounted.unwrap_or(false),
             );
