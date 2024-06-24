@@ -7,7 +7,6 @@ Taggers to detect the top K most repeated sequences in a document.
 import re
 from collections import Counter
 
-
 from ...core.data_types import DocResult, Document, Span
 from ...core.registry import TaggerRegistry
 from ...core.taggers import BaseTagger
@@ -25,8 +24,8 @@ class BaseTopKTagger(BaseTagger):
         tokens = [ws for w in self.splitter.split(doc.text) if (ws := w.strip())]
         counter = Counter(tokens)
         spans = [
-            Span(start=0, end=len(doc.text), type=k, score=v / len(tokens))
-            for k, v in counter.most_common(self.K)
+            Span(start=(pos := doc.text.find(k)), end=pos + len(k), type=str(i), score=v / len(tokens))
+            for i, (k, v) in enumerate(counter.most_common(self.K), start=1)
         ]
 
         return DocResult(doc=doc, spans=spans)

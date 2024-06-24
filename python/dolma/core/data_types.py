@@ -8,8 +8,8 @@ Data types assumed by Filters.
 
 import functools
 import re
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 from hashlib import sha1
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 from msgspec import Struct
 from typing_extensions import Self, TypeAlias

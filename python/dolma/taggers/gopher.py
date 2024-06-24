@@ -1,7 +1,7 @@
 import logging
+import re
 from collections import Counter
 from dataclasses import dataclass
-import re
 from statistics import median
 from typing import Counter as CounterType
 from typing import List, Tuple, Union
