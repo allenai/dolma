@@ -2,17 +2,12 @@ from dataclasses import dataclass
 from pstats import SortKey
 from typing import List, Optional
 
-from rich.console import Console
-from rich.table import Table
-
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
-from dolma.core.registry import TaggerRegistry
 from dolma.core.runtime import create_and_run_tagger
-from dolma.core.utils import import_modules
 
 
 @dataclass
@@ -141,32 +136,3 @@ class TaggerCli(BaseCli):
                 profile_steps=parsed_config.profile.steps,
                 profile_sort_key=parsed_config.profile.sort_key,
             )
-
-
-@dataclass
-class ListTaggerConfig:
-    tagger_modules: List[str] = field(
-        default=[],
-        help="List of Python modules $PYTHONPATH to import custom taggers from.",
-    )
-
-
-class ListTaggerCli(BaseCli):
-    CONFIG = ListTaggerConfig
-    DESCRIPTION = "List available taggers."
-
-    @classmethod
-    def run(cls, parsed_config: ListTaggerConfig):
-        # import tagger modules
-        import_modules(parsed_config.tagger_modules)
-
-        table = Table(title="dolma taggers", style="bold")
-        table.add_column("name", justify="left", style="cyan")
-        table.add_column("class", justify="left", style="magenta")
-
-        for tagger_name, tagger_cls in sorted(TaggerRegistry.items()):
-            tagger_repr = f"{tagger_cls.__module__}.{tagger_cls.__name__}"
-            table.add_row(tagger_name, tagger_repr)
-
-        console = Console()
-        console.print(table)

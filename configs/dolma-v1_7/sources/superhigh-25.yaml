@@ -1,0 +1,160 @@
+streams:
+  - name: falcon
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/*
+    attributes:
+      - cc_multi_bin
+      - dedupe_para_ngrams_13_1
+      - paloma_paragraphs
+      - paloma_documents
+      - pii_regex_with_counts_fast_v2
+      - tokenizer_repetitions_v2r2
+    output:
+      max_size_in_bytes: 3_814_697_265
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1-7/documents/superhigh-25/falcon
+      min_text_length: 100  # at least 100 characters
+      discard_fields:
+        - attributes
+    filter:
+      include:
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
+      exclude:
+        # Contaminated Data from Paloma
+        - ".attributes.paloma_documents_bff_duplicates != null"
+        - "(.attributes.paloma_paragraphs_bff_duplicates | length) > 0"
+
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+
+        # Quality filter
+        - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.25
+
+        # PII filter
+        - .attributes.pii_regex_with_counts_fast_v2__pii_regex_with_counts_fast_v2__doc_count[0][-1] > 5
+      syntax: jq
+    span_replacement:
+      - span: "$.attributes.dedupe_para_ngrams_13_1"
+        min_score: 0.8
+        replacement: ''
+
+  - name: c4
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/*
+    attributes:
+      - cc_multi_bin
+      - dedupe_para_ngrams_13_1
+      - tokenizer_repetitions_v2r2
+      - pii_regex_with_counts_v2
+    output:
+      max_size_in_bytes: 2_147_483_648
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1-7/documents/superhigh-25/c4
+      min_text_length: 100   # matches wikipedia
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
+      exclude:
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+
+        # Quality filter
+        - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.25
+
+        # PII filter
+        - .attributes.pii_regex_with_counts_v2__pii_regex_with_counts_v2__doc_count[0][-1] > 5
+      syntax: jq
+    span_replacement:
+      - span: "$.attributes.dedupe_para_ngrams_13_1"
+        min_score: 0.8
+        replacement: ''
+
+  - name: cc_en_head
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_docpara_le030_decontam/documents/cc_en_head/*
+    attributes:
+      - cc_multi_bin
+      - tokenizer_repetitions_v2r2
+    output:
+      max_size_in_bytes: 3_894_967_296
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1-7/documents/superhigh-25/cc_en_head
+      min_text_length: 100  # at least 100 characters
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      exclude:
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+
+        # Quality filter
+        - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.25
+      syntax: jq
+
+
+  - name: cc_en_middle
+    documents:
+        - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_docpara_le030_decontam/documents/cc_en_middle/*
+    attributes:
+      - cc_multi_bin
+      - tokenizer_repetitions_v2r2
+    output:
+      max_size_in_bytes: 3_894_967_296
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1-7/documents/superhigh-25/cc_en_middle
+      min_text_length: 100  # at least 100 characters
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      exclude:
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+
+        # Quality filter
+        - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.25
+      syntax: jq
+
+
+  - name: cc_en_tail
+    documents:
+        - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7_dd_ngram_docpara_le030_decontam/documents/cc_en_tail/*
+    attributes:
+      - cc_multi_bin
+      - tokenizer_repetitions_v2r2
+    output:
+      max_size_in_bytes: 3_894_967_296
+      path: s3://ai2-llm/pretraining-data/sources/olmo-mix/v1-7/documents/superhigh-25/cc_en_tail
+      min_text_length: 100  # at least 100 characters
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      exclude:
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+
+        # Quality filter
+        - .attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.25
+      syntax: jq
+
+
+work_dir:
+  input: "/tmp/superhigh-25/input"
+  output: "/tmp/superhigh-25/output"
+
+processes: 188

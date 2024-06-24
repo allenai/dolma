@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import List
 from unittest import TestCase
+
+import smart_open
 
 from dolma.cli.__main__ import main
 
@@ -221,3 +223,32 @@ class TestMixerPipeline(TestCasePipeline):
         self.assertEqual(len(new_docs), 2)
         self.assertEqual(new_docs[0]["text"], self.combineIntoDoc(to_keep_head, ""))
         self.assertEqual(new_docs[1]["text"], self.combineIntoDoc(to_keep_head, to_keep_tail))
+
+    def test_fail_on_unk_attribute(self):
+        with TemporaryDirectory() as temp_dir:
+            src_fp = (docs_dir := Path(temp_dir) / "documents") / "0000.jsonl.gz"
+            docs_dir.mkdir(exist_ok=True, parents=True)
+            (dst_fp := (docs_dir / "output")).mkdir(exist_ok=True, parents=True)
+
+            docs = [{"text": "test", "id": "0", "attributes": {"a": [[0, 3, 1]]}, "source": __file__}]
+            with smart_open.open(src_fp, "wt") as f:
+                f.write("\n".join(map(json.dumps, docs)))
+
+            config = {
+                "streams": [
+                    {
+                        "name": "test",
+                        "documents": [str(src_fp)],
+                        "output": {"path": str(dst_fp), "max_size_in_bytes": 10000000},
+                        "filter": {"include": [".attributes.b.b != null"], "syntax": "jq"},
+                    }
+                ],
+                "processes": 1,
+            }
+
+            config_fp = Path(temp_dir) / "config.json"
+            with config_fp.open("w") as f:
+                json.dump(config, f)
+
+            with self.assertRaises(Exception):
+                main(argv=["-c", str(config_fp), "mix"])

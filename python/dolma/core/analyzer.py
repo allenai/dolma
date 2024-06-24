@@ -325,7 +325,7 @@ def create_and_run_analyzer(
             debug=debug,
             seed=seed,
             ignore_existing=True,
-            retries_on_error=0,
+            backoff_max_tries=1,
             num_processes=num_processes,
         )
         analyzer(num_bins=num_bins, name_regex=name_regex)

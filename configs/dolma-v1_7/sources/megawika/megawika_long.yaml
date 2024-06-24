@@ -1,0 +1,53 @@
+streams:
+  - name: megawika
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/af/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/az/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/cs/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/de/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/en/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/et/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/fa/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/fr/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/gu/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/hi/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/hr/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/id/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/it/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ja/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ka/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/kk/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/km/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ko/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/lv/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ml/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/mn/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/mr/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/my/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ne/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/pl/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ps/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/pt/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ro/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ru/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/sv/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ta/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/th/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ur/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/vi/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/xh/*
+      - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/zh/*
+    attributes: &attributes
+      - whitespace_tokenizer_v1
+    output: &output
+      max_size_in_bytes: 500_000_000
+      path: ${oc.env:HOME}/megawika_long
+      min_text_length: 25   # matches wikipedia
+      # discard_fields:
+      #   - attributes
+    filter: &filter
+      include:
+        - .attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__length[0][-1] > 100000
+      syntax: jq
+
+processes: 188
