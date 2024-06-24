@@ -1,0 +1,73 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/af/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/az/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/cs/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/de/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/en/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/et/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/fa/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/fr/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/gu/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/hi/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/hr/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/id/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/it/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ja/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ka/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/kk/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/km/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ko/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/lv/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ml/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/mn/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/mr/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/my/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ne/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/pl/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ps/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/pt/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ro/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ru/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/sv/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ta/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/th/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/ur/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/vi/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/xh/*
+  - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/zh/*
+
+# dedupe:
+#   name: dedupe_para_ngrams_13_1
+#   paragraphs:
+#     attribute_name: dedupe_para_ngrams_13_1
+#     by_ngram:
+#       ngram_length: 13
+#       stride: 1
+#       overlap_threshold: 0.5
+#       skip_short_paragraphs: false
+#     paragraph_separator: ${d.unescape:'\n\n'}
+#   skip_empty: true
+
+dedupe:
+  name: dedupe_para_ngrams_13_1_v2
+  paragraphs:
+    attribute_name: dedupe_para_ngrams_13_1_v2
+    by_ngram:
+      ngram_length: 13
+      stride: 1
+      overlap_threshold: 0.5
+      # skip_short_paragraphs: false
+    # paragraph_separator: ${d.unescape:'\n\n'}
+  skip_empty: true
+
+bloom_filter:
+  file: ${oc.env:HOME}/mega_wika_dedupe_para_ngrams_13_1_v2.bin
+  read_only: false
+  # set to of words
+  estimated_doc_count: 123_589_835_382
+  desired_false_positive_rate: 0.01
+
+processes: 128
+work_dir:
+  input: /tmp/mega_wika_dedupe_para_ngrams_13_1_v2/input
+  output: /tmp/mega_wika_dedupe_para_ngrams_13_1_v2/output

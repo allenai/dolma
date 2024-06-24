@@ -1,0 +1,89 @@
+streams:
+  - name: adult
+    documents: &documents
+      # - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-decon/documents/c4/*.gz
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-decon/documents/cc_en_head/*.gz
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-decon/documents/cc_en_middle/*.gz
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/olmo-mix/v1_6-300G-decon/documents/cc_en_tail/*.gz
+    attributes:
+      - url_filtering
+    output: &output
+      max_size_in_bytes: 38949672960
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/all/v1_6_300G_decon_cc_only_adult
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - "$.attributes[?(@['url_filtering__blocklist_hosts_porn_v1__url'] && !@['url_filtering__allowlist_wikidata_cleaned_v1__url'])]"
+        - "$.attributes[?(@['url_filtering__domain_blocklist_utp_v1__url'] && !@['url_filtering__allowlist_wikidata_cleaned_v1__url'])]"
+
+  - name: wikidata
+    documents: *documents
+    attributes:
+      - url_filtering
+      - random_number_v1
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/all/v1_6_300G_decon_cc_only_wikidata
+    filter:
+      include:
+        - "$.attributes[?(@['url_filtering__allowlist_wikidata_cleaned_v1__url'] && @.['random_number_v1__random_number_v1__random'][0][2] < 0.1)]"
+
+  - name: gambling
+    documents: *documents
+    attributes: &attributes
+      - url_filtering
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/all/v1_6_300G_decon_cc_only_gambling
+    filter:
+      include:
+        - "$.attributes[?(@['url_filtering__blocklist_hosts_gambling_v1__url'] && !@['url_filtering__allowlist_wikidata_cleaned_v1__url'])]"
+
+  - name: adware_malware
+    documents: *documents
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/all/v1_6_300G_decon_cc_only_adware_malware
+    filter:
+      include:
+        - "$.attributes[?(@['url_filtering__blocklist_hosts_adware_malware_v1__url'] && !@['url_filtering__allowlist_wikidata_cleaned_v1__url'])]"
+
+  - name: fakenews
+    documents: *documents
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/all/v1_6_300G_decon_cc_only_fakenews
+    filter:
+      include:
+        - "$.attributes[?(@['url_filtering__blocklist_hosts_fakenews_v1__url'])]"
+
+  - name: social
+    documents: *documents
+    attributes: *attributes
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/all/v1_6_300G_decon_cc_only_social
+    filter:
+      include:
+        - "$.attributes[?(@['url_filtering__blocklist_hosts_social_v1__url'])]"
+
+  - name: cloudflare
+    documents: *documents
+    attributes:
+      - url_filtering
+      - random_number_v1
+    output:
+      <<: *output
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/all/v1_6_300G_decon_cc_only_cloudflare
+    filter:
+      include:
+        - "$@.attributes[?(@['url_filtering__cloudflare_rank_v1__url'] && @['url_filtering__cloudflare_rank_v1__url'][0] && @['url_filtering__cloudflare_rank_v1__url'][0][2] <= 4.0 && @['random_number_v1__random_number_v1__random'][0][2] < 0.3)]"
+
+work_dir:
+  input: "/tmp/blocklist_qc/input"
+  output: "/tmp/blocklist_qc/output"
+processes: 188
