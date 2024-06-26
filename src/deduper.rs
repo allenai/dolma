@@ -50,7 +50,7 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
                 dedupe,
                 compression,
                 bloom_filter,
-                !config.mounted.unwrap_or(false),
+                !config.is_s3_volume.unwrap_or(false),
             );
             if let Err(e) = result {
                 log::error!("Failed to process {:?}: {}", p, e);
@@ -554,7 +554,7 @@ pub mod deduper_config {
         pub dedupe: DedupeConfig,
         pub bloom_filter: BloomFilterConfig,
         pub processes: usize,
-        pub mounted: Option<bool>,
+        pub is_s3_volume: Option<bool>,
         pub compression: Option<CompressionConfig>,
     }
 
