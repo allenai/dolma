@@ -1,0 +1,26 @@
+streams:
+  - name: c4
+    documents:
+      - s3://ai2-s2-davidg/documents/cf6*.json.gz
+    attributes:
+      - 613test_*
+
+    output:
+      max_size_in_bytes: 1_073_741_824
+      path: ${oc.env:HOME}/dolma-stuffing/test/v1_dd_ngram_doc_le030/documents
+      min_text_length: 25   # matches wikipedia
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - >-
+          ((.attributes | to_entries | map(select(.key | startswith("613test"))) | map(.value[0]) | map(select(length == 3)) | length == 0) or ((.attributes | to_entries | map(select(.key | startswith("613test"))) | map(.value[0]) | map(select(length == 3)) | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3))
+
+      syntax: jq
+
+work_dir:
+  input: "/tmp/c4_ngram_dedupe_mix/input"
+  output: "/tmp/c4_ngram_dedupe_mix/output"
+
+processes: 188
