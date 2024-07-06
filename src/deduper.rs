@@ -44,7 +44,14 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
             None => CompressionConfig::infer(),
         };
         threadpool.execute(move || {
-            let result = write_attributes(path, work_dirs, dedupe, compression, bloom_filter);
+            let result = write_attributes(
+                path,
+                work_dirs,
+                dedupe,
+                compression,
+                bloom_filter,
+                !config.is_s3_volume.unwrap_or(false),
+            );
             if let Err(e) = result {
                 log::error!("Failed to process {:?}: {}", p, e);
                 failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
@@ -73,6 +80,22 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     }
 }
 
+//Use the first hash to check if this dedupe key belongs to the current partition.
+//If it does, return all hashes. If it doesn't, return an empty list.
+fn build_hashes(
+    bloom_filter: &Arc<BloomFilter>,
+    dedupe_key: &VecDeque<&str>,
+    num_partitions: u64,
+    partition_index: u64,
+) -> Vec<u64> {
+    let mut hashes = vec![bloom_filter.first_hash(&dedupe_key)];
+    if hashes[0] % num_partitions == partition_index {
+        hashes.extend(bloom_filter.remaining_hashes(&dedupe_key));
+        return hashes;
+    }
+    return Vec::new();
+}
+
 // Write attributes for the documents in the given file:
 // For doc-level deduping, check the Bloom filter for existence of the configured key and set the configured attribute to true.
 // For paragraph-level deduping, check the Bloom filter for existence of a paragraph in the text and add a span to the configured attribute.
@@ -82,17 +105,29 @@ fn write_attributes(
     dedupe_config: DedupeConfig,
     compression: CompressionConfig,
     bloom_filter: Arc<BloomFilter>,
+    label_temp: bool,
 ) -> Result<(), io::Error> {
     let cache = FileCache {
         s3_client: Box::new(s3_util::new_client(None)?),
         work: work_dirs.clone(),
     };
 
+    let mut attr_key = dedupe_config.name.clone();
+    if dedupe_config.num_partitions.unwrap_or(1) > 1 {
+        attr_key = format!(
+            "{}_{}",
+            attr_key,
+            dedupe_config.partition_index.unwrap_or(0)
+        );
+    }
+
     let attrs_location = {
-        let attr_prefix = format!("/attributes/{}/", &dedupe_config.name);
+        let attr_prefix = format!("/attributes/{}/", attr_key);
         docs_location.replace("/documents/", &attr_prefix)
     };
-    let local_output = cache.prepare_output(&attrs_location)?;
+    let local_output = cache.prepare_output(&attrs_location, label_temp)?;
+    let mut num_processed = 0;
+    let mut num_observed = 0;
     if local_output.exists() {
         log::info!("Skipping {:?} because it already exists", attrs_location);
         return Ok(());
@@ -183,38 +218,66 @@ fn write_attributes(
                         .to_string()
                 };
 
+                let attr_name_with_index;
+                let attr_name = if dedupe_config.num_partitions.unwrap_or(1) > 1 {
+                    attr_name_with_index = format!(
+                        "{}_{}",
+                        cfg.attribute_name,
+                        dedupe_config.partition_index.unwrap_or(0)
+                    );
+                    &attr_name_with_index
+                } else {
+                    &cfg.attribute_name
+                };
+
                 if min_word_count > 0 {
                     // Split the text into words and check the number of words.
                     let words = tokenize(&document_key);
                     if words.count() < min_word_count {
                         // skip documents with fewer than min_word_count words
-                        attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                        attributes[attr_name] = Value::Array(Vec::new());
                     }
                 } else if document_key.len() < min_content_length {
                     // skip length 0 documents
-                    attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                    attributes[attr_name] = Value::Array(Vec::new());
                 } else if dedupe_config.skip_empty.unwrap_or(false)
                     && document_key.trim().is_empty()
                 {
                     // skip empty documents if dedupe_config.skip_empty is true
                     // and the document key is empty after trimming (i.e., removing whitespace)
-                    attributes[&cfg.attribute_name] = Value::Array(Vec::new());
+                    attributes[attr_name] = Value::Array(Vec::new());
                 } else {
                     let dedupe_key = VecDeque::from([document_key.as_str()]);
-                    let hashes = bloom_filter.hashes(&dedupe_key);
-                    if bloom_filter.contains(&hashes) {
-                        // attributes[&cfg.attribute_name] = Value::Bool(true);
 
-                        let mut duplicate_docs_array = Vec::new();
-                        let attr = vec![
-                            Value::from(0),
-                            Value::Number(document_key.len().into()),
-                            Value::from(1),
-                        ];
-                        duplicate_docs_array.push(Value::Array(attr));
-                        attributes[&cfg.attribute_name] = Value::Array(duplicate_docs_array);
-                    } else if !bloom_filter.read_only {
-                        bloom_filter.insert(&hashes);
+                    //Just compute the first hash to see if it matches the partition
+                    num_observed += 1;
+                    let hashes = build_hashes(
+                        &bloom_filter,
+                        &dedupe_key,
+                        dedupe_config.num_partitions.unwrap_or(1),
+                        dedupe_config.partition_index.unwrap_or(0),
+                    );
+
+                    if !hashes.is_empty() {
+                        num_processed += 1;
+                        //Compute the remaining hashes
+                        if bloom_filter.contains(&hashes) {
+                            // attributes[&cfg.attribute_name] = Value::Bool(true);
+
+                            let mut duplicate_docs_array = Vec::new();
+                            let attr = vec![
+                                Value::from(0),
+                                Value::Number(document_key.len().into()),
+                                Value::from(1),
+                            ];
+                            duplicate_docs_array.push(Value::Array(attr));
+                            attributes[attr_name] = Value::Array(duplicate_docs_array);
+                        } else if !bloom_filter.read_only {
+                            bloom_filter.insert(&hashes);
+                        }
+                    } else {
+                        //The dedupe key doesn't belong to this partition
+                        attributes[attr_name] = Value::Array(Vec::new());
                     }
                 }
             }
@@ -262,19 +325,28 @@ fn write_attributes(
                                 if cfg.by_ngram.is_none()
                                     || cfg.by_ngram.as_ref().unwrap().ngram_length == 0
                                 {
-                                    // Dedupe the entire paragraph
                                     let dedupe_key = VecDeque::from([p]);
-                                    let hashes = bloom_filter.hashes(&dedupe_key);
-                                    if bloom_filter.contains(&hashes) {
-                                        let span = vec![
-                                            Value::Number(par_start.into()),
-                                            Value::Number(par_end.into()),
-                                            Value::from(1),
-                                        ];
-                                        // add span to duplicate_paragraph_spans
-                                        duplicate_paragraph_spans.push(Value::Array(span));
-                                    } else if !bloom_filter.read_only {
-                                        bloom_filter.insert(&hashes);
+                                    let hashes = build_hashes(
+                                        &bloom_filter,
+                                        &dedupe_key,
+                                        dedupe_config.num_partitions.unwrap_or(1),
+                                        dedupe_config.partition_index.unwrap_or(0),
+                                    );
+                                    num_observed += 1;
+                                    if !hashes.is_empty() {
+                                        num_processed += 1;
+                                        // Dedupe the entire paragraph
+                                        if bloom_filter.contains(&hashes) {
+                                            let span = vec![
+                                                Value::Number(par_start.into()),
+                                                Value::Number(par_end.into()),
+                                                Value::from(1),
+                                            ];
+                                            // add span to duplicate_paragraph_spans
+                                            duplicate_paragraph_spans.push(Value::Array(span));
+                                        } else if !bloom_filter.read_only {
+                                            bloom_filter.insert(&hashes);
+                                        }
                                     }
                                 } else {
                                     // Dedupe by ngram overlap
@@ -297,12 +369,20 @@ fn write_attributes(
                                                 last_ngram_start = ngram_start;
                                                 ngram_count += 1;
                                                 let dedupe_key = VecDeque::from(ngram.clone());
-                                                let hashes = bloom_filter.hashes(&dedupe_key);
-
-                                                if bloom_filter.contains(&hashes) {
-                                                    duplicate_ngram_count += 1;
-                                                } else if !bloom_filter.read_only {
-                                                    bloom_filter.insert(&hashes);
+                                                let hashes = build_hashes(
+                                                    &bloom_filter,
+                                                    &dedupe_key,
+                                                    dedupe_config.num_partitions.unwrap_or(1),
+                                                    dedupe_config.partition_index.unwrap_or(0),
+                                                );
+                                                num_observed += 1;
+                                                if !hashes.is_empty() {
+                                                    num_processed += 1;
+                                                    if bloom_filter.contains(&hashes) {
+                                                        duplicate_ngram_count += 1;
+                                                    } else if !bloom_filter.read_only {
+                                                        bloom_filter.insert(&hashes);
+                                                    }
                                                 }
                                             }
                                             ngram.pop_front();
@@ -344,6 +424,7 @@ fn write_attributes(
                                     } else {
                                         let overlap_fraction =
                                             duplicate_ngram_count as f32 / ngram_count as f32;
+
                                         if overlap_fraction >= by_ngram.overlap_threshold {
                                             let span = vec![
                                                 Value::Number(par_start.into()),
@@ -357,10 +438,23 @@ fn write_attributes(
                                 }
                             }
                         }
-                        attributes[&cfg.attribute_name] = Value::Array(duplicate_paragraph_spans);
+
+                        let attr_name_with_index;
+                        let attr_name = if dedupe_config.num_partitions.unwrap_or(1) > 1 {
+                            attr_name_with_index = format!(
+                                "{}_{}",
+                                cfg.attribute_name,
+                                dedupe_config.partition_index.unwrap_or(0)
+                            );
+                            &attr_name_with_index
+                        } else {
+                            &cfg.attribute_name
+                        };
+                        attributes[attr_name] = Value::Array(duplicate_paragraph_spans);
                     }
                 }
             }
+
             let mut output_object = json!({});
             output_object["id"] = data["id"].clone();
             output_object["attributes"] = attributes;
@@ -382,7 +476,16 @@ fn write_attributes(
             log::info!("Keeping local file {:?} after deduping...", local_input);
         }
     }
-    cache.finalize_output(&attrs_location)?;
+
+    log::info!(
+        " Num processed: {} / Job total: {}",
+        num_processed,
+        num_observed
+    );
+    if label_temp {
+        //Finalize output performs a rename operation, which isn't implemented in mountpoint-s3 (https://github.com/awslabs/mountpoint-s3/issues/506)
+        cache.finalize_output(&attrs_location)?;
+    }
     Ok(())
 }
 
@@ -440,6 +543,8 @@ pub mod deduper_config {
         pub min_length: Option<usize>,
         pub min_words: Option<usize>,
         pub skip_empty: Option<bool>,
+        pub num_partitions: Option<u64>,
+        pub partition_index: Option<u64>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
@@ -449,6 +554,7 @@ pub mod deduper_config {
         pub dedupe: DedupeConfig,
         pub bloom_filter: BloomFilterConfig,
         pub processes: usize,
+        pub is_s3_volume: Option<bool>,
         pub compression: Option<CompressionConfig>,
     }
 
