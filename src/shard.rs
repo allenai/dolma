@@ -158,7 +158,7 @@ impl Shard {
             None => CompressionConfig::infer(),
         };
 
-        let output_path: PathBuf = cache.prepare_output(&self.output)?;
+        let output_path: PathBuf = cache.prepare_output(&self.output, true)?;
 
         // compression is either provided by user or we infer from the temp file
         let output_compression = match compression.output {
@@ -180,9 +180,9 @@ impl Shard {
                 let local_docs_file = cache.prepare_input(&input_path.doc_path)?;
                 let mut local_attr_readers = Vec::new();
                 let mut attr_reader_failure_counts = Vec::new();
-
-                for attr in &input_path.attribute_paths {
-                    let local_attr_file = cache.prepare_input(attr)?;
+                let paths = find_objects_matching_patterns(&input_path.attribute_paths);
+                for attr in paths.unwrap() {
+                    let local_attr_file = cache.prepare_input(&attr)?;
                     let attr_compression = match compression.input {
                         Some(ref input) => input.clone(),
                         None => MultiStream::infer_compression_from_temp(local_attr_file.clone()),
@@ -447,8 +447,13 @@ impl Shard {
                         }
                     }
                 }
-                cache.finalize_input(&input_path.doc_path)?;
-                for (index, attribute_path) in input_path.attribute_paths.iter().enumerate() {
+                cache.finalize_input(local_docs_file.to_str().unwrap())?;
+                for (index, attribute_path) in
+                    find_objects_matching_patterns(&input_path.attribute_paths)
+                        .unwrap()
+                        .iter()
+                        .enumerate()
+                {
                     let failure_count = attr_reader_failure_counts[index];
                     if failure_count > 0 {
                         log::warn!(
@@ -457,6 +462,7 @@ impl Shard {
                             failure_count
                         );
                     }
+
                     cache.finalize_input(attribute_path)?;
                 }
                 log::info!(
@@ -682,7 +688,8 @@ impl FileCache {
     pub fn finalize_input(&self, location: &str) -> Result<(), IoError> {
         if location.starts_with("s3://") {
             let (_, _, path) = cached_s3_location!(location, &self.work.input);
-            std::fs::remove_file(path)?;
+            std::fs::remove_file(&path)?;
+
             Ok(())
         } else {
             Ok(())
@@ -691,13 +698,17 @@ impl FileCache {
 
     // If output is an S3 URL, return a path to a new temporary location in the working output directory
     // If it is a local path, return a ".tmp" path in the same directory
-    pub fn prepare_output(&self, location: &str) -> Result<PathBuf, IoError> {
+    pub fn prepare_output(&self, location: &str, label_temp: bool) -> Result<PathBuf, IoError> {
         if location.starts_with("s3://") {
             let (_, _, path) = cached_s3_location!(location, &self.work.output);
             std::fs::create_dir_all(path.parent().unwrap())?;
             Ok(path.clone())
         } else {
-            let tmp_location = location.to_owned() + ".tmp";
+            let tmp_location = if label_temp {
+                location.to_owned() + ".tmp"
+            } else {
+                location.to_owned()
+            };
             let path = Path::new(tmp_location.as_str());
             std::fs::create_dir_all(path.parent().unwrap())?;
             Ok(path.to_path_buf())
