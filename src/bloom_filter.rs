@@ -179,8 +179,29 @@ impl BloomFilter {
     }
 
     pub fn hashes(&self, s: &VecDeque<&str>) -> Vec<u64> {
+        self.partial_hashes(s, Some(0), None)
+    }
+
+    pub fn first_hash(&self, s: &VecDeque<&str>) -> u64 {
+        self.partial_hashes(s, Some(0), Some(1))[0]
+    }
+    pub fn remaining_hashes(&self, s: &VecDeque<&str>) -> Vec<u64> {
+        self.partial_hashes(s, Some(1), None)
+    }
+
+    pub fn partial_hashes(
+        &self,
+        s: &VecDeque<&str>,
+        start_index: Option<usize>,
+        end_index: Option<usize>,
+    ) -> Vec<u64> {
+        let start = start_index.unwrap_or(0);
+        let end = end_index.unwrap_or(self.hash_builders.len());
+
         self.hash_builders
             .iter()
+            .skip(start)
+            .take(end - start)
             .map(|hash_builder| {
                 let mut hasher = hash_builder.build_hasher();
                 s.hash(&mut hasher);

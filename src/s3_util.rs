@@ -207,18 +207,13 @@ pub fn find_objects_matching_patterns(
     let mut stream_inputs: Vec<String> = Vec::new();
     for pattern in patterns.iter() {
         let start_size = stream_inputs.len();
-        let mut prefix = pattern.clone();
-        let mut suffix: Option<String> = Some("".to_owned());
-        let maybe_index = pattern.chars().position(|c| c == '*');
-        if let Some(index) = maybe_index {
-            prefix = pattern[..index].to_string();
-            suffix = None;
-            if index < pattern.len() - 1 {
-                suffix = Some(pattern[index + 2..].to_string());
-            }
-        }
+        let segments: Vec<&str> = pattern.split('*').collect();
+        let prefix = segments[0].to_string();
+        let suffixes: Vec<String> = segments[1..].iter().map(|s| s.to_string()).collect();
+
         let mut has_more = true;
         let mut token: Option<String> = None;
+
         while has_more {
             let (bucket, key) = match split_url(&prefix) {
                 Ok((bucket, key)) => (bucket, key),
@@ -233,7 +228,6 @@ pub fn find_objects_matching_patterns(
                         .list_objects_v2()
                         .bucket(bucket)
                         .prefix(key)
-                        .delimiter("/")
                         .continuation_token(token_value)
                         .send(),
                 )
@@ -245,7 +239,6 @@ pub fn find_objects_matching_patterns(
                         .list_objects_v2()
                         .bucket(bucket)
                         .prefix(key)
-                        .delimiter("/")
                         .send(),
                 )
                 .unwrap()
@@ -265,22 +258,18 @@ pub fn find_objects_matching_patterns(
                 })
                 .collect();
 
-            match suffix {
-                None => {
-                    // if suffix is none, push all the objects in to_validate_stream_inputs to stream_inputs
-                    to_validate_stream_inputs.iter().for_each(|path| {
+            if suffixes.is_empty() {
+                to_validate_stream_inputs.iter().for_each(|path| {
+                    stream_inputs.push(path.to_owned());
+                });
+            } else {
+                to_validate_stream_inputs.iter().for_each(|path| {
+                    if suffixes.iter().all(|suffix| path.contains(suffix)) {
                         stream_inputs.push(path.to_owned());
-                    });
-                }
-                _ => {
-                    // push only the objects that match the suffix to stream_inputs
-                    to_validate_stream_inputs.iter().for_each(|path| {
-                        if path.ends_with(suffix.clone().unwrap().as_str()) {
-                            stream_inputs.push(path.to_owned());
-                        }
-                    });
-                }
+                    }
+                });
             }
+
             token = resp.next_continuation_token().map(String::from);
             has_more = token.is_some();
         }
