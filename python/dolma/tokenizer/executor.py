@@ -86,6 +86,9 @@ class MemMapParallelWriter(BaseParallelProcessor):
         # flag to control whether to segment the documents before tokenization
         tokenizer_kwargs["segment_before_tokenization"] = kwargs.pop("segment_before_tokenization", None) or False
 
+        # whether to split the special tokens into separate tokens, e.g. <s> -> < s >
+        tokenizer_kwargs["encode_special_tokens"] = kwargs.pop("encode_special_tokens", None) or False
+
         # this is useful for making sure the queue does not grows too much
         cpu_count = multiprocessing.cpu_count()
 
@@ -293,6 +296,7 @@ def tokenize_in_parallel(
     eos_token_id: Optional[int] = 50279,
     pad_token_id: Optional[int] = 1,
     segment_before_tokenization: bool = False,
+    encode_special_tokens: bool = False,
     seed: int = 3920,
     metadata_dir: Optional[str] = None,
     max_size: int = 1024 * 1024 * 1024,
@@ -371,6 +375,7 @@ def tokenize_in_parallel(
         pad_token_id=pad_token_id,
         eos_token_id=eos_token_id,
         segment_before_tokenization=segment_before_tokenization,
+        encode_special_tokens=encode_special_tokens,
         tokenizer_name_or_path=tokenizer_name_or_path,
         sample_ring_prop=sample_ring_prop,
         use_fast_tokenizer=use_fast_tokenizer,
