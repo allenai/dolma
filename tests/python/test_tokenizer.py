@@ -33,6 +33,12 @@ LLAMA3_TOKENIZER = {
     "eos_token_id": 128001,
     "pad_token_id": None,
 }
+DOLMA2_TOKENIZER = {
+    "filename": f"{TEST_DIR}/data/tokenizer/dolma2-test-tokenizer.json",
+    "bos_token_id": None,
+    "eos_token_id": 100257,
+    "pad_token_id": 100277,
+}
 
 
 TEXT_WITH_NO_NEWLINES = {
@@ -380,3 +386,32 @@ class TestShufflingTokenizer(TestCase):
 
             # verify that there has bee shuffling
             self.assertNotEqual(list(all_tokens), sorted(all_tokens))
+
+
+class TestTokenizeSpecialTokens(TestCase):
+    def test_tokenize_special_tokens(self):
+        tokenizer_default = Tokenizer.from_file(**DOLMA2_TOKENIZER)
+        tokenizer_split = Tokenizer.from_file(**DOLMA2_TOKENIZER, encode_special_tokens=True)
+
+        text = "This is a test document."
+        tokens_default = tokenizer_default.encode(text)
+        tokens_split = tokenizer_split.encode(text)
+        self.assertEqual(tokens_default, tokens_split)
+
+        text = "This document explains what <|endoftext|> is."
+        tokens_default = tokenizer_default.encode(text)
+        tokens_split = tokenizer_split.encode(text)
+        self.assertNotEqual(tokens_default, tokens_split)
+        self.assertEqual(
+            tokenizer_default.decode(tokens_default, skip_special_tokens=True), "This document explains what  is."
+        )
+        self.assertEqual(tokenizer_split.decode(tokens_split, skip_special_tokens=True), text)
+        self.assertEqual(
+            tokenizer_default.decode(tokens_default, skip_special_tokens=False),
+            tokenizer_split.decode(tokens_split, skip_special_tokens=False),
+        )
+
+        text = "This document explains contain a |||PHONE_NUMBER||| number."
+        tokens_default = tokenizer_default.encode(text)
+        tokens_split = tokenizer_split.encode(text)
+        self.assertEqual(tokens_default, tokens_split)

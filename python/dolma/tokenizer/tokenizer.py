@@ -75,15 +75,13 @@ class Tokenizer:
         truncate_to: Optional[int] = None,
         truncate_direction: Union[str, TruncationDirection] = TruncationDirection.right,
         segment_before_tokenization: bool = False,
+        encode_special_tokens: bool = False,
     ):
         self.base_tokenizer = base_tokenizer
         self.bos_token_id = bos_token_id
         self.eos_token_id = eos_token_id
         self.pad_token_id = pad_token_id
         self.is_fast = isinstance(self.base_tokenizer, BaseTokenizer)
-
-        if self.is_fast:
-            self.base_tokenizer.no_truncation()
 
         if self.pad_token_id is None:
             logger.warning("No pad token ID provided; using EOS token ID %s.", eos_token_id)
@@ -95,6 +93,17 @@ class Tokenizer:
 
         self.config = self.get_base_tokenizer_config()
         self.dtype = np.min_scalar_type(self.vocab_size - 1)
+        self.encode_special_tokens = encode_special_tokens
+
+    @property
+    def encode_special_tokens(self) -> bool:
+        return bool(getattr(self, "_encode_special_tokens", False))
+
+    @encode_special_tokens.setter
+    def encode_special_tokens(self, value: bool):
+        self._encode_special_tokens = value
+        if self.is_fast:
+            self.base_tokenizer.encode_special_tokens = value  # pyright: ignore
 
     @cached_property
     def tokenizer_has_prefix(self) -> bool:
@@ -314,7 +323,9 @@ class Tokenizer:
                 fast_batch = self.base_tokenizer.encode_batch(inputs, add_special_tokens=False)
                 batch_encoding = [e.ids for e in fast_batch]
             else:
-                slow_batch = self.base_tokenizer(inputs, add_special_tokens=False)  # pyright: ignore
+                slow_batch = self.base_tokenizer(
+                    inputs, add_special_tokens=False, split_special_tokens=self.encode_special_tokens
+                )  # pyright: ignore
                 batch_encoding = slow_batch.input_ids
 
         all_input_ids = []
