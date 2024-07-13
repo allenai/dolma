@@ -93,6 +93,12 @@ class DedupeConfig:
     min_words: Optional[int] = field(
         default=0, help="Minimum number of uniseg word units in documents/paragraphs to be deduplicated"
     )
+    num_partitions: Optional[int] = field(
+        default=1, help="The total number of partitions the work is divided into."
+    )
+    partition_index: Optional[int] = field(
+        default=0, help="The index of the partition being processed, in the range [0, num_partitions)."
+    )
 
 
 @dataclass
@@ -115,6 +121,9 @@ class DeduperConfig:
         default=False,
         help="If true, only print the configuration and exit without running the deduper.",
     )
+    is_s3_volume: bool = field(
+        default=False, help="Set true if the command is being run on files in a mounted S3 FUSE volume"
+    )
 
 
 class DeduperCli(BaseCli):
@@ -135,6 +144,8 @@ class DeduperCli(BaseCli):
                 "skip_empty": parsed_config.dedupe.skip_empty,
                 "min_length": parsed_config.dedupe.min_length,
                 "min_words": parsed_config.dedupe.min_words,
+                "num_partitions": parsed_config.dedupe.num_partitions,
+                "partition_index": parsed_config.dedupe.partition_index,
             }
             try_name = parsed_config.dedupe.name if not om.is_missing(parsed_config.dedupe, "name") else None
 
@@ -172,9 +183,6 @@ class DeduperCli(BaseCli):
             total_matching_documents = 0
             for document in parsed_config.documents:
                 dict_config.setdefault("documents", []).append(str(document))
-
-                if document.count("*") > 1:
-                    raise DolmaConfigError("Only one wildcard is allowed in the document path")
 
                 current_matching_documents = sum(1 for _ in glob_path(document))
                 if current_matching_documents == 0:
@@ -218,6 +226,7 @@ class DeduperCli(BaseCli):
                     "bloom_filter.desired_false_positive_rate must be specified"
                 )
 
+            dict_config["is_s3_volume"] = parsed_config.is_s3_volume
             dict_config["work_dir"] = {"input": str(work_dirs.input), "output": str(work_dirs.output)}
             dict_config["processes"] = int(parsed_config.processes)
 
