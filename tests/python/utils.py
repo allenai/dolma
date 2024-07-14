@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 import boto3
 import smart_open
-from smart_open import open
+import yaml
 
 from dolma.core.paths import glob_path, mkdir_p
 
@@ -22,6 +22,7 @@ DOLMA_TESTS_SKIP_AWS_ENV_VAR = "DOLMA_TESTS_SKIP_AWS"
 DOLMA_TESTS_S3_PREFIX_DEFAULT = "s3://dolma-tests"
 
 LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
 
 
 def parse_s3_path(s3_path: str) -> Tuple[str, str]:
@@ -65,9 +66,8 @@ def get_test_prefix() -> str:
 
 
 def skip_aws_tests() -> bool:
-    dolma_tests_skip = os.environ.get(DOLMA_TESTS_SKIP_AWS_ENV_VAR)
-    LOGGER.info(f"{DOLMA_TESTS_SKIP_AWS_ENV_VAR}: {dolma_tests_skip}")
-    return (dolma_tests_skip or "false").lower() == "true"
+    dolma_tests_skip = yaml.safe_load(os.environ.get(DOLMA_TESTS_SKIP_AWS_ENV_VAR) or "false")
+    return bool(dolma_tests_skip)
 
 
 def upload_test_documents(local_input: str, test_prefix: str) -> Tuple[str, str]:
