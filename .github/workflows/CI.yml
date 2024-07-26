@@ -191,6 +191,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes --upgrade libc6-dev-i386
+
+      - name: Install Rust toolchain
+        run: |
+          rustup update ${{ env.RUST_CHANNEL }}
+          rustup component add --toolchain ${{ env.RUST_CHANNEL }} rustfmt rust-src
+          rustup default ${{ env.RUST_CHANNEL }}
+
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:

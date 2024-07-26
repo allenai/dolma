@@ -30,6 +30,7 @@ dependencies = [
     "numpy",
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
+    "zstandard>=0.23.0",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
