@@ -47,6 +47,7 @@ threadpool = "1.8.1"
 tokenizers = { version = "0.15.0", features = ["http"] }
 tokio = { version = "1.27.0", features = ["full"] }
 tokio-util = "0.7.7"
+time = "0.3.36"
 unicode-segmentation = "1.7"
 openssl = { version = "0.10.63", features = ["vendored"] }
 adblock = { version = "0.8.6", features = ["content-blocking"] }

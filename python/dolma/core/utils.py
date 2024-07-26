@@ -1,4 +1,5 @@
 import importlib
+import io
 import os
 import re
 import string
@@ -14,8 +15,11 @@ except Exception:
 
 import nltk
 import uniseg.wordbreak
+import zstandard
+from necessary import necessary
 from nltk.tokenize.punkt import PunktSentenceTokenizer
 from omegaconf import OmegaConf as om
+from smart_open import register_compressor
 
 try:
     nltk.data.find("tokenizers/punkt")
@@ -148,3 +152,37 @@ def dataclass_to_dict(dataclass_instance) -> dict:
 
     # force typecasting because a dataclass instance will always be a dict
     return cast(dict, om.to_object(om.structured(dataclass_instance)))
+
+
+def add_compression():
+    """
+    Adds support for zstandard (.zst) compression format to the smart_open library.
+
+    This function registers a custom compressor for the .zst file extension in the smart_open library.
+    The compressor uses the zstandard library to handle zstandard compression.
+    """
+
+    def _handle_zstd(file_obj, mode):
+        result = zstandard.open(filename=file_obj, mode=mode)
+        # zstandard.open returns an io.TextIOWrapper in text mode, but otherwise
+        # returns a raw stream reader/writer, and we need the `io` wrapper
+        # to make FileLikeProxy work correctly.
+        if "b" in mode and "w" in mode:
+            result = io.BufferedWriter(result)
+        elif "b" in mode and "r" in mode:
+            result = io.BufferedReader(result)
+        return result
+
+    register_compressor(".zst", _handle_zstd)
+    register_compressor(".zstd", _handle_zstd)
+
+
+with necessary(("smart_open", "7.0.4"), soft=True) as SMART_OPEN_HAS_ZSTD:
+    if SMART_OPEN_HAS_ZSTD:
+        # add additional extension for smart_open
+        from smart_open.compression import _handle_zstd
+
+        register_compressor(".zstd", _handle_zstd)
+    else:
+        # add zstd compression
+        add_compression()

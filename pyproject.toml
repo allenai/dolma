@@ -1,6 +1,6 @@
 [project]
 name = "dolma"
-version = "1.0.4"
+version = "1.0.5"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
@@ -30,6 +30,7 @@ dependencies = [
     "numpy",
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
+    "zstandard>=0.23.0",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -117,18 +118,13 @@ pii = ["presidio_analyzer==2.2.32", "regex"]
 # language detection; by default, we use fastttext, everything else is optional
 lang = [
     "fasttext-wheel==0.9.2",
-    "LTpycld2==0.42",        # fork of pycld2 that works on Apple Silicon
+    "LTpycld2==0.42",                  # fork of pycld2 that works on Apple Silicon
     "lingua-language-detector>=2.0.0",
-    "langdetect>=1.0.9"
+    "langdetect>=1.0.9",
 ]
 
 # extension to parse warc files
-warc = [
-    "fastwarc",
-    "w3lib",
-    "url-normalize",
-
-]
+warc = ["fastwarc", "w3lib", "url-normalize"]
 trafilatura = [
     # must include warc dependencies
     "dolma[warc]",
@@ -136,16 +132,13 @@ trafilatura = [
     "trafilatura>=1.6.1",
     # following are all for speeding up trafilatura
     "brotli",
-    "cchardet >= 2.1.7; python_version < '3.11'",  # build issue
-    "faust-cchardet >= 2.1.18; python_version >= '3.11'",  # fix for build
+    "cchardet >= 2.1.7; python_version < '3.11'",         # build issue
+    "faust-cchardet >= 2.1.18; python_version >= '3.11'", # fix for build
     "htmldate[speed] >= 1.4.3",
     "py3langid >= 0.2.2",
 ]
 
-resiliparse = [
-    "dolma[warc]",
-    "resiliparse",
-]
+resiliparse = ["dolma[warc]", "resiliparse"]
 
 # all extensions
 all = [
@@ -154,15 +147,11 @@ all = [
     "dolma[pii]",
     "dolma[trafilatura]",
     "dolma[resiliparse]",
-    "dolma[lang]"
+    "dolma[lang]",
 ]
 
 [build-system]
-requires = [
-    "maturin[patchelf]>=1.1,<2.0",
-    "setuptools >= 61.0.0",
-    "wheel"
-]
+requires = ["maturin[patchelf]>=1.1,<2.0", "setuptools >= 61.0.0", "wheel"]
 build-backend = "maturin"
 
 
