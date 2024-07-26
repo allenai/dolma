@@ -19,7 +19,7 @@ permissions:
 env:
   DOLMA_TESTS_SKIP_AWS: ${{ secrets.AWS_ACCESS_KEY_ID == '' && 'true' || 'false' }}
   DOLMA_TEST_S3_PREFIX: s3://dolma-tests
-  RUST_CHANNEL: 1.79.0 # update this to the latest stable version when zed issue is fixed
+  RUST_CHANNEL: 1.78.0 # update this to the latest stable version when issues resolved
 
 jobs:
   info:
