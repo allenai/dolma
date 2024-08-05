@@ -46,6 +46,10 @@ class TokenizerConfig:
         default=True,
         help="Whether to use the fast tokenizer. If False, it requires the transformers library to be installed.",
     )
+    encode_special_tokens: bool = field(
+        default=False,
+        help="Whether to encode special tokens in the tokenized output, e.g. splitting '<s>' into '<', 's', '>'.",
+    )
 
     def __post__init__(self):
         logger = get_logger(__file__)
@@ -208,6 +212,7 @@ class TokenizerCli(BaseCli):
                 eos_token_id=parsed_config.tokenizer.eos_token_id,
                 pad_token_id=parsed_config.tokenizer.pad_token_id,
                 segment_before_tokenization=parsed_config.tokenizer.segment_before_tokenization,
+                encode_special_tokens=parsed_config.tokenizer.encode_special_tokens,
                 dtype=parsed_config.dtype,
                 seed=parsed_config.seed,
                 metadata_dir=work_dirs.output,
