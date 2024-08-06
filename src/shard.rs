@@ -213,13 +213,6 @@ impl Shard {
                 )
                 .reader()?;
 
-                // let input_file = OpenOptions::new()
-                //     .read(true)
-                //     .write(false)
-                //     .create(false)
-                //     .open(&local_docs_file)?;
-                // let reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(input_file));
-
                 let mut line_number = 0;
                 let mut lines_written = 0;
 
@@ -332,15 +325,6 @@ impl Shard {
                         .map_err(|s| IoError::new(IoErrorKind::Other, s))?;
 
                     if should_write {
-                        // if self.span_replacements.is_some() {
-                        // let mut replacements = self
-                        //     .span_replacements
-                        //     .as_ref()
-                        //     .unwrap()
-                        //     .iter()
-                        //     .flat_map(|r| r.find_spans_to_replace(&data).unwrap())
-                        //     .collect::<Vec<SpanReplacement>>();
-
                         let mut replacements = span_replacers
                             .iter()
                             .map(|replacer| replacer.find_spans_to_replace(&data))
