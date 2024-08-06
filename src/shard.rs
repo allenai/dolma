@@ -113,8 +113,8 @@ impl Shard {
             }
             if !shard_inputs.is_empty() {
                 let output = format!(
-                    "{}/{}-{:04}.json.gz",
-                    stream_config.output.path, stream_config.name, stream_shard_count
+                    "{}/{}-{:04}.json{}",
+                    stream_config.output.path, stream_config.name, stream_shard_count, output_ext
                 );
                 let shard = Shard {
                     inputs: shard_inputs.clone(),
