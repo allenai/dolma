@@ -213,13 +213,6 @@ impl Shard {
                 )
                 .reader()?;
 
-                // let input_file = OpenOptions::new()
-                //     .read(true)
-                //     .write(false)
-                //     .create(false)
-                //     .open(&local_docs_file)?;
-                // let reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(input_file));
-
                 let mut line_number = 0;
                 let mut lines_written = 0;
 
