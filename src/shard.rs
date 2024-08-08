@@ -113,8 +113,8 @@ impl Shard {
             }
             if !shard_inputs.is_empty() {
                 let output = format!(
-                    "{}/{}-{:04}.json.gz",
-                    stream_config.output.path, stream_config.name, stream_shard_count
+                    "{}/{}-{:04}.json{}",
+                    stream_config.output.path, stream_config.name, stream_shard_count, output_ext
                 );
                 let shard = Shard {
                     inputs: shard_inputs.clone(),
@@ -212,13 +212,6 @@ impl Shard {
                     None,
                 )
                 .reader()?;
-
-                // let input_file = OpenOptions::new()
-                //     .read(true)
-                //     .write(false)
-                //     .create(false)
-                //     .open(&local_docs_file)?;
-                // let reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(input_file));
 
                 let mut line_number = 0;
                 let mut lines_written = 0;
