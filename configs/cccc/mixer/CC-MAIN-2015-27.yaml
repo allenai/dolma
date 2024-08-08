@@ -1,0 +1,419 @@
+
+streams:
+  - name: cccc-CC-MAIN-2015-27
+    documents:
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/00a8b03375316a4fbbf4f1b9c7b0ef32a2dd0366.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/08ef7fa74c0df837fd7db18814c7a2c5efd2177e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/0ba99886d3c1021fa8cb7a393143fbc9937b5374.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/0d493ee1d154dafb683f82c13b0baa7e0c4ee149.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/12ecc5f2a72d9f0f29b1fd7206d35db56e18e161.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375090820.0/warc/2f1be7414feaf0eddc1973ca2f3a47b9948cafb4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375090820.0/warc/5c601a9935fce92105e6003ec4d2e4a6b54106b8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375090820.0/warc/cafcdba8f216e5c1993e5cde1bc2a599fc0aa1f0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375090887.26/warc/0edb919d0c4e7f00b3fa196d29e864158d28a435.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375090887.26/warc/3e6d35991a6d68f5cd83d3f447a06a06a9e8a9d8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375091585.27/warc/8dd3a25e84a17aec1cac94460baf3d0d84d0368a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375091585.27/warc/a6df9e22c15a9826eb8572c7048683d12137aa61.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375091587.3/warc/8208e81835f2570ad40090f03f651d50cffa837f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375091587.3/warc/e3482e36f2df6f591484beb81a1fd9df1a98aa03.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375091751.85/warc/8e84159054866146b424dec7a93d1bd747f9e5bf.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375091751.85/warc/c40c7f4cbfd4700215b78dc81302af26d6e12fbe.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375091925.14/warc/1aec0cc8a0c90e1f33bc2d6f9214a731b4b6bdf8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375091925.14/warc/838a994ad1c6f3503ddd6e7d092dbcc9e430b9de.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375093400.45/warc/c65d4a77e7cc25bbed4b8f2ae977aa5f5bd98801.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375093400.45/warc/e1c3dc62c1b9416aa9bfd848a591394f6c67310e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375093899.18/warc/4d00c772e2becf134b7a7201700f0472b70274ca.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375093899.18/warc/fedb848d17f1002edd6e000cc7b66259c1f35601.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375093974.67/warc/07696fe96ca5a7149502f8379b2160f1073a3359.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375093974.67/warc/084fbd7d258cb77921d282b6d2ed7694d9fd41c4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094451.94/warc/1e2ebac6aa4c40a20f7754036c6840a8ae4157d0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094451.94/warc/6eb7ab13c5707e7de710c45b2d9d1f5a03e75cdd.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094451.94/warc/e4bd5078b8f12cb765698bd7eeb5759339c9a69d.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094491.62/warc/a775618a8c7877772010cdd95a8c12553a8560c7.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094491.62/warc/cd4308a92c45d64a5c6763b5e2f3bde268054ad4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094491.62/warc/e57bc7ddbbe2b0decccc92ac8ccd4d23263c22b7.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094501.77/warc/63b3de8f19d006d310afe1b33525878a436ade64.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094501.77/warc/e22af352c8d403f4c7a3de1e1562a4d45488ef1a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094510.84/warc/73e4b5152cca7ce49b016d1a2f90fb13e670168a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094510.84/warc/8fba039e9f968ed41033353565bc7d9336f7f6a6.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094629.80/warc/26f6a5e97a9e129410a708dfedb3bbd4d4e71635.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094629.80/warc/3d7ebd6d413e8b550adb6f00415fadc4d34c4f37.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094634.87/warc/19aa5512ef5d939fe277f2412f81dbd38e80bc9f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094634.87/warc/bf08ca7547c9c2f60fa7fdf76878e1885d001789.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094662.41/warc/625ff8563f0eadf04fdc7c05d37a400ed69d5604.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094662.41/warc/9b8bcb110c1b0a7bdbd08fb4c070c36efee0c8f2.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094690.4/warc/6c2bf4ef482d40362aca60df5b48443b9b07cbd2.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094690.4/warc/d6ca0f595b69aeab40f28b92acacd0d26e448776.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094735.50/warc/f918868c027864ec4e8821ef998c6f5d96f85ae5.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094735.50/warc/fca3a2062b54615f6d5e58adec9264f664f83107.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094924.48/warc/5764155757337779aad0554cf7930a6a0d5544b4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094924.48/warc/8299bbdd6e9d4d12cc2a118bb807629348d4efd0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094931.19/warc/1903d361b978e23b3fa3a241d04c8e5ba614d02e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094931.19/warc/2ae83d05bc01ed18a4ebc03747af80def66e0f3b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094931.19/warc/ac3c88e888422de9a81370a68336f64baae45457.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094957.74/warc/c74502b422cd8220807ca22afd3301fe9c228b69.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094957.74/warc/ee0d478307c20e06cc69076721cff8b169cab863.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375094957.74/warc/f20b78a32844f5318a7d8cc89604517903db95ab.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095183.13/warc/5ce70835cde49a505f1b820cb4036bf23f4cceb8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095183.13/warc/c99830168e0f355c769c51a6b1b7237b334ca453.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095184.64/warc/afb639d81fe23295de84f5a26ac472f9f5d99d98.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095184.64/warc/c792da577830e0f22121d7477cd156cd71f95e6c.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095270.70/warc/5f1efe2be292ebcce009fb92956b6ddaa9943d60.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095270.70/warc/84a9f4c79f1f42e58e2fe6791e9d5101f2c9503f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095273.5/warc/40e50fd11ef7353ecbe8655db6bc75dbe92fbc52.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095273.5/warc/c98dc8a3763dda3775df813c6458d76479cb9422.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095346.56/warc/59706ed603f70b83e2570d622ac21af0187eb724.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095346.56/warc/e88565684b23d08e9d08791f5b8f82daf126e37f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095373.99/warc/b144f36daecdd2cdcb00cf35f0702831743c2e5e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095373.99/warc/f15f954488bdbeb9a7cc7552bab2992a6562d885.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095404.78/warc/03ffe8fbb3e50de18cf1fd8616d189e947a284f2.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095404.78/warc/de7ecf826980a2bbff8f750b697402dc85a6ea07.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095423.29/warc/2bc3189475b3fb061c0feca3a52b0e5113c038a3.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095423.29/warc/2eb57f45c08caf30fa874e71775aef919687c7c3.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095494.6/warc/1ce6f8d853f0b4218722fbdc54734b860d7e10b4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095494.6/warc/30be5ec0b60ff834ce2f54b0136850b4e5f21419.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095494.6/warc/f394a79478156f5580aace1207fc7d47f89aeebe.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095557.73/warc/a95f674c20225b42fdeda1c59fa7402a37196ea8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095557.73/warc/b33921f5ee3dafcf6e3eed14b6578725ed60d230.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095557.73/warc/b355f7d070c819e98b8c8091329902099096962f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095605.30/warc/1e97783d2c835097137c7a7fac447c9968aaf424.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095605.30/warc/ffd26baabf9d129dfb149b93088b8fa85037b8c2.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095632.21/warc/33356904958d606eef90d17a7294a0b8d91996df.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095632.21/warc/c05c85231d2f723cdee8e3aead17ff833603d51c.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095668.34/warc/057be0614265884de9a218008ffac4cb45fab45b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095668.34/warc/8c8bf2e8098e57acacfc4d165966dd2ffc7401c2.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095671.53/warc/27d6061fc1306215114f877f0ebf54f8a80ce72b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095671.53/warc/efeebedaafc5b4400be7e31e741805ba8e405647.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095677.90/warc/afee2566d1ae190b570b61add8128350fa6c9cd7.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095677.90/warc/feaaf29d8d00abdb2dbd5d245b36bed62cedafc9.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095711.51/warc/7feced0c3f07c09ce1af4b7b579a108c891a962d.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095711.51/warc/f0269183c12b3493dbe0babdababeb11f5406403.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095732.23/warc/616dc894808f4131ddc884ca1005b0a846240b81.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095732.23/warc/fb61c1f1ddb815368feea4a200c7b49b554bdd81.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095775.68/warc/dbdcab78634772b2d11161b75dd50be957422a93.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095775.68/warc/fdc29f6c475848980d948d6864ce5ce90d5aafce.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095806.49/warc/5f0f4caf9585dd437d879999902f864d5ec8f922.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095806.49/warc/86f096ca40253736b7db244d915b9d3cf881debc.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095806.49/warc/fead607f71077b30b03d5e95be6b7609076579ad.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095874.61/warc/0a9741a796398711deeb5a04a5edab254ca7f8e8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095874.61/warc/40e6ce0b24426b52d53c074e1e1eaa90f86d92d7.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375095874.61/warc/7023e25f45dceb8c8abfd0c4ae74dc0c040a7f33.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096061.71/warc/5f52cc075bf77e7abd5a0a63112a230ffdd2fcab.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096061.71/warc/7aab8c50304be054504961a91623e75e2d6e0b36.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096156.35/warc/9b912d86fd79b728e2d1fee2f10e82c9c989b902.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096156.35/warc/c379df4505103d41763f35e40b28236ec8b4998d.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096208.17/warc/10706ce2f6da2c321674c38f6e98d61865403dfb.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096208.17/warc/ccb3cec1deb8c994f1af5e1b33819643b4243863.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096209.79/warc/3aa9924b5388ed8c11f02e42f558b59bee14f27b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096209.79/warc/5c72852b318da244b63446626cd6ae18f21b824a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096287.97/warc/475b0babf911572ff249fc42cf9b7605292489f2.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096287.97/warc/edd0fea0ad471695d49e6f10712e3b7b39b26b3f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096290.39/warc/1b1807062e511a1e4b71db9e0e539f7a81eef082.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096290.39/warc/c935adf7ad0d0fd9d3d240990808a20cac3af786.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096293.72/warc/7367df5762a878b4bed41caf4c19f0cb00220eb9.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096293.72/warc/7abdb88e468f67b1fc0f79ef6eff308b22e19a9a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096301.47/warc/3c723625ac393649c08785f32013975dcb35cbc8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096301.47/warc/e70e3bc9689cb2305bdf48025a23aa403b8368c8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096504.12/warc/25d108f0a11274fc843d8abd38df6bec83194e09.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096504.12/warc/39c23a653bcc70e4a4c296d65aeeaf506c80cc15.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096504.12/warc/ed0094fb4638c5925ccd411d7bbb292200d919ba.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096579.52/warc/07311632682df0db39be1a6978691fbd81e1200e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096579.52/warc/a6839d3288901b99b558846bf849ac95cfbf0149.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096579.52/warc/e9f091c9dc1c7a0fe85e946dc043014b38cd4a10.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096579.89/warc/6db7cf7c1ceecb54ce1704e9ed17919bd98f0e49.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096579.89/warc/97074539898a70996fa5cfdf58d2c3cebe797edc.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096686.2/warc/082bbd2bfff03477cf337f66713f862ffcc8a3cd.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096686.2/warc/c47ef3738c2beee25182aa4384973b3d410d77c0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096706.9/warc/3e16267a068ea39d20d8ddf8ac323b6ee10a87ab.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096706.9/warc/5fa5427af850c5476aca51e4571745693455a8e1.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096738.25/warc/4fda5f1e78190a6b0182632b2fd548582f16c6ea.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096738.25/warc/e3d84f3ed5eca5e874be760b73a5bd76c9a60668.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096773.65/warc/42cc5625492842b0a07c653eebb571ffb3fdf766.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096773.65/warc/510dd346ede0dac0c2f92a289b294b8d7b86859a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096780.24/warc/21621d96a409f590e35320c1aebf336ce0d968ab.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096780.24/warc/ac4749d2ee7a0a7e3eaee839af45de20010c458d.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096870.66/warc/97db6f03e4089b5ae7445c39667f064eecc4bfda.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096870.66/warc/9d15a2babf46e0c78500b5a6e6da26abd4e9c3e0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096944.75/warc/6569bc32b51910112304664ca5560922e3b4d13e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096944.75/warc/cdf8bfb25111a30b949cdd58b493908f352286b9.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096991.38/warc/2b0a49007a8b0b066cad61ad1238f2294458ce38.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096991.38/warc/9fa4df7df30a5cbe5aef8a57cfa5a5dd7c6ed520.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375096991.38/warc/c7ac8a0cda463a31a3fa4d3251c4b2b79b20399d.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097038.44/warc/358337053388c03679f68412ba6971d4c17d025c.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097038.44/warc/5748440bfa1ecd38552eeb910c441a022bb11e30.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097038.44/warc/80ebb80bd71dee47a3836281086121dab64e01e8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097199.58/warc/011583bb1ac02d4a8b3707a54cabaf8c15f09cdc.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097199.58/warc/ac076d1dfba9f4551e135f433db4182b2d5d4b5f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097204.8/warc/b6c1e390bf8d98b4423ebdfee4be2aaf708d1923.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097204.8/warc/eb2929b0dd34f7364d54c77c1622c5fa6e87aeab.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097246.96/warc/3e13d11f772cb9895cea1f9fbe6f628da177b523.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097246.96/warc/50c5bdf1f78cde653db1f1447aae7e6790d5bbed.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097354.86/warc/77cad681c44136b2f7d88dd405b17392d2a9b3e3.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097354.86/warc/c204ef10d2a50deb81bd98063263b89f4135d153.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097396.10/warc/0fa65598a255103d49982dc02b2938a91153e6c0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097396.10/warc/f775785fc0be1911ff703e285693044ec86f9b59.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097473.95/warc/313b0791e1263cf8f5e418ca0a29905a730a3b9a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097473.95/warc/9bf84ef58b5c5d3c445ec2882ab3e955b97357d0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097475.46/warc/241800568cd87363fe802b1ceeee68034725966c.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097475.46/warc/5f2d38e0ca27a1d102f415d5366419815a967dfd.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097512.42/warc/14dff3885d84f0e16b6bbc2b7eeefc24718b26ac.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097512.42/warc/2f604569bdfa6f705cd47e84ac2b779096a6f39c.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097546.28/warc/2d071d44f21b0addfd120c3b592a76f3bd76dbc1.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097546.28/warc/854569f0bf063043a171429e11ffca6cb5d24d8e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097546.28/warc/bda04f23be0431783300d7161e4165787d06b062.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097548.7/warc/1cc9aad31e7a8f127e3543b53581db8102e327f7.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097548.7/warc/3cac9a945058be583a451903eb292243df5ca530.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097548.7/warc/f3cdea56a81c1b2d6ad0debf31cae1462c99ecc3.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097710.32/warc/01d1854cbcfd1f1981134369621e61abdc305178.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097710.32/warc/cee9a3dae2a32f775cbc0f89f760ae8b78849289.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097710.59/warc/01f3294088725964bf31866a8598c48703e1b227.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097710.59/warc/8e319fbfe3a55b5684f059d73aec29fca70b9230.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097730.92/warc/00d515b1a406a8e9a77cf24b2465961affd0aa4b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097730.92/warc/4825a30d352b677dc24e64e65554e876b8874abb.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097757.36/warc/1836f8a7e320719acf302cfb9a1271dbe11a8cda.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097757.36/warc/c3d12b4b88c3e7a66389ce4379a9442d6e42f89b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097861.54/warc/70aab1e2a6cdf49bda9b7114e300a3ba16241783.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375097861.54/warc/87269530a6dd3e9e444df9cee665b3a3c0b5420b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098059.60/warc/cbe795d74b09846011a28eb073d51ef64de90bd4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098059.60/warc/fea238db2644c393520c0bd8e2d8c26f6545ea20.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098071.98/warc/bb18bd0421434dd65b8a78abf486320cc339f440.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098071.98/warc/ff9d2c70f83ddd4157dd1d134261c18d9de76112.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098072.11/warc/93102066cea6ec8094657058c9547a1199584b43.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098072.11/warc/b96833fd9244f57b2843161b5f608b1375aa3e14.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098196.31/warc/00b688e62c0629e58480db2ad8f66b60a29fb3a7.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098196.31/warc/5edcc67eef63bfd48428c2d57218e129bb2fc2ba.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098196.31/warc/7477efd1c336f29f220a34766ab002cb14624f0f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098464.55/warc/1f8ab93110b01dd8dc24caa7ee1b9e1badde4de6.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098464.55/warc/210d0c0df0033963f4d5dddbf334827918c1a8d1.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098464.55/warc/cba5a3b2f7cdb5eab211699211b494721ccf7cd3.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098468.93/warc/dcd2cf435fe0fd26849c5dfa1ba7cf01c6077e78.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098468.93/warc/e84451a3851c6389eeee13a07c302068f5a6698d.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098685.20/warc/9ba127c1e6c5faf6e3c9688c5eaa0efd4cd52d05.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098685.20/warc/fb19e77e0d79440e7879b56c65e94166099840d5.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098808.88/warc/373a217e6f4f1901260520bd7611e8b622b742ff.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098808.88/warc/dcaf99363057fea9274df2a69fe953c726e0cd0b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098849.37/warc/1e2561256cea55b261dc581e3ec05f7691397a4f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098849.37/warc/be00713862e7abe676e42b44a20ed8bbdab9c80e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098924.1/warc/85cd7e3cc1399e795c3b6c5bb7980cc75b938816.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098924.1/warc/9f73f8cfab9b2be1c66744a248fe6953684e9b31.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098987.83/warc/0f1916392af4c9012d407b422fcc588e765b5064.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098987.83/warc/c4d5a84ca5b82e66ed20a6743ae5b3d66090ae82.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098990.43/warc/09cb761ff679fd0b5087745b5b7b57941721b5ba.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375098990.43/warc/c840ff1d71a717a4ed87334c1724e06f15f2fe77.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099036.81/warc/5cdcc74b5810600269ae080f7d91e1b399324ae5.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099036.81/warc/81f637b09ecfca3c8777652a0435da92d2d297e4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099105.15/warc/38da14a9bda59e65568b2425b57dcfb4ff1eccdd.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099105.15/warc/3fe64e7f5213360af1d3daf9476f8865fe5e9d44.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099105.15/warc/aa4febd66ed6da9034af5c25903d9c03b68d9ec3.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099173.16/warc/9b9a1056d77e7c4575a16f17a9eb950b081f55dd.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099173.16/warc/abfbae6d43081273fad62de1ef310f40172510e0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099173.16/warc/cb6264fa3e4ed32e3c2fb612ddd2b6d5e850c7c1.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099361.57/warc/47f68eb66835cf5563c6a198633243dad06de3d6.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099361.57/warc/70c99d97968435f236336283bcb005284d73e0f4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099755.63/warc/0da7e0d74c135ef9bfb66f384bedda7c96bedf11.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099755.63/warc/ab2c96470521a53f5df12d5bc73547b236021c39.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099758.82/warc/50119068fe9da08cb2dde0c08fdf0581c426e99f.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375099758.82/warc/942a84934a69a9c9e1c1f86bbdc8d1d5bdece319.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375100481.40/warc/cc01dd2aaf8a7db514ed5afaecb8501e82c0e863.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375100481.40/warc/e4a31667868903329cc3fa5f2afecc8908a5fb58.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375102712.76/warc/03c3ae67f84a13ec33e61047dbd14c7628e0bb73.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375102712.76/warc/04abd0771aa8000172dcfb93babcc298988b7c76.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375635143.91/warc/146aeb8b1db11c90401fff040c8b98d321b1ff51.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375635143.91/warc/da1978e2e6b627338fea5efdb40e0da789c3e31e.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375635604.22/warc/2e69c86e875d8a6b3c431dbb8cd24ba727aab389.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435375635604.22/warc/e53542cc8935f6ea829ebc1bdeb7d286bde3dad1.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435376073161.33/warc/bf6b585f7257a07a847611f1b49b9716dbe7ea5a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435376073161.33/warc/f9893310337af590694d87ab5403615a60af9695.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435376093097.69/warc/22fbabdfbe7861457adb323d03b81acb575ea60b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435376093097.69/warc/3a86a101570e9997b3fd54d9e6937af67b21d674.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1435376093097.69/warc/c4dd11d0713d11c122c90043ef44520179a7e34b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/159b00224a11ad11889dbf7f0f2aa64dfd97ef0b.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1796667638bea4b11648ed2726b4a6ce0bc0d878.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/19556971283317b5c8f87fcb9c8359dda458def0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/1afe294708e3b2fa325070fe5a8411c7984542ed.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/21242b372b96a58713c1a06380cdf4c1062e4d8c.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/21e9ae538dfadbea8a3ea8ad16d20c4d5cf6da94.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/2433aa923fd9bd40c4fd09ea1f7e62b1ab532206.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/2e41d8f1535d2c1d789bc057d2825c596e3864e8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/30dba691618f3010d9258c0c7f2d7f727aa8e69c.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/33808794840aa7b416aef1928c09ed2d98f3df6a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/3a29f3997c9facfb7138ea4639ec554a63e2b492.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/420eaceb62a0ab5ea91008aae4259446544fee04.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/427ba2dd6271cceb6a5f73a42a166ee208ddc190.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/4eb32d79f8e7a1e5ec1240e515b9a10df5028e32.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/4f2d8fba79cf4dada476c70e713c44c9fd150cf0.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/4ffb7e98d17235b1d10fc74455dff024ca69ed58.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/5166fbdf4fdb7ab6ea621f736f4f8a2b27bc4d30.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/52c0647d26aa45c8f42aa75fc8d2a009840cd296.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/545b0664dad3477ffa669819f592599bbedbda92.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/56ec6458706f829aa417d85d53523e251925d4ea.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/56fef31053f56e824080ee9e95b1687818f8d0ec.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/57bc20af9c2d251464a5b57b485ec64864786cb7.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/58dceadc6577a408ccf08fd6255a062b14efbdb3.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/597df5cee554f681ba284f31fb20f8b2d05859f8.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/5d5600dee511a6c89ce9330b5ab7229f29b20351.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/5d5dcdc7fb8fd98791d69bfe8c905e20360c36a5.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/5f1d63f5d363c5b3a066721b5247589e071cb7bc.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/5f99f3445527e666b8e38f1b09e9f01fd3484eec.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/63c3ac5b7b326720df5e85764b43659d0060b908.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/64150726802da39a7c8c6ddf8cbc05cb28e6ba52.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/6465374b6d4fced4536b7f78c42b90be98bb6432.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/690cfc4de9d7d146fdfe01ec6d130c86cdc9c0b1.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/6cc432002bdd21eeb1c40bc60c4708ed0f298f14.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/71d18c37e0f72091fe22996cb494b2c3f9572f46.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/75c35af07096a2459fc9254dbb555bb3e318880a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/7623a1370193d6294637f2876febf2663a4a4c20.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/7d9537d3952446d137ec5f256214ee8247e26588.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/7e29cbc0fb26b096c23ebf6c67a9b1e764bab633.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/7eb1c26d848960dd9379f29a7f7674609aaa3540.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/808e8aef8b606e86cc73d8cc8ffae598a18c13ef.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/8102c0fc412b4cce9e814c1c562bae6dbb276c38.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/8179bd22262e01408dce5a3bdb85e6c7f2c91fa9.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/83f6021a49f6496df326188bad40932c729b4693.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/84409d7ec9e90fb82f72b36991cdbd7ebd320d15.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/8906b08694302b5f6ded43304b4d69fdec402246.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/8b67d3be306f7f29d508baf5220bb554c2a0f13c.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/91056cca751c751336fc525c2f850a1c9dc6c252.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/92d7d5c1c4536fee5351047995555b44c508e8e2.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/940b0e4294a27c25778e11b52fbe7239ee7defe6.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/96fd0b3267ab6a1b0c7f0afb14d2c01601596003.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/978ca04d27ca0c7b93a8881e9c1c6214abc9b04a.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/999003b88395f4129dd899fdd48d1d0798f67b71.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/9e57f44c30fa945b58fa2bba8fd9eb8807d50940.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/9f3f3258c374a050ea2377ff2eca968049a4c9a3.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/a561a748277dc491c11ea8723fdac1e03ea2970d.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/a9aec25ea8bf7dd36cc2685a545dd17a639c0dc9.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/ab1e113ee81d5a89e634f334f20aa481ba296a90.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/b4fcdf528bd0db6f93914539acb8012aace5d331.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/b56c198784a149c1f5ad5756a6d9eb0c0f6b3359.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/b5b27be865cb33929627125072b9d85826de1148.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/b7c5bd4e5458ec2cab79e912b44fe410d7e92157.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/c10133d024fd87d1e081d8ec8789e8d77eac8247.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/c16de52a8c3e4dc074e4016c5ba2547553ecb163.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/c57c361fb80b283af1a7a40e76db4152a1075a37.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/c5a166539f9083982d733797f80a5a143601e8fb.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/c7c0987913e1ef903a09c2db11f3823418192469.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/c813a105acddd8099c8c9281509664bbfac84ff7.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/c9c651ec19091c2a56fb11775dbae34f8597b2b4.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/cb5efe8fdf35dd4276a250e06c5577caada28312.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/d042032e8d0cf199b06db1c0e77e4a086ef3b284.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/d08d964b8252afdbd6e94aa2bb9949d177eec458.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/d234567f223b3380324932f63ea81470101e58da.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/d38b68cba5070079ac21b77244c5e1ebd3265059.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/dca855220269cf4836b5ef0576676fc932c6ca36.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/e1f5fdae59ec5c7f571a675ae58c53ba1bc7d681.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/e22059ae5c905e05ea19cf68c63c9b0943e63259.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/e899860a757736a9e240b69c8cd44bad0d706357.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/e90118b5b929931e8e66142330fc8fb81b578455.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/ed2273c294f8abf3b1dfd577bc11347986fef290.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/f1cdae317658a2a10f4a4cc972cffc244f6aceaa.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/f1dba3544b954e8355e8d9be9af7d82f65acebf6.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/f513e5e478b5ecd33a37b1b7690544c3a940e025.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/f7d79b91d5c0c8f4cf1fac98ccdbae48130e1f22.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/f96075d032101100d1a1fac6ac6554e8d96b9a54.jsonl.zst
+          - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2015-27/fd22b5ced5501e980b6a9fb69361b66f7301bb91.jsonl.zst
+    attributes:
+      - c4_v2
+      - dedupe_url
+      - ft_lang_id_1e2
+      - gopher_v2
+      - tokenizer_repetitions_v2r2
+      - whitespace_tokenizer_v1
+    output:
+      max_size_in_bytes: 2_000_000_000
+      path: s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-27
+      min_text_length: 25   # matches wikipedia
+    filter:
+      syntax: jq
+      include:
+        # Only English
+        - >-
+          (.attributes.ft_lang_id_1e2__ft_lang_id_1e2__en != null) and
+          (.attributes.ft_lang_id_1e2__ft_lang_id_1e2__en[0][2] > 0.5)
+      exclude:
+        # Duplicated URLs
+        - (.attributes.dedupe_url | length > 1)
+
+        # C4 Rules
+        - >-
+          (.attributes.c4_v2__c4_v2__has_curly_brace != null) and
+          (.attributes.c4_v2__c4_v2__has_curly_brace[0][2] > 0.5)
+        - >-
+          (.attributes.c4_v2__c4_v2__has_lorem_ipsum != null) and
+          (.attributes.c4_v2__c4_v2__has_lorem_ipsum[0][2] > 0.5)
+        - >-
+          (.attributes.c4_v2__c4_v2__has_javascript != null) and
+          (.attributes.c4_v2__c4_v2__has_javascript[0][2] > 0.5)
+
+        # Gopher Rules
+        - >-
+          (.attributes.gopher_v2__gopher_v2__word_count != null) and
+          (.attributes.gopher_v2__gopher_v2__word_count[0][2] < 50)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__word_count != null) and
+          (.attributes.gopher_v2__gopher_v2__word_count[0][2] > 100000)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__median_word_length != null) and
+          (.attributes.gopher_v2__gopher_v2__median_word_length[0][2] < 3)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__median_word_length != null) and
+          (.attributes.gopher_v2__gopher_v2__median_word_length[0][2] > 10)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__symbol_to_word_ratio != null) and
+          (.attributes.gopher_v2__gopher_v2__symbol_to_word_ratio[0][2] > 0.1)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_words_with_alpha_character != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_words_with_alpha_character[0][2] < 0.8)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__required_word_count != null) and
+          (.attributes.gopher_v2__gopher_v2__required_word_count[0][2] < 2)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_lines_starting_with_bullet_point != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_lines_starting_with_bullet_point[0][2] > 0.9)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_lines_ending_with_ellipsis != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_lines_ending_with_ellipsis[0][2] > 0.3)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_duplicate_lines != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_duplicate_lines[0][2] > 0.3)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_lines != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_lines[0][2] > 0.3)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_2gram != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_2gram[0][2] > 0.2)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_3gram != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_3gram[0][2] > 0.18)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_4gram != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_most_common_4gram[0][2] > 0.16)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_5grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_5grams[0][2] > 0.15)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_6grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_6grams[0][2] > 0.14)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_7grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_7grams[0][2] > 0.13)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_8grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_8grams[0][2] > 0.12)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_9grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_9grams[0][2] > 0.11)
+        - >-
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_10grams != null) and
+          (.attributes.gopher_v2__gopher_v2__fraction_of_characters_in_duplicate_10grams[0][2] > 0.10)
+
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition > 10)
+
+work_dir:
+  input: "${oc.env:HOME}/status/cccc-CC-MAIN-2015-27/mix/input"
+  output: "${oc.env:HOME}/status/cccc-CC-MAIN-2015-27/mix/output"
+
+processes: 100
