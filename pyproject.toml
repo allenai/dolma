@@ -1,6 +1,6 @@
 [project]
 name = "dolma"
-version = "1.0.8"
+version = "1.0.9"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
@@ -24,7 +24,7 @@ dependencies = [
     "rich",
     "s3fs>=2023.6.0",
     "smart-open",
-    "tokenizers>=0.19.1,<1.0.0",
+    "tokenizers>=0.15.0,<=0.19.1",
     "tqdm",
     "uniseg",
     "numpy",
