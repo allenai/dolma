@@ -25,6 +25,12 @@ class BytesLengthV1(BaseTagger):
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="bytes", score=score)])
 
 
+@TaggerRegistry.add("doc_count_v1")
+class DocCountLengthV1(BaseTagger):
+    def predict(self, doc: Document) -> DocResult:
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="docs", score=1)])
+
+
 @TaggerRegistry.add("char_length_v1")
 class CharLengthV1(BaseTagger):
     def predict(self, doc: Document) -> DocResult:
