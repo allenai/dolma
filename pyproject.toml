@@ -1,6 +1,6 @@
 [project]
 name = "dolma"
-version = "1.0.8"
+version = "1.0.10"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
@@ -26,7 +26,7 @@ dependencies = [
     "rich",
     "s3fs>=2023.6.0",
     "smart-open",
-    "tokenizers>=0.19.1,<1.0.0",
+    "tokenizers>=0.15.0,<=0.19.1",
     "tqdm",
     "uniseg",
     "numpy",
@@ -166,9 +166,10 @@ all = [
 
 [build-system]
 requires = [
-    "maturin>=1.5,<2.0",
     "setuptools >= 61.0.0",
-    "wheel"
+    "wheel",
+    "maturin[patchelf]>=1.1,<2.0 ; platform_system=='Linux'",
+    "maturin>=1.1,<2.0 ; platform_system!='Linux'",
 ]
 build-backend = "maturin"
 
