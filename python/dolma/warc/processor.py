@@ -254,7 +254,10 @@ class WarcProcessor(BaseParallelProcessor):
                     http_headers = record.http_headers.asdict()
                     ctype = http_headers.get("Content-Type", "").split(";", 1)[0]
                     header_date = cls._parse_warc_timestamp(t) if (t := http_headers.get("Date")) else None
-                    payload_id = record.headers.get("WARC-Payload-Digest").split(":", 2)[1].lower()
+
+                    payload_id = record.headers.get("WARC-Payload-Digest", "")
+                    warc_id = record.headers.get("WARC-Record-ID", "")
+
                     header_timestamp = (
                         cls._format_to_dolma_timestamp(header_date) if header_date else warc_timestamp
                     )
@@ -271,7 +274,7 @@ class WarcProcessor(BaseParallelProcessor):
                     doc = DocumentWithMetadataAndAttributes(
                         source=source_name,
                         version=source_version,
-                        id=payload_id,
+                        id=payload_id or warc_id or hashlib.sha1(ct).hexdigest(),
                         text="",  # this will come later
                         metadata=metadata,
                         attributes={},  # this will come later
