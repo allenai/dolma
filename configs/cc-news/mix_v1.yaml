@@ -20,6 +20,6 @@ streams:
            (.attributes.dedupe_ngrams_13_1 | length > 0) and
            ((.attributes.dedupe_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) >= 0.5)
 
-      syntax: jq
+        syntax: jq
 
 processes: 1
