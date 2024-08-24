@@ -337,3 +337,16 @@ class FastTextEnglishLanguageParagraphWithDocScoreTagger(FastTextEnglishLanguage
         doc_result = super().predict(doc)
         doc_result = add_global_language_score_from_slice_score(doc_result)
         return doc_result
+
+
+# @TaggerRegistry.add("ft_OpenLID_v1")
+# class FastTextOpenLIDv1(BaseFastTextTagger):
+#     MODEL_PATH = "https://dolma-artifacts.org/laurieburchell/open-lid-dataset/lid201-model.bin"
+
+#     def __init__(self):
+#         super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+
+#     def predict_text(self, text: str) -> List[Tuple[str, float]]:
+
+
+#         return [(label.replace("__label__", ""), float(score)) for label, score in zip(*preds)]
