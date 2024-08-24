@@ -10,7 +10,7 @@ from typing import Generator
 
 import regex
 import uniseg.wordbreak
-from tokenizers import Regex, pre_tokenizers
+from tokenizers import Regex, pre_tokenizers, Tokenizer
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.registry import TaggerRegistry
@@ -73,6 +73,13 @@ class WhitespaceLengthParagraphsV1(WhitespaceLengthV1):
         ]
         spans.append(Span(start=0, end=len(doc.text), type="document", score=sum(s.score for s in spans)))
         return DocResult(doc=doc, spans=spans)
+
+
+@TaggerRegistry.add("uniseg_length_v1")
+class UnisegLengthV1(BaseTagger):
+    def predict(self, doc: Document) -> DocResult:
+        score = sum(1 for _ in uniseg.wordbreak.words(text)) if (text := doc.text.strip()) else 0
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
 
 
 @TaggerRegistry.add("uniseg_length_paragraphs_v1")
@@ -151,3 +158,21 @@ class OlmoPreTokenizerParagraphsV1(OlmoPreTokenizerV1):
         ]
         spans.append(Span(start=0, end=len(doc.text), type="document", score=sum(s.score for s in spans)))
         return DocResult(doc=doc, spans=spans)
+
+
+@TaggerRegistry.add("dolma_v1_tokenizer")
+class DolmaV1Tokenizer(BaseTagger):
+    TOKENIZER_NAME_OR_PATH = "allenai/gpt-neox-olmo-dolma-v1_5"
+
+    def __init__(self) -> None:
+        self.tokenizer = Tokenizer.from_pretrained(self.TOKENIZER_NAME_OR_PATH)
+        super().__init__()
+
+    def predict(self, doc: Document) -> DocResult:
+        score = len(self.tokenizer.encode(text)) if (text := doc.text.strip()) else 0
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
+
+
+@TaggerRegistry.add("dolma_v2_tokenizer")
+class DolmaV2Tokenizer(DolmaV1Tokenizer):
+    TOKENIZER_NAME_OR_PATH = "allenai/dolma2-tokenizer"
