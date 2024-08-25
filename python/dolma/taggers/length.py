@@ -10,7 +10,7 @@ from typing import Generator
 
 import regex
 import uniseg.wordbreak
-from tokenizers import Regex, pre_tokenizers, Tokenizer
+from tokenizers import Regex, Tokenizer, pre_tokenizers
 
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.registry import TaggerRegistry

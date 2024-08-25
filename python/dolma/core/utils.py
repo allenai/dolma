@@ -170,7 +170,7 @@ def dataclass_to_dict(dataclass_instance) -> dict:
     # force typecasting because a dataclass instance will always be a dict
     return cast(dict, om.to_object(om.structured(dataclass_instance)))
 
-  
+
 def batch_iterator(
     *iterables: Iterable[T], batch_size: int = 1, drop_last: bool = False
 ) -> Generator[List[Tuple[T, ...]], None, None]:

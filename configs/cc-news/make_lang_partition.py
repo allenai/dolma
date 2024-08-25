@@ -1,17 +1,23 @@
 import json
+from typing import List
 import smart_open
-import yaml
 
 
-def base_stream_config(lang: str, year: int, month: int):
+SRC_DATA = "v1-resiliparse"
+LANG_THR = 50_000
+DST_DATA = f"v2-resiliparse-l{LANG_THR // 1000}k"
+
+
+def base_stream_config(lang: str, year: int, months: List[int]):
     return {
-        "name": f"cc-news_{year:04d}-{month:02d}_{lang}",
+        "name": f"cc-news_{year:04d}_{lang}",
         "documents": [
-            f"s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse/documents/${year:04d}-${month:02d}/*.zst"
+            f"s3://ai2-llm/pretraining-data/sources/cc-news/{SRC_DATA}/documents/{year:04d}-{month:02d}/*.zst"
+            for month in months
         ],
         "compression": {"input": "zst", "output": "zst"},
         "output": {
-            "path": f"s3://ai2-llm/pretraining-data/sources/cc-news/v2-resiliparse/documents/{lang}/${year:04d}-${month:02d}",
+            "path": f"s3://ai2-llm/pretraining-data/sources/cc-news/{DST_DATA}/documents/{lang}/{year:04d}",
             "max_size_in_bytes": 1_000_000_000,
         },
         "attributes": ["ft_lang_id_1e2", "dolma_v2_tokenizer"],
@@ -22,8 +28,8 @@ def base_stream_config(lang: str, year: int, month: int):
                 # make sure the language is present and the confidence is high enough and that it is the highest confidence
                 (
                     f"(.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang} != null) and "
-                    + f"(.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang}[0][-1] >= 0.5) and"
-                    + f'((.attributes | to_entries | map(select(.key | startswith("ft_lang_id_1e2__ft_lang_id_1e2__"))) | max_by(.value) | .key ) == ft_lang_id_1e2__ft_lang_id_1e2__{lang})',
+                    + f"(.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang}[0][-1] >= 0.5) and "
+                    + f'((.attributes | to_entries | map(select(.key | startswith("ft_lang_id_1e2__ft_lang_id_1e2__"))) | max_by(.value) | .key ) == "ft_lang_id_1e2__ft_lang_id_1e2__{lang}")'
                 ),
             ],
             "syntax": "jq",
@@ -35,15 +41,22 @@ def main():
     with smart_open.open("s3://ai2-llm/stats/cc-news/v1-resiliparse/attributes/ft_lang_id_1e2_summary.json") as f:
         lang_counts = json.load(f)
 
-    languages = {k: v for k, v in lang_counts.items() if v >= 10000}
+    languages = {k: v for k, v in lang_counts.items() if v >= LANG_THR}
 
-    streams = [
-        base_stream_config(lang, year, month)
-        for lang in languages
-        for year in range(2016, 2024)
-        for month in range(1, 13)
-        if (year > 2016 or month > 8) and (year < 2024 or month < 8)
-    ]
+    streams = []
+    for year in range(2016, 2025):
+        if year == 2016:
+            months = list(range(8, 13))
+        elif year == 2024:
+            months = list(range(1, 8))
+        else:
+            months = list(range(1, 13))
 
-    with smart_open.open("configs/cc-news/mix_v2.sh", "wt") as f:
-        yaml.dump({"streams": streams, "processes": 1}, f)
+        streams.extend([base_stream_config(lang, year, months) for lang in languages])
+
+    with smart_open.open("configs/cc-news/mix_v2.json", "wt") as f:
+        json.dump({"processes": 1, "streams": streams}, f, indent=2)
+
+
+if __name__ == "__main__":
+    main()
