@@ -111,5 +111,5 @@ class FixedBinning(unittest.TestCase):
         count_diff = np.abs(tracker_counts - hist_counts) / total_count
         bin_diff = np.abs(tracker_bins - hist_bins)
 
-        self.assertLess(np.sum(count_diff), 0.01)
+        self.assertLess(np.sum(count_diff), 0.01)  # pyright: ignore
         self.assertLess(np.sum(bin_diff), 10)
