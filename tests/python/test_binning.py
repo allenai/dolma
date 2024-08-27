@@ -64,7 +64,7 @@ class TestBinning(unittest.TestCase):
         self.assertEqual(sum(tracker_counts), len(values))
         self.assertEqual(sorted(tracker_bins), tracker_bins)
         self.assertEqual(tracker_total, len(values))
-        self.assertAlmostEqual(tracker_sum, np.sum(values), delta=0.01)
+        self.assertAlmostEqual(tracker_sum, np.sum(values), delta=0.01)  # pyright: ignore
 
         tracker_dist, tracker_bins, tracker_total, tracker_sum = tracker.summarize(10, density=True)
         hist_dist, hist_bins = np.histogram(values, bins=10, density=True)
@@ -76,7 +76,7 @@ class TestBinning(unittest.TestCase):
             self.assertAlmostEqual(np.abs(tb - hb), 0, delta=0.5)
 
         self.assertEqual(tracker_total, len(values))
-        self.assertAlmostEqual(tracker_sum, np.sum(values), delta=0.01)
+        self.assertAlmostEqual(tracker_sum, np.sum(values), delta=0.01)  # pyright: ignore
 
 
 class FixedBinning(unittest.TestCase):
@@ -94,7 +94,7 @@ class FixedBinning(unittest.TestCase):
 
         count_diff = np.abs(tracker_counts - hist_counts) / total_count
         bin_diff = np.abs(tracker_bins - hist_bins)
-        self.assertLess(np.sum(count_diff), 0.03)
+        self.assertLess(np.sum(count_diff), 0.03)  # pyright: ignore
         self.assertLess(np.sum(bin_diff), 30)
 
     def test_uniform_bins(self):

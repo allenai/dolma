@@ -145,10 +145,11 @@ jobs:
 
           - name: Types Python
             run: |
+              pyright .
 
           - name: Run Python tests
             run: |
-              pyright .
+              pytest -vs --color=yes tests/python/
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3

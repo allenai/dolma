@@ -213,7 +213,7 @@ line-ending = "auto"
 
 
 [tool.pyright]
-include = ["python/**/*.py"]
+include = ["python/**/*.py", "tests/python/**/*.py"]
 exclude = [
    "__pycache__",
    ".git",

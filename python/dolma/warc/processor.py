@@ -165,10 +165,11 @@ class WarcProcessor(BaseParallelProcessor):
                     continue
 
                 # metadata
-                ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
+                ctype, *_ = ((record.http_headers or {}).get("Content-Type") or "").split(";")
                 date = cls._parse_warc_timestamp(record.http_headers.get("Date"))
-                target_uri = record.headers.get("WARC-Target-URI")
-                payload_id = record.headers.get("WARC-Payload-Digest").split(":")[1].lower()
+                target_uri = (record.headers or {}).get("WARC-Target-URI") or ""
+                *_, payload_id = ((record.headers or {}).get("WARC-Payload-Digest") or "").rsplit(":", 1)
+
                 metadata = dict(
                     warc_url=target_uri,
                     url=url_normalizer(target_uri),
