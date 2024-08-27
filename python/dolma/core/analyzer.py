@@ -332,6 +332,6 @@ def create_and_run_analyzer(
         )
         analyzer(num_bins=compute_bins, name_regex=name_regex)
 
-        summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=visualize_bins)
-        visualize_summaries(summaries=summaries, show_total=show_total)
+        summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=compute_bins)
+        visualize_summaries(summaries=summaries, show_total=show_total, num_viz_bins=visualize_bins)
         write_output(summaries=summaries, report=report)
