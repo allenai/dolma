@@ -6,7 +6,7 @@ from unittest import TestCase
 
 import numpy
 import smart_open
-from dolma.cli.__main__ import main
+from dolma.cli.main import main
 from dolma.tokenizer import Tokenizer, tokenize_in_parallel
 from tokenizers import Tokenizer as BaseTokenizer
 from typing_extensions import TypedDict
