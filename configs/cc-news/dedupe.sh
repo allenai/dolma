@@ -65,8 +65,8 @@ for year in {2016..2024}; do
             --bloom_filter.estimated_doc_count $size \
             --bloom_filter.desired_false_positive_rate 0.01 \
             --processes "$(expr $(nproc) - 4)" \
-            --work_dir.input /tmp/cc-news/dedupe_ngrams_13_1-${year}-${month}/input \
-            --work_dir.output /tmp/cc-news/dedupe_ngrams_13_1-${year}-${month}/output
+            --work_dir.input /tmp/cc-news/dedupe_ngrams_13_1/${year}-${month}/input \
+            --work_dir.output /tmp/cc-news/dedupe_ngrams_13_1/${year}-${month}/output
 
         set +ex
     done

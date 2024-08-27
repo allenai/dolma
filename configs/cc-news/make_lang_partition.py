@@ -3,28 +3,30 @@ from typing import List
 import smart_open
 
 
-SRC_DATA = "v1-resiliparse"
-LANG_THR = 50_000
-DST_DATA = f"v2-resiliparse-l{LANG_THR // 1000}k"
+SRC_BASE = "s3://ai2-llm/pretraining-data/sources/cc-news"
+SRC_PRFX = "v1-resiliparse"
+LANG_THR = 100_000
+DST_BASE = "${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news"
+DST_PRFX = f"v2-resiliparse-l{LANG_THR // 1000}k"
 
 
 def base_stream_config(lang: str, year: int, months: List[int]):
     return {
         "name": f"cc-news_{year:04d}_{lang}",
         "documents": [
-            f"s3://ai2-llm/pretraining-data/sources/cc-news/{SRC_DATA}/documents/{year:04d}-{month:02d}/*.zst"
+            f"{SRC_BASE}/{SRC_PRFX}/documents/{year:04d}-{month:02d}/*.zst"
             for month in months
         ],
         "compression": {"input": "zst", "output": "zst"},
         "output": {
-            "path": f"s3://ai2-llm/pretraining-data/sources/cc-news/{DST_DATA}/documents/{lang}/{year:04d}",
-            "max_size_in_bytes": 1_000_000_000,
+            "path": f"{DST_BASE}/{DST_PRFX}/documents/{lang}/{year:04d}",
+            "max_size_in_bytes": 10_000_000_000,
         },
         "attributes": ["ft_lang_id_1e2", "dolma_v2_tokenizer"],
         "filter": {
             "include": [
                 # at least 50 tokens
-                "(.attributes.dolma_v2_tokenizer != null) and (.attributes.dolma_v2_tokenizer[0][-1] >= 50)",
+                ".attributes.dolma_v2_tokenizer__dolma_v2_tokenizer__length[0][-1] >= 50",
                 # make sure the language is present and the confidence is high enough and that it is the highest confidence
                 (
                     f"(.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang} != null) and "

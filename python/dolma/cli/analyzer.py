@@ -8,6 +8,17 @@ from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
 
+@dataclass
+class BinsConfig:
+    compute: int = field(
+        default=1_000,
+        help="Number of bins to use to compute the histograms.",
+    )
+    visualization: int = field(
+        default=10,
+        help="Number of bins to use when visualizing the histograms.",
+    )
+
 
 @dataclass
 class AnalyzerConfig:
@@ -22,9 +33,9 @@ class AnalyzerConfig:
             "If not provided, the report will be printed to stdout."
         ),
     )
-    bins: int = field(
-        default=1_000,
-        help="Number of bins to use for the histograms.",
+    bins: BinsConfig = field(
+        default=BinsConfig(),
+        help="Configuration for the bins to use for the histograms."
     )
     processes: int = field(
         default=1,
@@ -80,7 +91,8 @@ class AnalyzerCli(BaseCli):
                 metadata_path=work_dirs.input,
                 debug=parsed_config.debug,
                 seed=parsed_config.seed,
-                num_bins=parsed_config.bins,
+                compute_bins=parsed_config.bins.compute,
+                visualize_bins=parsed_config.bins.visualization,
                 num_processes=parsed_config.processes,
                 name_regex=parsed_config.regex,
                 show_total=parsed_config.total,

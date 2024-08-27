@@ -8,7 +8,7 @@ streams:
         output: zst
 
       output:
-        path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse/documents/${oc.env:MIX_YEAR}-${oc.env:MIX_MONTH}
+        path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse/documents/${oc.env:MIX_YEAR}-${oc.env:MIX_MONTH}
         max_size_in_bytes: 1_000_000_000
 
       attributes:
