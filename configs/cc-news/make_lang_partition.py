@@ -25,8 +25,8 @@ def base_stream_config(lang: str, year: int, months: List[int]):
         "attributes": ["ft_lang_id_1e2", "dolma_v2_tokenizer"],
         "filter": {
             "include": [
-                # at least 50 tokens
-                ".attributes.dolma_v2_tokenizer__dolma_v2_tokenizer__length[0][-1] >= 50",
+                # at least 100 tokens
+                ".attributes.dolma_v2_tokenizer__dolma_v2_tokenizer__length[0][-1] >= 100",
                 # make sure the language is present and the confidence is high enough and that it is the highest confidence
                 (
                     f"(.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang} != null) and "
