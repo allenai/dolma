@@ -7,7 +7,7 @@ from typing import Dict, List, Tuple, TypeVar, Union
 from unittest import TestCase
 
 import smart_open
-from dolma.cli.__main__ import main
+from dolma.cli.main import run_from_cli
 from dolma.core.utils import split_words
 from typing_extensions import TypedDict
 
@@ -73,7 +73,7 @@ class TestDeduper(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "dedupe"])
+            run_from_cli(argv=["-c", f.name, "dedupe"])
 
         expected = load_jsonl("tests/data/expected/dedupe-by-url.json.gz")
         computed = load_jsonl(
@@ -92,7 +92,7 @@ class TestDeduper(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "dedupe"])
+            run_from_cli(argv=["-c", f.name, "dedupe"])
 
         expected = load_jsonl("tests/data/expected/dedupe-paragraphs.json.gz")
         computed = load_jsonl(
@@ -119,7 +119,7 @@ class TestDeduper(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "dedupe"])
+            run_from_cli(argv=["-c", f.name, "dedupe"])
 
         documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
         attributes = load_jsonl(
@@ -144,7 +144,7 @@ class TestDeduper(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "dedupe"])
+            run_from_cli(argv=["-c", f.name, "dedupe"])
 
         documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
         attributes = load_jsonl(
@@ -179,7 +179,7 @@ class TestDeduper(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "dedupe"])
+            run_from_cli(argv=["-c", f.name, "dedupe"])
 
         documents = load_jsonl(f"{self.local_temp_dir}/tests/data/provided/deduper/documents/000.json.gz")
         attributes = load_jsonl(
@@ -211,7 +211,7 @@ class TestDeduper(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "dedupe"])
+            run_from_cli(argv=["-c", f.name, "dedupe"])
 
         expected = load_jsonl("tests/data/expected/dedupe-paragraph-ngrams.json.gz")
         print(
@@ -245,7 +245,7 @@ class TestDeduper(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "dedupe"])
+            run_from_cli(argv=["-c", f.name, "dedupe"])
 
         download_s3_prefix(self.remote_test_prefix, self.local_temp_dir)
 
@@ -286,7 +286,7 @@ class TestDeduperPipeline(TestCasePipeline):
 
         config_path = self.writeConfig(config)
 
-        main(argv=["-c", config_path, "dedupe"])
+        run_from_cli(argv=["-c", config_path, "dedupe"])
 
         expected = self.readUnits([p.replace("documents", f"attributes/{key_name}") for p in docs_fp])
         self.assertEqual(len(expected), 2)
@@ -309,7 +309,7 @@ class TestDeduperPipeline(TestCasePipeline):
         config["bloom_filter"]["file"] = self.makeUniquePath()  # new filter
         config_path = self.writeConfig(config)
 
-        main(argv=["-c", config_path, "dedupe"])
+        run_from_cli(argv=["-c", config_path, "dedupe"])
 
         expected = self.readUnits([p.replace("documents", f"attributes/{key_name}") for p in docs_fp])
 
@@ -360,7 +360,7 @@ class TestDeduperUnicode(TestCase):
             with smart_open.open(f"{d}/config.json", "wt", encoding="utf-8") as f:
                 f.write(json.dumps(config))
 
-            main(argv=["-c", f"{d}/config.json", "dedupe"])
+            run_from_cli(argv=["-c", f"{d}/config.json", "dedupe"])
 
             attributes = load_jsonl(f"{attributes_dir}/dedupe_paragraphs/test.jsonl.gz")
 
@@ -413,7 +413,7 @@ class TestDeduperUnicode(TestCase):
             with smart_open.open(f"{d}/config.json", "wt", encoding="utf-8") as f:
                 f.write(json.dumps(config))
 
-            main(argv=["-c", f"{d}/config.json", "dedupe"])
+            run_from_cli(argv=["-c", f"{d}/config.json", "dedupe"])
 
             attributes = load_jsonl(f"{attributes_dir}/dedupe_paragraphs/test.jsonl.gz")
 

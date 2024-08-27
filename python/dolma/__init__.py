@@ -1,5 +1,6 @@
 import json
 import warnings
+from typing import Any
 
 # warning raised by pkg_resources used in a lot of google packages
 warnings.filterwarnings("ignore", message=r".*declare_namespace\(\'.*google.*", category=DeprecationWarning)
@@ -14,12 +15,9 @@ from .core.errors import DolmaRustPipelineError  # noqa: E402
 from .core.taggers import BaseTagger  # noqa: E402
 from .taggers import DUMMY_INIT_ALL_TAGGERS  # noqa: F401, E402
 
-__all__ = [
-    "add_tagger",
-    "BaseTagger",
-]
+__all__ = ["add_tagger", "BaseTagger", "run"]
 
-# we create a shortcut to easily add taggers to the registry
+# we create a shortcut to easily add taggers to the registry...
 add_tagger = TaggerRegistry.add
 
 
@@ -54,3 +52,19 @@ def mixer(config: dict):
         _dolma.mixer_entrypoint(json.dumps(config))
     except RuntimeError as e:
         raise DolmaRustPipelineError(f"Error running mixer: {e}") from e
+
+
+def run(command: str, config: Any):
+    """Run the dolma CLI with the given command and configuration.
+
+    Args:
+        command (str): The command to run.
+        config (Any): The configuration for the command. It can either be a dictionary
+            or a structured config object for the command (e.g., DeduperConfig from dolma.cli.deduper).
+    """
+
+    # this avoids a circular import
+    from .cli.main import run_from_python  # noqa: E402
+
+    # ...and a shortcut to run the CLI from python
+    run_from_python(command=command, config=config)

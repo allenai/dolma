@@ -1,9 +1,10 @@
 import multiprocessing
-from argparse import ArgumentParser
+from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import smart_open
+from omegaconf import OmegaConf as om
 from yaml import safe_load
 
 from ..core.paths import exists
@@ -43,7 +44,7 @@ def read_config(path: Union[None, str]) -> Dict[str, Any]:
         return dict(safe_load(f))
 
 
-def main(argv: Optional[List[str]] = None):
+def run_from_cli(argv: Optional[List[str]] = None):
     """Main entry point for the CLI"""
 
     try:
@@ -91,3 +92,13 @@ def main(argv: Optional[List[str]] = None):
     # get the cli for the command and run it with the config we just loaded + the args
     cli = AVAILABLE_COMMANDS[command]
     return cli.run_from_args(args=args, config=config)
+
+
+def run_from_python(command: str, config: Any):
+    assert command in AVAILABLE_COMMANDS, f"Command {command} not found"
+
+    # parse the config
+    parsed_config = om.create(config)
+
+    # run the cli
+    return AVAILABLE_COMMANDS[command].run_from_args(args=Namespace(), config=parsed_config)

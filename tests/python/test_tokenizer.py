@@ -6,7 +6,7 @@ from unittest import TestCase
 
 import numpy
 import smart_open
-from dolma.cli.main import main
+from dolma.cli.main import run_from_cli
 from dolma.tokenizer import Tokenizer, tokenize_in_parallel
 from tokenizers import Tokenizer as BaseTokenizer
 from typing_extensions import TypedDict
@@ -142,7 +142,7 @@ class TestTokenizerCli(TestCase):
         with NamedTemporaryFile(mode="wt") as f:
             json.dump(config, f)
             f.flush()
-            main(argv=["-c", f.name, "tokens"])
+            run_from_cli(argv=["-c", f.name, "tokens"])
 
         with smart_open.open(f"{config['destination']}/part-0-00000.csv.gz") as f:
             reader = csv.reader(f)
@@ -205,7 +205,7 @@ class TestTokenizerCli(TestCase):
         with NamedTemporaryFile(mode="wt") as f:
             json.dump(config, f)
             f.flush()
-            main(argv=["-c", f.name, "tokens"])
+            run_from_cli(argv=["-c", f.name, "tokens"])
 
         with smart_open.open(f"{config['destination']}/part-0-00000.csv.gz") as f:
             reader = csv.reader(f)
@@ -267,7 +267,7 @@ class TestTokenizerCli(TestCase):
         with NamedTemporaryFile(mode="wt") as f:
             json.dump(config, f)
             f.flush()
-            main(argv=["-c", f.name, "tokens"])
+            run_from_cli(argv=["-c", f.name, "tokens"])
 
         with smart_open.open(f"{config['destination']}/part-0-00000.csv.gz") as f:
             reader = csv.reader(f)

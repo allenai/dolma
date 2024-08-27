@@ -1,4 +1,4 @@
-from dolma.cli.main import main
+from dolma.cli.main import run_from_cli
 
 if __name__ == "__main__":
-    main()
+    run_from_cli()

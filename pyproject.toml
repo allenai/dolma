@@ -96,7 +96,7 @@ Homepage = "https://github.com/allenai/dolma"
 
 
 [project.scripts]
-dolma = "dolma.cli.__main__:main"
+dolma = "dolma.cli.__main__:run_from_cli"
 
 [project.optional-dependencies]
 dev = [

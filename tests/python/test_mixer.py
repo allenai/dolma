@@ -5,7 +5,7 @@ from typing import List
 from unittest import TestCase
 
 import smart_open
-from dolma.cli.__main__ import main
+from dolma.cli.main import run_from_cli
 
 from .utils import (
     TestCasePipeline,
@@ -56,7 +56,7 @@ class TestMixer(TestCase):
         return provided
 
     def test_email_spans(self):
-        main(argv=["-c", str(EMAIL_SPANS), "mix"])
+        run_from_cli(argv=["-c", str(EMAIL_SPANS), "mix"])
 
         expected = load_jsonl("tests/data/expected/email-spans.json.gz")
         provided = load_jsonl("tests/work/output/email-spans/email-spans-0000.json.gz")
@@ -64,7 +64,7 @@ class TestMixer(TestCase):
         self.assertEqual(expected, provided)
 
     def test_email_span_jq(self):
-        main(argv=["-c", str(EMAIL_SPANS_JQ), "mix"])
+        run_from_cli(argv=["-c", str(EMAIL_SPANS_JQ), "mix"])
 
         expected = load_jsonl("tests/data/expected/email-spans-jq.json.gz")
         provided = load_jsonl("tests/work/output/email-spans-jq/email-spans-jq-0000.json.gz")
@@ -72,7 +72,7 @@ class TestMixer(TestCase):
         self.assertEqual(expected, provided)
 
     def test_filter_by_spans(self):
-        main(argv=["-c", str(FILTER_BY_SPANS), "mix"])
+        run_from_cli(argv=["-c", str(FILTER_BY_SPANS), "mix"])
 
         expected = load_jsonl("tests/data/expected/filter-by-spans.json.gz")
         provided = load_jsonl("tests/work/output/filter-by-spans/filter-by-spans-test-0000.json.gz")
@@ -80,7 +80,7 @@ class TestMixer(TestCase):
         self.assertEqual(expected, provided)
 
     def test_mixer(self):
-        main(argv=["-c", str(MIXER), "mix"])
+        run_from_cli(argv=["-c", str(MIXER), "mix"])
 
         expected = load_jsonl("tests/data/expected/mixer.json.gz")
         provided = load_jsonl("tests/work/output/mixer/mixer-test-0000.json.gz")
@@ -88,7 +88,7 @@ class TestMixer(TestCase):
         self.assertEqual(expected, provided)
 
     def test_paragraph_spans(self):
-        main(argv=["-c", str(PARAGRAPH_SPANS), "mix"])
+        run_from_cli(argv=["-c", str(PARAGRAPH_SPANS), "mix"])
 
         expected = load_jsonl("tests/data/expected/remove-paragraphs.json.gz")
         provided = load_jsonl("tests/work/output/paragraph-spans/paragraph-spans-test-0000.json.gz")
@@ -112,7 +112,7 @@ class TestMixer(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "mix"])
+            run_from_cli(argv=["-c", f.name, "mix"])
 
         download_s3_prefix(f"{self.remote_test_prefix}/tests/work", "tests/work/remote")
 
@@ -142,7 +142,7 @@ class TestMixer(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "mix"])
+            run_from_cli(argv=["-c", f.name, "mix"])
 
         download_s3_prefix(f"{self.remote_test_prefix}/tests/work", "tests/work/remote")
         expected = load_jsonl("tests/data/expected/mixer.json.gz")
@@ -167,7 +167,7 @@ class TestMixer(TestCase):
             json.dump(config, f)
             f.flush()
 
-            main(argv=["-c", f.name, "mix"])
+            run_from_cli(argv=["-c", f.name, "mix"])
 
         expected = load_jsonl("tests/data/expected/mixer.json.gz")
         provided = load_jsonl("tests/work/output/mixer/mixer-test-0000.json.gz")
@@ -216,7 +216,7 @@ class TestMixerPipeline(TestCasePipeline):
 
         config_path = self.writeConfig(config=config)
 
-        main(argv=["-c", config_path, "mix"])
+        run_from_cli(argv=["-c", config_path, "mix"])
 
         new_docs = self.readUnits(list(output_dir.iterdir()))
 
@@ -251,4 +251,4 @@ class TestMixerPipeline(TestCasePipeline):
                 json.dump(config, f)
 
             with self.assertRaises(Exception):
-                main(argv=["-c", str(config_fp), "mix"])
+                run_from_cli(argv=["-c", str(config_fp), "mix"])
