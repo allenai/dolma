@@ -133,9 +133,7 @@ jobs:
         task:
           - name: Check Python style
             run: |
-              set -e
-              isort --check --verbose .
-              black --check --verbose .
+              ruff check .
 
           - name: Check Rust style
             run: |
@@ -143,15 +141,14 @@ jobs:
 
           - name: Lint Python
             run: |
-              flake8 tests/python/ && flake8 python/
+              ruff check --select I .
 
           - name: Types Python
             run: |
-              mypy tests/python/ && mypy python/
 
           - name: Run Python tests
             run: |
-              pytest -vs --color=yes tests/python/
+              pyright .
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -165,6 +162,11 @@ jobs:
           path: ./.venv/
           # The cache key depends on pyproject.toml and Cargo.toml
           key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml, **/Cargo.lock') }}--${{ hashFiles('python/**', 'src/**') }}
+
+      - name: Install make
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make
 
       - name: ${{ matrix.task.name }}
         run: |

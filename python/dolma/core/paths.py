@@ -493,8 +493,11 @@ def decompress_path(path: str, dest: Optional[str] = None) -> str:
             the original path will be returned.
     """
     for supported_ext in get_supported_extensions():
+        # explicit string conversion
+        ext_text = str(supported_ext)
+
         # not the supported extension
-        if not path.endswith(supported_ext):
+        if not path.endswith(ext_text):
             continue
 
         if dest is None:
@@ -504,7 +507,7 @@ def decompress_path(path: str, dest: Optional[str] = None) -> str:
 
             # to get the decompressed file name, we remove the bit of the extension that
             # indicates the compression type.
-            decompressed_fn = base_fn + ext.replace(supported_ext, "")
+            decompressed_fn = base_fn + ext.replace(ext_text, "")
 
             # finally, we get cache directory and join the decompressed file name to it
             dest = join_path("", get_cache_dir(), decompressed_fn)

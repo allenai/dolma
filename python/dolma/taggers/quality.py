@@ -32,7 +32,7 @@ class Dolma17QualityClassifier(BaseFastTextTagger):
 
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
         tokens, _ = zip(*self.preprocess(text_slice.text))
-        preds = self.classifier.predict(" ".join(tokens), k=-1)
+        preds = self.classifier.predict(" ".join(tokens), k=-1)  # pyright: ignore
         out = [
             Prediction(label=label.replace("__label__", ""), score=score)
             for label, score in sorted(zip(*preds), key=lambda x: x[1], reverse=True)
