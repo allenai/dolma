@@ -44,14 +44,11 @@ develop:
 
 style:
 	rustfmt --edition 2021 src/*.rs
-	isort .
-	black .
+	ruff check --select I --fix .
+	ruff format .
 
 check:
-	isort --check .
-	black --check .
-	mypy tests/python/
-	mypy python/
-	flake8 tests/python/
-	flake8 python/
-	rustfmt --edition 2021 src/*.rs --check
+	printf "Running ruff...\n"
+	ruff check .
+	printf "\n\n\nRunning pyright...\n"
+	pyright .

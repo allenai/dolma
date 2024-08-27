@@ -2,7 +2,6 @@ from pathlib import Path
 from unittest import TestCase
 
 import smart_open
-
 from dolma.core.data_types import Document
 from dolma.taggers.quality import Dolma17QualityClassifier
 

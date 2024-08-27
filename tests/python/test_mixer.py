@@ -5,7 +5,6 @@ from typing import List
 from unittest import TestCase
 
 import smart_open
-
 from dolma.cli.__main__ import main
 
 from .utils import (
@@ -51,7 +50,8 @@ class TestMixer(TestCase):
             prev_id = int(lid)
 
             # remove metadata if empty
-            len(row["metadata"]) == 0 and row.pop("metadata")
+            if len(row["metadata"]) == 0:
+                row.pop("metadata")
 
         return provided
 

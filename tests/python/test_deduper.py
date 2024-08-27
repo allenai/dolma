@@ -7,10 +7,9 @@ from typing import Dict, List, Tuple, TypeVar, Union
 from unittest import TestCase
 
 import smart_open
-from typing_extensions import TypedDict
-
 from dolma.cli.__main__ import main
 from dolma.core.utils import split_words
+from typing_extensions import TypedDict
 
 from .utils import (
     TestCasePipeline,

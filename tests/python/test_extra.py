@@ -6,7 +6,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import smart_open
-
 from dolma.core.registry import TaggerRegistry
 from dolma.core.runtime import create_and_run_tagger
 from dolma.core.utils import import_modules

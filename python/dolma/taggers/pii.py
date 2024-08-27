@@ -7,13 +7,13 @@ Filters.
 """
 
 import re
-from typing import List
+from typing import TYPE_CHECKING, List
 from warnings import warn
 
 from necessary import necessary
 
 with necessary("presidio-analyzer", soft=True) as PRESIDIO_AVAILABLE:
-    if PRESIDIO_AVAILABLE:
+    if TYPE_CHECKING or PRESIDIO_AVAILABLE:
         from presidio_analyzer import AnalyzerEngine  # pylint: disable=import-error # pyright: ignore
 
 from ..core.data_types import DocResult, Document, Span, TextSlice

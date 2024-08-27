@@ -2,9 +2,8 @@ from argparse import ArgumentParser
 from dataclasses import dataclass
 from unittest import TestCase
 
-from omegaconf import MissingMandatoryValue
-
 from dolma.cli import field, make_parser, namespace_to_nested_omegaconf
+from omegaconf import MissingMandatoryValue
 
 
 @dataclass
@@ -22,7 +21,7 @@ class _2:
 class TestOmegaconf(TestCase):
     def test_make_parser(self):
         ap = ArgumentParser()
-        parser = make_parser(ap, _1)
+        parser = make_parser(ap, _1)  # pyright: ignore
 
         args = parser.parse_args(["--a", "1", "--b", "2"])
         opts = namespace_to_nested_omegaconf(args=args, structured=_1)
@@ -32,7 +31,7 @@ class TestOmegaconf(TestCase):
 
     def test_nested_parser(self):
         ap = ArgumentParser()
-        parser = make_parser(ap, _2)
+        parser = make_parser(ap, _2)  # pyright: ignore
 
         args = parser.parse_args(["--a.a", "1", "--a.b", "2", "--c", "3"])
         opts = namespace_to_nested_omegaconf(args=args, structured=_2)
@@ -43,7 +42,7 @@ class TestOmegaconf(TestCase):
 
     def test_fail_omegaconf(self):
         ap = ArgumentParser()
-        parser = make_parser(ap, _2)
+        parser = make_parser(ap, _2)  # pyright: ignore
 
         args = parser.parse_args(["--a.a", "1", "--c", "3"])
         conf = namespace_to_nested_omegaconf(args, _2)

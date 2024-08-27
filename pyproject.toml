@@ -1,10 +1,10 @@
 [project]
 name = "dolma"
-version = "1.0.12"
+version = "1.0.13"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "anyascii>=0.3.2",
     "blingfire==0.1.8",
@@ -100,14 +100,10 @@ dolma = "dolma.cli.__main__:main"
 
 [project.optional-dependencies]
 dev = [
-    "black>=22.6.0",
-    "flake8>=5.0",
-    "flake8-pyi>=22.8.1",
-    "Flake8-pyproject>=1.1.0",
+    "ruff>=0.6.2",
     "ipdb>=0.13.0",
     "ipython>=8.4.0",
-    "isort>=5.10.1",
-    "mypy>=0.971",
+    "pyright>=1.1.322",
     "pytest>=5.2",
 ]
 # extension to process code
@@ -171,69 +167,74 @@ where = ["src"]
 [tool.setuptools.package-data]
 dolma = ["py.typed", "data/*"]
 
-[tool.black]
+
+[tool.ruff]
 line-length = 115
-include = '\.pyi?$'
-exclude = '''
-(
-      __pycache__
-    | \.git
-    | \.mypy_cache
-    | \.pytest_cache
-    | \.vscode
-    | \.venv
-    | \bdist\b
-    | \bdoc\b
-    | \.cargo
-    | configs
-    | docs
-    | scripts
-    | sources
-    | src
-    | target
-    | tests/config
-    | tests/data
-    | tests/work
-)
-'''
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+indent-width = 4
+exclude = [
+   "__pycache__",
+   ".git",
+   ".mypy_cache",
+   ".pytest_cache",
+   ".vscode",
+   ".venv",
+   "dist",
+   "docs",
+   "scripts",
+   "sources",
+   "src",
+   "target",
+   "tests/config",
+   "tests/data",
+   "tests/work",
+   "temp"
+]
+target-version = "py310"
+
+[tool.ruff.lint]
+# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
+# Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
+# McCabe complexity (`C901`) by default.
+select = ["E4", "E7", "E9", "F"]
+ignore = []
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+
+# Like Black, indent with spaces, rather than tabs.
+indent-style = "space"
+
+# Like Black, respect magic trailing commas.
+skip-magic-trailing-comma = false
+
+# Like Black, automatically detect the appropriate line ending.
+line-ending = "auto"
 
 
-[tool.isort]
-profile = "black"
-py_version = 38
-known_first_party = ["dolma"]
-known_local_folder = ["tests", "python"]
-extend_skip_glob = [
-    "configs/*",
-    "docs/*",
-    "scripts/*",
-    "sources/*",
-    "src/*",
-    "tests/config/*",
-    "tests/data/*",
-    "tests/work/*",
+[tool.pyright]
+include = ["python/**/*.py"]
+exclude = [
+   "__pycache__",
+   ".git",
+   ".mypy_cache",
+   ".pytest_cache",
+   ".vscode",
+   ".venv",
+   "dist",
+   "docs",
+   "scripts",
+   "sources",
+   "src",
+   "target",
+   "tests/config",
+   "tests/data",
+   "tests/work",
+   "temp"
 ]
 
-[tool.autopep8]
-max_line_length = 115
-in-place = true
-recursive = true
-aggressive = 3
+reportMissingImports = "error"
+reportMissingTypeStubs = false
 
-[tool.mypy]
-python_version = "3.8"
-ignore_missing_imports = true
-no_site_packages = true
-allow_redefinition = false
-warn_unused_configs = true
-warn_unused_ignores = true
-warn_no_return = true
-warn_return_any = false
-warn_unreachable = true
-show_error_codes = true
-pretty = true
-plugins = ["numpy.typing.mypy_plugin"]
-
-[tool.mypy-tests]
-strict_optional = false
+pythonVersion = "3.10"
+pythonPlatform = "All"

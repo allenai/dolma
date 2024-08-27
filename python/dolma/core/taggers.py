@@ -59,10 +59,10 @@ class BaseTagger:
 
 class BaseTaggerWithMetadata(BaseTagger):
     @abstractmethod
-    def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore[override]
         raise NotImplementedError
 
-    def tag(self, row: InputSpecWithMetadata) -> TaggerOutputDictType:
+    def tag(self, row: InputSpecWithMetadata) -> TaggerOutputDictType:  # type: ignore[override]
         """Internal function that is used by the tagger to get data"""
         doc = DocumentWithMetadata.from_spec(row)
         doc_result = self.predict(doc)

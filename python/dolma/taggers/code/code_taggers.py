@@ -8,7 +8,7 @@ Code-related taggers.
 
 import logging
 import re
-from typing import List
+from typing import TYPE_CHECKING, List
 
 import numpy as np
 from necessary import necessary
@@ -18,7 +18,7 @@ from ...core.registry import TaggerRegistry
 from ...core.taggers import BaseTagger, BaseTaggerWithMetadata
 
 with necessary(["detect_secrets", "bs4", "regex", "pygments"], soft=True) as CODE_DEPENDENCIES_AVAILABLE:
-    if CODE_DEPENDENCIES_AVAILABLE:
+    if TYPE_CHECKING or CODE_DEPENDENCIES_AVAILABLE:
         from .starcoder import get_nl_ratio
         from .utils import (
             filter_html,

@@ -7,9 +7,8 @@ Author: Luca Soldaini (@soldni)
 from argparse import ArgumentParser, Namespace
 from collections.abc import Iterable
 from copy import deepcopy
-from dataclasses import Field
+from dataclasses import Field, is_dataclass
 from dataclasses import field as dataclass_field
-from dataclasses import is_dataclass
 from logging import warning
 from typing import (
     Any,
@@ -142,9 +141,7 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
     for key, value in vars(args).items():
         nested_config_dict = _make_nested_dict(key, value, nested_config_dict)
 
-    untyped_config: DictConfig = om.merge(
-        om.create(config or {}), om.create(nested_config_dict)
-    )  # pyright: ignore (pylance is confused because om.create might return a DictConfig or a ListConfig)
+    untyped_config: DictConfig = om.merge(om.create(config or {}), om.create(nested_config_dict))  # pyright: ignore (pylance is confused because om.create might return a DictConfig or a ListConfig)
 
     base_structured_config: DictConfig = om.structured(structured)
     merged_config = om.merge(base_structured_config, untyped_config)
@@ -186,7 +183,9 @@ class BaseCli(Generic[D]):
     def run_from_args(cls, args: Namespace, config: Optional[dict] = None):
         assert hasattr(cls, "CONFIG"), f"{cls.__name__} must have a CONFIG attribute"
         parsed_config = namespace_to_nested_omegaconf(
-            args=args, structured=cls.CONFIG, config=config  # pyright: ignore
+            args=args,
+            structured=cls.CONFIG,
+            config=config,  # pyright: ignore
         )
         try:
             return cls.run(parsed_config)

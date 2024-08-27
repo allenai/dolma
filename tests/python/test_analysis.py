@@ -1,7 +1,6 @@
 from unittest import TestCase
 
 import numpy as np
-
 from dolma.core.binning import cumsum_with_reset, equal_count_hist
 
 

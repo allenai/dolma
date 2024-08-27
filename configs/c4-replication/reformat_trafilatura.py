@@ -7,10 +7,9 @@ from tempfile import TemporaryDirectory
 from typing import Any, Dict, Tuple, Union, cast
 
 import smart_open
+from dolma.core.parallel import BaseParallelProcessor
 from omegaconf import MISSING
 from omegaconf.omegaconf import OmegaConf as om
-
-from dolma.core.parallel import BaseParallelProcessor
 
 
 class TrafilaturaReformatter(BaseParallelProcessor):
@@ -38,9 +37,10 @@ class TrafilaturaReformatter(BaseParallelProcessor):
         )
         destination_path = f"{destination_prefix.rstrip()}/{new_destination_suffix}"
 
-        with smart_open.open(source_path, "rt") as source_file, smart_open.open(
-            destination_path, "wt"
-        ) as destination_file:
+        with (
+            smart_open.open(source_path, "rt") as source_file,
+            smart_open.open(destination_path, "wt") as destination_file,
+        ):
             for line in source_file:
                 document = json.loads(line)
                 documents += 1

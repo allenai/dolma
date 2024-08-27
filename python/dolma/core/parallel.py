@@ -326,7 +326,7 @@ class BaseParallelProcessor:
 
     def __add__(self: BPP, other: BPP) -> BPP:
         """Combine two parallel processors into one."""
-        if not type(self) is type(other):
+        if not isinstance(self, type(other)):
             raise TypeError(f"Cannot add {type(self)} and {type(other)}")
 
         # we try combining the two list of include paths; if they are both None, then set the combo back to none

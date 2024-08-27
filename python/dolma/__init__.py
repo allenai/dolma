@@ -12,7 +12,7 @@ from . import dolma as _dolma  # type: ignore   # noqa: E402
 from .core import TaggerRegistry  # noqa: E402
 from .core.errors import DolmaRustPipelineError  # noqa: E402
 from .core.taggers import BaseTagger  # noqa: E402
-from .taggers import *  # noqa: E402
+from .taggers import DUMMY_INIT_ALL_TAGGERS  # noqa: F401, E402
 
 __all__ = [
     "add_tagger",

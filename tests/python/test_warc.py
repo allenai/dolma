@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Dict, List
 
 import smart_open
-
 from dolma.warc import create_and_run_warc_pipeline
 
 DATA_PATH = Path(__file__).parent.parent / "data/warc"

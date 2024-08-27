@@ -63,7 +63,8 @@ def get_docstrings(source, module="<string>"):
         source = source.read()
 
     docstrings = sorted(
-        parse_docstrings(source), key=lambda x: (NODE_TYPES.get(type(x[0])), x[1])  # pyright: ignore
+        parse_docstrings(source),
+        key=lambda x: (NODE_TYPES.get(type(x[0])), x[1]),  # pyright: ignore
     )
 
     grouped = groupby(docstrings, key=lambda x: NODE_TYPES.get(type(x[0])))  # pyright: ignore
