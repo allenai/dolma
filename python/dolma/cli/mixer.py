@@ -77,6 +77,10 @@ class MixerConfig:
         default=False,
         help="If true, only print the configuration and exit without running the mixer.",
     )
+    skip_checks: bool = field(
+        default=False,
+        help="If true, skip checks on paths (e.g. validation, globbing). Useful in case many paths are being evaluated.",
+    )
 
 
 class MixerCli(BaseCli):
@@ -141,19 +145,22 @@ class MixerCli(BaseCli):
                 if "span_replacement" not in stream_config_dict and "filter" not in stream_config_dict:
                     raise DolmaConfigError("Either `filter` or `span_replacement` must be specified")
 
-                # perform some path validation to make sure we don't call the mixer with invalid config
-                total_matching_documents = 0
-                for document in stream_config.documents:
+                if not parsed_config.skip_checks:
+                    # perform some path validation to make sure we don't call the mixer with invalid config
+                    total_matching_documents = 0
+                    for document in stream_config.documents:
 
-                    current_matching_documents = sum(1 for _ in glob_path(document))
-                    if current_matching_documents == 0:
-                        # only raise a warning if no documents are found for a single path
-                        logger.warning("No documents found for path %s", document)
-                    total_matching_documents += current_matching_documents
+                        current_matching_documents = sum(1 for _ in glob_path(document))
+                        if current_matching_documents == 0:
+                            # only raise a warning if no documents are found for a single path
+                            logger.warning("No documents found for path %s", document)
+                        total_matching_documents += current_matching_documents
 
-                if total_matching_documents == 0:
-                    # but raise an error if no documents are found for all paths
-                    raise DolmaConfigError(f"No documents found for the paths for {stream_config.name} config.")
+                    if total_matching_documents == 0:
+                        # but raise an error if no documents are found for all paths
+                        raise DolmaConfigError(
+                            f"No documents found for the paths for {stream_config.name} config."
+                        )
 
                 # populate the stream config dict
                 stream_config_dict["name"] = stream_config.name

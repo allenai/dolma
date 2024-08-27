@@ -113,8 +113,8 @@ impl Shard {
             }
             if !shard_inputs.is_empty() {
                 let output = format!(
-                    "{}/{}-{:04}.json.gz",
-                    stream_config.output.path, stream_config.name, stream_shard_count
+                    "{}/{}-{:04}.json{}",
+                    stream_config.output.path, stream_config.name, stream_shard_count, output_ext
                 );
                 let shard = Shard {
                     inputs: shard_inputs.clone(),
@@ -213,13 +213,6 @@ impl Shard {
                 )
                 .reader()?;
 
-                // let input_file = OpenOptions::new()
-                //     .read(true)
-                //     .write(false)
-                //     .create(false)
-                //     .open(&local_docs_file)?;
-                // let reader = BufReader::with_capacity(1024 * 1024, MultiGzDecoder::new(input_file));
-
                 let mut line_number = 0;
                 let mut lines_written = 0;
 
@@ -252,7 +245,7 @@ impl Shard {
                     line_number += 1;
                     let line = line?;
                     let mut data: Value = serde_json::from_str(&line)?;
-                    let mut attrs = serde_json::Map::new();
+                    let mut attrs: serde_json::Map<String, Value> = serde_json::Map::new();
                     for (attr_reader_index, (_, attr_reader)) in
                         local_attr_readers.iter_mut().enumerate()
                     {
@@ -316,7 +309,11 @@ impl Shard {
                         }
                     }
 
-                    if !attrs.is_empty() {
+                    // If there are any attribute readers, then we insert the attributes key into
+                    // the mixer data, regardless of whether any attributes have been read or not.
+                    // Essentially, we skip adding the `attributes` key if for some reason this mixer
+                    // is using no attributes data.
+                    if local_attr_readers.len() > 0 {
                         // Add to existing attributes if they exist, otherwise create them.
                         if let Value::Object(ref mut existing_attrs) = data["attributes"] {
                             for (k, v) in attrs.iter() {
