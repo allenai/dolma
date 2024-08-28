@@ -27,7 +27,7 @@ dependencies = [
     "tokenizers>=0.15.0,<=0.19.1",
     "tqdm",
     "uniseg",
-    "numpy",
+    "numpy<2",
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
     "zstandard>=0.23.0",
