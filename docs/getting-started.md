@@ -50,7 +50,7 @@ python scripts/make_wikipedia.py \
   --output wikipedia \
   --date 20231001 \
   --lang simple \
-  --num_processes 16
+  --processes 16
 ```
 
 The code above will download and process Wikipedia articles in the `simple` language from the October 1, 2023 wikipedia dump.
