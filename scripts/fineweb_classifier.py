@@ -39,13 +39,9 @@ with necessary.necessary("torch") as TORCH_AVAILABLE:
 
 with necessary.necessary("transformers") as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
-        from transformers import AutoTokenizer, AutoModelForSequenceClassification  # pyright: ignore
+        from transformers import AutoModelForSequenceClassification  # pyright: ignore
         from transformers import PreTrainedModel    # pyright: ignore
 
-
-# Initialize tokenizer and model outside the processing function to avoid repeated loading
-tokenizer = AutoTokenizer.from_pretrained('HuggingFaceFW/fineweb-edu-classifier')
-model_name: str = 'HuggingFaceFW/fineweb-edu-classifier'
 
 class JsonlDataset(Dataset):
     """Custom Dataset for JSONL files."""
@@ -70,7 +66,7 @@ def setup(rank, world_size):
 def cleanup():
     dist.destroy_process_group()
 
-def load_model(rank) -> PreTrainedModel:
+def load_model(model_name: str, rank: int) -> PreTrainedModel:
     """Loads the model onto the specified GPU."""
     device = torch.device(f'cuda:{rank}')
     model = AutoModelForSequenceClassification.from_pretrained(model_name, torch_dtype=torch.bfloat16)
@@ -80,7 +76,12 @@ def load_model(rank) -> PreTrainedModel:
 
 
 
-def make_prediction(batch: List[dict], model: PreTrainedModel, max_length: Optional[int] = None):
+def make_prediction(
+    tokenizer: AutoTokenizer,
+    batch: List[dict],
+    model: PreTrainedModel,
+    max_length: Optional[int] = None
+):
     inputs = tokenizer(
         [b['text'] for b in batch],
         padding=True,
@@ -110,6 +111,7 @@ def process_file(
     source_path: str,
     destination_path: str,
     model: PreTrainedModel,
+    tokenizer: AutoTokenizer,
     batch_size: int,
     rank: int,
     world_size: int,
@@ -136,7 +138,7 @@ def process_file(
                 if len(batch) < batch_size:
                     continue
 
-                scores = make_prediction(batch, model, max_length)
+                scores = make_prediction(tokenizer, batch, model, max_length)
 
                 attributes = format_prediction(batch, scores, model_name)
                 for attribute in attributes:
@@ -145,7 +147,7 @@ def process_file(
                 batch = []
 
             if batch:
-                scores = make_prediction(batch, model)
+                scores = make_prediction(tokenizer, batch, model, max_length)
                 attributes = format_prediction(batch, scores, model_name)
                 for attribute in attributes:
                     destination_file.write(json.dumps(attribute) + '\n')
@@ -157,11 +159,13 @@ def process_documents(
     source_paths: List[str] ,
     destination_paths: List[str],
     batch_size: int,
+    model_name: str,
     max_length: Optional[int] = None
 ):
     """Processes a batch of files using distributed processing."""
     setup(rank, world_size)
-    model = load_model(rank)
+    model = load_model(model_name, rank)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     s3 = s3fs.S3FileSystem()
 
     for source_path, destination_path in zip(source_paths, destination_paths):
@@ -174,6 +178,7 @@ def process_documents(
             source_path=source_path,
             destination_path=destination_path,
             model=model,
+            tokenizer=tokenizer,
             rank=rank,
             world_size=world_size,
             batch_size=batch_size,
@@ -229,6 +234,7 @@ def main(args: argparse.Namespace) -> None:
     process_documents(
         rank=rank,
         world_size=world_size,
+        model_name=args.model_name,
         source_paths=partition_source_paths,
         destination_paths=partition_destination_paths,
         batch_size=args.batch_size,
@@ -240,6 +246,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--source-prefix', type=str, required=True, help='S3 glob pattern for input files (e.g., s3://path/to/docs/*/*.jsonl.gz)')
     parser.add_argument('--output-prefix', type=str, default=None, help='S3 prefix to save the results')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size for processing (default: 32)')
+    parser.add_argument('--model-name', type=str, default="HuggingFaceFW/fineweb-edu-classifier", help='Hugging Face model name (default: allenai/fineweb-edu-classifier)')
     parser.add_argument('--max-length', type=int, default=None, help='Maximum sequence length for tokenization (default: None)')
     opts = parser.parse_args()
 
