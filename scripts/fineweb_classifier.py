@@ -127,7 +127,7 @@ def process_file(
             batch = []
 
             for i, line in enumerate(source_file):
-                if i % 10_000 == 0 and i > 0:
+                if i % 10_000 == 0:
                     throughput = i / (time.time() - start_time)
                     print(f"{i:,} docs on GPU {rank}/{world_size} from {source_path} ({throughput:.2f} docs/s)")
 
