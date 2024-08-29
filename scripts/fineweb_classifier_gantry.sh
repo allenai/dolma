@@ -6,7 +6,7 @@ DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b
 NUM_NODES=2
 MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
 # CLUSTER="ai2/jupiter*"
-CLUSTER="ai2/s2*"
+CLUSTER="ai2/s2-cirrascale-l40"
 # BATCH_SIZE=1024
 BATCH_SIZE=128
 

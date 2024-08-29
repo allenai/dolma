@@ -17,7 +17,6 @@ import json
 import os
 import time
 from itertools import zip_longest
-
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import smart_open
@@ -210,7 +209,6 @@ def process_documents(
     max_length: Optional[int] = None
 ):
     """Processes a batch of files using distributed processing."""
-    setup()
     model = load_model(model_name, rank)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     s3 = s3fs.S3FileSystem()
