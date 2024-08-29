@@ -39,8 +39,7 @@ with necessary.necessary("torch") as TORCH_AVAILABLE:
 
 with necessary.necessary("transformers") as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
-        from transformers import AutoModelForSequenceClassification  # pyright: ignore
-        from transformers import PreTrainedModel    # pyright: ignore
+        from transformers import AutoModelForSequenceClassification, PreTrainedModel, PreTrainedTokenizer  # pyright: ignore
 
 
 class JsonlDataset(Dataset):
@@ -77,7 +76,7 @@ def load_model(model_name: str, rank: int) -> PreTrainedModel:
 
 
 def make_prediction(
-    tokenizer: AutoTokenizer,
+    tokenizer: PreTrainedTokenizer,
     batch: List[dict],
     model: PreTrainedModel,
     max_length: Optional[int] = None
@@ -111,7 +110,7 @@ def process_file(
     source_path: str,
     destination_path: str,
     model: PreTrainedModel,
-    tokenizer: AutoTokenizer,
+    tokenizer: PreTrainedTokenizer,
     batch_size: int,
     rank: int,
     world_size: int,
@@ -165,7 +164,7 @@ def process_documents(
     """Processes a batch of files using distributed processing."""
     setup(rank, world_size)
     model = load_model(model_name, rank)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = PreTrainedTokenizer.from_pretrained(model_name)
     s3 = s3fs.S3FileSystem()
 
     for source_path, destination_path in zip(source_paths, destination_paths):
