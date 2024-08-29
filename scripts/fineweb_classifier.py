@@ -210,6 +210,8 @@ def main(args: argparse.Namespace) -> None:
     s3 = s3fs.S3FileSystem()
     source_paths = [f's3://{p}' for p in s3.glob(args.source_prefix)]
 
+    print(f"Tagging {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
+
     source_prefix = longest_common_sequence(source_paths)
     destination_paths = [
         f'{args.output_prefix.rstrip("/")}/{p.replace(source_prefix, "").lstrip("/")}' for p in source_paths
@@ -219,6 +221,11 @@ def main(args: argparse.Namespace) -> None:
     files_per_process = len(source_paths) // world_size
     partition_source_paths = source_paths[rank * files_per_process : (rank + 1) * files_per_process]
     partition_destination_paths = destination_paths[rank * files_per_process : (rank + 1) * files_per_process]
+
+    print(
+        f"Partitioned into {len(partition_source_paths)} of size {len(partition_source_paths[0])}. "
+        f"Processing {rank}/{world_size}"
+    )
     process_documents(
         rank=rank,
         world_size=world_size,
