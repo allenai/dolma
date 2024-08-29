@@ -80,10 +80,11 @@ class WandbLogger:
     use_wandb = False
     project = "fineweb-classifier"
     entity = "ai2"
+    name = os.environ.get("GANTRY_TASK_NAME", "fineweb-classifier")
 
     def __new__(cls, *args, **kwargs):
         if not cls.is_initialized and cls.use_wandb:
-            wandb.init(project=cls.project, entity=cls.entity)
+            wandb.init(project=cls.project, entity=cls.entity, name=cls.name)
             cls.is_initialized = True
         return super().__new__(cls, *args, **kwargs)
 
@@ -294,7 +295,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--max-length', type=int, default=None, help='Maximum sequence length for tokenization (default: None)')
     parser.add_argument('--use-wandb', action='store_true', help='Use Weights & Biases for logging')
     parser.add_argument('--wandb-project', type=str, default="fineweb-classifier", help='Weights & Biases project name')
-    parser.add_argument('--wandb-entity', type=str, default="ai2", help='Weights & Biases entity name')
+    parser.add_argument('--wandb-entity', type=str, default="ai2-llm", help='Weights & Biases entity name')
     opts = parser.parse_args()
 
     if opts.output_prefix is None:
