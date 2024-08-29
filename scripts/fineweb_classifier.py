@@ -111,6 +111,8 @@ def process_file(
     destination_path: str,
     model: PreTrainedModel,
     batch_size: int,
+    rank: int,
+    world_size: int,
     max_length: Optional[int] = None,
 ):
     """Processes a single JSONL file and classifies the text."""
@@ -125,9 +127,9 @@ def process_file(
             batch = []
 
             for i, line in enumerate(source_file):
-                if i % 10_000 == 0:
+                if i % 10_000 == 0 and i > 0:
                     throughput = i / (time.time() - start_time)
-                    print(f"Processed {i:,} lines on GPU from {source_path} ({throughput:.2f} lines/s)")
+                    print(f"{i:,} docs on GPU {rank}/{world_size} from {source_path} ({throughput:.2f} docs/s)")
 
                 batch.append(json.loads(line))
 
@@ -168,11 +170,12 @@ def process_documents(
             print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
             continue
 
-        print(f"Processing {source_path} on GPU {rank}/{world_size}")
         process_file(
             source_path=source_path,
             destination_path=destination_path,
             model=model,
+            rank=rank,
+            world_size=world_size,
             batch_size=batch_size,
             max_length=max_length,
         )

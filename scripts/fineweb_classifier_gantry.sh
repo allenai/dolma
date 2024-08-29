@@ -2,7 +2,7 @@
 
 
 DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/*zst'
-NUM_NODES=2
+NUM_NODES=1
 
 gantry run \
     --description "Score DCLM7 with fineweb classifier" \
@@ -26,4 +26,7 @@ gantry run \
     --shared-memory 10GiB \
     --install "pip install necessary s3fs" \
     --yes \
-    -- /bin/bash -c "torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=420' scripts/fineweb_classifier.py --source-prefix ${DOCUMENTS} --batch-size 512"
+    -- /bin/bash -c "torchrun --standalone --nproc_per_node=8 scripts/fineweb_classifier.py --source-prefix ${DOCUMENTS} --batch-size 1024"
+
+# Multi-node command (commented out):
+# -- /bin/bash -c "torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=420' scripts/fineweb_classifier.py --source-prefix ${DOCUMENTS} --batch-size 512"
