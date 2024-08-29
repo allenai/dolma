@@ -8,7 +8,7 @@ gantry run \
     --description "Score DCLM7 with fineweb classifier" \
     --allow-dirty \
     --workspace ai2/oe-data-model-based-cleanup \
-    --beaker-image 'lucas/refine-1' \
+    --beaker-image 'lucas/refine1' \
     --host-networking \
     --venv 'base' \
     --priority urgent \
@@ -16,7 +16,7 @@ gantry run \
     --gpus 8 \
     --replicas ${NUM_NODES} \
     --preemptible \
-    --cluster "ai2/${CLUSTER}*" \
+    --cluster "ai2/jupiter*" \
     --budget ai2/oe-data \
     --env LOG_FILTER_TYPE=local_rank0_only \
     --env OMP_NUM_THREADS=8 \
