@@ -237,9 +237,10 @@ def parse_args() -> argparse.Namespace:
     opts = parser.parse_args()
 
     if opts.output_prefix is None:
-        if "documents" not in opts.source_prefix:
+        if "/documents/" not in opts.source_prefix:
             raise ValueError("Output prefix is required unless source prefix contains 'documents'")
-        opts.output_prefix = opts.source_prefix.replace("/documents/", "/attributes/fineweb-edu-classifier/")
+        base, _ = opts.source_prefix.split("/documents/", 1)
+        opts.output_prefix = f"{base}/attributes/fineweb-edu-classifier"
     return opts
 
 
