@@ -61,6 +61,14 @@ def get_rank_and_world_size():
     else:
         return 0, 1
 
+def get_local_gpu_rank() -> int:
+    """Returns the local GPU rank for the current process using torch.distributed."""
+    if dist.is_initialized():
+        return dist.get_rank() % torch.cuda.device_count()
+    else:
+        return 0
+
+
 
 def setup() -> Tuple[int, int]:
     if (rank := os.environ.get("RANK")) and (world_size := os.environ.get("WORLD_SIZE")):
@@ -71,9 +79,9 @@ def cleanup():
     dist.destroy_process_group()
 
 
-def load_model(model_name: str, rank: int) -> PreTrainedModel:
+def load_model(model_name: str) -> PreTrainedModel:
     """Loads the model onto the specified GPU."""
-    device = torch.device(f'cuda:{rank}')
+    device = torch.device(f'cuda:{get_local_gpu_rank()}')
     model = AutoModelForSequenceClassification.from_pretrained(model_name, torch_dtype=torch.bfloat16)
     model.to(device)
     model = torch.compile(model) # pyright: ignore
@@ -88,7 +96,8 @@ class WandbLogger:
     name = os.environ.get("GANTRY_TASK_NAME", "fineweb-classifier")
 
     def __new__(cls, *args, **kwargs):
-        if not cls.is_initialized and cls.use_wandb:
+        rank, _ = get_rank_and_world_size()
+        if not cls.is_initialized and cls.use_wandb and rank == 0:
             wandb.init(project=cls.project, entity=cls.entity, name=cls.name)
             cls.is_initialized = True
         return super().__new__(cls, *args, **kwargs)
@@ -215,7 +224,7 @@ def process_documents(
     max_length: Optional[int] = None
 ):
     """Processes a batch of files using distributed processing."""
-    model = load_model(model_name, rank)
+    model = load_model(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     s3 = s3fs.S3FileSystem()
 
