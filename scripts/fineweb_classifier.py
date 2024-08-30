@@ -13,12 +13,13 @@ Replace <num_gpus> with the number of GPUs you want to use.
 
 
 import argparse
+from functools import partial
 import os
 import time
 import multiprocessing as mp
 from itertools import zip_longest
 from queue import Queue as QueueType
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union, Generator
+from typing import TYPE_CHECKING, List, NamedTuple, Optional, Tuple, Union, Generator
 
 import smart_open
 import necessary
@@ -52,7 +53,8 @@ with necessary.necessary("transformers") as TRANSFORMERS_AVAILABLE:
             AutoModelForSequenceClassification,
             PreTrainedModel,
             PreTrainedTokenizer,
-            AutoTokenizer
+            AutoTokenizer,
+            BatchEncoding
         )
 
 with necessary.necessary("wandb") as WANDB_AVAILABLE:
@@ -162,6 +164,21 @@ def format_prediction(docs: List["DocSpec"], scores: List[float], model_name: st
     return attributes
 
 
+def format_prediction_batch(batch: "BatchItem", batch_scores: List[float], model_name: str):
+    attributes = []
+    for id, length, score in zip(batch.ids, batch.lengths, batch_scores):
+        int_score = int(round(max(0, min(score, 5))))
+        attribute = {
+            "id": id,
+            "attributes": {
+                f"{model_name}_score": [[0, length, score]],
+                f"{model_name}_int_score": [[0, length, float(int_score)]]
+            }
+        }
+        attributes.append(attribute)
+    return attributes
+
+
 def async_sync_counts(counts: int) -> int:
     """
     Asynchronously reduces the counts across all GPUs and returns the result.
@@ -220,6 +237,91 @@ class FileReader:
             yield doc
 
 
+class BatchItem(NamedTuple):
+    ids: List[str]
+    lengths: List[int]
+    inputs: BatchEncoding
+
+
+class BatchAndTokenizeReader:
+    def __init__(self, source_path: str, batch_size: int, tokenizer_name_or_path: str, max_length: Optional[int] = None):
+        self.queue: QueueType[Union[BatchItem, None]] = mp.Queue()  # type: ignore
+        self.process = mp.Process(
+            target=self.read_file,
+            kwargs={
+                "source_path": source_path,
+                "queue": self.queue,
+                "batch_size": batch_size,
+                "tokenizer_name_or_path": tokenizer_name_or_path,
+                "max_length": max_length
+            }
+        )
+
+    @classmethod
+    def make_item(
+        cls,
+        batch: List[DocSpec],
+        tokenizer: PreTrainedTokenizer,
+        max_length: Optional[int] = None
+    ) -> BatchItem:
+        inputs = tokenizer(
+            [d.text for d in batch],
+            padding=True,
+            truncation=True,
+            return_tensors='pt',
+            max_length=max_length
+        )
+        return BatchItem(
+            ids=[d.id for d in batch],
+            lengths=[len(d.text) for d in batch],
+            inputs=inputs
+        )
+
+    @classmethod
+    def read_file(
+        cls,
+        source_path: str,
+        queue: QueueType[Union[BatchItem, None]],
+        batch_size: int,
+        tokenizer_name_or_path: str,
+        max_length: Optional[int] = None
+    ):
+        decoder = msgspec.json.Decoder(DocSpec)
+        tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
+        make_item_fn = partial(cls.make_item, tokenizer=tokenizer, max_length=max_length)
+        with smart_open.open(source_path, 'rt') as source_file:
+            batch = []
+            for line in source_file:
+                batch.append(decoder.decode(line))
+                if len(batch) < batch_size:
+                    continue
+
+                queue.put(make_item_fn(batch))
+                batch = []
+
+        if batch:
+            queue.put(make_item_fn(batch))
+
+        queue.put(None)
+
+    def __enter__(self):
+        self.process.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.process.join()
+        self.process.close()
+
+    def __iter__(self) -> Generator[BatchItem, None, None]:
+        if not self.process.is_alive():
+            raise RuntimeError("FileReader must be used with a with statement.")
+        while True:
+            item = self.queue.get()
+            if item is None:
+                break
+            yield item
+
+
 def process_documents(
     rank: int,
     world_size: int,
@@ -231,6 +333,7 @@ def process_documents(
 ):
     """Processes a batch of files using distributed processing."""
     model = load_model(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     s3 = s3fs.S3FileSystem()
 
     step = file_cnt = 0
@@ -253,9 +356,6 @@ def process_documents(
         with torch.no_grad(), \
             smart_open.open(destination_path, 'wt') as destination_file, \
             FileReader(source_path) as source_file:
-
-            # moved here to avoid extra forking
-            tokenizer = AutoTokenizer.from_pretrained(model_name)
 
             batch: List[DocSpec] = []
             file_cnt += 1
@@ -286,7 +386,56 @@ def process_documents(
                 output = encoder.encode_lines(attributes)
                 destination_file.write(output.decode('utf-8'))
 
-            del tokenizer
+    cleanup()
+
+
+def process_documents_batch_and_tokenize(
+    rank: int,
+    world_size: int,
+    source_paths: List[str] ,
+    destination_paths: List[str],
+    batch_size: int,
+    model_name: str,
+    max_length: Optional[int] = None
+):
+    """Processes a batch of files using distributed processing."""
+    model = load_model(model_name)
+    s3 = s3fs.S3FileSystem()
+
+    step = file_cnt = 0
+    model_name_attributes = model.config.name_or_path.replace('/', '_')
+    model.eval()
+    logger = WandbLogger()
+    prev_time = time.time()
+    log_every = int(round(LOG_EVERY / batch_size) * batch_size)
+
+    encoder = msgspec.json.Encoder()
+
+    for source_path, destination_path in zip(source_paths, destination_paths):
+        if s3.exists(destination_path):
+            print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
+            continue
+
+        with torch.no_grad(), \
+            smart_open.open(destination_path, 'wt') as destination_file, \
+            BatchAndTokenizeReader(source_path, batch_size, model_name, max_length) as batches:
+
+            file_cnt += 1
+
+            for batch in batches:
+                step += len(batch.ids)
+
+                if step % log_every == 0:
+                    throughput = log_every / -(prev_time - (prev_time := time.time()))
+                    logger.log(step=step, throughput=throughput, files=file_cnt, docs=step)
+
+                batch.inputs.to(model.device)
+                outputs = model(**batch.inputs)
+                scores = outputs.logits.squeeze(-1).float().cpu().tolist()
+
+                attributes = format_prediction_batch(batch, scores, model_name_attributes)
+                output = encoder.encode_lines(attributes)
+                destination_file.write(output.decode('utf-8'))
 
     cleanup()
 
@@ -310,7 +459,7 @@ def longest_common_sequence(strings):
 
 def main(args: argparse.Namespace) -> None:
     rank, world_size = setup()
-    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     WandbLogger()   # Initialize WandbLogger if use_wandb is True
 
@@ -342,7 +491,7 @@ def main(args: argparse.Namespace) -> None:
         f"Partitioned into {len(partition_source_paths)} of size {len(partition_source_paths[0])}. "
         f"Processing {rank}/{world_size}"
     )
-    process_documents(
+    process_documents_batch_and_tokenize(
         rank=rank,
         world_size=world_size,
         model_name=args.model_name,
@@ -384,7 +533,9 @@ if __name__ == "__main__":
 
     # path = "/Users/lucas/Downloads/0000_dclm_shard_00000065.jsonl.zstd"
     # cnt = 0
-    # with FileReader(path) as f:
-    #     for doc in f:
+    # import tqdm
+    # # with FileReader(path) as f:
+    # with BatchAndTokenizeReader(path, 10, "bert-base-uncased") as f:
+    #     for batch in tqdm.tqdm(f):
     #         cnt += 1
     # print(cnt)
