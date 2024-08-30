@@ -381,3 +381,10 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = parse_args()
     main(args)
+
+    # path = "/Users/lucas/Downloads/0000_dclm_shard_00000065.jsonl.zstd"
+    # cnt = 0
+    # with FileReader(path) as f:
+    #     for doc in f:
+    #         cnt += 1
+    # print(cnt)
