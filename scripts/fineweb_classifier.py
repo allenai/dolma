@@ -16,8 +16,10 @@ import argparse
 import json
 import os
 import time
+import multiprocessing as mp
 from itertools import zip_longest
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from queue import Queue as QueueType
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union
 
 import smart_open
 import necessary
@@ -106,14 +108,21 @@ class WandbLogger:
         self.rank, self.world_size = get_rank_and_world_size()
 
     def log(self, **kwargs):
-        if self.use_wandb and self.rank == 0:
+
+        print(
+            "{wandb}{rank}/{world_size}: {kwargs}".format(
+                wandb="wandb" if (to_wandb := (self.rank == 0) or (not self.use_wandb)) else "",
+                rank=self.rank,
+                world_size=self.world_size,
+                kwargs=", ".join(f"{k}={v}" for k, v in kwargs.items())
+            )
+        )
+
+        if to_wandb:
             if (step := kwargs.pop('step', None)):
                 wandb.log(kwargs, step=step)
             else:
                 wandb.log(kwargs)
-
-        for k, v in kwargs.items():
-            print(f"{self.rank}/{self.world_size} {k}: {v}")
 
 
 def make_prediction(
@@ -212,6 +221,31 @@ def async_sync_counts(counts: int) -> int:
     stream.synchronize()
 
     return int(tensor_counts.item())
+
+
+
+
+class FileReader:
+    def __init__(self, source_path: str):
+        self.queue = mp.Queue()
+        self.process = mp.Process(target=self.read_file, args=(source_path, self.queue))
+        self.process.start()
+
+    @staticmethod
+    def read_file(source_path: str, queue: QueueType[Union[dict, None]]):
+        with smart_open.open(source_path, 'rt') as source_file:
+            for line in source_file:
+                doc = json.loads(line)
+                queue.put(doc)
+        queue.put(None)
+
+    def __iter__(self):
+        while True:
+            doc = self.queue.get()
+            if doc is None:
+                break
+            yield doc
+
 
 
 def process_documents(
