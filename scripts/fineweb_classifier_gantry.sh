@@ -1,14 +1,17 @@
 #! /bin/bash
 
-# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/*zst'
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b-01/*zstd'
-# NUM_NODES=1
-NUM_NODES=2
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/*zst'
+
+NUM_NODES=4
 MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
-# CLUSTER="ai2/jupiter*"
-CLUSTER="ai2/s2-cirrascale-l40"
-# BATCH_SIZE=1024
-BATCH_SIZE=128
+CLUSTER="ai2/jupiter*"
+BATCH_SIZE=1024
+
+# Test Values
+# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b-01/*zstd'
+# NUM_NODES=1
+# BATCH_SIZE=128
+# CLUSTER="ai2/s2-cirrascale-l40"
 
 # Generate a hash for the run name by combining model name and documents
 RUN_HASH=$(echo -n "${MODEL_NAME}${DOCUMENTS}" | md5sum | awk '{print $1}')

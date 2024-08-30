@@ -345,6 +345,7 @@ def process_documents(
     encoder = msgspec.json.Encoder()
 
     for source_path, destination_path in zip(source_paths, destination_paths):
+        file_cnt += 1
         if s3.exists(destination_path):
             print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
             continue
@@ -354,13 +355,9 @@ def process_documents(
             FileReader(source_path) as source_file:
 
             batch: List[DocSpec] = []
-            file_cnt += 1
             for doc in source_file:
                 step += 1
                 if step % LOG_EVERY == 0:
-
-                    total_doc_count = async_sync_counts(step)
-
                     throughput = LOG_EVERY / -(prev_time - (prev_time := time.time()))
                     logger.log(step=step, throughput=throughput, files=file_cnt, docs=total_doc_count)
 
