@@ -51,8 +51,7 @@ with necessary.necessary("transformers") as TRANSFORMERS_AVAILABLE:
         from transformers import ( # pyright: ignore
             AutoModelForSequenceClassification,
             PreTrainedModel,
-            PreTrainedTokenizer,
-            AutoTokenizer
+            PreTrainedTokenizer
         )
 
 with necessary.necessary("wandb") as WANDB_AVAILABLE:
@@ -228,7 +227,7 @@ def process_documents(
     s3 = s3fs.S3FileSystem()
 
     step = file_cnt = 0
-    model_name = model.config.name_or_path.replace('/', '_')
+    model_name_attributes = model.config.name_or_path.replace('/', '_')
     model.eval()
     logger = WandbLogger()
     prev_time = time.time()
@@ -247,7 +246,7 @@ def process_documents(
         with torch.no_grad(), smart_open.open(destination_path, 'wt') as destination_file:
             source_file = FileReader(source_path)
 
-            # Load the tokenizer here to avoid spawning after forking
+            # moved here to avoid extra forking
             tokenizer = AutoTokenizer.from_pretrained(model_name)
 
             batch: List[DocSpec] = []
@@ -267,7 +266,7 @@ def process_documents(
 
                 scores = make_prediction(tokenizer, batch, model, max_length)
 
-                attributes = format_prediction(batch, scores, model_name)
+                attributes = format_prediction(batch, scores, model_name_attributes)
                 output = encoder.encode_lines(attributes)
                 destination_file.write(output.decode('utf-8'))
 
@@ -278,6 +277,8 @@ def process_documents(
                 attributes = format_prediction(batch, scores, model_name)
                 output = encoder.encode_lines(attributes)
                 destination_file.write(output.decode('utf-8'))
+
+            del tokenizer
 
     cleanup()
 
@@ -301,6 +302,7 @@ def longest_common_sequence(strings):
 
 def main(args: argparse.Namespace) -> None:
     rank, world_size = setup()
+    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     WandbLogger()   # Initialize WandbLogger if use_wandb is True
 
