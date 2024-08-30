@@ -51,7 +51,8 @@ with necessary.necessary("transformers") as TRANSFORMERS_AVAILABLE:
         from transformers import ( # pyright: ignore
             AutoModelForSequenceClassification,
             PreTrainedModel,
-            PreTrainedTokenizer
+            PreTrainedTokenizer,
+            AutoTokenizer
         )
 
 with necessary.necessary("wandb") as WANDB_AVAILABLE:
@@ -191,7 +192,6 @@ class FileReader:
     def __init__(self, source_path: str):
         self.queue: QueueType[Union[DocSpec, None]] = mp.Queue()  # type: ignore
         self.process = mp.Process(target=self.read_file, args=(source_path, self.queue))
-        self.process.start()
 
     @staticmethod
     def read_file(source_path: str, queue: QueueType[Union[DocSpec, None]]):
@@ -202,15 +202,22 @@ class FileReader:
                 queue.put(doc)
         queue.put(None)
 
+    def __enter__(self):
+        self.process.start()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.process.join()
+        self.process.close()
+
     def __iter__(self) -> Generator[DocSpec, None, None]:
+        if not self.process.is_alive():
+            raise RuntimeError("FileReader must be used with a with statement.")
         while True:
             doc = self.queue.get()
             if doc is None:
                 break
             yield doc
-
-        self.process.join()
-        self.process.close()
 
 
 def process_documents(
@@ -243,8 +250,9 @@ def process_documents(
         #     smart_open.open(source_path, 'rt') as source_file, \
         #     smart_open.open(destination_path, 'wt') as destination_file:
 
-        with torch.no_grad(), smart_open.open(destination_path, 'wt') as destination_file:
-            source_file = FileReader(source_path)
+        with torch.no_grad(), \
+            smart_open.open(destination_path, 'wt') as destination_file, \
+            FileReader(source_path) as source_file:
 
             # moved here to avoid extra forking
             tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -315,7 +323,12 @@ def main(args: argparse.Namespace) -> None:
 
     print(f"Tagging {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
 
-    source_prefix = longest_common_sequence(source_paths)
+    if all( "/documents/" in p for p in source_paths):
+        source_prefix = longest_common_sequence([p.split('/documents/', 1)[0] for p in source_paths])
+        source_prefix = f"{source_prefix}/documents/"
+    else:
+        source_prefix = longest_common_sequence(source_paths)
+
     destination_paths = [
         f'{args.output_prefix.rstrip("/")}/{p.replace(source_prefix, "").lstrip("/")}' for p in source_paths
     ]
