@@ -57,11 +57,15 @@ with necessary.necessary("wandb") as WANDB_AVAILABLE:
         import wandb
 
 
+LOG_EVERY = 10_000
+
+
 def get_rank_and_world_size():
     if dist.is_initialized():
         return dist.get_rank(), dist.get_world_size()
     else:
         return 0, 1
+
 
 def get_local_gpu_rank() -> int:
     """Returns the local GPU rank for the current process using torch.distributed."""
@@ -69,7 +73,6 @@ def get_local_gpu_rank() -> int:
         return dist.get_rank() % torch.cuda.device_count()
     else:
         return 0
-
 
 
 def setup() -> Tuple[int, int]:
@@ -108,7 +111,6 @@ class WandbLogger:
         self.rank, self.world_size = get_rank_and_world_size()
 
     def log(self, **kwargs):
-
         print(
             "{wandb}{rank}/{world_size}: {kwargs}".format(
                 wandb="[wandb]" if (to_wandb := (self.rank == 0) and (self.use_wandb)) else "",
@@ -117,7 +119,6 @@ class WandbLogger:
                 kwargs=", ".join(f"{k}={v}" for k, v in kwargs.items())
             )
         )
-
         if to_wandb:
             if (step := kwargs.pop('step', None)):
                 wandb.log(kwargs, step=step)
@@ -141,6 +142,7 @@ def make_prediction(
     outputs = model(**inputs)
     scores = outputs.logits.squeeze(-1).float().cpu().tolist()
     return scores
+
 
 def format_prediction(docs: List[dict], scores: List[float], model_name: str):
     attributes = []
@@ -228,19 +230,24 @@ def process_documents(
             print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
             continue
 
-        with torch.no_grad(), \
-            smart_open.open(source_path, 'rt') as source_file, \
-            smart_open.open(destination_path, 'wt') as destination_file:
+        # with torch.no_grad(), \
+        #     smart_open.open(source_path, 'rt') as source_file, \
+        #     smart_open.open(destination_path, 'wt') as destination_file:
+
+        with torch.no_grad(), smart_open.open(destination_path, 'wt') as destination_file:
+            source_file = FileReader(source_path)
 
             batch = []
             file_cnt += 1
-            for line in source_file:
+            # for line in source_file:
+            for doc in source_file:
                 step += 1
-                if step % 10_000 == 0:
-                    throughput = step / -(prev_time - (prev_time := time.time()))
+                if step % LOG_EVERY == 0:
+                    throughput = LOG_EVERY / -(prev_time - (prev_time := time.time()))
                     logger.log(step=step, throughput=throughput, files=file_cnt)
 
-                batch.append(json.loads(line))
+                # batch.append(json.loads(line))
+                batch.append(doc)
 
                 if len(batch) < batch_size:
                     continue
