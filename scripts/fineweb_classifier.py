@@ -11,18 +11,17 @@ torchrun --nproc_per_node=2 scripts/fineweb_classifier.py \
 Replace <num_gpus> with the number of GPUs you want to use.
 """
 
-
 import argparse
-from functools import partial
+import multiprocessing as mp
 import os
 import time
-import multiprocessing as mp
+from functools import partial
 from itertools import zip_longest
 from queue import Queue as QueueType
-from typing import TYPE_CHECKING, List, NamedTuple, Optional, Tuple, Union, Generator
+from typing import TYPE_CHECKING, Generator, List, NamedTuple, Optional, Tuple, Union
 
-import smart_open
 import necessary
+import smart_open
 
 with necessary.necessary("msgspec") as MSGSPEC_AVAILABLE:
     if TYPE_CHECKING or MSGSPEC_AVAILABLE:
@@ -36,6 +35,7 @@ with necessary.necessary("smart_open>=7.0.4") as SMART_OPEN_AVAILABLE:
     if TYPE_CHECKING or SMART_OPEN_AVAILABLE:
         import smart_open
         from smart_open.compression import _handle_zstd
+
         smart_open.register_compressor(".zstd", _handle_zstd)
 
 with necessary.necessary("tqdm") as TQDM_AVAILABLE:
@@ -45,16 +45,16 @@ with necessary.necessary("tqdm") as TQDM_AVAILABLE:
 with necessary.necessary("torch") as TORCH_AVAILABLE:
     if TYPE_CHECKING or TORCH_AVAILABLE:
         import torch  # pyright: ignore
-        import torch.distributed as dist # pyright: ignore
+        import torch.distributed as dist  # pyright: ignore
 
 with necessary.necessary("transformers") as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
-        from transformers import ( # pyright: ignore
+        from transformers import (  # pyright: ignore
             AutoModelForSequenceClassification,
+            AutoTokenizer,
+            BatchEncoding,
             PreTrainedModel,
             PreTrainedTokenizer,
-            AutoTokenizer,
-            BatchEncoding
         )
 
 with necessary.necessary("wandb") as WANDB_AVAILABLE:
@@ -85,17 +85,18 @@ def setup() -> Tuple[int, int]:
         dist.init_process_group("nccl", rank=int(rank), world_size=int(world_size))
     return get_rank_and_world_size()
 
+
 def cleanup():
     dist.destroy_process_group()
 
 
 def load_model(model_name: str) -> PreTrainedModel:
     """Loads the model onto the specified GPU."""
-    device = torch.device(f'cuda:{get_local_gpu_rank()}')
+    device = torch.device(f"cuda:{get_local_gpu_rank()}")
     model = AutoModelForSequenceClassification.from_pretrained(model_name, torch_dtype=torch.bfloat16)
     model.to(device)
-    model = torch.compile(model) # pyright: ignore
-    return model    # pyright: ignore
+    model = torch.compile(model)  # pyright: ignore
+    return model  # pyright: ignore
 
 
 class WandbLogger:
@@ -121,11 +122,11 @@ class WandbLogger:
                 wandb="[wandb]" if (to_wandb := (self.rank == 0) and (self.use_wandb)) else "",
                 rank=self.rank,
                 world_size=self.world_size,
-                kwargs=", ".join(f"{k}={v}" for k, v in kwargs.items())
+                kwargs=", ".join(f"{k}={v}" for k, v in kwargs.items()),
             )
         )
         if to_wandb:
-            if (step := kwargs.pop('step', None)):
+            if step := kwargs.pop("step", None):
                 wandb.log(kwargs, step=step)
             else:
                 wandb.log(kwargs)
@@ -135,14 +136,10 @@ def make_prediction(
     tokenizer: PreTrainedTokenizer,
     batch: List["DocSpec"],
     model: PreTrainedModel,
-    max_length: Optional[int] = None
+    max_length: Optional[int] = None,
 ):
     inputs = tokenizer(
-        [b.text for b in batch],
-        padding=True,
-        truncation=True,
-        return_tensors='pt',
-        max_length=max_length
+        [b.text for b in batch], padding=True, truncation=True, return_tensors="pt", max_length=max_length
     ).to(model.device)
     outputs = model(**inputs)
     scores = outputs.logits.squeeze(-1).float().cpu().tolist()
@@ -157,8 +154,8 @@ def format_prediction(docs: List["DocSpec"], scores: List[float], model_name: st
             "id": doc.id,
             "attributes": {
                 f"{model_name}_score": [[0, len(doc.text), score]],
-                f"{model_name}_int_score": [[0, len(doc.text), float(int_score)]]
-            }
+                f"{model_name}_int_score": [[0, len(doc.text), float(int_score)]],
+            },
         }
         attributes.append(attribute)
     return attributes
@@ -172,8 +169,8 @@ def format_prediction_batch(batch: "BatchItem", batch_scores: List[float], model
             "id": id,
             "attributes": {
                 f"{model_name}_score": [[0, length, score]],
-                f"{model_name}_int_score": [[0, length, float(int_score)]]
-            }
+                f"{model_name}_int_score": [[0, length, float(int_score)]],
+            },
         }
         attributes.append(attribute)
     return attributes
@@ -190,7 +187,7 @@ def async_sync_counts(counts: int) -> int:
     tensor_counts = torch.tensor(counts).cuda()
 
     # Perform all_reduce operation asynchronously
-    with torch.cuda.stream(stream): # pyright: ignore
+    with torch.cuda.stream(stream):  # pyright: ignore
         dist.all_reduce(tensor_counts, op=dist.ReduceOp.SUM)
 
     # Stream synchronization ensures that the counts are reduced
@@ -213,7 +210,7 @@ class FileReader:
     @staticmethod
     def read_file(source_path: str, queue: QueueType[Union[DocSpec, None]]):
         decoder = msgspec.json.Decoder(DocSpec)
-        with smart_open.open(source_path, 'rt') as source_file:
+        with smart_open.open(source_path, "rt") as source_file:
             for line in source_file:
                 doc = decoder.decode(line)
                 queue.put(doc)
@@ -244,7 +241,9 @@ class BatchItem(NamedTuple):
 
 
 class BatchAndTokenizeReader:
-    def __init__(self, source_path: str, batch_size: int, tokenizer_name_or_path: str, max_length: Optional[int] = None):
+    def __init__(
+        self, source_path: str, batch_size: int, tokenizer_name_or_path: str, max_length: Optional[int] = None
+    ):
         self.queue: QueueType[Union[BatchItem, None]] = mp.Queue()  # type: ignore
         self.process = mp.Process(
             target=self.read_file,
@@ -253,29 +252,18 @@ class BatchAndTokenizeReader:
                 "queue": self.queue,
                 "batch_size": batch_size,
                 "tokenizer_name_or_path": tokenizer_name_or_path,
-                "max_length": max_length
-            }
+                "max_length": max_length,
+            },
         )
 
     @classmethod
     def make_item(
-        cls,
-        batch: List[DocSpec],
-        tokenizer: PreTrainedTokenizer,
-        max_length: Optional[int] = None
+        cls, batch: List[DocSpec], tokenizer: PreTrainedTokenizer, max_length: Optional[int] = None
     ) -> BatchItem:
         inputs = tokenizer(
-            [d.text for d in batch],
-            padding=True,
-            truncation=True,
-            return_tensors='pt',
-            max_length=max_length
+            [d.text for d in batch], padding=True, truncation=True, return_tensors="pt", max_length=max_length
         )
-        return BatchItem(
-            ids=[d.id for d in batch],
-            lengths=[len(d.text) for d in batch],
-            inputs=inputs
-        )
+        return BatchItem(ids=[d.id for d in batch], lengths=[len(d.text) for d in batch], inputs=inputs)
 
     @classmethod
     def read_file(
@@ -284,12 +272,12 @@ class BatchAndTokenizeReader:
         queue: QueueType[Union[BatchItem, None]],
         batch_size: int,
         tokenizer_name_or_path: str,
-        max_length: Optional[int] = None
+        max_length: Optional[int] = None,
     ):
         decoder = msgspec.json.Decoder(DocSpec)
         tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
         make_item_fn = partial(cls.make_item, tokenizer=tokenizer, max_length=max_length)
-        with smart_open.open(source_path, 'rt') as source_file:
+        with smart_open.open(source_path, "rt") as source_file:
             batch = []
             for line in source_file:
                 batch.append(decoder.decode(line))
@@ -325,11 +313,11 @@ class BatchAndTokenizeReader:
 def process_documents(
     rank: int,
     world_size: int,
-    source_paths: List[str] ,
+    source_paths: List[str],
     destination_paths: List[str],
     batch_size: int,
     model_name: str,
-    max_length: Optional[int] = None
+    max_length: Optional[int] = None,
 ):
     """Processes a batch of files using distributed processing."""
     model = load_model(model_name)
@@ -337,7 +325,7 @@ def process_documents(
     s3 = s3fs.S3FileSystem()
 
     step = file_cnt = 0
-    model_name_attributes = model.config.name_or_path.replace('/', '_')
+    model_name_attributes = model.config.name_or_path.replace("/", "_")
     model.eval()
     logger = WandbLogger()
     prev_time = time.time()
@@ -350,9 +338,9 @@ def process_documents(
             print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
             continue
 
-        with torch.no_grad(), \
-            smart_open.open(destination_path, 'wt') as destination_file, \
-            FileReader(source_path) as source_file:
+        with torch.no_grad(), smart_open.open(destination_path, "wt") as destination_file, FileReader(
+            source_path
+        ) as source_file:
 
             batch: List[DocSpec] = []
             for doc in source_file:
@@ -370,7 +358,7 @@ def process_documents(
 
                 attributes = format_prediction(batch, scores, model_name_attributes)
                 output = encoder.encode_lines(attributes)
-                destination_file.write(output.decode('utf-8'))
+                destination_file.write(output.decode("utf-8"))
 
                 batch = []
 
@@ -378,25 +366,25 @@ def process_documents(
                 scores = make_prediction(tokenizer, batch, model, max_length)
                 attributes = format_prediction(batch, scores, model_name)
                 output = encoder.encode_lines(attributes)
-                destination_file.write(output.decode('utf-8'))
+                destination_file.write(output.decode("utf-8"))
     cleanup()
 
 
 def process_documents_batch_and_tokenize(
     rank: int,
     world_size: int,
-    source_paths: List[str] ,
+    source_paths: List[str],
     destination_paths: List[str],
     batch_size: int,
     model_name: str,
-    max_length: Optional[int] = None
+    max_length: Optional[int] = None,
 ):
     """Processes a batch of files using distributed processing."""
     model = load_model(model_name)
     s3 = s3fs.S3FileSystem()
 
     step = file_cnt = 0
-    model_name_attributes = model.config.name_or_path.replace('/', '_')
+    model_name_attributes = model.config.name_or_path.replace("/", "_")
     model.eval()
     logger = WandbLogger()
     prev_time = time.time()
@@ -409,9 +397,9 @@ def process_documents_batch_and_tokenize(
             print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
             continue
 
-        with torch.no_grad(), \
-            smart_open.open(destination_path, 'wt') as destination_file, \
-            BatchAndTokenizeReader(source_path, batch_size, model_name, max_length) as batches:
+        with torch.no_grad(), smart_open.open(destination_path, "wt") as destination_file, BatchAndTokenizeReader(
+            source_path, batch_size, model_name, max_length
+        ) as batches:
 
             file_cnt += 1
 
@@ -428,7 +416,7 @@ def process_documents_batch_and_tokenize(
 
                 attributes = format_prediction_batch(batch, scores, model_name_attributes)
                 output = encoder.encode_lines(attributes)
-                destination_file.write(output.decode('utf-8'))
+                destination_file.write(output.decode("utf-8"))
 
     cleanup()
 
@@ -454,19 +442,18 @@ def main(args: argparse.Namespace) -> None:
     rank, world_size = setup()
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    WandbLogger()   # Initialize WandbLogger if use_wandb is True
+    WandbLogger()  # Initialize WandbLogger if use_wandb is True
 
     if not torch.cuda.is_available():
         raise RuntimeError("No GPUs available, but the script is designed to use multiple GPUs.")
 
-
     s3 = s3fs.S3FileSystem()
-    source_paths = [f's3://{p}' for p in s3.glob(args.source_prefix)]
+    source_paths = [f"s3://{p}" for p in s3.glob(args.source_prefix)]
 
     print(f"Tagging {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
 
-    if all( "/documents/" in p for p in source_paths):
-        source_prefix = longest_common_sequence([p.split('/documents/', 1)[0] for p in source_paths])
+    if all("/documents/" in p for p in source_paths):
+        source_prefix = longest_common_sequence([p.split("/documents/", 1)[0] for p in source_paths])
         source_prefix = f"{source_prefix}/documents/"
     else:
         source_prefix = longest_common_sequence(source_paths)
@@ -494,16 +481,33 @@ def main(args: argparse.Namespace) -> None:
         max_length=args.max_length,
     )
 
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Classify text from JSONL files on S3 using a Hugging Face model.')
-    parser.add_argument('--source-prefix', type=str, required=True, help='S3 glob pattern for input files (e.g., s3://path/to/docs/*/*.jsonl.gz)')
-    parser.add_argument('--output-prefix', type=str, default=None, help='S3 prefix to save the results')
-    parser.add_argument('--batch-size', type=int, default=32, help='Batch size for processing (default: 32)')
-    parser.add_argument('--model-name', type=str, default="HuggingFaceFW/fineweb-edu-classifier", help='Hugging Face model name (default: allenai/fineweb-edu-classifier)')
-    parser.add_argument('--max-length', type=int, default=None, help='Maximum sequence length for tokenization (default: None)')
-    parser.add_argument('--use-wandb', action='store_true', help='Use Weights & Biases for logging')
-    parser.add_argument('--wandb-project', type=str, default="fineweb-classifier", help='Weights & Biases project name')
-    parser.add_argument('--wandb-entity', type=str, default="ai2-llm", help='Weights & Biases entity name')
+    parser = argparse.ArgumentParser(
+        description="Classify text from JSONL files on S3 using a Hugging Face model."
+    )
+    parser.add_argument(
+        "--source-prefix",
+        type=str,
+        required=True,
+        help="S3 glob pattern for input files (e.g., s3://path/to/docs/*/*.jsonl.gz)",
+    )
+    parser.add_argument("--output-prefix", type=str, default=None, help="S3 prefix to save the results")
+    parser.add_argument("--batch-size", type=int, default=32, help="Batch size for processing (default: 32)")
+    parser.add_argument(
+        "--model-name",
+        type=str,
+        default="HuggingFaceFW/fineweb-edu-classifier",
+        help="Hugging Face model name (default: allenai/fineweb-edu-classifier)",
+    )
+    parser.add_argument(
+        "--max-length", type=int, default=None, help="Maximum sequence length for tokenization (default: None)"
+    )
+    parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
+    parser.add_argument(
+        "--wandb-project", type=str, default="fineweb-classifier", help="Weights & Biases project name"
+    )
+    parser.add_argument("--wandb-entity", type=str, default="ai2-llm", help="Weights & Biases entity name")
     opts = parser.parse_args()
 
     if opts.output_prefix is None:
