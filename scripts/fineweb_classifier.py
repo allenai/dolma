@@ -349,24 +349,21 @@ def process_documents(
             print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
             continue
 
-        # with torch.no_grad(), \
-        #     smart_open.open(source_path, 'rt') as source_file, \
-        #     smart_open.open(destination_path, 'wt') as destination_file:
-
         with torch.no_grad(), \
             smart_open.open(destination_path, 'wt') as destination_file, \
             FileReader(source_path) as source_file:
 
             batch: List[DocSpec] = []
             file_cnt += 1
-            # for line in source_file:
             for doc in source_file:
                 step += 1
                 if step % LOG_EVERY == 0:
-                    throughput = LOG_EVERY / -(prev_time - (prev_time := time.time()))
-                    logger.log(step=step, throughput=throughput, files=file_cnt, docs=step)
 
-                # batch.append(json.loads(line))
+                    total_doc_count = async_sync_counts(step)
+
+                    throughput = LOG_EVERY / -(prev_time - (prev_time := time.time()))
+                    logger.log(step=step, throughput=throughput, files=file_cnt, docs=total_doc_count)
+
                 batch.append(doc)
 
                 if len(batch) < batch_size:
@@ -385,7 +382,6 @@ def process_documents(
                 attributes = format_prediction(batch, scores, model_name)
                 output = encoder.encode_lines(attributes)
                 destination_file.write(output.decode('utf-8'))
-
     cleanup()
 
 
@@ -491,7 +487,7 @@ def main(args: argparse.Namespace) -> None:
         f"Partitioned into {len(partition_source_paths)} of size {len(partition_source_paths[0])}. "
         f"Processing {rank}/{world_size}"
     )
-    process_documents_batch_and_tokenize(
+    process_documents(
         rank=rank,
         world_size=world_size,
         model_name=args.model_name,
