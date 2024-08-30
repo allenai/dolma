@@ -111,7 +111,7 @@ class WandbLogger:
 
         print(
             "{wandb}{rank}/{world_size}: {kwargs}".format(
-                wandb="wandb" if (to_wandb := (self.rank == 0) or (not self.use_wandb)) else "",
+                wandb="[wandb]" if (to_wandb := (self.rank == 0) and (self.use_wandb)) else "",
                 rank=self.rank,
                 world_size=self.world_size,
                 kwargs=", ".join(f"{k}={v}" for k, v in kwargs.items())
