@@ -225,7 +225,6 @@ def process_documents(
 ):
     """Processes a batch of files using distributed processing."""
     model = load_model(model_name)
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
     s3 = s3fs.S3FileSystem()
 
     step = file_cnt = 0
@@ -247,6 +246,9 @@ def process_documents(
 
         with torch.no_grad(), smart_open.open(destination_path, 'wt') as destination_file:
             source_file = FileReader(source_path)
+
+            # Load the tokenizer here to avoid spawning after forking
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
 
             batch: List[DocSpec] = []
             file_cnt += 1
@@ -299,7 +301,6 @@ def longest_common_sequence(strings):
 
 def main(args: argparse.Namespace) -> None:
     rank, world_size = setup()
-    mp.set_start_method('spawn')
 
     WandbLogger()   # Initialize WandbLogger if use_wandb is True
 
