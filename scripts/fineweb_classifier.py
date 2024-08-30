@@ -156,51 +156,6 @@ def format_prediction(docs: List[dict], scores: List[float], model_name: str):
         attributes.append(attribute)
     return attributes
 
-def process_file(
-    source_path: str,
-    destination_path: str,
-    model: PreTrainedModel,
-    tokenizer: PreTrainedTokenizer,
-    batch_size: int,
-    max_length: Optional[int] = None,
-):
-    """Processes a single JSONL file and classifies the text."""
-
-    model.eval()
-    model_name = model.config.name_or_path.replace('/', '_')
-    start_time = time.time()
-
-    logger = WandbLogger()
-
-    with torch.no_grad():
-        with smart_open.open(source_path, 'rt') as source_file, \
-            smart_open.open(destination_path, 'wt') as destination_file:
-            batch = []
-
-            for i, line in enumerate(source_file):
-                if i % 10_000 == 0:
-                    throughput = i / (time.time() - start_time)
-                    logger.log(step=i, throughput=throughput)
-
-                batch.append(json.loads(line))
-
-                if len(batch) < batch_size:
-                    continue
-
-                scores = make_prediction(tokenizer, batch, model, max_length)
-
-                attributes = format_prediction(batch, scores, model_name)
-                for attribute in attributes:
-                    destination_file.write(json.dumps(attribute) + '\n')
-
-                batch = []
-
-            if batch:
-                scores = make_prediction(tokenizer, batch, model, max_length)
-                attributes = format_prediction(batch, scores, model_name)
-                for attribute in attributes:
-                    destination_file.write(json.dumps(attribute) + '\n')
-
 
 def async_sync_counts(counts: int) -> int:
     """
@@ -223,11 +178,9 @@ def async_sync_counts(counts: int) -> int:
     return int(tensor_counts.item())
 
 
-
-
 class FileReader:
     def __init__(self, source_path: str):
-        self.queue = mp.Queue()
+        self.queue: QueueType[Union[dict, None]] = mp.Queue()  # type: ignore
         self.process = mp.Process(target=self.read_file, args=(source_path, self.queue))
         self.process.start()
 
@@ -246,6 +199,8 @@ class FileReader:
                 break
             yield doc
 
+        self.process.join()
+        self.process.close()
 
 
 def process_documents(
@@ -262,19 +217,47 @@ def process_documents(
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     s3 = s3fs.S3FileSystem()
 
+    step = file_cnt = 0
+    model_name = model.config.name_or_path.replace('/', '_')
+    model.eval()
+    logger = WandbLogger()
+    prev_time = time.time()
+
     for source_path, destination_path in zip(source_paths, destination_paths):
         if s3.exists(destination_path):
             print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
             continue
 
-        process_file(
-            source_path=source_path,
-            destination_path=destination_path,
-            model=model,
-            tokenizer=tokenizer,
-            batch_size=batch_size,
-            max_length=max_length,
-        )
+        with torch.no_grad(), \
+            smart_open.open(source_path, 'rt') as source_file, \
+            smart_open.open(destination_path, 'wt') as destination_file:
+
+            batch = []
+            file_cnt += 1
+            for line in source_file:
+                step += 1
+                if step % 10_000 == 0:
+                    throughput = step / -(prev_time - (prev_time := time.time()))
+                    logger.log(step=step, throughput=throughput, files=file_cnt)
+
+                batch.append(json.loads(line))
+
+                if len(batch) < batch_size:
+                    continue
+
+                scores = make_prediction(tokenizer, batch, model, max_length)
+
+                attributes = format_prediction(batch, scores, model_name)
+                for attribute in attributes:
+                    destination_file.write(json.dumps(attribute) + '\n')
+
+                batch = []
+
+            if batch:
+                scores = make_prediction(tokenizer, batch, model, max_length)
+                attributes = format_prediction(batch, scores, model_name)
+                for attribute in attributes:
+                    destination_file.write(json.dumps(attribute) + '\n')
 
     cleanup()
 
