@@ -347,7 +347,7 @@ def process_documents(
                 step += 1
                 if step % LOG_EVERY == 0:
                     throughput = LOG_EVERY / -(prev_time - (prev_time := time.time()))
-                    logger.log(step=step, throughput=throughput, files=file_cnt, docs=total_doc_count)
+                    logger.log(step=step, throughput=throughput, files=file_cnt, docs=step)
 
                 batch.append(doc)
 
