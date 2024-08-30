@@ -440,8 +440,6 @@ def longest_common_sequence(strings):
 
 def main(args: argparse.Namespace) -> None:
     rank, world_size = setup()
-    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
     WandbLogger()  # Initialize WandbLogger if use_wandb is True
 
     if not torch.cuda.is_available():
@@ -457,15 +455,24 @@ def main(args: argparse.Namespace) -> None:
         source_prefix = f"{source_prefix}/documents/"
     else:
         source_prefix = longest_common_sequence(source_paths)
-
     destination_paths = [
         f'{args.output_prefix.rstrip("/")}/{p.replace(source_prefix, "").lstrip("/")}' for p in source_paths
     ]
 
+    # Filter out existing files unless --override is set
+    if not args.override:
+        existing_destinations = set(f"s3://{p}" for p in s3.glob(f'{args.output_prefix.rstrip("/")}/**'))
+        source_paths, destination_paths = map(
+            lambda t: list(t),
+            zip(*[(p, d) for p, d in zip(source_paths, destination_paths) if d not in existing_destinations])
+        )
+
     # Distribute files across processes
-    files_per_process = len(source_paths) // world_size
-    partition_source_paths = source_paths[rank * files_per_process : (rank + 1) * files_per_process]
-    partition_destination_paths = destination_paths[rank * files_per_process : (rank + 1) * files_per_process]
+    files_per_process = len(source_paths) / world_size
+    start_idx = int(rank * files_per_process)
+    end_idx = int((rank + 1) * files_per_process) if rank < world_size - 1 else len(source_paths)
+    partition_source_paths = source_paths[start_idx:end_idx]
+    partition_destination_paths = destination_paths[start_idx:end_idx]
 
     print(
         f"Partitioned into {len(partition_source_paths)} of size {len(partition_source_paths[0])}. "
@@ -481,6 +488,56 @@ def main(args: argparse.Namespace) -> None:
         max_length=args.max_length,
     )
 
+
+def remove_incorrectly_formatted_files(output_prefix: str, max_workers: int | None = None) -> None:
+    import concurrent.futures
+    import tqdm
+    import multiprocessing as mp
+
+    s3 = s3fs.S3FileSystem()
+
+    if max_workers is None:
+        max_workers = mp.cpu_count()
+
+    def check_file(p):
+        decoder = msgspec.json.Decoder()
+        full_path = f"s3://{p}"
+        with smart_open.open(full_path, "rt") as f:
+            for line in f:
+                attributes = decoder.decode(line)
+                if any(a.startswith("HuggingFaceFW/") for a in attributes['attributes']):
+                    return full_path
+                break
+        return None
+
+    all_files = list(s3.glob(f"{output_prefix}/**/*.*"))
+    to_remove = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_file = {executor.submit(check_file, p): p for p in all_files}
+        for future in tqdm.tqdm(concurrent.futures.as_completed(future_to_file),
+                                total=len(all_files),
+                                desc="Checking files for incorrect formatting"):
+            result = future.result()
+            if result:
+                to_remove.append(result)
+
+    print(f"Found {len(to_remove)} incorrectly formatted files.")
+    while True:
+        user_input = input("Do you want to delete these files? (y/n): ").strip().lower()
+        if user_input in ['y', 'yes']:
+            break
+        elif user_input in ['n', 'no', '']:
+            print("Exiting without deleting files.")
+            return
+        else:
+            print("Invalid input. Please enter 'y' or 'n'.")
+    print(f"Proceeding to delete {len(to_remove)} files...")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        list(tqdm.tqdm(executor.map(s3.rm_file, to_remove),
+                       total=len(to_remove),
+                       desc="Removing incorrectly formatted files"))
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -508,6 +565,7 @@ def parse_args() -> argparse.Namespace:
         "--wandb-project", type=str, default="fineweb-classifier", help="Weights & Biases project name"
     )
     parser.add_argument("--wandb-entity", type=str, default="ai2-llm", help="Weights & Biases entity name")
+    parser.add_argument("--override", action="store_true", help="Override existing files")
     opts = parser.parse_args()
 
     if opts.output_prefix is None:
@@ -527,6 +585,7 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = parse_args()
     main(args)
+    # remove_incorrectly_formatted_files(args.output_prefix)
 
     # path = "/Users/lucas/Downloads/0000_dclm_shard_00000065.jsonl.zstd"
     # cnt = 0
