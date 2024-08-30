@@ -69,3 +69,6 @@ target/
 # ignore temporary directories
 /tmp/
 /temp/
+
+# ignore ruff cache
+.ruff_cache

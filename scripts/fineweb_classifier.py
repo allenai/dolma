@@ -3,7 +3,7 @@ Author: Luca Soldaini (@soldni)
 Email:  lucas@allenai.org
 
 To run this script with torchrun, use the following command:
-torchrun --nproc_per_node=2 scripts/fineweb_classifier.py \
+torchrun --nproc_per_node=<num_gpus> scripts/fineweb_classifier.py \
     --source-prefix s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/dclm-1969.json.zst \
     --output-prefix s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/attributes/fineweb-edu-classifier
     --batch-size 512 # 128 on A6000
@@ -475,8 +475,8 @@ def main(args: argparse.Namespace) -> None:
     partition_destination_paths = destination_paths[start_idx:end_idx]
 
     print(
-        f"Partitioned into {len(partition_source_paths)} of size {len(partition_source_paths[0])}. "
-        f"Processing {rank}/{world_size}"
+        f"Partitioned into {world_size} workers of with average of {files_per_process:.2f} files per worker; "
+        f"processing {rank}/{world_size}: {len(partition_source_paths)} files"
     )
     process_documents(
         rank=rank,
@@ -489,7 +489,7 @@ def main(args: argparse.Namespace) -> None:
     )
 
 
-def remove_incorrectly_formatted_files(output_prefix: str, max_workers: int | None = None) -> None:
+def remove_incorrectly_formatted_files(output_prefix: str, max_workers: Union[int, None] = None) -> None:
     import concurrent.futures
     import tqdm
     import multiprocessing as mp
