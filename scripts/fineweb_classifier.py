@@ -440,7 +440,7 @@ def longest_common_sequence(strings):
 
 def main(args: argparse.Namespace) -> None:
     rank, world_size = setup()
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    # os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     WandbLogger()  # Initialize WandbLogger if use_wandb is True
 
