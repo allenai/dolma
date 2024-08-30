@@ -26,6 +26,12 @@ with necessary.necessary("s3fs") as S3FS_AVAILABLE:
     if TYPE_CHECKING or S3FS_AVAILABLE:
         import s3fs
 
+with necessary.necessary("smart_open>=7.0.4") as SMART_OPEN_AVAILABLE:
+    if TYPE_CHECKING or SMART_OPEN_AVAILABLE:
+        import smart_open
+        from smart_open.compression import _handle_zstd
+        smart_open.register_compressor(".zstd", _handle_zstd)
+
 with necessary.necessary("tqdm") as TQDM_AVAILABLE:
     if TYPE_CHECKING or TQDM_AVAILABLE:
         pass
