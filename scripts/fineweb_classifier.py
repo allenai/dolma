@@ -13,16 +13,19 @@ Replace <num_gpus> with the number of GPUs you want to use.
 
 
 import argparse
-import json
 import os
 import time
 import multiprocessing as mp
 from itertools import zip_longest
 from queue import Queue as QueueType
-from typing import TYPE_CHECKING, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, List, Optional, Tuple, Union, Generator
 
 import smart_open
 import necessary
+
+with necessary.necessary("msgspec") as MSGSPEC_AVAILABLE:
+    if TYPE_CHECKING or MSGSPEC_AVAILABLE:
+        import msgspec
 
 with necessary.necessary("s3fs") as S3FS_AVAILABLE:
     if TYPE_CHECKING or S3FS_AVAILABLE:
@@ -128,12 +131,12 @@ class WandbLogger:
 
 def make_prediction(
     tokenizer: PreTrainedTokenizer,
-    batch: List[dict],
+    batch: List["DocSpec"],
     model: PreTrainedModel,
     max_length: Optional[int] = None
 ):
     inputs = tokenizer(
-        [b['text'] for b in batch],
+        [b.text for b in batch],
         padding=True,
         truncation=True,
         return_tensors='pt',
@@ -144,15 +147,15 @@ def make_prediction(
     return scores
 
 
-def format_prediction(docs: List[dict], scores: List[float], model_name: str):
+def format_prediction(docs: List["DocSpec"], scores: List[float], model_name: str):
     attributes = []
     for doc, score in zip(docs, scores):
         int_score = int(round(max(0, min(score, 5))))
         attribute = {
-            "id": doc["id"],
+            "id": doc.id,
             "attributes": {
-                f"{model_name}_score": [[0, len(doc['text']), score]],
-                f"{model_name}_int_score": [[0, len(doc['text']), float(int_score)]]
+                f"{model_name}_score": [[0, len(doc.text), score]],
+                f"{model_name}_int_score": [[0, len(doc.text), float(int_score)]]
             }
         }
         attributes.append(attribute)
@@ -180,21 +183,27 @@ def async_sync_counts(counts: int) -> int:
     return int(tensor_counts.item())
 
 
+class DocSpec(msgspec.Struct):
+    id: str
+    text: str
+
+
 class FileReader:
     def __init__(self, source_path: str):
-        self.queue: QueueType[Union[dict, None]] = mp.Queue()  # type: ignore
+        self.queue: QueueType[Union[DocSpec, None]] = mp.Queue()  # type: ignore
         self.process = mp.Process(target=self.read_file, args=(source_path, self.queue))
         self.process.start()
 
     @staticmethod
-    def read_file(source_path: str, queue: QueueType[Union[dict, None]]):
+    def read_file(source_path: str, queue: QueueType[Union[DocSpec, None]]):
+        decoder = msgspec.json.Decoder(DocSpec)
         with smart_open.open(source_path, 'rt') as source_file:
             for line in source_file:
-                doc = json.loads(line)
+                doc = decoder.decode(line)
                 queue.put(doc)
         queue.put(None)
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[DocSpec, None, None]:
         while True:
             doc = self.queue.get()
             if doc is None:
@@ -225,6 +234,8 @@ def process_documents(
     logger = WandbLogger()
     prev_time = time.time()
 
+    encoder = msgspec.json.Encoder()
+
     for source_path, destination_path in zip(source_paths, destination_paths):
         if s3.exists(destination_path):
             print(f"Skipping {source_path} on GPU {rank}/{world_size} because {destination_path} already exists")
@@ -237,14 +248,14 @@ def process_documents(
         with torch.no_grad(), smart_open.open(destination_path, 'wt') as destination_file:
             source_file = FileReader(source_path)
 
-            batch = []
+            batch: List[DocSpec] = []
             file_cnt += 1
             # for line in source_file:
             for doc in source_file:
                 step += 1
                 if step % LOG_EVERY == 0:
                     throughput = LOG_EVERY / -(prev_time - (prev_time := time.time()))
-                    logger.log(step=step, throughput=throughput, files=file_cnt)
+                    logger.log(step=step, throughput=throughput, files=file_cnt, docs=step)
 
                 # batch.append(json.loads(line))
                 batch.append(doc)
@@ -255,16 +266,16 @@ def process_documents(
                 scores = make_prediction(tokenizer, batch, model, max_length)
 
                 attributes = format_prediction(batch, scores, model_name)
-                for attribute in attributes:
-                    destination_file.write(json.dumps(attribute) + '\n')
+                output = encoder.encode_lines(attributes)
+                destination_file.write(output.decode('utf-8'))
 
                 batch = []
 
             if batch:
                 scores = make_prediction(tokenizer, batch, model, max_length)
                 attributes = format_prediction(batch, scores, model_name)
-                for attribute in attributes:
-                    destination_file.write(json.dumps(attribute) + '\n')
+                output = encoder.encode_lines(attributes)
+                destination_file.write(output.decode('utf-8'))
 
     cleanup()
 
@@ -288,6 +299,8 @@ def longest_common_sequence(strings):
 
 def main(args: argparse.Namespace) -> None:
     rank, world_size = setup()
+    mp.set_start_method('spawn')
+
     WandbLogger()   # Initialize WandbLogger if use_wandb is True
 
     if not torch.cuda.is_available():
