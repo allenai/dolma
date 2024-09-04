@@ -101,7 +101,7 @@ class ListMembership(BaseTaggerWithMetadata):
 
 @TaggerRegistry.add("banned_subreddit_membership")
 class BannedSubs(ListMembership):
-    LOOKUP_LIST = (Path(__file__).parent / "../../../sources/reddit/reddit_blocklists/banned_subreddits.txt")
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/banned_subreddits.txt")
 
     def predict(self, doc: Document) -> DocResult:
         score = doc.metadata["subreddit"].lower() in self.blocklist
@@ -111,7 +111,7 @@ class BannedSubs(ListMembership):
 
 @TaggerRegistry.add("non_english_subreddit")
 class NonEnglishSubs(ListMembership):
-    LOOKUP_LIST = (Path(__file__).parent / "../../../sources/reddit/reddit_blocklists/non-english_subreddits.txt")
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/non-english_subreddits.txt")
 
     def predict(self, doc: Document) -> DocResult:
         score = doc.metadata["subreddit"].lower() in self.blocklist
@@ -119,7 +119,7 @@ class NonEnglishSubs(ListMembership):
 
 @TaggerRegistry.add("bot_author")
 class BotAuthor(ListMembership):
-    LOOKUP_LIST = (Path(__file__).parent / "../../../sources/reddit/reddit_blocklists/thresholded_botlist.txt")
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/thresholded_botlist.txt")
 
     def predict(self, doc: Document) -> DocResult:
         score = doc.metadata["author"] in self.blocklist
