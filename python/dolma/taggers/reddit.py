@@ -7,10 +7,10 @@ import regex
 import uniseg.wordbreak
 from tokenizers import Regex, Tokenizer, pre_tokenizers
 
-from dolma.core.data_types import DocResult, Document, Span, TextSlice
-from dolma.core.registry import TaggerRegistry
-from dolma.core.taggers import BaseTagger,BaseTaggerWithMetadata
-from dolma.core.utils import split_paragraphs
+from ..core.data_types import DocResult, Document, Span, TextSlice
+from ..core.registry import TaggerRegistry
+from ..core.taggers import BaseTagger,BaseTaggerWithMetadata
+from ..core.utils import split_paragraphs
 
 
 
