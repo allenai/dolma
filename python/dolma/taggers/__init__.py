@@ -13,4 +13,5 @@ from . import (
     sampling,
     tokenizers,
     url,
+    reddit
 )
