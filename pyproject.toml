@@ -31,6 +31,7 @@ dependencies = [
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
     "zstandard>=0.23.0",
+    "wildguard@git+https://github.com/aetting/wildguard"
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

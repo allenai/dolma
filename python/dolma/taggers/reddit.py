@@ -7,6 +7,11 @@ import regex
 import uniseg.wordbreak
 from tokenizers import Regex, Tokenizer, pre_tokenizers
 
+from wildguard import load_wildguard
+from transformers.utils import logging
+logging.disable_progress_bar()
+logging.set_verbosity(50)
+
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger,BaseTaggerWithMetadata
@@ -86,3 +91,16 @@ class BotAuthor(ListMembership):
     def predict(self, doc: Document) -> DocResult:
         score = doc.metadata["author"] in self.blocklist
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
+
+@TaggerRegistry.add("wildguard_classifier")
+class WildGuardClassifier(BaseTagger):
+
+    def __init__(self) -> None:
+        self.wildguard = load_wildguard(use_vllm=False,ephemeral_model=False)
+        super().__init__()
+
+    def predict(self, doc: Document) -> DocResult:
+
+        results = self.wildguard.classify([{"prompt": doc.text.strip()}])
+        score = 1 if results[0]["prompt_harmfulness"] == "harmful" else 0
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
