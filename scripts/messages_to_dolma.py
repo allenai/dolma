@@ -50,6 +50,7 @@ def process_and_upload(
                 fileobj.write(json.dumps(doc) + '\n')
                 row_cnt += 1
                 if row_cnt >= num_rows_per_file:
+                    stack.pop_all().close()
                     file_cnt += 1
                     row_cnt = 0
                     fileobj = stack.enter_context(smart_open.open(filename_gen(file_cnt), 'wt'))
