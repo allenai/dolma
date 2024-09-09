@@ -7,11 +7,6 @@ import regex
 import uniseg.wordbreak
 from tokenizers import Regex, Tokenizer, pre_tokenizers
 
-from wildguard import load_wildguard
-from transformers.utils import logging
-logging.disable_progress_bar()
-logging.set_verbosity(50)
-
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger,BaseTaggerWithMetadata
@@ -96,6 +91,10 @@ class BotAuthor(ListMembership):
 class WildGuardClassifier(BaseTagger):
 
     def __init__(self) -> None:
+        from wildguard import load_wildguard
+        from transformers.utils import logging
+        logging.disable_progress_bar()
+        logging.set_verbosity(50)
         self.wildguard = load_wildguard(use_vllm=False,ephemeral_model=False)
         super().__init__()
 
