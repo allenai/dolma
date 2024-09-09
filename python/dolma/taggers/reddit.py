@@ -50,13 +50,13 @@ class BPETokenizer(BaseTagger):
 class LongestString(BaseTagger):
 
     def predict(self, doc: Document) -> DocResult:
-        score = max([len(x) for x in doc.text.split()])
+        score = max([len(x) for x in doc.text.split()],default=0)
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
 
 @TaggerRegistry.add("starts_nonascii")
 class NonASCII(BaseTagger):
     def predict(self, doc: Document) -> DocResult:
-        score = int(not doc.text[0].isascii())
+        score = int(not doc.text[0].isascii()) if doc.text else 0
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
 
 @TaggerRegistry.add("list_membership")
