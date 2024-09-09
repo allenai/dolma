@@ -92,9 +92,6 @@ class WildGuardClassifier(BaseTagger):
 
     def __init__(self) -> None:
         from wildguard import load_wildguard
-        from transformers.utils import logging
-        logging.disable_progress_bar()
-        logging.set_verbosity(50)
         self.wildguard = load_wildguard(use_vllm=False,ephemeral_model=False)
         super().__init__()
 
