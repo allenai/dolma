@@ -54,6 +54,17 @@ class NonASCII(BaseTagger):
         score = int(not doc.text[0].isascii()) if doc.text else 0
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
 
+@TaggerRegistry.add("removed_deleted")
+class RemovedDeleted(BaseTaggerWithMetadata):
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/thresholded_botlist.txt")
+
+    def predict(self, doc: Document) -> DocResult:
+        author = doc.metadata.get("author",None) in ("[deleted]","[removed]","[UNICODE ENCODE ERROR]")
+        body = doc.metadata.get("body",None) in ("[deleted]","[removed]","[UNICODE ENCODE ERROR]")
+        present = ("[deleted]" in doc.text) or ("[removed]" in doc.text) or ("[UNICODE ENCODE ERROR]" in doc.text)
+        score = author or body or present
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
+
 @TaggerRegistry.add("list_membership")
 class ListMembership(BaseTaggerWithMetadata):
     
