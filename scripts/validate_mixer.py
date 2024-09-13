@@ -2,6 +2,12 @@ import yaml
 import json
 import sys
 import jq
+import re
+import boto3
+from botocore.exceptions import ClientError
+
+# Initialize the S3 client
+s3_client = boto3.client('s3')
 
 def load_config(config_path):
     """Load the configuration file (YAML or JSON)."""
@@ -24,6 +30,44 @@ def validate_jq_expression(expr):
         return True, None
     except ValueError as e:
         return False, str(e)
+
+def validate_s3_path(path):
+    """Validate an S3 path and check if it exists."""
+    s3_pattern = r'^s3://(?P<bucket>[\w.-]+)/(?P<key>.+)$'
+    match = re.match(s3_pattern, path)
+    
+    if not match:
+        return False, "Invalid S3 path format"
+    
+    bucket = match.group('bucket')
+    key = match.group('key')
+    
+    try:
+        s3_client.head_bucket(Bucket=bucket)
+    except ClientError as e:
+        error_code = e.response['Error']['Code']
+        if error_code == '404':
+            return False, f"Bucket does not exist: {bucket}"
+        elif error_code == '403':
+            return False, f"Access denied to bucket: {bucket}"
+        else:
+            return False, f"Error checking bucket: {str(e)}"
+
+    # For directories, we need to list objects instead of head_object
+    if key.endswith('/'):
+        try:
+            response = s3_client.list_objects_v2(Bucket=bucket, Prefix=key, MaxKeys=1)
+            if 'Contents' not in response:
+                return False, f"Directory does not exist: {path}"
+        except ClientError as e:
+            return False, f"Error checking directory: {str(e)}"
+    else:
+        try:
+            s3_client.head_object(Bucket=bucket, Key=key)
+        except ClientError as e:
+            return False, f"Object does not exist: {path}"
+
+    return True, None
 
 def validate_config_structure(config):
     """Validate the basic structure of the configuration."""
@@ -54,8 +98,14 @@ def validate_stream(stream, index):
         if key not in stream:
             errors.append(f"Stream {index}: Missing required key '{key}'")
 
-    if 'documents' in stream and not isinstance(stream['documents'], list):
-        errors.append(f"Stream {index}: 'documents' should be a list")
+    if 'documents' in stream:
+        if not isinstance(stream['documents'], list):
+            errors.append(f"Stream {index}: 'documents' should be a list")
+        else:
+            for doc in stream['documents']:
+                is_valid, error_msg = validate_s3_path(doc)
+                if not is_valid:
+                    errors.append(f"Stream {index}: Invalid S3 path in 'documents': {error_msg}")
 
     if 'attributes' in stream and not isinstance(stream['attributes'], list):
         errors.append(f"Stream {index}: 'attributes' should be a list")
@@ -81,6 +131,11 @@ def validate_output(output, stream_index):
 
     if 'max_size_in_bytes' in output and not isinstance(output['max_size_in_bytes'], int):
         errors.append(f"Stream {stream_index} output: 'max_size_in_bytes' should be an integer")
+
+    if 'path' in output:
+        is_valid, error_msg = validate_s3_path(output['path'])
+        if not is_valid:
+            errors.append(f"Stream {stream_index} output: Invalid S3 path: {error_msg}")
 
     return errors
 
@@ -115,7 +170,7 @@ def main(config_path):
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python dolma_config_validator.py <path_to_config_file>")
+        print("Usage: python validate_mixer.py <path_to_config_file>")
         sys.exit(1)
     
     config_path = sys.argv[1]
