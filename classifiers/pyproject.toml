@@ -1,0 +1,125 @@
+[project]
+name = "dolma-classifiers"
+version = "0.1.0"
+description = "Utility to train and run classifiers for data filtering."
+authors = [
+    {name = "Luca Soldaini", email = "luca@soldaini.net" }
+]
+license = {text = "Apache-2.0"}
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "dolma>=1.0.12",
+    "msgspec",
+    "s3fs",
+    "smart_open>=7.0.4",
+    "tqdm",
+    "torch>=2.3",
+    "transformers>=4.36",
+    "wandb"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3"
+]
+
+[project.urls]
+Homepage = "https://github.com/allenai/dolma"
+Source = "https://github.com/allenai/dolma"
+Tracker = "https://github.com/allenai/dolma/issues"
+
+[project.optional-dependencies]
+dev = [
+    "black>=22.6.0",
+    "isort>=5.10.1",
+    "mypy>=0.971",
+    "pytest>=5.2",
+    "ipython>=8.4.0",
+    "autopep8>=1.7.0",
+    "flake8>=5.0",
+    "ipdb>=0.13.0",
+    "flake8-pyi>=22.8.1",
+    "Flake8-pyproject>=1.1.0"
+]
+
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = [
+    "setuptools >= 61.0.0",
+    "wheel"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dolma-classifiers = ["py.typed", "data/*"]
+
+[tool.black]
+line-length = 115
+include = '\.pyi?$'
+exclude = '''
+(
+      __pycache__
+    | \.git
+    | \.mypy_cache
+    | \.pytest_cache
+    | \.vscode
+    | \.venv
+    | \bdist\b
+    | \bdoc\b
+    | \.cargo
+    | configs
+    | docs
+    | scripts
+    | sources
+    | src
+    | target
+    | tests/config
+    | tests/data
+    | tests/work
+)
+'''
+target-version = ["py38", "py39", "py310", "py311", "py312"]
+
+
+[tool.isort]
+profile = "black"
+py_version = 38
+known_first_party = ["dolma"]
+known_local_folder = ["tests", "python"]
+extend_skip_glob = [
+    "configs/*",
+    "docs/*",
+    "scripts/*",
+    "sources/*",
+    "src/*",
+    "tests/config/*",
+    "tests/data/*",
+    "tests/work/*",
+]
+
+[tool.autopep8]
+max_line_length = 115
+in-place = true
+recursive = true
+aggressive = 3
+
+[tool.mypy]
+python_version = "3.8"
+ignore_missing_imports = true
+no_site_packages = true
+allow_redefinition = false
+warn_unused_configs = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_return_any = false
+warn_unreachable = true
+show_error_codes = true
+pretty = true
+plugins = ["numpy.typing.mypy_plugin"]
+
+[tool.mypy-tests]
+strict_optional = false
