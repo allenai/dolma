@@ -72,3 +72,6 @@ target/
 
 # ignore ruff cache
 .ruff_cache
+
+# do not commit runpod config
+runpod.toml
