@@ -139,7 +139,7 @@ def make_prediction(
     batch: List[Dict[str, Any]],
     model: PreTrainedModel,
     max_length: Optional[int] = None,
-    text_selector: Any = None
+    text_selector: Any = None,
 ):
     text_selector = text_selector or jq.compile(".text")
     inputs = tokenizer(
@@ -158,7 +158,8 @@ def format_prediction(
     docs: List[Dict[str, Any]],
     scores: List[float],
     model_name: str,
-    text_selector: Any = None
+    text_selector: Any = None,
+    suffix: Optional[str] = None,
 ):
     attributes = []
     text_selector = text_selector or jq.compile(".text")
@@ -166,11 +167,12 @@ def format_prediction(
     for doc, score in zip(docs, scores):
         int_score = int(round(max(0, min(score, 5))))
         doc_text = text_selector.input_value(doc).first()
+        maybe_suffix = f"_{suffix}" if suffix else ""
         attribute = {
             "id": doc["id"],
             "attributes": {
-                f"{model_name}_score": [[0, len(doc_text), score]],
-                f"{model_name}_int_score": [[0, len(doc_text), float(int_score)]],
+                f"{model_name}_score{maybe_suffix}": [[0, len(doc_text), score]],
+                f"{model_name}_int_score{maybe_suffix}": [[0, len(doc_text), float(int_score)]],
             },
         }
         attributes.append(attribute)
@@ -245,6 +247,7 @@ def process_documents(
     model_name: str,
     max_length: Optional[int] = None,
     text_key: str = ".text",
+    suffix: Optional[str] = None,
 ):
     """Processes a batch of files using distributed processing."""
     model = load_model(model_name)
@@ -294,7 +297,8 @@ def process_documents(
                     docs=batch,
                     scores=scores,
                     model_name=model_name_attributes,
-                    text_selector=text_selector
+                    text_selector=text_selector,
+                    suffix=suffix,
                 )
                 output = encoder.encode_lines(attributes)
                 destination_file.write(output.decode("utf-8"))
@@ -302,8 +306,8 @@ def process_documents(
                 batch = []
 
             if batch:
-                scores = make_prediction(tokenizer, batch, model, max_length)   # type: ignore
-                attributes = format_prediction(batch, scores, model_name)
+                scores = make_prediction(tokenizer, batch, model, max_length)  # type: ignore
+                attributes = format_prediction(batch, scores, model_name, suffix=suffix)
                 output = encoder.encode_lines(attributes)
                 destination_file.write(output.decode("utf-8"))
     cleanup()
@@ -352,7 +356,7 @@ def main(args: argparse.Namespace) -> None:
         existing_destinations = set(f"s3://{p}" for p in s3.glob(f'{args.output_prefix.rstrip("/")}/**'))
         source_paths, destination_paths = map(
             lambda t: list(t),
-            zip(*[(p, d) for p, d in zip(source_paths, destination_paths) if d not in existing_destinations])
+            zip(*[(p, d) for p, d in zip(source_paths, destination_paths) if d not in existing_destinations]),
         )
 
     # Distribute files across processes
@@ -375,6 +379,7 @@ def main(args: argparse.Namespace) -> None:
         batch_size=args.batch_size,
         max_length=args.max_length,
         text_key=args.text_key,
+        suffix=args.attribute_suffix,
     )
 
 
@@ -394,7 +399,7 @@ def remove_incorrectly_formatted_files(output_prefix: str, max_workers: Union[in
         with smart_open.open(full_path, "rt") as f:
             for line in f:
                 attributes = decoder.decode(line)
-                if any(a.startswith("HuggingFaceFW/") for a in attributes['attributes']):
+                if any(a.startswith("HuggingFaceFW/") for a in attributes["attributes"]):
                     return full_path
                 break
         return None
@@ -404,9 +409,11 @@ def remove_incorrectly_formatted_files(output_prefix: str, max_workers: Union[in
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_file = {executor.submit(check_file, p): p for p in all_files}
-        for future in tqdm.tqdm(concurrent.futures.as_completed(future_to_file),
-                                total=len(all_files),
-                                desc="Checking files for incorrect formatting"):
+        for future in tqdm.tqdm(
+            concurrent.futures.as_completed(future_to_file),
+            total=len(all_files),
+            desc="Checking files for incorrect formatting",
+        ):
             result = future.result()
             if result:
                 to_remove.append(result)
@@ -414,9 +421,9 @@ def remove_incorrectly_formatted_files(output_prefix: str, max_workers: Union[in
     print(f"Found {len(to_remove)} incorrectly formatted files.")
     while True:
         user_input = input("Do you want to delete these files? (y/n): ").strip().lower()
-        if user_input in ['y', 'yes']:
+        if user_input in ["y", "yes"]:
             break
-        elif user_input in ['n', 'no', '']:
+        elif user_input in ["n", "no", ""]:
             print("Exiting without deleting files.")
             return
         else:
@@ -424,9 +431,13 @@ def remove_incorrectly_formatted_files(output_prefix: str, max_workers: Union[in
     print(f"Proceeding to delete {len(to_remove)} files...")
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        list(tqdm.tqdm(executor.map(s3.rm_file, to_remove),
-                       total=len(to_remove),
-                       desc="Removing incorrectly formatted files"))
+        list(
+            tqdm.tqdm(
+                executor.map(s3.rm_file, to_remove),
+                total=len(to_remove),
+                desc="Removing incorrectly formatted files",
+            )
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -457,6 +468,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb-entity", type=str, default="ai2-llm", help="Weights & Biases entity name")
     parser.add_argument("--override", action="store_true", help="Override existing files")
     parser.add_argument("--text-key", type=str, default=".text", help="JQ key to extract text from documents")
+    parser.add_argument("--attribute-suffix", type=str, default=None, help="Optional suffix for attribute keys")
     opts = parser.parse_args()
 
     if opts.output_prefix is None:
