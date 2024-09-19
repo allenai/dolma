@@ -30,6 +30,14 @@ class FilterConfig:
 
 
 @dataclass
+class ReplacementConfig:
+    value: str = field(
+        default="", help="Value to replace the matched field with, if selector true this should be a jq selector"
+    )
+    selector: bool = field(default=False, help="Whether to use field selector for the replacement")
+
+
+@dataclass
 class SpanReplacementConfig:
     span: str = field(help="JSONPath expression for the span to replace")
     min_score: Optional[float] = field(
@@ -40,7 +48,7 @@ class SpanReplacementConfig:
         default=None,
         help="Maximum score for the span to be replaced. Either min_score or max_score must be specified.",
     )
-    replacement: str = field(default="", help="Replacement for the span")
+    replacement: ReplacementConfig = field(default=ReplacementConfig(), help="Replacement config for the span(s).")
     syntax: str = field(
         default="jsonpath",
         help="Syntax to use for filter expressions. Currently only JSONPath is supported. Defaults to JSONPath.",
@@ -131,7 +139,10 @@ class MixerCli(BaseCli):
                     stream_config_dict.setdefault("span_replacement", []).append(
                         {
                             "span": str(span_replacement.span),
-                            "replacement": str(span_replacement.replacement),
+                            "replacement": {
+                                "value": span_replacement.replacement.value,
+                                "selector": span_replacement.replacement.selector,
+                            },
                             "syntax": span_replacement.syntax,
                             **min_score_config,
                             **max_score_config,

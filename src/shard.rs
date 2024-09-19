@@ -399,9 +399,9 @@ impl Shard {
                                     );
                                 new_text.push_str(&replacement_text);
                             }
-                            data["text"] = Value::String(new_text);
+                            data["text"] = serde_json::from_str(&new_text)?;
                         }
-                        // }
+
                         for f in self.discard_fields.iter().flatten() {
                             data.as_object_mut().unwrap().remove(f);
                         }
