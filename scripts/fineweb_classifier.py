@@ -142,8 +142,13 @@ def make_prediction(
     text_selector: Any = None,
 ):
     text_selector = text_selector or jq.compile(".text")
+    text_entries = [text_selector.input_value(b).first() for b in batch]
+
+    if not text_entries:
+        raise ValueError("No text entries found in the batch. Check your text selector.")
+
     inputs = tokenizer(
-        [text_selector.input_value(b).first() for b in batch],
+        text_entries,
         padding=True,
         truncation=True,
         return_tensors="pt",
