@@ -467,7 +467,7 @@ impl Shard {
 }
 
 pub mod shard_config {
-    use crate::filters::Selector;
+    use crate::filters::{JqSelector, Selector};
     use jsonpath_rust::JsonPathFinder;
     use serde::{Deserialize, Serialize};
     use serde_json::Value;
@@ -525,11 +525,17 @@ pub mod shard_config {
     }
 
     #[derive(Serialize, Deserialize, Clone)]
+    pub struct ReplacementConfig {
+        pub value: String,
+        pub selector: bool
+    }
+
+    #[derive(Serialize, Deserialize, Clone)]
     pub struct SpanReplacementConfig {
         pub span: String,
         pub min_score: Option<f64>,
         pub max_score: Option<f64>,
-        pub replacement: String,
+        pub replacement: ReplacementConfig,
         pub syntax: Option<String>,
     }
 
@@ -543,7 +549,33 @@ pub mod shard_config {
         selector: Selector,
         min_score: f64,
         max_score: f64,
-        replacement: String,
+        replacement: Replacement,
+    }
+
+    pub enum Replacement {
+        Selectors(JqSelector),
+        String(String),
+    }
+
+    impl Replacement {
+        pub fn new(config: &ReplacementConfig) -> Result<Replacement, IoError> {
+            if config.selector {
+                let selector = JqSelector::new(&config.value)?;
+                Ok(Replacement::Selectors(selector))
+            } else {
+                Ok(Replacement::String(config.value.clone()))
+            }
+        }
+
+        pub fn get(&self, json: &Value) -> Result<String, IoError> {
+            match self {
+                Replacement::Selectors(selector) => {
+                    let value = selector.select(json)?;
+                    Ok(value.to_string())
+                }
+                Replacement::String(s) => Ok(s.clone()),
+            }
+        }
     }
 
     impl SpanReplacer {
@@ -553,7 +585,7 @@ pub mod shard_config {
                 selector: Selector::new(&config).unwrap(),
                 min_score: config.min_score.unwrap_or(f64::NEG_INFINITY),
                 max_score: config.max_score.unwrap_or(f64::INFINITY),
-                replacement: config.replacement.clone(),
+                replacement: Replacement::new(&config.replacement).unwrap(),
             }
         }
 
@@ -575,7 +607,7 @@ pub mod shard_config {
                                 let replacement = SpanReplacement {
                                     start: start as usize,
                                     end: end as usize,
-                                    replacement: self.replacement.clone(),
+                                    replacement: self.replacement.get(json).unwrap(),
                                 };
                                 Some(replacement)
                             } else {
