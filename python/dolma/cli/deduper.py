@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import smart_open
 from omegaconf import OmegaConf as om
+from enum import Enum
 
 from dolma import deduper
 from dolma.cli import BaseCli, field, print_config
@@ -17,6 +18,7 @@ from dolma.cli.shared import (
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path, is_local
+
 
 
 @dataclass
@@ -77,6 +79,12 @@ class BloomFilterConfig:
             "estimated_doc_count."
         ),
     )
+    save_to_disk: bool = field(
+        default=true,
+        help=(
+            "If False, ignore the 'file' field and do NOT save the populated bloom filter to disk")
+    )
+
 
 
 @dataclass
@@ -99,6 +107,7 @@ class DedupeConfig:
     partition_index: Optional[int] = field(
         default=0, help="The index of the partition being processed, in the range [0, num_partitions)."
     )
+    dedupe_method: Optional[str] = field(default=None, help="Selects which dedupe method to use. Must be either empty or in the set {paragraphs, documents, dclm}")
 
 
 @dataclass
@@ -155,23 +164,26 @@ class DeduperCli(BaseCli):
             if dedupe_dict_config["min_words"] < 0:
                 raise ValueError("min_words must be >= 0")
 
-            # add either the document or paragraph dedupe config
-            if not (
-                om.is_missing(parsed_config.dedupe.documents, "attribute_name")
-                and om.is_missing(parsed_config.dedupe.documents, "key")
-            ):
-                cfg = om.to_container(parsed_config.dedupe.documents)
-                assert isinstance(cfg, dict), "Expected dedupe.documents to be a dict"
-                dedupe_dict_config["documents"] = cfg
-                try_name = try_name or cfg["attribute_name"]
-            elif not om.is_missing(parsed_config.dedupe.paragraphs, "attribute_name"):
-                cfg = om.to_container(parsed_config.dedupe.paragraphs)
-                assert isinstance(cfg, dict), "Expected dedupe.paragraphs to be a dict"
-                dedupe_dict_config["paragraphs"] = cfg
-                try_name = try_name or cfg["attribute_name"]
-            else:
-                raise ValueError("Either dedupe.documents or dedupe.paragraphs must be specified")
 
+            # add either the document or paragraph dedupe config and infer the dedup_method
+            dedupe_method = parsed_config.dedupe.dedupe_method # If is specified
+            if dedupe_method == None #Else infer:
+                print("DEBUG: Inferring dedup method")
+                if not (om.is_missing(parsed_config.dedupe.documents, "attribute_name")
+                        and om.is_missing(parsed_config.dedupe.documents, "key")):
+                    dedupe_method = "document"
+                elif not (om.is_missing(parsed_config.dedupe.paragraphs, "attribute_name")):
+                    dedupe_method = "paragraph"
+                elif not (om.is_missing(parsed_config.dedupe.dclm, "attribute_name")):
+                    dedupe_method = "dclm"
+                else:
+                    raise ValueError("Some dedupe method must be specified (either explicitly or implicitly)")
+
+            assert parsed_config.dedupe[dedupe_method].get("attribute_name") != None, "Need attribute name for deduplication"
+            cfg = om.to_container(parsed_config.dedupe[dedupe_method])
+            assert isinstance(cfg, dict), "Expected dedupe.%s to be a dict" % dedupe_meth
+            try_name = try_name or cfg["attribute_name"]
+            
             if try_name is None:
                 raise ValueError("dedupe.name must be specified")
             dedupe_dict_config["name"] = try_name
@@ -215,6 +227,7 @@ class DeduperCli(BaseCli):
                 "size_in_bytes": int(parsed_config.bloom_filter.size_in_bytes),
                 "estimated_doc_count": int(parsed_config.bloom_filter.estimated_doc_count),
                 "desired_false_positive_rate": float(parsed_config.bloom_filter.desired_false_positive_rate),
+                "save_to_disk": float(parsed_config.bloom_filter.save_to_disk),
             }
 
             if dict_config["bloom_filter"]["size_in_bytes"] <= 0 and (
@@ -247,7 +260,7 @@ class DeduperCli(BaseCli):
             deduper(dict_config)
 
             # upload to remote file if necessary
-            if not parsed_config.bloom_filter.read_only and not path_is_local:
+            if not parsed_config.bloom_filter.read_only and not path_is_local and parsed_config.bloom_filter.save_to_disk:
                 print(f"Pushing Bloom filter to {parsed_config.bloom_filter.file}")
                 local = stack.enter_context(smart_open.open(local_bloom_file, "rb"))
                 remote = stack.enter_context(smart_open.open(parsed_config.bloom_filter.file, "wb"))
