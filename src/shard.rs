@@ -527,7 +527,7 @@ pub mod shard_config {
     #[derive(Serialize, Deserialize, Clone)]
     pub struct ReplacementConfig {
         pub value: String,
-        pub selector: bool
+        pub selector: bool,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
