@@ -11,9 +11,9 @@ if [[ $UNAME == "Darwin" ]]; then
   which openssl || brew install openssl
 elif [[ $UNAME == "Linux" ]]; then
   echo "Linux detected..."
-	which cmake || sudo apt-get install --yes build-essential cmake
-	which protoc || sudo apt-get install --yes protobuf-compiler
-	which openssl || sudo apt-get install --yes libssl-dev
+  which cmake || sudo apt-get install --yes build-essential cmake
+  which protoc || sudo apt-get install --yes protobuf-compiler
+  which openssl || sudo apt-get install --yes libssl-dev
 else
   echo "Unsupported OS; please install rust, cmake, protobuf, maturin and openssl manually!"
   exit 1
@@ -23,7 +23,7 @@ which cargo || curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s
 
 if [[ $PLATFORM == "x86_64" ]]; then
   echo "x86_64 detected..."
-	which maturin || pip install maturin[patchelf]
+  which maturin || pip install maturin[patchelf]
 fi
 
 if [[ $PLATFORM = "aarch64" ]]; then
@@ -33,7 +33,7 @@ fi
 
 if [[ $PLATFORM = "arm64" ]]; then
   echo "arm64 detected..."
-	which maturin || pip install maturin
+  which maturin || pip install maturin
 else
   echo "Unsupported platform; please install maturin manually"
   exit 0
