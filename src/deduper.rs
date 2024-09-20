@@ -107,10 +107,13 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let removed_bytes = removed_bytes.into_inner();
     log::info!("----------------------------------");
     log::info!("Finished processing files in {:?} (s)", start_main.elapsed().as_secs());
-    log::info!("Was successful on {:?}/{:?} of the paths", failure_count, paths.len());
-    log::error!("FAILED ON {:?} PATHS", failure_count);
+    log::info!("Was successful on {:?}/{:?} of the paths", paths.len() - failure_count as usize, paths.len());
+    if failure_count > 0 {
+        log::error!("FAILED ON {:?} PATHS", failure_count);
+    }
+    log::info!("Bloom filter has sparsity {:?}", bloom_filter.calculate_sparsity());
     log::info!("Processed {:?} documents in total", docs_processed.into_inner());
-    log::info!("Processed {:?} of data, removed {:?} of them | Removal rate of {:?}", 
+    log::info!("Processed {} of data, removed {} of them | Removal rate of {:?}", 
                human_bytes(seen_bytes as f32), human_bytes(removed_bytes as f32),
                if seen_bytes == 0 {0.0} else {removed_bytes as f32 / seen_bytes as f32});
 
