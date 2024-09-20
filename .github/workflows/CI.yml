@@ -227,7 +227,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
       - name: Upload wheels
-        uses: actions/upload-artifact@4
+        uses: actions/upload-artifact@v3
         with:
           name: wheels
           path: dist
