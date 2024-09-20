@@ -130,7 +130,7 @@ Further, we override the number of processes to use to 96 using the `--processes
       # the documents to mix; note how we use a glob pattern to match all documents
       "documents": [
         "wikipedia/v0/documents/*.gz",
-      ]
+      ],
       # this is the directory where the output will be written
       # note how the toolkit will try to create files of size ~1GB
       "output": {
