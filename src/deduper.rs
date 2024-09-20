@@ -297,13 +297,14 @@ fn write_attributes(
                         // skip empty documents if text_length is 0
                         for p in paragraphs {
                             let par_start = offset;
-                            offset += p.chars().count();
+                            let par_char_length = p.chars().count();
+                            offset += par_char_length;
                             if offset < text_length - 1 {
                                 offset += 1; // For the newline
                             }
                             let par_end = offset;
 
-                            if offset < min_content_length {
+                            if par_char_length < min_content_length {
                                 // skip length 0 paragraphs
                                 continue;
                             }
