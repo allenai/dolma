@@ -29,6 +29,58 @@ class LenWithoutURL(BaseTagger):
         score = len(re.sub(url_regex,"",doc.text))
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
 
+@TaggerRegistry.add("len_wo_url_v2")
+class LenWithoutURL2(BaseTagger):
+
+    def predict(self, doc: Document) -> DocResult:
+        url_regex = re.compile("(\[[^\]]*])?\(?https?://[^\s]+\)?")
+        score = len(re.sub(url_regex,"",doc.text))
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
+
+@TaggerRegistry.add("longest_tok_wo_url")
+class LongestTokWithoutURL(BaseTagger):
+    TOKENIZER_NAME_OR_PATH = "allenai/dolma2-tokenizer"
+
+    def __init__(self) -> None:
+        self.tokenizer = Tokenizer.from_pretrained(self.TOKENIZER_NAME_OR_PATH)
+        super().__init__()
+
+    def predict(self, doc: Document) -> DocResult:
+        url_regex = re.compile("https?://[^\s]+\)?")
+        toks = self.tokenizer.encode(text).tokens if (text := re.sub(url_regex,"",doc.text.strip())) else []
+        score = max([len(x) for x in toks],default=0)
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
+
+@TaggerRegistry.add("longest_tok_wo_url_v2")
+class LongestTokWithoutURL2(BaseTagger):
+    TOKENIZER_NAME_OR_PATH = "allenai/dolma2-tokenizer"
+
+    def __init__(self) -> None:
+        self.tokenizer = Tokenizer.from_pretrained(self.TOKENIZER_NAME_OR_PATH)
+        super().__init__()
+
+    def predict(self, doc: Document) -> DocResult:
+        url_regex = re.compile("(\[[^\]]*])?\(?https?://[^\s]+\)?")
+        toks = self.tokenizer.encode(text).tokens if (text := re.sub(url_regex,"",doc.text.strip())) else []
+        score = max([len(x) for x in toks],default=0)
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
+
+@TaggerRegistry.add("perc_len_wo_url")
+class PercLenWithoutURL(BaseTagger):
+
+    def predict(self, doc: Document) -> DocResult:
+        url_regex = re.compile("https?://[^\s]+\)?")
+        score = len(re.sub(url_regex,"",doc.text)) / len(doc.text) if doc.text else 0
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
+
+@TaggerRegistry.add("perc_len_wo_url_v2")
+class PercLenWithoutURL2(BaseTagger):
+
+    def predict(self, doc: Document) -> DocResult:
+        url_regex = re.compile("(\[[^\]]*])?\(?https?://[^\s]+\)?")
+        score = len(re.sub(url_regex,"",doc.text)) / len(doc.text) if doc.text else 0
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
+
 @TaggerRegistry.add("bpe_tokenizer")
 class BPETokenizer(BaseTagger):
     TOKENIZER_NAME_OR_PATH = "allenai/dolma2-tokenizer"
