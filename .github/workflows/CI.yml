@@ -202,7 +202,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: wheels
           path: dist
@@ -251,7 +251,7 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
       - name: Upload wheels
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: wheels
           path: dist
@@ -268,7 +268,7 @@ jobs:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: wheels
           path: dist
@@ -279,7 +279,7 @@ jobs:
     if: "startsWith(github.ref, 'refs/tags/')"
     needs: [build-linux, build-windows, build-macos, sdist]
     steps:
-      - uses: actions/download-artifact@v4.1.7
+      - uses: actions/download-artifact@v3
         with:
           name: wheels
       - name: Publish to PyPI
