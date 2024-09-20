@@ -399,7 +399,8 @@ impl Shard {
                                     );
                                 new_text.push_str(&replacement_text);
                             }
-                            data["text"] = serde_json::from_str(&new_text)?;
+
+                            data["text"] = Value::String(new_text);
                         }
 
                         for f in self.discard_fields.iter().flatten() {
@@ -525,17 +526,11 @@ pub mod shard_config {
     }
 
     #[derive(Serialize, Deserialize, Clone)]
-    pub struct ReplacementConfig {
-        pub value: String,
-        pub selector: bool,
-    }
-
-    #[derive(Serialize, Deserialize, Clone)]
     pub struct SpanReplacementConfig {
         pub span: String,
         pub min_score: Option<f64>,
         pub max_score: Option<f64>,
-        pub replacement: ReplacementConfig,
+        pub replacement: String,
         pub syntax: Option<String>,
     }
 
@@ -558,20 +553,21 @@ pub mod shard_config {
     }
 
     impl Replacement {
-        pub fn new(config: &ReplacementConfig) -> Result<Replacement, IoError> {
-            if config.selector {
-                let selector = JqSelector::new(&config.value)?;
+        pub fn new(string: &str) -> Result<Replacement, IoError> {
+            // Note: Users should escape leading $ in replacement strings
+            if string.starts_with("$") {
+                // Strip leading $ and create a selector
+                let selector = JqSelector::new(&string[1..])?;
                 Ok(Replacement::Selectors(selector))
             } else {
-                Ok(Replacement::String(config.value.clone()))
+                Ok(Replacement::String(string.to_string()))
             }
         }
 
         pub fn get(&self, json: &Value) -> Result<String, IoError> {
             match self {
                 Replacement::Selectors(selector) => {
-                    let value = selector.select(json)?;
-                    Ok(value.to_string())
+                    Ok(serde_json::from_value(selector.select(json)?.to_owned()).unwrap())
                 }
                 Replacement::String(s) => Ok(s.clone()),
             }
