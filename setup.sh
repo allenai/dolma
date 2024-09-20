@@ -31,8 +31,8 @@ if [[ $PLATFORM = "aarch64" ]]; then
   which maturin || pip install maturin
 fi
 
-if [[ $PLATFORM = "arm64" ]]; then
-  echo "arm64 detected..."
+if [[ $PLATFORM = arm* ]]; then
+  echo "arm detected..."
   which maturin || pip install maturin
 else
   echo "Unsupported platform; please install maturin manually"
