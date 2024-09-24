@@ -32,13 +32,15 @@ class DclmQualityClassifier(BaseFastTextTagger):
         # Extract the predicted label and its probability
         (pred_label, pred_prob) = pred
         pred_label = pred_label[0]
-        hq_prob = pred_prob[0]
+        probability_score = pred_prob[0]
 
         # If the predicted label is 'CC', adjust the probability of it being 'Wikipedia'
         if pred_label == "__label__cc":
-            hq_prob = 1 - hq_prob
+            probability_score = 1 - probability_score
 
-        return [Prediction(label=pred_label.replace("__label__", ""), score=hq_prob)]
+        label = pred_label.replace("__label__", "").replace("cc", "score").replace("hq", "score")
+
+        return [Prediction(label=label, score=probability_score)]
 
 
 @TaggerRegistry.add("dolma17-quality")
