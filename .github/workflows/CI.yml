@@ -288,4 +288,5 @@ jobs:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
           command: upload
+          maturin-version: 1.7.1
           args: --skip-existing *
