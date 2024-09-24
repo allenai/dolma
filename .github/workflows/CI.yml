@@ -109,7 +109,7 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           pip install -U pip
-          pip install maturin
+          pip install maturin==1.7.1
 
       - name: Install dolma wheels
         if: steps.cache-venv.outputs.cache-hit != 'true'
