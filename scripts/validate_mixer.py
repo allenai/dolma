@@ -3,7 +3,8 @@ import json
 import sys
 import jq
 import jsonpath_ng
-from jsonpath_ng.ext import parser
+# from jsonpath_ng.ext import parser
+from jsonpath_ng.ext import parse as parse_jsonpath
 import re
 import boto3
 import random
@@ -175,29 +176,80 @@ def validate_jq_expression(expr):
         return True, None
     except ValueError as e:
         return False, str(e)
+    
+def validate_jsonpath_expression(expr):
+    """Validate a JSONPath expression."""
+    try:
+        parse_jsonpath(expr)
+        return True, None
+    except Exception as e:
+        return False, str(e)
+    
+def split_complex_jsonpath(expr):
+    """Split a complex JSONPath expression into individual valid JSONPath expressions."""
+    # Extract the base path and the filter condition
+    match = re.match(r'(\$\.attributes\[?\??)\s*(.+?)\s*(\]?)$', expr)
+    if not match:
+        return [expr]  # Return the original expression if it doesn't match the expected pattern
+
+    base_path, conditions, closing_bracket = match.groups()
+    
+    # Split the conditions
+    split_conditions = re.split(r'\s*(?:&&|\|\|)\s*', conditions)
+    
+    # Reconstruct each condition into a valid JSONPath
+    valid_jsonpaths = []
+    for condition in split_conditions:
+        # Remove any opening and closing parentheses from the condition
+        condition = condition.strip('()')
+        # Extract the comparison part if present
+        comparison_match = re.search(r'([<>]=?)\s*([^)]+)$', condition)
+        if comparison_match:
+            comparison_op, comparison_value = comparison_match.groups()
+            # Remove the comparison part from the condition
+            condition = condition[:comparison_match.start()].rstrip()
+            # Add back the comparison
+            condition += f" {comparison_op} {comparison_value.rstrip(')')}"
+        valid_jsonpaths.append(f"{base_path}{condition}{closing_bracket}")
+    
+    return valid_jsonpaths
 
 def validate_filter_expressions(filter_config):
     """Validate filter expressions based on specified syntax."""
     errors = []
     warnings = []
 
-    syntax = filter_config.get('syntax')
-    if syntax is None:
-        warnings.append("No 'syntax' key specified. JSONPath expressions are not being evaluated.")
-        return errors, warnings
+    syntax = filter_config.get('syntax', 'jsonpath').lower()  # Default to JSONPath if not specified
 
-    if syntax.lower() != 'jq':
-        warnings.append(f"Unsupported syntax '{syntax}'. Only 'jq' is currently supported for validation.")
-        return errors, warnings
+    if syntax not in ['jq', 'jsonpath']:
+        warnings.append(f"Unsupported syntax '{syntax}'. Defaulting to JSONPath for validation.")
+        syntax = 'jsonpath'
+
+    validate_function = validate_jq_expression if syntax == 'jq' else validate_jsonpath_expression
 
     for filter_type in ['include', 'exclude']:
         expressions = filter_config.get(filter_type, [])
         for expr in expressions:
-            is_valid, error = validate_jq_expression(expr)
-            if not is_valid:
-                errors.append(f"Invalid JQ expression in {filter_type}: {expr}. Error: {error}")
+            expr = expr.replace('$@.', '$.')
+            
+            if syntax == 'jsonpath':
+                conditions = split_complex_jsonpath(expr)
+                is_valid = True
+                for condition in conditions:
+                    valid, error = validate_function(condition)
+                    if not valid:
+                        errors.append(f"Invalid {syntax.upper()} sub-expression in {filter_type}: {condition}. Error: {error}")
+                        is_valid = False
+                        break
+                
+                if is_valid:
+                    print(f"Valid {syntax.upper()} expression in {filter_type}: {expr}")
             else:
-                print(f"Valid JQ expression in {filter_type}: {expr}")
+                is_valid, error = validate_function(expr)
+                if not is_valid:
+                    errors.append(f"Invalid {syntax.upper()} expression in {filter_type}: {expr}. Error: {error}")
+                else:
+                    print(f"Valid {syntax.upper()} expression in {filter_type}: {expr}")
 
     return errors, warnings
 
@@ -218,7 +270,7 @@ def get_corresponding_attribute_path(doc_path, base_doc_path, base_attr_path):
 def validate_document_attribute_alignment(config, num_samples):
     """Validate alignment between document and attribute files."""
     print(f"Sampling and validating {num_samples} files for each stream...")
-    for stream in tqdm(config['streams'], desc="Validating streams"):
+    for stream in config['streams']:
         base_doc_path = get_base_path(stream['documents'][0])
         base_attr_path = re.sub(r'/documents($|/)', r'/attributes\1', base_doc_path)
 
@@ -251,14 +303,14 @@ def validate_document_attribute_alignment(config, num_samples):
         print(f"Documents with all attributes matched: {len(matches)}")
         print(f"Documents with some or all attributes missing: {len(mismatches)}")
 
-        if matches:
-            print("\nSample of matching documents:")
-            for doc, attrs in matches[:3]:  # Show up to 3 examples
-                print(f"  Document: {doc}")
-                for attr, path in attrs:
-                    print(f"    Matched {attr}: {path}")
-            if len(matches) > 3:
-                print("  ...")
+        # if matches:
+        #     print("\nSample of matching documents:")
+        #     for doc, attrs in matches[:3]:  # Show up to 3 examples
+        #         print(f"  Document: {doc}")
+        #         for attr, path in attrs:
+        #             print(f"    Matched {attr}: {path}")
+        #     if len(matches) > 3:
+        #         print("  ...")
 
         if mismatches:
             print("\nDocuments with missing attributes:")
@@ -285,13 +337,14 @@ def main(config_path, num_samples):
         sys.exit(1)
 
     print("Validating S3 paths and permissions...")
-    for stream in tqdm(config['streams'], desc="Validating streams"):
+    # for stream in tqdm(config['streams'], desc="Validating streams"):
+    for stream in config['streams']:
         # Assuming the first document pattern is the base path for attributes
         base_doc_path = get_base_path(stream['documents'][0])
         base_attr_path = re.sub(r'/documents($|/)', r'/attributes\1', base_doc_path)
         
-        print(f"Base document path: {base_doc_path}")
-        print(f"Base attribute path: {base_attr_path}")
+        # print(f"Base document path: {base_doc_path}")
+        # print(f"Base attribute path: {base_attr_path}")
 
         for doc_pattern in stream['documents']:
             is_valid, error = validate_s3_path(doc_pattern)
@@ -334,16 +387,16 @@ def main(config_path, num_samples):
                     objects = list(list_s3_objects(attr_path))
                     if not objects:
                         print(f"  Warning: No objects found in this attribute path")
-                    else:
-                        print(f"  The attribute path contains various subdirectories and files")
-                        print(f"  Here are a few examples of the contents:")
-                        for obj in objects[:3]:  # Print first 3 objects
-                            print(f"    - {obj}")
-                        if len(objects) > 3:
-                            print(f"    ... and more")
+                    # else:
+                    #     print(f"  The attribute path contains various subdirectories and files")
+                    #     print(f"  Here are a few examples of the contents:")
+                    #     for obj in objects[:3]:  # Print first 3 objects
+                    #         print(f"    - {obj}")
+                    #     if len(objects) > 3:
+                    #         print(f"    ... and more")
 
     print("Validating filter expressions...")
-    for stream in tqdm(config['streams'], desc="Validating filters"):
+    for stream in config['streams']:
         if 'filter' in stream:
             filter_config = stream['filter']
             filter_errors, filter_warnings = validate_filter_expressions(filter_config)
