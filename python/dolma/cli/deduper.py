@@ -127,7 +127,7 @@ class DeduperConfig:
     dedupe: DedupeConfig = field(help="Deduplication configuration. Required.")
     bloom_filter: BloomFilterConfig = field(help="Bloom filter configuration. Required.")
     processes: int = field(
-        default=1, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
+        default=0, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
     )
     compression: CompressionConfig = field(
         default=CompressionConfig(),

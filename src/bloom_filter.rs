@@ -152,8 +152,9 @@ impl BloomFilter {
         }
 
         let number_of_u32 = size_in_bytes / size_of::<AtomicU32>();
+        println!("START INIT");
         let bits = (0..number_of_u32).into_par_iter().map(|_| AtomicU32::default()).collect();
-        
+        println!("FINISH INIT");
         Self {
             bits,
             hash_builder_seeds,

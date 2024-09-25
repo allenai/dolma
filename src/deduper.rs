@@ -2,7 +2,7 @@ use human_bytes::human_bytes;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::VecDeque;
 use std::io;
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Write, Error, ErrorKind};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -38,16 +38,15 @@ fn build_pbar(num_items: usize, units: &str) -> ProgressBar {
 pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     // Set global thread count for rayon parallelism
     let start_main = Instant::now();
-    let num_threads = match config.processes {
-        0 => rayon::current_num_threads(),
-        _ => config.processes
-    };
-    ThreadPoolBuilder::new().num_threads(num_threads).build_global().unwrap();
+
+    if config.processes > 0 {
+        ThreadPoolBuilder::new().num_threads(config.processes).build_global().unwrap();
+    }
+
 
 
     let bloom_filter = BloomFilter::initialize(&config.bloom_filter).unwrap();
     let bloom_filter = Arc::new(bloom_filter);
-
     let paths = find_objects_matching_patterns(&config.documents)
         .unwrap()
         .clone();
@@ -59,7 +58,7 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let failed_shard_count = AtomicU32::new(0);
     let failed_shard_count_ref = Arc::new(failed_shard_count);
     let pbar = build_pbar(paths.len(), "Paths");
-
+    println!("Starting par iter thing");
     paths.par_iter()
         .for_each(|p| {
             let path = p.clone();
@@ -171,6 +170,11 @@ fn write_attributes(
         let attr_prefix = format!("/attributes/{}/", attr_key);
         docs_location.replace("/documents/", &attr_prefix)
     };
+    if attrs_location == docs_location {
+        return Err(Error::new(
+            ErrorKind::InvalidInput,
+            "Malformed file location: no /documents/ in file path! Continuing would overwrite data!"));
+    }
     let local_output = cache.prepare_output(&attrs_location, label_temp)?;
     let mut docs_processed = 0;
     let mut seen_bytes = 0;
@@ -179,11 +183,6 @@ fn write_attributes(
         log::info!("Skipping {:?} because it already exists", attrs_location);
         return Ok((docs_processed, seen_bytes, removed_bytes));
     }
-    log::info!(
-        "Writing attributes for {} to {}",
-        docs_location,
-        local_output.display()
-    );
 
     std::fs::create_dir_all(local_output.parent().unwrap())?;
     log::info!(
@@ -249,7 +248,7 @@ fn write_attributes(
                 dedupe_documents(data, dedupe_config.clone(), &bloom_filter)
             } else if dedupe_config.dedupe_method == "paragraphs" {
                 dedupe_paragraphs(data, dedupe_config.clone(), &bloom_filter)
-            } else if dedupe_config.dedupe_method == "" {
+            } else if dedupe_config.dedupe_method == "dclm" {
                 dedupe_dclm(data, dedupe_config.clone(), &bloom_filter)
             } else {
                 (json!({}), 0, 0)
@@ -602,8 +601,7 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
     let mut removed_bytes = 0;
     let mut hashes_to_insert : Vec<Vec<u64>> = Vec::new();
     let mut offset = 0;
-
-
+    let effective_stride = ngram_params.stride + 1; // 0 means consecutive ngrams
     for p in paragraphs {
         // Loop over paragraphs
         let par_start = offset;
@@ -613,7 +611,9 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
             offset += splitter.len();
         }
         let par_end = offset; 
-        if par_char_length < min_content_length { continue; } // Skip paragraph: too short (in chars)
+        if par_char_length < min_content_length { 
+            continue; 
+        } // Skip paragraph: too short (in chars)
         
         // Now tokenize and make ngrams
         let mut stride_counter = 0;
@@ -622,21 +622,22 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
         for token in tokenize(p) {
             ngram.push_back(token);
             if ngram.len() >= ngram_params.ngram_length {
-                if stride_counter % ngram_params.stride == 0 {
+                if stride_counter % effective_stride == 0 {
                     hashes.push(bloom_filter.hashes(&ngram));
                 }
-                stride_counter = (stride_counter + 1) % ngram_params.stride;
+                stride_counter = (stride_counter + 1) % effective_stride;
                 ngram.pop_front();
             }
         }
-        if hashes.len() == 0 { continue } // Skip paragraph: too short (in tokens )
-
+        if hashes.len() == 0 { 
+            continue } // Skip paragraph: too short (in tokens )
         // Check containment and keep track of whether we should keep/delete this para
         let contained_ngrams = hashes.iter().filter(|h| bloom_filter.contains(h)).count();
+
         total_ngrams += hashes.len();
         total_contained_ngrams += contained_ngrams;
         let paragraph_duplicate_score = (contained_ngrams / hashes.len()) as f32;
-        let should_remove =  paragraph_duplicate_score > ngram_params.overlap_threshold;
+        let should_remove =  paragraph_duplicate_score >= ngram_params.overlap_threshold;
         if should_remove {
             duplicate_paragraph_spans.push(Value::Array(vec![
                 Value::from(par_start),
@@ -647,11 +648,12 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
         } else {
             hashes_to_insert.extend(hashes);
         }
+
     }
 
     // Now check the whole document:
     let document_score = (total_contained_ngrams / total_ngrams) as f32;
-    if (total_contained_ngrams / total_ngrams) as f32 > ngram_params.overlap_threshold {
+    if (total_contained_ngrams / total_ngrams) as f32 >= ngram_params.overlap_threshold {
         duplicate_paragraph_spans.clear();
         duplicate_paragraph_spans.push(Value::Array(vec![
             Value::from(0),
@@ -667,7 +669,7 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
     }
 
     attributes[attr_name] = Value::Array(duplicate_paragraph_spans);
-    (attributes, removed_bytes, seen_bytes)
+    (attributes, seen_bytes, removed_bytes)
 }
 
 
@@ -693,13 +695,13 @@ pub mod deduper_config {
         pub document_key: Option<String>,
     }
 
-    #[derive(Serialize, Deserialize, Clone)]
+    #[derive(Serialize, Deserialize, Clone, Debug)]
     pub struct DocumentDedupeConfig {
         pub attribute_name: String,
         pub key: String,
     }
 
-    #[derive(Serialize, Deserialize, Clone)]
+    #[derive(Serialize, Deserialize, Clone, Debug)]
     pub struct ParagraphDedupeConfig {
         pub attribute_name: String,
         // If defined, remove paragraphs based on contained ngrams
@@ -710,7 +712,7 @@ pub mod deduper_config {
         pub paragraph_separator: Option<String>,
     }
 
-    #[derive(Serialize, Deserialize, Clone)]
+    #[derive(Serialize, Deserialize, Clone, Debug)]
     pub struct NgramDedupeConfig {
         // Number of whitespace-delimited tokens per ngram
         pub ngram_length: usize,
@@ -722,7 +724,7 @@ pub mod deduper_config {
         pub skip_short_paragraphs: Option<bool>,
     }
 
-    #[derive(Serialize, Deserialize, Clone)]
+    #[derive(Serialize, Deserialize, Clone, Debug)]
     pub struct DCLMDedupeConfig {
         // DCLMDedupeConfig does a hybrid of both fuzzy document and paragraph level deduplication
         pub attribute_name: String,
@@ -730,7 +732,7 @@ pub mod deduper_config {
         pub paragraph_separator: Option<String>
     }
 
-    #[derive(Serialize, Deserialize, Clone)]
+    #[derive(Serialize, Deserialize, Clone, Debug)]
     pub struct DedupeConfig {
         pub name: String,
         pub dedupe_method: String,
