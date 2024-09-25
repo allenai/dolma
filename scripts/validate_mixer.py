@@ -2,15 +2,13 @@ import yaml
 import json
 import sys
 import jq
+import jsonpath_ng
+from jsonpath_ng.ext import parser
 import re
 import boto3
-import os
-import gzip
-import struct
+import random
 from botocore.exceptions import ClientError
-
-# Initialize the S3 client
-s3_client = boto3.client('s3')
+from tqdm import tqdm
 
 def load_config(config_path):
     """Load the configuration file (YAML or JSON)."""
@@ -26,252 +24,39 @@ def load_config(config_path):
         print(f"Error loading config file: {str(e)}")
         sys.exit(1)
 
-def validate_jq_expression(expr):
-    """Validate a JQ expression."""
-    try:
-        jq.compile(expr)
-        return True, None
-    except ValueError as e:
-        return False, str(e)
-    
-    
-def jq_dryrun(expressions, sample_file_path, sample_size=10):
-    """
-    Perform a dry run of JQ expressions on a sample gzipped JSONL file.
-    
-    :param expressions: List of JQ expressions to test
-    :param sample_file_path: Path to a sample gzipped JSONL file to test against
-    :param sample_size: Number of lines to sample from the file (default 10)
-    :return: List of tuples (expression, success, error_message)
-    """
-    results = []
-
-    try:
-        # Read a sample of lines from the gzipped file
-        with gzip.open(sample_file_path, 'rt') as file:
-            sample_lines = [next(file) for _ in range(sample_size)]
-        
-        # Debugging: Print the first few lines of the sample
-        print("Sample file content (first 3 lines):")
-        for i, line in enumerate(sample_lines[:3]):
-            print(f"Line {i+1}: {line[:100]}...")  # Print first 100 characters of each line
-    except Exception as e:
-        return [(expr, False, f"Error reading sample file: {str(e)}") for expr in expressions]
-
-    for expr in expressions:
-        try:
-            # Compile the JQ expression
-            jq_program = jq.compile(expr)
-            
-            # Try to apply the JQ expression to each line
-            for i, line in enumerate(sample_lines):
-                try:
-                    json_data = json.loads(line)
-                    result = jq_program.input(json_data).all()
-                    # You might want to add some logic here to check if the result is what you expect
-                except json.JSONDecodeError:
-                    results.append((expr, False, f"Invalid JSON on line {i+1}"))
-                    break
-                except Exception as e:
-                    results.append((expr, False, f"JQ expression failed on line {i+1}: {str(e)}"))
-                    break
-            else:
-                # This else clause runs if the for loop completes without breaking
-                results.append((expr, True, "Dry run successful"))
-        
-        except Exception as e:
-            results.append((expr, False, f"Error during dry run: {str(e)}"))
-
-    return results
-
-
-def parse_s3_path(s3_path):
-    """Parse an S3 path into bucket name and key."""
-    pattern = r'^s3://(?P<bucket>[\w.-]+)/(?P<key>.+)$'
-    match = re.match(pattern, s3_path)
-    if not match:
-        raise ValueError(f"Invalid S3 path: {s3_path}")
-    return match.group('bucket'), match.group('key')
-
-def validate_s3_path(s3_path):
-    """Validate an S3 path and check if it exists."""
-    try:
-        bucket, key = parse_s3_path(s3_path)
-    except ValueError as e:
-        return False, str(e)
-
-    try:
-        s3_client.head_bucket(Bucket=bucket)
-    except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == '404':
-            return False, f"Bucket does not exist: {bucket}"
-        elif error_code == '403':
-            return False, f"Access denied to bucket: {bucket}"
-        else:
-            return False, f"Error checking bucket: {str(e)}"
-
-    # Handle wildcard paths
-    if '*' in key:
-        prefix = key.split('*')[0]
-        try:
-            response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
-            if 'Contents' not in response:
-                return False, f"No objects found matching: {s3_path}"
-        except ClientError as e:
-            return False, f"Error listing objects: {str(e)}"
-    else:
-        try:
-            s3_client.head_object(Bucket=bucket, Key=key)
-        except ClientError as e:
-            return False, f"Object does not exist: {s3_path}"
-
-    return True, None
-
-def diagnose_file(file_path):
-    """
-    Diagnose issues with a potentially gzipped file.
-    
-    :param file_path: Path to the file to diagnose
-    :return: A diagnostic message
-    """
-    if not os.path.exists(file_path):
-        return f"File does not exist: {file_path}"
-
-    file_size = os.path.getsize(file_path)
-    if file_size == 0:
-        return f"File is empty: {file_path}"
-
-    with open(file_path, 'rb') as f:
-        file_start = f.read(10)  # Read the first 10 bytes
-
-    if file_start.startswith(b'\x1f\x8b'):
-        # It's a gzip file, let's try to read it
-        try:
-            with gzip.open(file_path, 'rb') as gz:
-                gz.read(1)  # Try to read 1 byte
-            return f"File appears to be a valid gzip file: {file_path}"
-        except gzip.BadGzipFile:
-            return f"File starts with gzip header but is corrupt: {file_path}"
-        except Exception as e:
-            return f"Error reading gzip file: {file_path}. Error: {str(e)}"
-    else:
-        # It's not a gzip file
-        return f"File is not gzipped (first 10 bytes: {file_start.hex()}): {file_path}"
-
-def get_sample_file(documents):
-    """
-    Get a sample file path from the list of documents in the config.
-    
-    :param documents: List of document paths from the config
-    :return: Path to a sample file, or None if no suitable file is found
-    """
-    for doc in documents:
-        if doc.startswith('s3://'):
-            try:
-                bucket, key = parse_s3_path(doc)
-            except ValueError:
-                continue
-
-            # Handle wildcard paths
-            if '*' in key:
-                prefix = key.split('*')[0]
-                try:
-                    response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
-                    if 'Contents' in response:
-                        key = response['Contents'][0]['Key']
-                except ClientError as e:
-                    print(f"Error listing objects: {str(e)}")
-                    continue
-
-            local_path = f"/tmp/sample_{os.path.basename(key)}"
-            try:
-                s3_client.download_file(bucket, key, local_path)
-                print(diagnose_file(local_path))  # Diagnose the downloaded file
-                return local_path
-            except ClientError as e:
-                print(f"Error downloading sample file: {str(e)}")
-        else:
-            # Handle local paths
-            if os.path.isfile(doc):
-                print(diagnose_file(doc))  # Diagnose the local file
-                return doc
-            elif doc.endswith('*'):
-                directory = os.path.dirname(doc)
-                for filename in os.listdir(directory):
-                    if filename.endswith('.gz') or filename.endswith('.json'):
-                        full_path = os.path.join(directory, filename)
-                        print(diagnose_file(full_path))  # Diagnose the found file
-                        return full_path
-    
-    return None
-
-def print_s3_debug_info(s3_path):
-    try:
-        bucket, key = parse_s3_path(s3_path)
-        print(f"Debugging S3 path: {s3_path}")
-        print(f"Bucket: {bucket}")
-        print(f"Key: {key}")
-        
-        if '*' in key:
-            prefix = key.split('*')[0]
-            try:
-                response = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=10)
-                if 'Contents' in response:
-                    print("Found the following objects:")
-                    for obj in response['Contents']:
-                        print(f"- {obj['Key']}")
-                else:
-                    print("No objects found with this prefix.")
-            except ClientError as e:
-                print(f"Error listing objects: {str(e)}")
-        else:
-            try:
-                s3_client.head_object(Bucket=bucket, Key=key)
-                print("Object exists.")
-            except ClientError as e:
-                print(f"Error checking object: {str(e)}")
-    except ValueError as e:
-        print(f"Error parsing S3 path: {str(e)}")
-
-
 def validate_config_structure(config):
     """Validate the basic structure of the configuration."""
+    required_fields = ['streams', 'processes']
     errors = []
 
-    if 'streams' not in config:
-        errors.append("Missing 'streams' key in config")
-    elif not isinstance(config['streams'], list):
-        errors.append("'streams' should be a list")
-    else:
-        for i, stream in enumerate(config['streams']):
-            stream_errors = validate_stream(stream, i)
-            errors.extend(stream_errors)
+    for field in required_fields:
+        if field not in config:
+            errors.append(f"Missing required field: {field}")
 
-    if 'processes' not in config:
-        errors.append("Missing 'processes' key in config")
-    elif not isinstance(config['processes'], int):
+    if 'streams' in config:
+        if not isinstance(config['streams'], list):
+            errors.append("'streams' should be a list")
+        else:
+            for i, stream in enumerate(config['streams']):
+                stream_errors = validate_stream(stream, i)
+                errors.extend(stream_errors)
+
+    if 'processes' in config and not isinstance(config['processes'], int):
         errors.append("'processes' should be an integer")
 
     return errors
 
 def validate_stream(stream, index):
     """Validate an individual stream configuration."""
+    required_fields = ['name', 'documents', 'attributes', 'output']
     errors = []
 
-    required_keys = ['name', 'documents', 'attributes', 'output']
-    for key in required_keys:
-        if key not in stream:
-            errors.append(f"Stream {index}: Missing required key '{key}'")
+    for field in required_fields:
+        if field not in stream:
+            errors.append(f"Stream {index}: Missing required field: {field}")
 
-    if 'documents' in stream:
-        if not isinstance(stream['documents'], list):
-            errors.append(f"Stream {index}: 'documents' should be a list")
-        else:
-            for doc in stream['documents']:
-                is_valid, error_msg = validate_s3_path(doc)
-                if not is_valid:
-                    errors.append(f"Stream {index}: Invalid S3 path in 'documents': {error_msg}")
+    if 'documents' in stream and not isinstance(stream['documents'], list):
+        errors.append(f"Stream {index}: 'documents' should be a list")
 
     if 'attributes' in stream and not isinstance(stream['attributes'], list):
         errors.append(f"Stream {index}: 'attributes' should be a list")
@@ -281,85 +66,308 @@ def validate_stream(stream, index):
         errors.extend(output_errors)
 
     if 'filter' in stream:
-        filter_errors = validate_filter(stream['filter'], index, stream.get('documents', []))
+        filter_errors = validate_filter(stream['filter'], index)
         errors.extend(filter_errors)
 
     return errors
 
 def validate_output(output, stream_index):
     """Validate the output configuration of a stream."""
+    required_fields = ['path', 'max_size_in_bytes']
     errors = []
 
-    required_keys = ['max_size_in_bytes', 'path']
-    for key in required_keys:
-        if key not in output:
-            errors.append(f"Stream {stream_index} output: Missing required key '{key}'")
+    for field in required_fields:
+        if field not in output:
+            errors.append(f"Stream {stream_index} output: Missing required field: {field}")
 
     if 'max_size_in_bytes' in output and not isinstance(output['max_size_in_bytes'], int):
         errors.append(f"Stream {stream_index} output: 'max_size_in_bytes' should be an integer")
 
-    if 'path' in output:
-        is_valid, error_msg = validate_s3_path(output['path'])
-        if not is_valid:
-            errors.append(f"Stream {stream_index} output: Invalid S3 path: {error_msg}")
-
     return errors
 
-def validate_filter(filter_config, stream_index, documents):
+def validate_filter(filter_config, stream_index):
     """Validate the filter configuration of a stream."""
     errors = []
 
-    if 'syntax' in filter_config:
-        if filter_config['syntax'] == 'jq':
-            expressions = []
-            for filter_type in ['include', 'exclude']:
-                if filter_type in filter_config:
-                    expressions.extend(filter_config[filter_type])
-            
-            sample_file_path = get_sample_file(documents)
-            if sample_file_path:
-                dryrun_results = jq_dryrun(expressions, sample_file_path)
-                
-                for expr, success, message in dryrun_results:
-                    if not success:
-                        errors.append(f"Stream {stream_index} filter: JQ dry run failed for expression '{expr}': {message}")
-                
-                # Clean up the sample file if it was downloaded from S3
-                if sample_file_path.startswith('/tmp/'):
-                    os.remove(sample_file_path)
-            else:
-                errors.append(f"Stream {stream_index} filter: Unable to find a sample file for JQ validation")
-        
-        elif filter_config['syntax'] != 'jsonpath':
-            errors.append(f"Stream {stream_index} filter: Unsupported syntax '{filter_config['syntax']}'. Use 'jq' or 'jsonpath'")
+    if 'include' in filter_config and not isinstance(filter_config['include'], list):
+        errors.append(f"Stream {stream_index} filter: 'include' should be a list")
+
+    if 'exclude' in filter_config and not isinstance(filter_config['exclude'], list):
+        errors.append(f"Stream {stream_index} filter: 'exclude' should be a list")
 
     return errors
 
-def main(config_path):
-    config = load_config(config_path)
-    errors = validate_config_structure(config)
+def validate_s3_path(s3_path):
+    """Validate an S3 path."""
+    pattern = r'^s3://[\w.-]+/.*$'
+    if not re.match(pattern, s3_path):
+        return False, f"Invalid S3 path format: {s3_path}"
+    return True, None
 
-    # Print debug information for S3 paths
-    for stream in config.get('streams', []):
-        for doc in stream.get('documents', []):
-            print_s3_debug_info(doc)
+def check_s3_path_exists(s3_path):
+    """Check if an S3 path exists and is accessible."""
+    s3_client = boto3.client('s3')
+    try:
+        bucket, key = s3_path[5:].split('/', 1)
+        if key.endswith('/'):
+            # For directories, we just need to check if the prefix exists
+            response = s3_client.list_objects_v2(Bucket=bucket, Prefix=key, MaxKeys=1)
+            if 'Contents' not in response:
+                return False, f"S3 path does not exist or is empty: {s3_path}"
+        else:
+            # For files, we can use head_object
+            s3_client.head_object(Bucket=bucket, Key=key)
+        return True, None
+    except ClientError as e:
+        return False, f"S3 path does not exist or is not accessible: {s3_path}. Error: {str(e)}"
+
+def check_s3_path_writable(s3_path):
+    """Check if an S3 path is writable."""
+    s3_client = boto3.client('s3')
+    try:
+        bucket, key = s3_path[5:].split('/', 1)
+        # Ensure the key ends with a '/' to treat it as a directory
+        if not key.endswith('/'):
+            key += '/'
+        s3_client.put_object(Bucket=bucket, Key=f"{key}test_write", Body=b'')
+        s3_client.delete_object(Bucket=bucket, Key=f"{key}test_write")
+        return True, None
+    except ClientError as e:
+        return False, f"S3 path is not writable: {s3_path}. Error: {str(e)}"
+
+def check_s3_parent_exists(s3_path):
+    """Check if the parent directory of an S3 path exists."""
+    parent_path = '/'.join(s3_path.split('/')[:-1]) + '/'
+    return check_s3_path_exists(parent_path)
+
+def list_s3_objects(s3_path):
+    """List objects in an S3 path, handling wildcards."""
+    s3_client = boto3.client('s3')
+    bucket, prefix = s3_path[5:].split('/', 1)
+    
+    # Remove '**/' from the prefix as we'll search recursively anyway
+    prefix = prefix.replace('**/', '')
+    
+    # Remove the filename pattern (e.g., '*.jsonl.gz') from the prefix
+    prefix = '/'.join(prefix.split('/')[:-1]) + '/'
+    
+    paginator = s3_client.get_paginator('list_objects_v2')
+    
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                yield f"s3://{bucket}/{obj['Key']}"
+
+def get_base_path(s3_path):
+    """Extract the base path from an S3 path with wildcards."""
+    parts = s3_path.split('/')
+    base_parts = []
+    for part in parts:
+        if part == '**':
+            break
+        base_parts.append(part)
+    return '/'.join(base_parts)
+
+def validate_jq_expression(expr):
+    """Validate a JQ expression."""
+    try:
+        jq.compile(expr)
+        return True, None
+    except ValueError as e:
+        return False, str(e)
+
+def validate_filter_expressions(filter_config):
+    """Validate filter expressions based on specified syntax."""
+    errors = []
+    warnings = []
+
+    syntax = filter_config.get('syntax')
+    if syntax is None:
+        warnings.append("No 'syntax' key specified. JSONPath expressions are not being evaluated.")
+        return errors, warnings
+
+    if syntax.lower() != 'jq':
+        warnings.append(f"Unsupported syntax '{syntax}'. Only 'jq' is currently supported for validation.")
+        return errors, warnings
+
+    for filter_type in ['include', 'exclude']:
+        expressions = filter_config.get(filter_type, [])
+        for expr in expressions:
+            is_valid, error = validate_jq_expression(expr)
+            if not is_valid:
+                errors.append(f"Invalid JQ expression in {filter_type}: {expr}. Error: {error}")
+            else:
+                print(f"Valid JQ expression in {filter_type}: {expr}")
+
+    return errors, warnings
+
+def sample_files(s3_path, num_samples):
+    """Sample a subset of files from an S3 path."""
+    all_files = list(list_s3_objects(s3_path))
+    # Filter out directories (paths ending with '/')
+    all_files = [f for f in all_files if not f.endswith('/')]
+    return random.sample(all_files, min(num_samples, len(all_files)))
+
+def get_corresponding_attribute_path(doc_path, base_doc_path, base_attr_path):
+    """Get the corresponding attribute path for a given document path."""
+    relative_path = doc_path.replace(base_doc_path, '', 1)
+    # Remove leading slash if present
+    relative_path = relative_path.lstrip('/')
+    return f"{base_attr_path.rstrip('/')}/{relative_path}"
+
+def validate_document_attribute_alignment(config, num_samples):
+    """Validate alignment between document and attribute files."""
+    print(f"Sampling and validating {num_samples} files for each stream...")
+    for stream in tqdm(config['streams'], desc="Validating streams"):
+        base_doc_path = get_base_path(stream['documents'][0])
+        base_attr_path = re.sub(r'/documents($|/)', r'/attributes\1', base_doc_path)
+
+        # Sample documents
+        sampled_docs = []
+        for doc_pattern in stream['documents']:
+            sampled_docs.extend(sample_files(doc_pattern, num_samples))
+
+        mismatches = []
+        matches = []
+        for doc_path in sampled_docs:
+            # Check for corresponding attribute files
+            doc_matches = []
+            doc_mismatches = []
+            for attr in stream['attributes']:
+                attr_path = get_corresponding_attribute_path(doc_path, base_doc_path, f"{base_attr_path}/{attr}/")
+                exists, error = check_s3_path_exists(attr_path)
+                if exists:
+                    doc_matches.append((attr, attr_path))
+                else:
+                    doc_mismatches.append((attr, attr_path))
+            
+            if doc_mismatches:
+                mismatches.append((doc_path, doc_mismatches))
+            if doc_matches:
+                matches.append((doc_path, doc_matches))
+
+        print(f"\nResults for stream '{stream['name']}':")
+        print(f"Total sampled documents: {len(sampled_docs)}")
+        print(f"Documents with all attributes matched: {len(matches)}")
+        print(f"Documents with some or all attributes missing: {len(mismatches)}")
+
+        if matches:
+            print("\nSample of matching documents:")
+            for doc, attrs in matches[:3]:  # Show up to 3 examples
+                print(f"  Document: {doc}")
+                for attr, path in attrs:
+                    print(f"    Matched {attr}: {path}")
+            if len(matches) > 3:
+                print("  ...")
+
+        if mismatches:
+            print("\nDocuments with missing attributes:")
+            for doc, missing_attrs in mismatches:
+                print(f"  Document: {doc}")
+                for attr, path in missing_attrs:
+                    print(f"    Missing {attr}: {path}")
+
+        if not mismatches:
+            print("\nAll sampled documents have corresponding attribute files.")
+
+
+def main(config_path, num_samples):
+    print("Loading configuration file...")
+    config = load_config(config_path)
+
+    print("Validating configuration structure...")
+    errors = validate_config_structure(config)
 
     if errors:
         print("Configuration validation failed. Errors:")
         for error in errors:
             print(f"- {error}")
         sys.exit(1)
-    else:
-        print("Configuration validation passed successfully!")
-        print("\nValidation Summary:")
-        print(f"- Streams validated: {len(config['streams'])}")
-        print(f"- S3 paths checked: {sum(len(stream['documents']) for stream in config['streams'])}")
-        print(f"- JQ expressions validated: {sum(len(stream.get('filter', {}).get('include', [])) + len(stream.get('filter', {}).get('exclude', [])) for stream in config['streams'])}")
+
+    print("Validating S3 paths and permissions...")
+    for stream in tqdm(config['streams'], desc="Validating streams"):
+        # Assuming the first document pattern is the base path for attributes
+        base_doc_path = get_base_path(stream['documents'][0])
+        base_attr_path = re.sub(r'/documents($|/)', r'/attributes\1', base_doc_path)
+        
+        print(f"Base document path: {base_doc_path}")
+        print(f"Base attribute path: {base_attr_path}")
+
+        for doc_pattern in stream['documents']:
+            is_valid, error = validate_s3_path(doc_pattern)
+            if not is_valid:
+                print(f"Error: {error}")
+            else:
+                # Check if at least one object matches the pattern
+                matching_objects = list(list_s3_objects(doc_pattern))
+                if not matching_objects:
+                    print(f"Warning: No objects found matching pattern: {doc_pattern}")
+                else:
+                    print(f"Found {len(matching_objects)} objects matching pattern: {doc_pattern}")
+
+        output_path = stream['output']['path']
+        is_valid, error = validate_s3_path(output_path)
+        if not is_valid:
+            print(f"Error: {error}")
+        else:
+            parent_exists, error = check_s3_parent_exists(output_path)
+            if not parent_exists:
+                print(f"Error: Parent directory does not exist for output path: {output_path}")
+            writable, error = check_s3_path_writable(output_path)
+            if not writable:
+                print(f"Error: {error}")
+            else:
+                print(f"Output path is writable: {output_path}")
+
+        for attr in stream['attributes']:
+            attr_path = f"{base_attr_path}/{attr}/"
+            is_valid, error = validate_s3_path(attr_path)
+            if not is_valid:
+                print(f"Error: {error}")
+            else:
+                exists, error = check_s3_path_exists(attr_path)
+                if not exists:
+                    print(f"Error: Attribute path does not exist: {attr_path}")
+                else:
+                    print(f"Found attribute path: {attr_path}")
+                    # Check if there are any objects in this path
+                    objects = list(list_s3_objects(attr_path))
+                    if not objects:
+                        print(f"  Warning: No objects found in this attribute path")
+                    else:
+                        print(f"  The attribute path contains various subdirectories and files")
+                        print(f"  Here are a few examples of the contents:")
+                        for obj in objects[:3]:  # Print first 3 objects
+                            print(f"    - {obj}")
+                        if len(objects) > 3:
+                            print(f"    ... and more")
+
+    print("Validating filter expressions...")
+    for stream in tqdm(config['streams'], desc="Validating filters"):
+        if 'filter' in stream:
+            filter_config = stream['filter']
+            filter_errors, filter_warnings = validate_filter_expressions(filter_config)
+            
+            if filter_warnings:
+                print(f"Warnings in filter configuration for stream '{stream['name']}':")
+                for warning in filter_warnings:
+                    print(f"- Warning: {warning}")
+
+            if filter_errors:
+                print(f"Errors in filter expressions for stream '{stream['name']}':")
+                for error in filter_errors:
+                    print(f"- {error}")
+
+    print(f"Sampling and validating document-attribute alignment...")
+    validate_document_attribute_alignment(config, num_samples)
+
+    print("Validation complete!")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python validate_mixer.py <path_to_config_file>")
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print("Usage: python validate_mixer.py <path_to_config_file> [number_of_samples]")
         sys.exit(1)
     
     config_path = sys.argv[1]
-    main(config_path)
+    num_samples = sys.argv[2] if len(sys.argv) > 2 else 1
+    main(config_path, num_samples=1)
