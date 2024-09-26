@@ -1,5 +1,6 @@
 use ahash::RandomState;
 use byteorder::{LittleEndian, NativeEndian, ReadBytesExt, WriteBytesExt};
+use human_bytes::human_bytes;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
@@ -10,6 +11,10 @@ use std::io::{BufReader, BufWriter, Write};
 use std::mem::size_of;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, Ordering};
+use sysinfo::System;
+use rayon::prelude::*;
+
+
 mod bloom_test;
 // A thread-safe bloom filter.
 pub struct BloomFilter {
@@ -59,6 +64,55 @@ impl BloomFilter {
         size_in_bytes
     }
 
+    pub fn compute_bloom_size_binsearch(
+        expected_elements: usize, 
+        fp_rate: f64,
+        limit_to_system: bool, 
+        num_hashers: usize
+        ) -> usize {
+        /* Uses binary search to get a finer-grained bloom filter size.
+           If limit_to_system: guarantees that no more than 90% of RAM gets allocated
+           If num_hashers == 0: computes the optimal number of hashers on the fly
+        */
+
+        // Get 90% of System RAM and set binsearch bounds
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        let mut lo = 1 as usize;
+        let mut hi = if limit_to_system {
+            ((sys.total_memory() as f64) * 0.9) as usize
+        } else {
+            std::usize::MAX
+        };
+
+        let compute_hashers = num_hashers == 0;
+        let num_hashers = if num_hashers == 0 {
+            BloomFilter::optimal_number_of_hashers(hi, expected_elements)
+        } else {   
+            num_hashers
+        };
+
+        if limit_to_system && BloomFilter::prob_of_false_positive(hi, expected_elements, num_hashers) > fp_rate {
+            log::info!("WARNING: TO achieve desired false-positive rate, you'd need >90% of system RAM. Defaulting to 90% SysRAM");
+            return hi;
+        }
+
+        // Do BinSearch
+        while lo < hi - 1 {
+            let mid = lo + (hi - lo) / 2;
+            let num_hashers = if compute_hashers {
+                BloomFilter::optimal_number_of_hashers(mid, expected_elements)
+            } else {num_hashers};
+            let computed_fp = BloomFilter::prob_of_false_positive(mid, expected_elements, num_hashers);
+            if computed_fp > fp_rate {
+                lo = mid + 1;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        hi
+    }
+
     #[allow(dead_code)]
     pub fn my_prob_of_false_positive(&self, expected_elements: usize) -> f64 {
         Self::prob_of_false_positive(
@@ -67,6 +121,18 @@ impl BloomFilter {
             self.hash_builders.len(),
         )
     }
+
+    pub fn calculate_sparsity(&self) -> f64 {
+        let set_bits : usize = self.bits.par_iter()
+            .map(|atomic| {
+                let value = atomic.load(std::sync::atomic::Ordering::Relaxed);
+                value.count_ones() as usize
+            })
+            .sum();
+        let total_bits = self.size_in_bytes() * 8;
+        (set_bits as f64) / (total_bits as f64)
+    }
+
 
     #[allow(dead_code)]
     pub fn size_in_bytes(&self) -> usize {
@@ -86,9 +152,9 @@ impl BloomFilter {
         }
 
         let number_of_u32 = size_in_bytes / size_of::<AtomicU32>();
-        let bits: Vec<AtomicU32> = std::iter::repeat_with(|| AtomicU32::new(0))
-            .take(number_of_u32)
-            .collect();
+        println!("START INIT");
+        let bits = (0..number_of_u32).into_par_iter().map(|_| AtomicU32::default()).collect();
+        println!("FINISH INIT");
         Self {
             bits,
             hash_builder_seeds,
@@ -243,11 +309,12 @@ impl BloomFilter {
             log::info!("Creating new bloom filter...");
             let mut bloom_filter_size: usize = config.size_in_bytes;
             if bloom_filter_size == 0 {
-                bloom_filter_size = BloomFilter::suggest_size_in_bytes(
+
+                bloom_filter_size = BloomFilter::compute_bloom_size_binsearch(
                     config.estimated_doc_count,
                     config.desired_false_positive_rate,
-                );
-                log::info!("Creating bloom filter with size {} bytes to achieve false positive rate {} for {} elements", bloom_filter_size, config.desired_false_positive_rate, config.estimated_doc_count);
+                    true, 0);
+                log::info!("Creating bloom filter with size {} bytes to achieve false positive rate {} for {} elements", human_bytes(bloom_filter_size as f64), config.desired_false_positive_rate, config.estimated_doc_count);
             }
             let num_hashers = BloomFilter::optimal_number_of_hashers(
                 bloom_filter_size,
@@ -260,7 +327,7 @@ impl BloomFilter {
             );
             log::info!(
                 "Bloom filter will have size {}, {} hashers, false positive rate {}.",
-                bloom_filter_size,
+                human_bytes(bloom_filter_size as f64),
                 num_hashers,
                 p
             );
@@ -278,4 +345,5 @@ pub struct BloomFilterConfig {
     pub read_only: bool,
     pub estimated_doc_count: usize,
     pub desired_false_positive_rate: f64,
+    pub save_to_disk: bool,
 }

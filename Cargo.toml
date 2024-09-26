@@ -24,6 +24,7 @@ flate2 = { version = "1.0.28", features = [
   "zlib-ng",
 ], default-features = false }
 glob = "0.3.1"
+human_bytes = "0.4.3"
 humantime = "2.1"
 indicatif = "0.17"
 jsonpath-rust = "0.3.0"
@@ -42,6 +43,7 @@ simple_logger = { version = "3.0", features = [
   "colors",
 ], default-features = false, optional = true }
 structopt = { version = "0.3", optional = true }
+sysinfo="0.30.7"
 thousands = "0.2"
 threadpool = "1.8.1"
 tokenizers = { version = "0.15.0", features = ["http"] }

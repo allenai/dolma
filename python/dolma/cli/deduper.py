@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import smart_open
 from omegaconf import OmegaConf as om
+from enum import Enum
 
 from dolma import deduper
 from dolma.cli import BaseCli, field, print_config
@@ -17,6 +18,7 @@ from dolma.cli.shared import (
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path, is_local
+
 
 
 @dataclass
@@ -45,6 +47,14 @@ class ParagraphDedupeConfig:
         help="String to use to separate paragraphs. By default, paragraphs are separated by newlines.",
     )
 
+@dataclass 
+class DCLMDedupeConfig:
+    attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
+    by_ngram: Optional[NgramDedupeConfig] = field(
+        default=None, help="Configuration for fuzzy dedupe", default_factory=NgramDedupeConfig)
+    paragraph_separator: Optional[str] = field(
+        default="\n",
+        help="String to use to separate paragraphs. By default, paragraphs are separated by newlines.")
 
 @dataclass
 class DocumentDedupeConfig:
@@ -77,6 +87,12 @@ class BloomFilterConfig:
             "estimated_doc_count."
         ),
     )
+    save_to_disk: bool = field(
+        default=True,
+        help=(
+            "If False, ignore the 'file' field and do NOT save the populated bloom filter to disk")
+    )
+
 
 
 @dataclass
@@ -88,6 +104,8 @@ class DedupeConfig:
     paragraphs: Optional[ParagraphDedupeConfig] = field(
         default=None, help="Configuration for paragraph deduplication"
     )
+    dclm: Optional[DCLMDedupeConfig] = field(
+        default=None, help="Configuration for DCLM deduplication")
     skip_empty: Optional[bool] = field(default=False, help="If true, empty documents/paragraphs will be skipped")
     min_length: Optional[int] = field(default=0, help="Minimum length of documents/paragraphs to be deduplicated")
     min_words: Optional[int] = field(
@@ -99,6 +117,7 @@ class DedupeConfig:
     partition_index: Optional[int] = field(
         default=0, help="The index of the partition being processed, in the range [0, num_partitions)."
     )
+    dedupe_method: Optional[str] = field(default=None, help="Selects which dedupe method to use. Must be either empty or in the set {paragraphs, documents, dclm}")
 
 
 @dataclass
@@ -108,7 +127,7 @@ class DeduperConfig:
     dedupe: DedupeConfig = field(help="Deduplication configuration. Required.")
     bloom_filter: BloomFilterConfig = field(help="Bloom filter configuration. Required.")
     processes: int = field(
-        default=1, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
+        default=0, help="Number of processes to use for deduplication. If 1, no multiprocessing will be used."
     )
     compression: CompressionConfig = field(
         default=CompressionConfig(),
@@ -135,7 +154,6 @@ class DeduperCli(BaseCli):
         logger = get_logger("tagger")
 
         dict_config: Dict[str, Any] = {}
-
         with ExitStack() as stack:
             work_dirs = stack.enter_context(make_workdirs(parsed_config.work_dir))
 
@@ -155,22 +173,25 @@ class DeduperCli(BaseCli):
             if dedupe_dict_config["min_words"] < 0:
                 raise ValueError("min_words must be >= 0")
 
-            # add either the document or paragraph dedupe config
-            if not (
-                om.is_missing(parsed_config.dedupe.documents, "attribute_name")
-                and om.is_missing(parsed_config.dedupe.documents, "key")
-            ):
-                cfg = om.to_container(parsed_config.dedupe.documents)
-                assert isinstance(cfg, dict), "Expected dedupe.documents to be a dict"
-                dedupe_dict_config["documents"] = cfg
-                try_name = try_name or cfg["attribute_name"]
-            elif not om.is_missing(parsed_config.dedupe.paragraphs, "attribute_name"):
-                cfg = om.to_container(parsed_config.dedupe.paragraphs)
-                assert isinstance(cfg, dict), "Expected dedupe.paragraphs to be a dict"
-                dedupe_dict_config["paragraphs"] = cfg
-                try_name = try_name or cfg["attribute_name"]
-            else:
-                raise ValueError("Either dedupe.documents or dedupe.paragraphs must be specified")
+
+            # add either the document or paragraph dedupe config and infer the dedup_method
+            dedupe_method = parsed_config.dedupe.dedupe_method # If is specified
+            if dedupe_method == None: #Else infer:
+                if not (om.is_missing(parsed_config.dedupe.documents, "attribute_name")
+                        and om.is_missing(parsed_config.dedupe.documents, "key")):
+                    dedupe_method = "documents"
+                elif not (om.is_missing(parsed_config.dedupe.paragraphs, "attribute_name")):
+                    dedupe_method = "paragraphs"
+                elif not (om.is_missing(parsed_config.dedupe.dclm, "attribute_name")):
+                    dedupe_method = "dclm"
+                else:
+                    raise ValueError("Some dedupe method must be specified (either explicitly or implicitly)")
+            dedupe_dict_config["dedupe_method"] = dedupe_method
+            dedupe_dict_config[dedupe_method] = om.to_container(parsed_config.dedupe[dedupe_method])
+            assert dedupe_dict_config[dedupe_method].get("attribute_name") != None, "Need attribute name for deduplication"
+            cfg = om.to_container(parsed_config.dedupe[dedupe_method])
+            assert isinstance(cfg, dict), "Expected dedupe.%s to be a dict" % dedupe_meth
+            try_name = try_name or cfg["attribute_name"]
 
             if try_name is None:
                 raise ValueError("dedupe.name must be specified")
@@ -215,6 +236,7 @@ class DeduperCli(BaseCli):
                 "size_in_bytes": int(parsed_config.bloom_filter.size_in_bytes),
                 "estimated_doc_count": int(parsed_config.bloom_filter.estimated_doc_count),
                 "desired_false_positive_rate": float(parsed_config.bloom_filter.desired_false_positive_rate),
+                "save_to_disk": parsed_config.bloom_filter.save_to_disk,
             }
 
             if dict_config["bloom_filter"]["size_in_bytes"] <= 0 and (
@@ -247,7 +269,7 @@ class DeduperCli(BaseCli):
             deduper(dict_config)
 
             # upload to remote file if necessary
-            if not parsed_config.bloom_filter.read_only and not path_is_local:
+            if not parsed_config.bloom_filter.read_only and not path_is_local and parsed_config.bloom_filter.save_to_disk:
                 print(f"Pushing Bloom filter to {parsed_config.bloom_filter.file}")
                 local = stack.enter_context(smart_open.open(local_bloom_file, "rb"))
                 remote = stack.enter_context(smart_open.open(parsed_config.bloom_filter.file, "wb"))
