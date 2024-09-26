@@ -602,6 +602,9 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
     let mut hashes_to_insert : Vec<Vec<u64>> = Vec::new();
     let mut offset = 0;
     let effective_stride = ngram_params.stride + 1; // 0 means consecutive ngrams
+    if text_length == 0 {
+        return (attributes, seen_bytes, removed_bytes);
+    }    
     for p in paragraphs {
         // Loop over paragraphs
         let par_start = offset;
@@ -630,7 +633,9 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
             }
         }
         if hashes.len() == 0 { 
-            continue } // Skip paragraph: too short (in tokens )
+            continue 
+
+        } // Skip paragraph: too short (in tokens )
         // Check containment and keep track of whether we should keep/delete this para
         let contained_ngrams = hashes.iter().filter(|h| bloom_filter.contains(h)).count();
 
@@ -650,24 +655,23 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
         }
 
     }
+    if total_ngrams > 0 {
+        let document_score = (total_contained_ngrams / total_ngrams) as f32;
+        if (total_contained_ngrams / total_ngrams) as f32 >= ngram_params.overlap_threshold {
+            duplicate_paragraph_spans.clear();
+            duplicate_paragraph_spans.push(Value::Array(vec![
+                Value::from(0),
+                Value::from(text_length), 
+                Value::from(document_score)]));
+            hashes_to_insert.clear();
+        }
 
-    // Now check the whole document:
-    let document_score = (total_contained_ngrams / total_ngrams) as f32;
-    if (total_contained_ngrams / total_ngrams) as f32 >= ngram_params.overlap_threshold {
-        duplicate_paragraph_spans.clear();
-        duplicate_paragraph_spans.push(Value::Array(vec![
-            Value::from(0),
-            Value::from(text_length), 
-            Value::from(document_score)]));
-        hashes_to_insert.clear();
-    }
-
-    if !bloom_filter.read_only {
-        for h in hashes_to_insert {
-            bloom_filter.insert(&h);
+        if !bloom_filter.read_only {
+            for h in hashes_to_insert {
+                bloom_filter.insert(&h);
+            }
         }
     }
-
     attributes[attr_name] = Value::Array(duplicate_paragraph_spans);
     (attributes, seen_bytes, removed_bytes)
 }
