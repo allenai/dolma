@@ -45,10 +45,8 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
             && hashed_path % config.dedupe.num_partitions.unwrap_or(1)
                 != config.dedupe.partition_index.unwrap_or(0)
         {
-            log::info!("Hash miss for {}, skipping.", p);
             continue;
         }
-        log::info!("Processing {}", p);
 
         let path = p.clone();
         let work_dirs = config.work_dir.clone();
