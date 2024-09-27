@@ -92,6 +92,7 @@ After tagging, we deduplicate the dataset at a paragraph level.
 ```shell
 dolma dedupe \
     --documents "wikipedia/v0/documents/*" \
+    --dedupe.dedupe_method "paragraphs" \
     --dedupe.paragraphs.attribute_name 'bff_duplicate_paragraph_spans' \
     --dedupe.skip_empty \
     --bloom_filter.file /tmp/deduper_bloom_filter.bin \

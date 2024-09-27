@@ -7,6 +7,7 @@
     "output": "tests/work/url/output"
   },
   "dedupe": {
+    "dedupe_method": "documents",
     "name": "dedupe_by_url",
     "documents": {
       "attribute_name": "bff_duplicate_url",
