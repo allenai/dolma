@@ -259,26 +259,16 @@ def validate_filter_expressions(filter_config):
     for filter_type in ['include', 'exclude']:
         expressions = filter_config.get(filter_type, [])
         for expr in expressions:
-            expr = expr.replace('$@.', '$.')
-            
             if syntax == 'jsonpath':
                 conditions = split_complex_jsonpath(expr)
-                is_valid = True
                 for condition in conditions:
                     valid, error = validate_function(condition)
                     if not valid:
                         errors.append(f"Invalid {syntax.upper()} sub-expression in {filter_type}: {condition}. Error: {error}")
-                        is_valid = False
-                        break
-                
-                # if is_valid:
-                #     print(f"Valid {syntax.upper()} expression in {filter_type}: {expr}")
             else:
                 is_valid, error = validate_function(expr)
                 if not is_valid:
                     errors.append(f"Invalid {syntax.upper()} expression in {filter_type}: {expr}. Error: {error}")
-                else:
-                    print(f"Valid {syntax.upper()} expression in {filter_type}: {expr}")
 
     return errors, warnings
 
@@ -358,17 +348,28 @@ def get_corresponding_attribute_path(doc_path, base_doc_path, base_attr_path, at
 #         if not mismatches:
 #             print("\nAll sampled documents have corresponding and correctly aligned attribute files.")
 
-def validate_jsonl(file_path):
-    """Validate that the file is a valid JSONL and contains expected fields."""
-    expected_fields = {'id', 'text', 'source', 'created', 'added', 'version', 'metadata', 'attributes'}
-    unexpected_fields = set()
+
+def validate_jsonl(file_path, expected_fields):
+    """
+    Validate that the file is a valid JSONL and contains expected fields.
     
+    :param file_path: Path to the file (can be S3 or local)
+    :param expected_fields: Set of field names expected in each JSON object
+    :return: Tuple (is_valid, error_messages)
+    """
+    unexpected_fields = set()
+    error_messages = []
+    is_valid = True
+
     try:
         if file_path.startswith('s3://'):
             content = read_s3_file(file_path)
             f = io.StringIO(content)
         else:
-            f = open(file_path, 'r')
+            if file_path.endswith('.gz'):
+                f = gzip.open(file_path, 'rt')
+            else:
+                f = open(file_path, 'r')
         
         for i, line in enumerate(f, 1):
             try:
@@ -377,28 +378,58 @@ def validate_jsonl(file_path):
                 new_fields = set(data.keys()) - expected_fields
                 
                 if missing_fields:
-                    print(f"Line {i}: Missing expected fields: {missing_fields}")
+                    error_messages.append(f"Line {i}: Missing expected fields: {missing_fields}")
+                    is_valid = False
                 
                 if new_fields:
-                    print(f"Line {i}: Unexpected new fields: {new_fields}")
+                    # error_messages.append(f"Line {i}: Unexpected new fields: {new_fields}")
                     unexpected_fields.update(new_fields)
+                    is_valid = False
                 
             except json.JSONDecodeError:
-                print(f"Line {i}: Invalid JSON")
+                error_messages.append(f"Line {i}: Invalid JSON")
+                is_valid = False
     
     except Exception as e:
-        print(f"Error reading file {file_path}: {str(e)}")
+        error_messages.append(f"Error reading file {file_path}: {str(e)}")
+        is_valid = False
     
     finally:
         if not file_path.startswith('s3://'):
             f.close()
     
-    print("JSONL validation complete")
-    
     if unexpected_fields:
-        print(f"\nSummary of unexpected fields found across all lines:")
-        for field in sorted(unexpected_fields):
-            print(f"  - {field}")
+        error_messages.append(f"Unexpected fields found across the file: {unexpected_fields}")
+    
+    return is_valid, error_messages
+
+def count_file_lines(file_path):
+    """
+    Count the number of lines in a file (local or S3, compressed or not).
+    
+    :param file_path: Path to the file (can be S3 or local)
+    :return: Number of lines in the file
+    """
+    try:
+        if file_path.startswith('s3://'):
+            content = read_s3_file(file_path)
+            f = io.StringIO(content)
+        else:
+            if file_path.endswith('.gz'):
+                f = gzip.open(file_path, 'rt')
+            else:
+                f = open(file_path, 'r')
+        
+        line_count = sum(1 for _ in f)
+        
+        if not file_path.startswith('s3://'):
+            f.close()
+        
+        return line_count
+    
+    except Exception as e:
+        print(f"Error counting lines in file {file_path}: {str(e)}")
+        return -1
 
 def apply_jq_filter(data, filter_expr):
     """Apply a JQ filter to the data and return the result."""
@@ -543,6 +574,8 @@ def main(config_path, num_samples):
             else:
                 # Check if at least one object matches the pattern
                 matching_objects = list(list_s3_objects(doc_pattern))
+                # Filter out folders (objects ending with '/')
+                matching_objects = [obj for obj in matching_objects if not obj.endswith('/')]
                 if not matching_objects:
                     print(f"Warning: No objects found matching pattern: {doc_pattern}")
                 else:
@@ -598,20 +631,63 @@ def main(config_path, num_samples):
     for stream in config['streams']:
         doc_samples = sample_files(stream['documents'][0], num_samples)
         for doc_sample in doc_samples:
-            print(f"Validating file: {doc_sample}")
-            # validate_document_attribute_alignment(config, doc_sample)
-
-            validate_jsonl(doc_sample)
+            print(f"\nValidating file: {doc_sample}")
+            
+            # Count lines in the document
+            doc_line_count = count_file_lines(doc_sample)
+            if doc_line_count == -1:
+                print("Failed to count lines in document file. Skipping further validation for this file.")
+                continue
+            print(f"Document has {doc_line_count} lines")
+            
+            # Validate document JSONL
+            doc_expected_fields = {'id', 'text', 'source', 'created', 'added', 'version', 'metadata', 'attributes'}
+            is_valid, error_messages = validate_jsonl(doc_sample, doc_expected_fields)
+            if not is_valid:
+                print("Document validation failed:")
+                for error in error_messages:
+                    print(f"  {error}")
+            else:
+                print("Document validation passed")
             
             for attr_type in stream['attributes']:
                 attr_sample = get_corresponding_attribute_path(doc_sample, base_doc_path, base_attr_path, attr_type)
-                print(f"Validating attribute file: {attr_sample}")
-                # validate_jsonl(attr_sample)
-                print("Validate that attribute spans align with the document content...")
+                print(f"\nValidating attribute file: {attr_sample}")
+                
+                # Count lines in the attribute file
+                attr_line_count = count_file_lines(attr_sample)
+                if attr_line_count == -1:
+                    print("Failed to count lines in attribute file. Skipping further validation for this attribute.")
+                    continue
+                print(f"Attribute file has {attr_line_count} lines")
+                
+                # Check if the number of lines in document and attribute files match
+                if doc_line_count != attr_line_count:
+                    print(f"ERROR: Line count mismatch! Document has {doc_line_count} lines, but attribute file has {attr_line_count} lines.")
+                else:
+                    print("Line count check passed: Document and attribute file have the same number of lines.")
+                
+                # Validate attribute JSONL (you'll need to define the expected fields for attributes)
+                attr_expected_fields = {'id', 'attributes'}
+                is_valid, error_messages = validate_jsonl(attr_sample, attr_expected_fields)
+                if not is_valid:
+                    print("Attribute validation failed:")
+                    for error in error_messages:
+                        print(f"  {error}")
+                else:
+                    print("Attribute validation passed")
+
+                # attr_expected_fields = {'id', 'attributes'}
+            
+            # for attr_type in stream['attributes']:
+            #     attr_sample = get_corresponding_attribute_path(doc_sample, base_doc_path, base_attr_path, attr_type)
+            #     print(f"Validating attribute file: {attr_sample}")
+            #     # validate_jsonl(attr_sample)
+            #     print("Validate that attribute spans align with the document content...")
                 # Not working properly yet
-                mismatches = validate_attribute_spans(doc_sample, attr_sample)
-                print(f"Found {len(mismatches)} mismatches:")
-                print("\n".join(mismatches))
+                # mismatches = validate_attribute_spans(doc_sample, attr_sample)
+                # print(f"Found {len(mismatches)} mismatches:")
+                # print("\n".join(mismatches))
         
         # print("Applying filters to sampled data...")
         # if 'filter' in stream:
