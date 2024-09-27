@@ -14,8 +14,9 @@ use crate::s3_util;
 use crate::shard::shard_config::{CompressionConfig, WorkDirConfig};
 use crate::shard::{find_objects_matching_patterns, FileCache};
 use crate::wimbd::tokens::tokenize;
-
+use ahash::RandomState;
 use deduper_config::*;
+use std::hash::{BuildHasher, Hash, Hasher};
 
 pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let bloom_filter = BloomFilter::initialize(&config.bloom_filter).unwrap();
@@ -33,7 +34,22 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let threadpool = ThreadPool::new(config.processes);
     let failed_shard_count = AtomicU32::new(0);
     let failed_shard_count_ref = Arc::new(failed_shard_count);
+    let hash_builder = RandomState::with_seeds(0, 1, 2, 3);
+
     for p in paths {
+        let mut hasher = hash_builder.build_hasher();
+        p.hash(&mut hasher);
+        let hashed_path = hasher.finish();
+
+        if config.dedupe.file_partition.unwrap_or(false)
+            && hashed_path % config.dedupe.num_partitions.unwrap_or(1)
+                != config.dedupe.partition_index.unwrap_or(0)
+        {
+            log::info!("Hash miss for {}, skipping.", p);
+            continue;
+        }
+        log::info!("Processing {}", p);
+
         let path = p.clone();
         let work_dirs = config.work_dir.clone();
         let dedupe = config.dedupe.clone();
@@ -123,7 +139,15 @@ fn write_attributes(
 
     let attrs_location = {
         let attr_prefix = format!("/attributes/{}/", attr_key);
-        docs_location.replace("/documents/", &attr_prefix)
+        docs_location.replace(
+            &format!(
+                "/{}/",
+                dedupe_config
+                    .document_dir
+                    .unwrap_or(String::from("documents"))
+            ),
+            &attr_prefix,
+        )
     };
     let local_output = cache.prepare_output(&attrs_location, label_temp)?;
     let mut num_processed = 0;
@@ -546,6 +570,8 @@ pub mod deduper_config {
         pub skip_empty: Option<bool>,
         pub num_partitions: Option<u64>,
         pub partition_index: Option<u64>,
+        pub file_partition: Option<bool>,
+        pub document_dir: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
