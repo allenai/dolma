@@ -13,6 +13,7 @@ pub mod mixer;
 pub mod s3_util;
 pub mod shard;
 pub mod wimbd;
+pub mod log_pbar;
 
 use crate::deduper::deduper_config::DeduperConfig;
 use crate::mixer::mixer_config::MixerConfig;

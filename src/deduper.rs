@@ -1,11 +1,10 @@
 use human_bytes::human_bytes;
-use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::VecDeque;
 use std::io;
 use std::io::{BufRead, Write, Error, ErrorKind};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde_json::{json, Value};
@@ -19,17 +18,12 @@ use crate::s3_util;
 use crate::shard::shard_config::{CompressionConfig, WorkDirConfig};
 use crate::shard::{find_objects_matching_patterns, FileCache};
 use crate::wimbd::tokens::tokenize;
+use crate::log_pbar::LogProgressBar; 
 
 use deduper_config::*;
 
-
-fn build_pbar(num_items: usize, units: &str) -> ProgressBar {
-    let mut template = String::from(units);
-    template.push_str(" {human_pos}/{human_len} [{elapsed_precise}/{duration_precise}] [{wide_bar:.cyan/blue}]");
-    let pbar = ProgressBar::new(num_items as u64)
-        .with_style(
-            ProgressStyle::with_template(&template).unwrap()
-        );
+fn build_pbar(num_items: usize) -> LogProgressBar {
+    let mut pbar = LogProgressBar::new(num_items);
     pbar.inc(0);
     pbar
 }
@@ -57,7 +51,8 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let removed_bytes = AtomicUsize::new(0);
     let failed_shard_count = AtomicU32::new(0);
     let failed_shard_count_ref = Arc::new(failed_shard_count);
-    let pbar = build_pbar(paths.len(), "Paths");
+    let pbar = Arc::new(Mutex::new(build_pbar(paths.len())));
+    
     println!("Starting par iter thing");
     paths.par_iter()
         .for_each(|p| {
@@ -85,7 +80,7 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
                 seen_bytes.fetch_add(path_seen_bytes, Ordering::Relaxed);
                 removed_bytes.fetch_add(path_removed_bytes, Ordering::Relaxed);
             }
-        pbar.inc(1);
+        pbar.lock().unwrap().inc(1);
     });
 
     if config.bloom_filter.save_to_disk {
