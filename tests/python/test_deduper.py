@@ -1,4 +1,6 @@
 import json
+
+import json
 import shutil
 from contextlib import ExitStack
 from pathlib import Path
@@ -100,7 +102,7 @@ class TestDeduper(TestCase):
             with self.assertRaises(DolmaConfigError):
                 main(argv=["-c", f.name, "dedupe"])
 
-    def test_dedupe_bad_filepath(self):
+    def test_dedupe_good_filepath(self):
         with open(DEDUPE_GOOD_FILENAME, "r") as f:
             config = json.load(f)
 
