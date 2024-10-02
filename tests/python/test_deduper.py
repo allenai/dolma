@@ -1,6 +1,4 @@
 import json
-
-import json
 import shutil
 from contextlib import ExitStack
 from pathlib import Path
