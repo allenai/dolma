@@ -4,7 +4,7 @@ version = "1.0.5"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 dependencies = [
     "anyascii>=0.3.2",
     "blingfire==0.1.8",
