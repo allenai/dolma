@@ -134,9 +134,10 @@ class WarcProcessor(BaseParallelProcessor):
             extension = extension.replace(".gz", "").replace(".warc", "") + ".jsonl.gz"
             destination_path = join_path(prot, *base_dst[:-1], base_dst[-1] + extension)
 
-        with smart_open.open(source_path, "rb") as warc_file, smart_open.open(
-            destination_path, "wb"
-        ) as output_file:
+        with (
+            smart_open.open(source_path, "rb") as warc_file,
+            smart_open.open(destination_path, "wb") as output_file,
+        ):
             it = ArchiveIterator(warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo)
             for record in it:
                 if record.record_type == WarcRecordType.warcinfo:
