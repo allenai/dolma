@@ -196,12 +196,12 @@ exclude = '''
     | tests/work
 )
 '''
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py39", "py310", "py311", "py312"]
 
 
 [tool.isort]
 profile = "black"
-py_version = 38
+py_version = 39
 known_first_party = ["dolma"]
 known_local_folder = ["tests", "python"]
 extend_skip_glob = [
