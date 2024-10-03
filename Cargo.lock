@@ -987,7 +987,7 @@ dependencies = [
 
 [[package]]
 name = "dolma"
-version = "1.0.9"
+version = "1.0.14"
 dependencies = [
  "adblock",
  "ahash",
