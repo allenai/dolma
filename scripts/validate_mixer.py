@@ -10,11 +10,11 @@ import tempfile
 import os
 import shutil
 from botocore.exceptions import ClientError
-from tqdm import tqdm
 import json
 import gzip
 import io
 import itertools
+from collections import defaultdict
 
 
 s3_client = boto3.client('s3')
@@ -413,31 +413,38 @@ def check_attribute_name_typos(config_attributes, sample_attributes):
         for attr in extra_in_sample:
             print(f"  - {attr}")
 
-def validate_filters_and_check_typos(attr_file_path, filter_config):
-    """Validate filters and check for attribute name typos for a specific stream."""
-    print(f"Validating filters and checking typos for: {attr_file_path}")
+def validate_filters_and_check_typos(attr_file_paths, filter_config, stream_attributes):
+    """Validate filters and check for attribute name typos across multiple attribute files."""
+    print("Validating filters and checking typos across all attribute files")
     
-    # Extract filter attributes
+    # Extract filter attributes from config
     filter_attributes = extract_filter_attributes(filter_config)
-    print(f"Extracted filter attributes: {filter_attributes}")
+    # print(f"Extracted filter attributes from config: {filter_attributes}")
+    
+    # Sample and extract attributes from all files
+    all_sampled_attributes = set()
+    for attr_file_path in attr_file_paths:
+        sampled_attributes = sample_and_extract_attributes(attr_file_path)
+        all_sampled_attributes.update(sampled_attributes)
+        # print(f"Attributes found in {attr_file_path}: {sampled_attributes}")
+    
+    # Check if all mixer config filters are found
+    missing_attributes = filter_attributes - all_sampled_attributes
+    
+    if not missing_attributes:
+        print("All mixer config filters were found in the attribute files.")
+    else:
+        print("Warning: Some mixer config filters were not found in the attribute files.")
+        print("Missing attributes:")
+        for attr in missing_attributes:
+            print(f"  - {attr}")
+        
+        print("\nAll attributes found in files:")
+        for attr in sorted(all_sampled_attributes):
+            print(f"  - {attr}")
+        
+        print("\nThis detailed list is provided to help identify potential typos or misconfigurations.")
 
-    # Sample one line from the attribute file
-    sampled_lines = sample_file_lines(attr_file_path, num_lines=1)
-    print(f"Sampled line: {sampled_lines}")
-    if not sampled_lines:
-        return
-
-    # Extract attribute names from the sampled line
-    try:
-        data = json.loads(sampled_lines[0])
-        sample_attributes = set(data['attributes'].keys()) if 'attributes' in data else set()
-        print(f"Extracted attribute names from sample: {sample_attributes}")
-    except json.JSONDecodeError:
-        print(f"Error: Invalid JSON in sampled line from {attr_file_path}")
-        return
-
-    # Check for typos
-    check_attribute_name_typos(filter_attributes, sample_attributes)
 
 def extract_filter_attributes(filter_config):
     """Extract attribute names from filter expressions."""
@@ -448,6 +455,20 @@ def extract_filter_attributes(filter_config):
             matches = re.findall(r'@\.([a-zA-Z_][a-zA-Z0-9_]*)', filter_expr)
             filter_attributes.update(matches)
     return filter_attributes
+
+def sample_and_extract_attributes(attr_file_path, num_samples=5):
+    """Sample lines from the attribute file and extract unique attributes."""
+    sampled_attributes = set()
+    sampled_lines = sample_file_lines(attr_file_path, num_lines=num_samples)
+    
+    for line in sampled_lines:
+        try:
+            data = json.loads(line)
+            sampled_attributes.update(data['attributes'].keys())
+        except (json.JSONDecodeError, KeyError):
+            print(f"Error: Invalid JSON or missing 'attributes' key in sampled line from {attr_file_path}")
+    
+    return sampled_attributes
 
 def sample_file_lines(file_path, num_lines=1):
     """
@@ -574,6 +595,7 @@ def main(config_path, num_samples):
     print(f"Sampling and validating document-attribute alignment, filters, and attribute names...")
     for stream in config['streams']:
         # Extract filter attributes once per stream
+        attr_file_paths = []
         filter_attributes = set()
         if 'filter' in stream:
             include_filters = stream['filter'].get('include', [])
@@ -608,6 +630,7 @@ def main(config_path, num_samples):
             
             for attr_type in stream['attributes']:
                 attr_sample = get_corresponding_attribute_path(doc_sample, base_doc_path, base_attr_path, attr_type)
+                attr_file_paths.append(attr_sample)
                 print(f"\nValidating attribute file: {attr_sample}")
                 
                 # Count lines in the attribute file
@@ -633,11 +656,11 @@ def main(config_path, num_samples):
                 else:
                     print("Attribute validation passed")
 
-                # Validate filters and check for attribute name typos
-                if 'filter' in stream:
-                    print(f"Checking sample file for filters and typos: {attr_sample}")
-                    print(f"passing config: {stream['filter']}")
-                    validate_filters_and_check_typos(attr_sample, stream['filter'])
+            # Validate filters and check for attribute name typos
+            if 'filter' in stream:
+                # print(f"Checking sample file for filters and typos: {attr_sample}")
+                # print(f"passing config: {stream['filter']}")
+                validate_filters_and_check_typos(attr_file_paths, stream['filter'], stream['attributes'])
 
             
     # print("Applying JQ/JSONPath filters to sampled data...")
