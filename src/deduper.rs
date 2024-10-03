@@ -150,7 +150,7 @@ fn write_attributes(
             docs_location,
             &document_key
         );
-        panic!("Attribtue would be written to document location");
+        panic!("Attribute would be written to document location!");
     }
 
     let local_output = cache.prepare_output(&attrs_location, label_temp)?;
