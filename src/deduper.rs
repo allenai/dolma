@@ -135,18 +135,24 @@ fn write_attributes(
         );
     }
 
+    let document_key = dedupe_config
+        .document_dir
+        .unwrap_or(String::from("documents"));
+
     let attrs_location = {
         let attr_prefix = format!("/attributes/{}/", attr_key);
-        docs_location.replace(
-            &format!(
-                "/{}/",
-                dedupe_config
-                    .document_dir
-                    .unwrap_or(String::from("documents"))
-            ),
-            &attr_prefix,
-        )
+        docs_location.replace(&format!("/{}/", &document_key), &attr_prefix)
     };
+
+    if attrs_location == docs_location {
+        log::error!(
+            "{} does not contain {} . Not writing its attributes!",
+            docs_location,
+            &document_key
+        );
+        panic!("Attribtue would be written to document location");
+    }
+
     let local_output = cache.prepare_output(&attrs_location, label_temp)?;
     let mut num_processed = 0;
     let mut num_observed = 0;
