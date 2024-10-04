@@ -205,7 +205,8 @@ def merge_bins(
 
 class BaseBucketApi:
     def __init__(self):
-        self._total = self._sum = 0
+        self._total = 0
+        self._sum = 0.0
 
     @abstractproperty
     def full(self) -> bool:

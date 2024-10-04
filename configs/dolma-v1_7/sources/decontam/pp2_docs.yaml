@@ -1,0 +1,26 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/algebraic-stack/train/*.gz
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/algebraic-stack/test/*.gz
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/algebraic-stack/validation/*.gz
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/arxiv/train/*.gz
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/arxiv/test/*.gz
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/arxiv/validation/*.gz
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/open-web-math/train/*.gz
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/open-web-math/test/*.gz
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0/documents/open-web-math/validation/*.gz
+
+
+dedupe:
+  name: paloma_documents
+  documents:
+    attribute_name: paloma_documents_bff_duplicates
+    key: $.text
+  skip_empty: true
+
+bloom_filter:
+  read_only: true
+  estimated_doc_count: 188815
+  desired_false_positive_rate: 1e-15
+  file: ${oc.env:HOME}/perplexity/filters/paloma_documents.bin
+
+processes: 94

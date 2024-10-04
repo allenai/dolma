@@ -1,0 +1,86 @@
+
+documents:
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0000.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0001.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0002.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0003.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0004.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0005.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0006.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0007.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0008.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0009.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0010.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0011.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0012.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0013.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0014.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0015.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0016.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0017.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0018.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0019.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0020.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0021.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0022.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0023.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0024.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0025.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0026.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0027.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0028.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0029.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0030.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0031.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0032.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0033.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0034.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0035.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0036.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0037.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0038.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0039.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0040.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0041.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0042.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0043.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0044.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0045.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0046.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0047.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0048.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0049.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0050.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0051.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0052.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0053.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0054.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0055.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0056.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0057.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0058.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0059.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0060.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0061.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0062.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0063.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2014-42/cccc-CC-MAIN-2014-42-0064.json.gz
+
+dedupe:
+  name: dedupe_doc
+  documents:
+    attribute_name: dedupe_doc
+    key: $.text
+  skip_empty: true
+
+
+bloom_filter:
+  file: /tmp/dedupe-doc/cccc-CC-MAIN-2014-42/filter.bloom
+  read_only: false
+  estimated_doc_count: 100_000_000
+  desired_false_positive_rate: 1e-05
+
+processes: 188
+work_dir:
+  input: "${oc.env:HOME}/status/dedupe-doc-v1/cccc-CC-MAIN-2014-42/input"
+  output: "${oc.env:HOME}/status/dedupe-doc-v1/cccc-CC-MAIN-2014-42/output"

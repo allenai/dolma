@@ -1,10 +1,11 @@
 import copy
 import os
+import sys
 import tempfile
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Generator, List, Optional, Union
 
 from dolma.cli import field
 
@@ -45,3 +46,17 @@ def make_workdirs(config: WorkDirConfig) -> Generator[WorkDirConfig, None, None]
             config.output = stack.enter_context(tempfile.TemporaryDirectory(prefix="dolma-output-"))
 
         yield config
+
+
+def maybe_parse_from_stdin(paths: Union[str, List[str]]) -> List[str]:
+    """
+    If paths is a single string equal to "-", read from stdin and return a list of lines;
+    otherwise return the input as is.
+    """
+    if isinstance(paths, str):
+        paths = [paths]
+
+    if paths == ["-"]:
+        return [str(r.strip()) for r in sys.stdin]
+
+    return paths[:]
