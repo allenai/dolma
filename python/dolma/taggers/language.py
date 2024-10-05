@@ -182,17 +182,6 @@ class FastTextEnglishLanguageDocumentTagger(FastTextAllLanguagesDocumentTagger):
         return filtered_preds  # pyright: ignore
 
 
-@TaggerRegistry.add("ft_dolma_doc_eng")
-class FastTextEnglishDolmaTagger(FastTextEnglishLanguageDocumentTagger):
-    INCLUDE_NEGATIVE = False
-    PREDICT_ON_PARAGRAPHS = False
-
-    def predict_text(self, text: str) -> List[Tuple[str, float]]:
-        preds = super().predict_text(text)
-        filtered_preds = [(lang, score) for lang, score in preds if lang == "en" and score > 0.5]
-        return filtered_preds  # pyright: ignore
-
-
 @TaggerRegistry.add("ft_lang_id_en_only_v2")
 class FastTextEnglishOnlyLanguageDocumentTagger(FastTextEnglishLanguageDocumentTagger):
     INCLUDE_NEGATIVE = False

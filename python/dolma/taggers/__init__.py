@@ -11,7 +11,6 @@ from . import (
     quality,
     repetitions,
     sampling,
-    science,
     tokenizers,
     url,
 )

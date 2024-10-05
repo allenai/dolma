@@ -1,4 +1,5 @@
-# import multiprocessing
+import io
+import multiprocessing
 import tempfile
 from contextlib import ExitStack, contextmanager
 from typing import (
@@ -17,7 +18,7 @@ from typing import (
 import msgspec
 import smart_open
 
-from dolma.core.progressbar import BaseProgressBar
+from dolma.core.taggers import BaseTaggerWithMetadata
 
 from .data_types import (
     InputSpec,
@@ -28,9 +29,7 @@ from .data_types import (
 from .errors import DolmaFatalError, DolmaRetryableFailure, DolmaShardError
 from .parallel import BaseParallelProcessor, QueueType
 from .paths import delete_dir, join_path, make_relative, mkdir_p, split_glob, split_path
-from .profile import profiler
 from .registry import TaggerRegistry
-from .taggers import BaseTaggerWithMetadata
 from .utils import import_modules, make_variable_name
 
 # this placeholder gets used when a user has provided no experiment name, and we want to use taggers'
@@ -222,13 +221,20 @@ def _write_sample_to_streams(
         output_streams[stream_path].write(output)
 
 
-class TaggerProcessorProgessBar(BaseProgressBar):
-    files: int = 0
-    documents: int = 0
-
-
 class TaggerProcessor(BaseParallelProcessor):
-    PROGRESS_BAR_CLS = TaggerProcessorProgessBar
+    @classmethod
+    def increment_progressbar(  # type: ignore
+        cls,
+        queue: QueueType,  # queue must be the first argument, and it should be a positional-only argument
+        /,
+        files: int = 0,
+        documents: int = 0,
+    ) -> Dict[str, int]:
+        """We override this method to specify which units we want to keep track of in a progress bar.
+        Specifically, we keep track of files and documents in this example. Their default value must be zero."""
+
+        # we call the super method to increment the progress bar
+        return super().increment_progressbar(queue, files=files, documents=documents)
 
     @classmethod
     def process_single(
@@ -267,6 +273,13 @@ class TaggerProcessor(BaseParallelProcessor):
         # maximum numbers of lines to process
         steps: Union[int, None] = kwargs.get("steps", None)
 
+        # interval at which to update the progress bar; will double if it gets
+        # too full
+        update_interval = 1
+
+        # running document count; gets reset every time we update the progress bar
+        docs_cnt = 0
+
         # total number of documents processed
         total_docs_cnt = 0
 
@@ -283,7 +296,6 @@ class TaggerProcessor(BaseParallelProcessor):
             output_streams = stack.enter_context(
                 _make_output_streams(taggers_paths=taggers_paths, mode="wt", encoding="utf-8")
             )
-            pbar = stack.enter_context(TaggerProcessorProgessBar(queue))
             try:
                 for raw in in_stream:
                     row = decoder.decode(raw)
@@ -298,12 +310,22 @@ class TaggerProcessor(BaseParallelProcessor):
                             samples_collectors[tagger_name] = tagger.tag(row)
 
                     # increment the number of documents processed so far
-                    pbar.documents += 1
+                    docs_cnt += 1
                     total_docs_cnt += 1
 
                     if steps is not None and total_docs_cnt >= steps:
                         # if we have reached the maximum number of steps, we break
                         break
+
+                    if docs_cnt % update_interval == 0:
+                        # update the progress bar every 1000 documents to prevent
+                        # buffering
+                        cls.increment_progressbar(queue, documents=docs_cnt)
+                        docs_cnt = 0
+
+                        if queue.qsize() >= multiprocessing.cpu_count():
+                            # double the update interval if the queue is full
+                            update_interval *= 2
 
             except Exception as exp:
                 # handle any exception that might have occurred
@@ -317,8 +339,28 @@ class TaggerProcessor(BaseParallelProcessor):
                     else:
                         raise DolmaFatalError(msg) from exp
 
-            # increment the files progress bar
-            pbar.files += 1
+        # increment the files progress bar
+        cls.increment_progressbar(queue, files=1, documents=docs_cnt)
+
+
+@contextmanager
+def profiler(
+    output: Optional[str] = None,
+    sort_key: str = "tottime",
+    lines: int = 100,
+) -> Generator[None, None, None]:
+    import cProfile
+    import pstats
+
+    profile = cProfile.Profile()
+    profile.enable()
+    yield
+    profile.disable()
+
+    with ExitStack() as stack:
+        output_stream = io.StringIO() if output is None else stack.enter_context(smart_open.open(output, "w"))
+        ps = pstats.Stats(profile, stream=output_stream).sort_stats(sort_key)
+        ps.print_stats(lines)
 
 
 @contextmanager
@@ -425,7 +467,7 @@ def create_and_run_tagger(
             debug=debug or profile_enable,  # if profile is true, debug must be true
             seed=seed,
             ignore_existing=ignore_existing,
-            backoff_max_tries=retries_on_error,
+            retries_on_error=retries_on_error,
             num_processes=num_processes,
         )
 

@@ -25,7 +25,6 @@ from typing import (
     get_origin,
 )
 
-from necessary import necessary
 from omegaconf import MISSING, DictConfig, ListConfig
 from omegaconf import OmegaConf as om
 from omegaconf.errors import OmegaConfBaseException
@@ -34,7 +33,13 @@ from rich.syntax import Syntax
 
 from ..core.errors import DolmaConfigError
 
-__all__ = ["BaseCli", "field", "make_parser", "namespace_to_nested_omegaconf", "print_config"]
+__all__ = [
+    "BaseCli",
+    "field",
+    "make_parser",
+    "namespace_to_nested_omegaconf",
+    "print_config",
+]
 
 
 T = TypeVar("T", bound=Any)
@@ -132,15 +137,6 @@ def _make_nested_dict(key: str, value: Any, d: Optional[Dict[str, Any]] = None) 
     return d
 
 
-def to_native_types(
-    obj: Any, resolve: bool = True, throw_on_missing: bool = True, enum_to_str: bool = True
-) -> Any:
-    """Converts an OmegaConf object to native types (dicts, lists, etc.)"""
-    if isinstance(obj, DictConfig) or isinstance(obj, ListConfig):
-        return om.to_container(obj, resolve=resolve, throw_on_missing=throw_on_missing, enum_to_str=enum_to_str)
-    return obj
-
-
 def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: Optional[dict] = None) -> T:
     nested_config_dict: Dict[str, Any] = {}
     for key, value in vars(args).items():
@@ -150,13 +146,7 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
         om.create(config or {}), om.create(nested_config_dict)
     )  # pyright: ignore (pylance is confused because om.create might return a DictConfig or a ListConfig)
 
-    # resolve any interpolations in the config
-    om.resolve(untyped_config)
-
-    # create structured config from cli dataclass
     base_structured_config: DictConfig = om.structured(structured)
-
-    # merge with options parsed from config file and
     merged_config = om.merge(base_structured_config, untyped_config)
 
     # check for type
@@ -209,65 +199,3 @@ class BaseCli(Generic[D]):
     @classmethod
     def run(cls, parsed_config: D):
         raise NotImplementedError("Abstract method; must be implemented in subclass")
-
-
-def patch_old_omegaconf():
-    """Monkey patch omegaconf below version 2.3.0 to support custom resolver returning
-    lists or dicts. Applies patch https://github.com/omry/omegaconf/pull/1093"""
-
-    if necessary(("omegaconf", "2.4.0"), soft=True):
-        # no need to patch
-        return
-
-    if getattr(patch_old_omegaconf, "__patched__", False):
-        # already patched
-        return
-
-    from omegaconf import _impl  # pylint: disable=import-outside-toplevel
-    from omegaconf import (  # pylint: disable=import-outside-toplevel
-        Container,
-        Node,
-        ValueNode,
-    )
-    from omegaconf._utils import (  # noqa: F401  # pylint: disable=import-outside-toplevel
-        _ensure_container,
-        _get_value,
-        is_primitive_container,
-        is_structured_config,
-    )
-    from omegaconf.errors import (  # pylint: disable=import-outside-toplevel
-        InterpolationToMissingValueError,
-    )
-    from omegaconf.nodes import (  # pylint: disable=import-outside-toplevel
-        InterpolationResultNode,
-    )
-
-    def _resolve_container_value(cfg: Container, key: Any) -> None:
-        node = cfg._get_child(key)  # pylint: disable=protected-access
-        assert isinstance(node, Node)
-        if node._is_interpolation():  # pylint: disable=protected-access
-            try:
-                resolved = node._dereference_node()  # pylint: disable=protected-access
-            except InterpolationToMissingValueError:
-                node._set_value(MISSING)  # pylint: disable=protected-access
-            else:
-                if isinstance(resolved, Container):
-                    _impl._resolve(resolved)  # pylint: disable=protected-access
-                if isinstance(resolved, InterpolationResultNode):
-                    resolved_value = _get_value(resolved)
-                    if is_primitive_container(resolved_value) or is_structured_config(resolved_value):
-                        resolved = _ensure_container(resolved_value)
-                if isinstance(resolved, Container) and isinstance(node, ValueNode):
-                    cfg[key] = resolved
-                else:
-                    node._set_value(_get_value(resolved))  # pylint: disable=protected-access
-        else:
-            _impl._resolve(node)  # pylint: disable=protected-access
-
-    # set new function and mark as patched
-    setattr(_impl, "_resolve_container_value", _resolve_container_value)
-    setattr(patch_old_omegaconf, "__patched__", True)
-
-
-# actually executes the patch
-patch_old_omegaconf()

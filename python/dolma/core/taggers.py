@@ -17,7 +17,9 @@ from .data_types import (
     InputSpecWithMetadata,
     TaggerOutputDictType,
 )
-from .utils import format_span_output
+
+# digits after the decimal point
+TAGGER_SCORE_PRECISION = 5
 
 
 class BaseTagger:
@@ -44,7 +46,8 @@ class BaseTagger:
     def group_output(self, doc_result: DocResult) -> TaggerOutputDictType:
         tagger_output: TaggerOutputDictType = {field: [] for field in self.defaults}
         for span in doc_result.spans:
-            tagger_output.setdefault(span.type, []).append(format_span_output(span))
+            output = (span.start, span.end, round(float(span.score), TAGGER_SCORE_PRECISION))
+            tagger_output.setdefault(span.type, []).append(output)
         return tagger_output
 
     def tag(self, row: InputSpec) -> TaggerOutputDictType:

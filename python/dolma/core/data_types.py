@@ -6,13 +6,10 @@ Data types assumed by Filters.
 
 """
 
-import functools
-import re
-from hashlib import sha1
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple
 
 from msgspec import Struct
-from typing_extensions import Self, TypeAlias
+from typing_extensions import TypeAlias
 
 TaggerOutputValueType: TypeAlias = Tuple[int, int, float]
 TaggerOutputType: TypeAlias = List[TaggerOutputValueType]
@@ -20,17 +17,12 @@ TaggerOutputDictType: TypeAlias = Dict[str, TaggerOutputType]
 
 
 class InputSpec(Struct):
+    id: str
     text: str
-    id: str = ""
     source: str = ""
-    created: Optional[Any] = ""
-    added: Optional[Any] = ""
+    created: str = ""
+    added: str = ""
     version: Optional[str] = None
-
-    def __post_init__(self):
-        if not self.id:
-            (h := sha1()).update(self.text.encode())
-            self.id = h.hexdigest()
 
 
 class InputSpecWithMetadata(InputSpec):
@@ -48,38 +40,27 @@ class OutputSpec(Struct):
 
 
 class Document:
-    __slots__ = "source", "version", "id", "text", "added", "created"
-    spec_cls: Type[InputSpec] = InputSpec
+    __slots__ = "source", "version", "id", "text"
 
-    def __init__(
-        self,
-        source: str,
-        id: str,
-        text: str,
-        version: Optional[str] = None,
-        added: Optional[str] = None,
-        created: Optional[str] = None,
-    ) -> None:
+    def __init__(self, source: str, id: str, text: str, version: Optional[str] = None) -> None:
         self.source = source
         self.version = version
         self.id = id
         self.text = text
-        self.added = added
-        self.created = created
 
     @classmethod
-    def from_spec(cls, spec: InputSpec) -> Self:
-        return cls(**{k: v for k in cls.__slots__ if (v := getattr(spec, k)) is not None})
+    def from_spec(cls, spec: InputSpec) -> "Document":
+        return Document(source=spec.source, version=spec.version, id=spec.id, text=spec.text)
 
     def to_spec(self) -> InputSpec:
-        return self.spec_cls(**{k: v for k in self.__slots__ if (v := getattr(self, k)) is not None})
+        return InputSpec(source=self.source, version=self.version, id=self.id, text=self.text)
 
     @classmethod
-    def from_json(cls, d: Dict[str, Any]) -> Self:
-        return cls(**{k: v for k in cls.__slots__ if (v := d.get(k)) is not None})
+    def from_json(cls, d: Dict[str, Any]) -> "Document":
+        return Document(source=d["source"], version=d["version"], id=d["id"], text=d["text"])
 
     def to_json(self) -> Dict[str, Any]:
-        return {k: v for k in self.__slots__ if (v := getattr(self, k)) is not None}
+        return {"source": self.source, "version": self.version, "id": self.id, "text": self.text}
 
     def __str__(self) -> str:
         attributes_string = ",".join([f"{k}:{repr(v)}" for k, v in self.to_json().items()])
@@ -87,12 +68,49 @@ class Document:
 
 
 class DocumentWithMetadata(Document):
-    __slots__ = Document.__slots__ + ("metadata",)
-    spec_cls = InputSpecWithMetadata
+    __slots__ = ("metadata",)
 
     def __init__(self, *args, metadata: Optional[Dict[str, Any]] = None, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.metadata = metadata or {}
+
+    @classmethod
+    def from_spec(cls, spec: InputSpecWithMetadata) -> "DocumentWithMetadata":
+        return DocumentWithMetadata(
+            source=spec.source,
+            version=spec.version,
+            id=spec.id,
+            text=spec.text,
+            metadata=spec.metadata,
+        )
+
+    def to_spec(self) -> InputSpecWithMetadata:
+        return InputSpecWithMetadata(
+            source=self.source,
+            version=self.version,
+            id=self.id,
+            text=self.text,
+            metadata=self.metadata,
+        )
+
+    @classmethod
+    def from_json(cls, d: Dict) -> "DocumentWithMetadata":
+        return DocumentWithMetadata(
+            source=d["source"],
+            version=d["version"],
+            id=d["id"],
+            text=d["text"],
+            metadata=d["metadata"],
+        )
+
+    def to_json(self) -> Dict:
+        return {
+            "source": self.source,
+            "version": self.version,
+            "id": self.id,
+            "text": self.text,
+            "metadata": self.metadata,
+        }
 
     def __str__(self) -> str:
         repr_ = super().__str__()
@@ -100,23 +118,60 @@ class DocumentWithMetadata(Document):
 
 
 class DocumentWithMetadataAndAttributes(DocumentWithMetadata):
-    __slots__ = DocumentWithMetadata.__slots__ + ("attributes",)
-    spec_cls = InputSpecWithMetadataAndAttributes
-
     def __init__(
         self, *args, attributes: Optional[Dict[str, List[Tuple[int, int, float]]]] = None, **kwargs
     ) -> None:
         super().__init__(*args, **kwargs)
         self.attributes = attributes or {}
 
+    @classmethod
+    def from_spec(cls, spec: InputSpecWithMetadataAndAttributes) -> "DocumentWithMetadataAndAttributes":
+        return DocumentWithMetadataAndAttributes(
+            source=spec.source,
+            version=spec.version,
+            id=spec.id,
+            text=spec.text,
+            metadata=spec.metadata,
+            attributes=spec.attributes,
+        )
+
+    @classmethod
+    def from_json(cls, d: Dict) -> "DocumentWithMetadataAndAttributes":
+        return DocumentWithMetadataAndAttributes(
+            source=d["source"],
+            version=d["version"],
+            id=d["id"],
+            text=d["text"],
+            metadata=d["metadata"],
+            attributes=d["attributes"],
+        )
+
+    def to_json(self) -> Dict:
+        return {
+            "source": self.source,
+            "version": self.version,
+            "id": self.id,
+            "text": self.text,
+            "metadata": self.metadata,
+            "attributes": self.attributes,
+        }
+
+    def to_spec(self) -> InputSpecWithMetadataAndAttributes:
+        return InputSpecWithMetadataAndAttributes(
+            source=self.source,
+            version=self.version,
+            id=self.id,
+            text=self.text,
+            metadata=self.metadata,
+            attributes=self.attributes,
+        )
+
     def __str__(self) -> str:
         return super().__str__().rstrip(")") + f",attributes={'...' if self.attributes else 'none'})"
 
 
 class Span:
-    __slots__ = "start", "end", "type", "score", "experiment", "tagger", "location"
-
-    __selectors_cache__: Dict[str, Callable[["Document"], str]] = {}
+    __slots__ = "start", "end", "type", "score", "experiment", "tagger"
 
     def __init__(
         self,
@@ -126,7 +181,6 @@ class Span:
         score: float = 1.0,
         experiment: Optional[str] = None,
         tagger: Optional[str] = None,
-        location: str = "text",
     ):
         self.start = start
         self.end = end
@@ -134,58 +188,15 @@ class Span:
         self.score = float(score)
         self.experiment = experiment
         self.tagger = tagger
-        self.location = location
-
-    def _make_selector(self) -> Callable[["Document"], str]:
-        if self.location not in self.__selectors_cache__:
-
-            def _nested_selector(
-                doc: Any,
-                index: Optional[int] = None,
-                key: Optional[str] = None,
-                previous: Optional[Callable] = None,
-                dict_like: bool = True,
-            ) -> Any:
-                prev = previous(doc) if previous is not None else doc
-                if dict_like or index is not None:
-                    assert (key or index) is not None, "Either key or index must be set"
-                    return prev[key or index]
-                elif key is not None:
-                    return getattr(prev, key)
-                else:
-                    raise ValueError("Either key or index must be set")
-
-            matches = list(
-                re.finditer(r"((^|\.)(?P<key>[a-zA-Z][a-zA-Z0-9]*))|(\[(?P<index>[0-9]+)\])", self.location)
-            )
-            assert len(matches) > 0, f"Invalid location: `{self.location}`"
-            init_match, *rest_matches = matches
-
-            fn = functools.partial(
-                _nested_selector,
-                index=int(init_match.group("index")) if init_match.group("index") is not None else None,
-                key=init_match.group("key"),
-                dict_like=False,
-            )
-            for match in rest_matches[::-1]:
-                fn = functools.partial(
-                    _nested_selector,
-                    index=int(match.group("index")) if match.group("index") is not None else None,
-                    key=match.group("key"),
-                    previous=fn,
-                )
-            self.__selectors_cache__[self.location] = fn
-
-        return self.__selectors_cache__[self.location]
 
     def mention(self, text: str, window: int = 0) -> str:
         return text[max(0, self.start - window) : min(len(text), self.end + window)]
 
-    def select(self, doc: Document, left: int = 0, right: int = 0) -> str:
-        return self._make_selector()(doc)[self.start - left : self.end + right]
+    def select(self, doc: Document) -> str:
+        return doc.text[self.start : self.end]
 
     @classmethod
-    def from_spec(cls, attribute_name: str, attribute_value: TaggerOutputValueType) -> Self:
+    def from_spec(cls, attribute_name: str, attribute_value: TaggerOutputValueType) -> "Span":
         if "__" in attribute_name:
             # bff tagger has different name
             exp_name, tgr_name, attr_type = attribute_name.split("__", 2)
@@ -193,7 +204,7 @@ class Span:
             exp_name = tgr_name = attr_type = attribute_name
 
         start, end, score = attribute_value
-        return cls(
+        return Span(
             start=int(start),
             end=int(end),
             type=attr_type,
@@ -203,18 +214,19 @@ class Span:
         )
 
     def to_spec(self) -> Tuple[str, TaggerOutputValueType]:
-        from .utils import format_span_key, format_span_output
-
         assert self.experiment is not None, "Experiment name must be set to convert to spec"
         assert self.tagger is not None, "Tagger name must be set to convert to spec"
-        return format_span_key(self.experiment, self.tagger, self), format_span_output(self)
+        return (
+            f"{self.experiment}__{self.tagger}__{self.type}",
+            (self.start, self.end, self.score),
+        )
 
     def __len__(self) -> int:
         return self.end - self.start
 
     @classmethod
-    def from_json(cls, di: Dict) -> Self:
-        return cls(**{k: v for k, v in di.items() if k in cls.__slots__})
+    def from_json(cls, di: Dict) -> "Span":
+        return Span(start=di["start"], end=di["end"], type=di["type"], score=di["score"])
 
     def to_json(self, text: Optional[str] = None, window: int = 0) -> dict:
         span_repr = {"start": self.start, "end": self.end, "type": self.type, "score": self.score}
