@@ -6,7 +6,7 @@ Data types assumed by Filters.
 
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 from msgspec import Struct
 from typing_extensions import TypeAlias
@@ -20,7 +20,7 @@ class InputSpec(Struct):
     id: str
     text: str
     source: str = ""
-    created: Union[str, int] = None
+    created: str = ""
     added: str = ""
     version: Optional[str] = None
 
