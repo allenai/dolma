@@ -15,6 +15,7 @@ import gzip
 import io
 import itertools
 from collections import defaultdict
+import subprocess
 
 
 s3_client = boto3.client('s3')
@@ -176,26 +177,40 @@ def list_s3_objects(s3_path):
                 yield f"s3://{bucket}/{obj['Key']}"
 
 def read_s3_file(s3_path):
-    """Read a file from S3."""
+    """Read a file from S3, handling both regular and gzipped files."""
     bucket, key = s3_path[5:].split('/', 1)
-    response = s3_client.get_object(Bucket=bucket, Key=key)
-    content = response['Body'].read()
-    
-    if key.endswith('.gz'):
-        content = gzip.decompress(content)
-    
-    return content.decode('utf-8')
+    try:
+        response = s3_client.get_object(Bucket=bucket, Key=key)
+        content = response['Body'].read()
+        
+        if key.endswith('.gz'):
+            content = gzip.decompress(content)
+        
+        return content.decode('utf-8')
+    except ClientError as e:
+        if e.response['Error']['Code'] == 'NoSuchKey':
+            print(f"Error: The file {s3_path} does not exist in the S3 bucket.")
+        else:
+            print(f"Error accessing S3 file {s3_path}: {str(e)}")
+        return None
+    except Exception as e:
+        print(f"Unexpected error reading file {s3_path}: {str(e)}")
+        return None
 
 def open_file(file_path):
     """Open a file, handling both local and S3 paths, and compression."""
-    if file_path.startswith('s3://'):
-        content = read_s3_file(file_path)
-        return io.StringIO(content)
-    else:
-        if file_path.endswith('.gz'):
-            return gzip.open(file_path, 'rt')
+    try:
+        if file_path.startswith('s3://'):
+            content = read_s3_file(file_path)
+            return io.StringIO(content)
         else:
-            return open(file_path, 'r')
+            if file_path.endswith('.gz'):
+                return gzip.open(file_path, 'rt')
+            else:
+                return open(file_path, 'r')
+    except IOError as e:
+        print(f"Error opening file {file_path}: {str(e)}")
+        return None
 
 def get_base_path(s3_path):
     """Extract the base path from an S3 path with wildcards."""
@@ -509,6 +524,100 @@ def sample_file_lines(file_path, num_lines=1):
         print(f"Error type: {type(e)}")
         print(f"File path type: {type(file_path)}")
         return None
+    
+
+def execute_filter_commands(doc_samples, attr_samples_dict, filter_config, num_lines=100):
+    """
+    Execute filter commands on sampled lines from documents and their attributes.
+    
+    Args:
+    doc_samples (list): List of paths to sampled document files
+    attr_samples_dict (dict): Dictionary of attribute types to lists of attribute file paths
+    filter_config (dict): Filter configuration containing include and exclude filters
+    num_lines (int): Number of lines to sample from each file
+    
+    Returns:
+    dict: Results of filter command execution
+    """
+    print(f"Executing filter commands on {len(doc_samples)} sampled documents, up to {num_lines} lines each")
+
+    results = {
+        'include': {'passed': 0, 'total': 0, 'errors': []},
+        'exclude': {'passed': 0, 'total': 0, 'errors': []}
+    }
+
+    for doc_index, doc_path in enumerate(doc_samples):
+        doc_lines = sample_file_lines(doc_path, num_lines)
+        if doc_lines is None:
+            print(f"Skipping document {doc_path} due to sampling error")
+            continue
+
+        for line_index, doc_line in enumerate(doc_lines):
+            try:
+                doc = json.loads(doc_line)
+                combined_doc = doc.copy()
+                combined_doc['attributes'] = {}
+
+                # Process all attribute files
+                for attr_type, attr_paths in attr_samples_dict.items():
+                    attr_path = attr_paths[doc_index]
+                    attr_lines = sample_file_lines(attr_path, num_lines)
+                    if attr_lines is None:
+                        print(f"Skipping attribute {attr_path} due to sampling error")
+                        continue
+                    if line_index < len(attr_lines):
+                        attr = json.loads(attr_lines[line_index])
+                        combined_doc['attributes'].update(attr['attributes'])
+
+                for filter_type in ['include', 'exclude']:
+                    for filter_expr in filter_config.get(filter_type, []):
+                        results[filter_type]['total'] += 1
+                        try:
+                            if filter_expr.startswith('$'):
+                                # JSONPath
+                                jsonpath_expr = parse_jsonpath(filter_expr)
+                                matches = jsonpath_expr.find(combined_doc)
+                            else:
+                                # JQ
+                                matches = jq.compile(filter_expr).input(combined_doc).all()
+
+                            if matches:
+                                results[filter_type]['passed'] += 1
+                            else:
+                                results[filter_type]['errors'].append(f"Filter '{filter_expr}' did not match for document {doc_path}, line {line_index+1}")
+                        except Exception as e:
+                            results[filter_type]['errors'].append(f"Error executing filter '{filter_expr}' on document {doc_path}, line {line_index+1}: {str(e)}")
+
+            except json.JSONDecodeError as e:
+                print(f"Error decoding JSON in file {doc_path}, line {line_index+1}: {str(e)}")
+            except Exception as e:
+                print(f"Error processing line {line_index+1} in file {doc_path}: {str(e)}")
+
+    return results
+
+def sample_documents_with_attributes(doc_file_paths, attr_file_paths, num_samples=100):
+    sampled_docs = []
+    for doc_path, attr_paths in zip(doc_file_paths, attr_file_paths):
+        doc_lines = sample_file_lines(doc_path, num_samples)
+        if not doc_lines:
+            continue
+        
+        attr_samples = {}
+        for attr_path in attr_paths:
+            attr_lines = sample_file_lines(attr_path, num_samples)
+            if attr_lines:
+                attr_name = os.path.basename(attr_path).split('.')[0]  # Extract attribute name from file name
+                attr_samples[attr_name] = attr_lines
+
+        for i, doc_line in enumerate(doc_lines):
+            doc = json.loads(doc_line)
+            for attr_name, attr_lines in attr_samples.items():
+                if i < len(attr_lines):
+                    doc[attr_name] = json.loads(attr_lines[i])
+            sampled_docs.append(doc)
+
+    return sampled_docs
+
 
 def main(config_path, num_samples):
     print("Loading configuration file...")
@@ -595,6 +704,7 @@ def main(config_path, num_samples):
     print(f"Sampling and validating document-attribute alignment, filters, and attribute names...")
     for stream in config['streams']:
         # Extract filter attributes once per stream
+        doc_file_paths = stream['documents']
         attr_file_paths = []
         filter_attributes = set()
         if 'filter' in stream:
@@ -608,6 +718,14 @@ def main(config_path, num_samples):
 
 
         doc_samples = sample_files(stream['documents'][0], num_samples)
+
+        attr_samples_dict = {}
+        for attr_type in stream['attributes']:
+            attr_samples = []
+            for doc_sample in doc_samples:
+                attr_sample = get_corresponding_attribute_path(doc_sample, base_doc_path, base_attr_path, attr_type)
+                attr_samples.append(attr_sample)
+            attr_samples_dict[attr_type] = attr_samples
         for doc_sample in doc_samples:
             print(f"\nValidating file: {doc_sample}")
             
@@ -661,6 +779,18 @@ def main(config_path, num_samples):
                 # print(f"Checking sample file for filters and typos: {attr_sample}")
                 # print(f"passing config: {stream['filter']}")
                 validate_filters_and_check_typos(attr_file_paths, stream['filter'], stream['attributes'])
+
+
+                # Execute filter commands and analyze results
+                filter_execution_results = execute_filter_commands(doc_samples, attr_samples_dict, stream['filter'], num_lines=100)
+                print("\nFilter Execution Results:")
+                for filter_type, results in filter_execution_results.items():
+                    print(f"  {filter_type.capitalize()} filters:")
+                    print(f"    Passed: {results['passed']}/{results['total']}")
+                    if results['errors']:
+                        print("    Errors:")
+                        for error in results['errors']:
+                            print(f"      - {error}")
 
             
     # print("Applying JQ/JSONPath filters to sampled data...")
