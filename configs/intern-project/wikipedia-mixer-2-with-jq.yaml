@@ -1,0 +1,24 @@
+streams:
+  - name: mixer-validation
+    documents:
+      - s3://ai2-oe-data/mashai/mixer-validation/output/v0/documents/*.gz
+    output:
+      path: s3://ai2-oe-data/mashai/mixer-validation/output/
+      max_size_in_bytes: 1_000_000_000
+    attributes:
+      - wikipedia_tagging
+      - bff_duplicate_paragraph_spans
+    filter:
+      syntax: jq
+      include:
+        - '.attributes.wikipedia_tagging__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 100000'
+      exclude:
+        - '.attributes.wikipedia_tagging__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 50'
+        - '.attributes.wikipedia_tagging__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0][2] <= 0.5'
+        - '.attributes.bff_duplicate_paragraph_spans and .attributes.bff_duplicate_paragraph_spans[0] and .attributes.bff_duplicate_paragraph_spans[0][2] >= 1.0'
+    span_replacement:
+      - span: '.attributes.wikipedia_tagging__cld2_en_paragraph_with_doc_score_v2__not_en'
+        min_score: 0.1
+        replacement: ''
+
+processes: 4

@@ -1,0 +1,23 @@
+streams:
+  - name: dclm
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/*
+
+    attributes: &attributes
+      - fineweb-edu-classifier
+
+    output: &output
+      max_size_in_bytes: 4_000_000_000
+      path: s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile_fw2/documents
+      min_text_length: 100
+
+    compression:
+      input: zst
+      output: zst
+
+    filter: &filter
+      exclude:
+        - '(.attributes."HuggingFaceFW_fineweb-edu-classifier_score" == null) or (.attributes."HuggingFaceFW_fineweb-edu-classifier_score"[0][-1] < 2.0)'
+      syntax: jq
+
+processes: 32

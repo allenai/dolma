@@ -1,0 +1,26 @@
+streams:
+  - name: cc_tiny_subset_only_english
+    documents:
+      - s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset/documents/**/*.jsonl.gz
+
+    attributes:
+      - cc_tiny_subset_only_english
+
+    output:
+      path: s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset/mixed-output-english-only
+      max_size_in_bytes: 4294967296  # 4GB, adjust as needed
+      discard_fields:
+        - attributes
+
+    filter:
+      include: []
+      exclude:
+        # Language filter (using both cld2 and fasttext)
+        - "$.attributes[?(@.cc_tiny_subset_only_english__cld2_en_paragraph_with_doc_score_v2__doc_en && @.cc_tiny_subset_only_english__cld2_en_paragraph_with_doc_score_v2__doc_en[0] && @.cc_tiny_subset_only_english__cld2_en_paragraph_with_doc_score_v2__doc_en[0][2] < 0.8)]"
+        - "$.attributes[?(@.cc_tiny_subset_only_english__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en && @.cc_tiny_subset_only_english__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0] && @.cc_tiny_subset_only_english__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0][2] < 0.8)]"
+
+work_dir:
+  input: "/tmp/cc_tiny_subset_only_english_mix/input"
+  output: "/tmp/cc_tiny_subset_only_english_mix/output"
+
+processes: 16
