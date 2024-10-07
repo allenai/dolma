@@ -31,3 +31,7 @@ def coqa() -> Task:
         targets.append(Target(selector=selector, label=qa_label))
 
     return Task(name="coqa", datasets=datasets, targets=targets)
+
+
+def jeopardy() -> Task:
+    ...
