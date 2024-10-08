@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.table import Table
 
 from dolma.cli import BaseCli, field, print_config
-from dolma.cli.shared import WorkDirConfig, make_workdirs
+from dolma.cli.shared import CompressionConfig, WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
@@ -82,6 +82,13 @@ class TaggerConfig:
         default=False,
         help="Whether to run in debug mode.",
     )
+    compression: CompressionConfig = field(
+        default=CompressionConfig(),
+        help=(
+            "Compression configuration for input and output; if not provided, "
+            "compression will inferred from file extension"
+        ),
+    )
     profile: ProfilerConfig = field(
         default=ProfilerConfig(),
         help="Whether to run in profiling mode.",
@@ -140,6 +147,8 @@ class TaggerCli(BaseCli):
                 profile_output=parsed_config.profile.output,
                 profile_steps=parsed_config.profile.steps,
                 profile_sort_key=parsed_config.profile.sort_key,
+                compression_input=parsed_config.compression.input,
+                compression_output=parsed_config.compression.output,
             )
 
 

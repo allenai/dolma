@@ -273,6 +273,10 @@ class TaggerProcessor(BaseParallelProcessor):
         # maximum numbers of lines to process
         steps: Union[int, None] = kwargs.get("steps", None)
 
+        # compression configuration
+        compression_input = kwargs.get("compression_input", None)
+        compression_output = kwargs.get("compression_output", None)
+
         # interval at which to update the progress bar; will double if it gets
         # too full
         update_interval = 1
@@ -292,9 +296,13 @@ class TaggerProcessor(BaseParallelProcessor):
             decoder = msgspec.json.Decoder(InputSpec)
 
         with ExitStack() as stack:
-            in_stream = stack.enter_context(smart_open.open(source_path, "rt", encoding="utf-8"))
+            in_stream = stack.enter_context(
+                smart_open.open(source_path, "rt", encoding="utf-8", compression=compression_input)
+            )
             output_streams = stack.enter_context(
-                _make_output_streams(taggers_paths=taggers_paths, mode="wt", encoding="utf-8")
+                _make_output_streams(
+                    taggers_paths=taggers_paths, mode="wt", encoding="utf-8", compression=compression_output
+                )
             )
             try:
                 for raw in in_stream:
@@ -392,6 +400,8 @@ def create_and_run_tagger(
     profile_steps: Optional[int] = None,
     profile_sort_key: str = "tottime",
     profile_lines: int = 100,
+    compression_input: Optional[str] = None,
+    compression_output: Optional[str] = None,
 ):
     """This function creates a tagger and runs it on a list of documents.
 
@@ -423,7 +433,25 @@ def create_and_run_tagger(
         profile_steps (Optional[int], optional): Number of steps to profile; if not provided, all steps will
             be profiled. Defaults to None.
         profile_sort_key (str, optional): Sort key for the profiling output. Defaults to 'tottime'.
+        compression_input (Optional[str], optional): Compression algorithm to use for input files. If None,
+            compression will be inferred from the input file extension. Defaults to None.
+        compression_output (Optional[str], optional): Compression algorithm to use for output files. If None,
+            compression will be inferred from the output file extension. Defaults to None.
     """
+
+    # get a list of supported compression types
+    compression_type = smart_open.compression.get_supported_compression_types()
+
+    # if compression is not provided, set it to "infer_from_extension"; this is to maintain consistency with
+    # how compression is specified in the mixer/deduper code
+    compression_input = compression_input or "infer_from_extension"
+    compression_output = compression_output or "infer_from_extension"
+
+    # check if compression is supported
+    if compression_input not in compression_type:
+        raise ValueError(f"Compression {compression_input} is not supported")
+    if compression_output not in compression_type:
+        raise ValueError(f"Compression {compression_output} is not supported")
 
     # before pre-caching taggers, import any taggers modules
     if taggers_modules is not None:
@@ -486,4 +514,6 @@ def create_and_run_tagger(
                 taggers_modules=taggers_modules,
                 skip_on_failure=skip_on_failure,
                 steps=profile_steps,
+                compression_input=compression_input,
+                compression_output=compression_output,
             )
