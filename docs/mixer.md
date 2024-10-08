@@ -25,7 +25,7 @@ The following parameters are supported either via CLI (e.g. `dolma mix --paramet
 |`streams[].span_replacement`|No| A list of objects specifying spans of text to be replaced. |
 |`streams[].span_replacement[].span`|No| A json-path expression for an attribute that contains an array of spans. Each span should be list of length three:  `[start, end, score]`. |
 |`streams[].span_replacement[].min_score`|No| If the span score is less than this value, the span will not be replaced. |
-|`streams[].span_replacement[].replacement`|No| The text that should be inserted in place of the span. Use `{}` to represent the original text. |
+|`streams[].span_replacement[].replacement`|No| The text that should be inserted in place of the span. Use `{}` to represent the original text. Field selection from the document is also supported by prefixing a jq selector with `$`. Note: Escape a leading $ if you do not with to use jq selector pattern. |
 |`work_dir.input`|No| Path to a local scratch directory where temporary input files can be placed. If not provided, Dolma will make one for you and delete it upon completion. |
 |`work_dir.output`|No| Path to a local scratch directory where temporary output files can be placed. If not provided, Dolma will make one for you and delete it upon completion. |
 |`processes`|No| Number of processes to use for mixing. By default 1 process is used. |

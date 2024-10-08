@@ -50,7 +50,7 @@ python scripts/make_wikipedia.py \
   --output wikipedia \
   --date 20231001 \
   --lang simple \
-  --num_processes 16
+  --processes 16
 ```
 
 The code above will download and process Wikipedia articles in the `simple` language from the October 1, 2023 wikipedia dump.
@@ -130,7 +130,7 @@ Further, we override the number of processes to use to 96 using the `--processes
       # the documents to mix; note how we use a glob pattern to match all documents
       "documents": [
         "wikipedia/v0/documents/*.gz",
-      ]
+      ],
       # this is the directory where the output will be written
       # note how the toolkit will try to create files of size ~1GB
       "output": {

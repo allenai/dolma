@@ -14,8 +14,9 @@ use crate::s3_util;
 use crate::shard::shard_config::{CompressionConfig, WorkDirConfig};
 use crate::shard::{find_objects_matching_patterns, FileCache};
 use crate::wimbd::tokens::tokenize;
-
+use ahash::RandomState;
 use deduper_config::*;
+use std::hash::{BuildHasher, Hash, Hasher};
 
 pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let bloom_filter = BloomFilter::initialize(&config.bloom_filter).unwrap();
@@ -33,7 +34,20 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let threadpool = ThreadPool::new(config.processes);
     let failed_shard_count = AtomicU32::new(0);
     let failed_shard_count_ref = Arc::new(failed_shard_count);
+    let hash_builder = RandomState::with_seeds(0, 1, 2, 3);
+
     for p in paths {
+        let mut hasher = hash_builder.build_hasher();
+        p.hash(&mut hasher);
+        let hashed_path = hasher.finish();
+
+        if config.dedupe.file_partition.unwrap_or(false)
+            && hashed_path % config.dedupe.num_partitions.unwrap_or(1)
+                != config.dedupe.partition_index.unwrap_or(0)
+        {
+            continue;
+        }
+
         let path = p.clone();
         let work_dirs = config.work_dir.clone();
         let dedupe = config.dedupe.clone();
@@ -121,10 +135,24 @@ fn write_attributes(
         );
     }
 
+    let document_key = dedupe_config
+        .document_dir
+        .unwrap_or(String::from("documents"));
+
     let attrs_location = {
         let attr_prefix = format!("/attributes/{}/", attr_key);
-        docs_location.replace("/documents/", &attr_prefix)
+        docs_location.replace(&format!("/{}/", &document_key), &attr_prefix)
     };
+
+    if attrs_location == docs_location {
+        log::error!(
+            "{} does not contain {} . Not writing its attributes!",
+            docs_location,
+            &document_key
+        );
+        panic!("Attribute would be written to document location!");
+    }
+
     let local_output = cache.prepare_output(&attrs_location, label_temp)?;
     let mut num_processed = 0;
     let mut num_observed = 0;
@@ -297,13 +325,14 @@ fn write_attributes(
                         // skip empty documents if text_length is 0
                         for p in paragraphs {
                             let par_start = offset;
-                            offset += p.chars().count();
+                            let par_char_length = p.chars().count();
+                            offset += par_char_length;
                             if offset < text_length - 1 {
                                 offset += 1; // For the newline
                             }
                             let par_end = offset;
 
-                            if offset < min_content_length {
+                            if par_char_length < min_content_length {
                                 // skip length 0 paragraphs
                                 continue;
                             }
@@ -545,6 +574,8 @@ pub mod deduper_config {
         pub skip_empty: Option<bool>,
         pub num_partitions: Option<u64>,
         pub partition_index: Option<u64>,
+        pub file_partition: Option<bool>,
+        pub document_dir: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]

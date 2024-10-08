@@ -40,7 +40,7 @@ class SpanReplacementConfig:
         default=None,
         help="Maximum score for the span to be replaced. Either min_score or max_score must be specified.",
     )
-    replacement: str = field(default="", help="Replacement for the span")
+    replacement: str = field(default="", help="Replacement config for the span(s).")
     syntax: str = field(
         default="jsonpath",
         help="Syntax to use for filter expressions. Currently only JSONPath is supported. Defaults to JSONPath.",
