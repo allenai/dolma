@@ -5,15 +5,20 @@ from typing import Union
 DOLMA_PREFIX = "dolma"
 
 
-def get_logger(name: str) -> logging.Logger:
+def get_logger(name: str, level: Union[int, str] = logging.WARN) -> logging.Logger:
     if (proc_name := multiprocessing.current_process().name) == "MainProcess":
         proc_name = "main"
     proc_name = proc_name.replace(" ", "_")
 
+    # set the log level
+    level = level if isinstance(level, int) else getattr(logging, level.strip().upper(), logging.WARN)
+
+    # set name
     name = f"{proc_name}.dolma.{name}"
     logger = logging.getLogger(name)
-    logger.setLevel(logging.WARN)
+    logger.setLevel(level)
 
+    # add handler
     if not logger.handlers:
         handler = logging.StreamHandler()
         formatter = logging.Formatter(

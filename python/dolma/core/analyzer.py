@@ -283,7 +283,8 @@ def create_and_run_analyzer(
     report: Optional[str] = None,
     debug: bool = False,
     seed: int = 0,
-    num_bins: int = 1000,
+    compute_bins: int = 1_000,
+    visualize_bins: int = 10,
     num_processes: int = 1,
     name_regex: Optional[str] = None,
     show_total: bool = False,
@@ -300,7 +301,8 @@ def create_and_run_analyzer(
         report (Optional[str], optional): Path to the report directory. Defaults to None.
         debug (bool, optional): Enable debug mode. Defaults to False.
         seed (int, optional): Seed value for randomization. Defaults to 0.
-        num_bins (int, optional): Number of bins for analysis. Defaults to 1000.
+        compute_bins (int, optional): Number of bins for analysis. Defaults to 1_000.
+        visualize_bins (int, optional): Number of bins for visualization. Defaults to 10.
         num_processes (int, optional): Number of processes to use for analysis. Defaults to 1.
         name_regex (Optional[str], optional): Regular expression for filtering attribute names. Defaults to None.
         show_total (bool, optional): Show total summary. Defaults to False.
@@ -325,11 +327,11 @@ def create_and_run_analyzer(
             debug=debug,
             seed=seed,
             ignore_existing=True,
-            retries_on_error=0,
+            backoff_max_tries=1,
             num_processes=num_processes,
         )
-        analyzer(num_bins=num_bins, name_regex=name_regex)
+        analyzer(num_bins=compute_bins, name_regex=name_regex)
 
-        summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=num_bins)
-        visualize_summaries(summaries=summaries, show_total=show_total)
+        summaries = aggregate_summaries(summaries_path=summaries_path, num_bins=compute_bins)
+        visualize_summaries(summaries=summaries, show_total=show_total, num_viz_bins=visualize_bins)
         write_output(summaries=summaries, report=report)

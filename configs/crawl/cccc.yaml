@@ -1,0 +1,28 @@
+documents:  ${d.stdin:}
+destination:
+  - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/${oc.env:SNAPSHOT}
+processes: ${d.procs:}
+source_name: cccc_${oc.env:SNAPSHOT}
+linearizer: resiliparse
+pre:
+    taggers:
+        - cc_re
+    skip: true
+
+post:
+    taggers:
+        - copyright
+    skip: false
+
+store:
+    html: false
+    attr_spans: 500
+
+skip_duplicate_urls: true
+skip_checks: true
+
+batch_size: 100
+
+work_dir:
+  input: ${oc.env:HOME}/cccc/${oc.env:SNAPSHOT}/input
+  output: ${oc.env:HOME}/cccc/${oc.env:SNAPSHOT}/output

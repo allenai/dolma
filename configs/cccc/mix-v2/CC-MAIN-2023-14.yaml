@@ -1,0 +1,76 @@
+
+streams:
+  - name: cccc-CC-MAIN-2023-14
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0000.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0001.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0002.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0003.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0004.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0005.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0006.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0007.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0008.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0009.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0010.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0011.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0012.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0013.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0014.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0015.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0016.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0017.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0018.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0019.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0020.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0021.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0022.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0023.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0024.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0025.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0026.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0027.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0028.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0029.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0030.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0031.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0032.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0033.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0034.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0035.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0036.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0037.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0038.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0039.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0040.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0041.json.gz
+      - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2023-14/cccc-CC-MAIN-2023-14-0042.json.gz
+    attributes:
+      - dedupe_doc
+      - dedupe_para
+    output:
+      max_size_in_bytes: 2_000_000_000
+      path: s3://ai2-llm/pretraining-data/sources/cccc/v2_nc_nd_fix/documents/CC-MAIN-2023-14
+      discard_fields:
+        - attributes
+    filter:
+      syntax: jq
+      exclude:
+        # Exact duplicates
+        - .attributes.dedupe_doc != null
+
+        # Remove NC or ND licensed pages
+        - >-
+          (.metadata.attribute_spans != null) and
+          (.metadata.attribute_spans | keys | map(select(test("_nc_|_nd_"))) | length > 0)
+
+        # Fuzzy duplicates with above 0.8 of shared ngrams
+        - >-
+          (.attributes.dedupe_para | length > 0) and
+          ((.attributes.dedupe_para | map(.[2] * (.[1] - .[0])) | add) / (.text | length) >= 0.8)
+
+work_dir:
+  input: "${oc.env:HOME}/status/cccc-CC-MAIN-2023-14/mix-v2/input"
+  output: "${oc.env:HOME}/status/cccc-CC-MAIN-2023-14/mix-v2/output"
+
+processes: 100
