@@ -525,6 +525,13 @@ class OwmMathLatexFtScienceCombinedLowThreshold(OwmMathLatexFtScienceCombined):
 class OwmMathLatexFtScienceCombinedHighThreshold(OwmMathLatexFtScienceCombined):
     FT_THRESHOLD = 0.50
 
+@TaggerRegistry.add("owmV2_FTsciV1_comb_vhth")
+class OwmMathLatexFtScienceCombinedVeryHighThreshold(OwmMathLatexFtScienceCombined):
+    FT_THRESHOLD = 0.70
+
+@TaggerRegistry.add("owmV2_FTsciV1_comb_vvhth")
+class OwmMathLatexFtScienceCombinedVeryVeryHighThreshold(OwmMathLatexFtScienceCombined):
+    FT_THRESHOLD = 0.90
 
 @TaggerRegistry.add("ft_science_v1_qt")
 class FastTextScienceTaggerQuantized(FastTextScienceTagger):
@@ -544,3 +551,11 @@ class OwmMathLatexFtScienceCombinedLowThresholdQuantized(OwmMathLatexFtScienceCo
 @TaggerRegistry.add("owmV2_FTsciV1_comb_hth_qt")
 class OwmMathLatexFtScienceCombinedHighThresholdQuantized(OwmMathLatexFtScienceCombinedHighThreshold):
     MODEL_PATH = FastTextScienceTaggerQuantized.MODEL_PATH  # pyright: ignore
+
+@TaggerRegistry.add("owmV2_FTsciV1_comb_vhth_qt")
+class OwmMathLatexFtScienceCombinedVeryHighThresholdQuantized(OwmMathLatexFtScienceCombinedVeryHighThreshold):
+    MODEL_PATH = FastTextScienceTaggerQuantized.MODEL_PATH  # pyright: ignore
+    
+@TaggerRegistry.add("owmV2_FTsciV1_comb_vvhth_qt") # FST2
+class OwmMathLatexFtScienceCombinedVeryVeryHighThresholdQuantized(OwmMathLatexFtScienceCombinedVeryVeryHighThreshold):
+    MODEL_PATH = "~/test_analyze/model_09_06_quantized.bin"  # pyright: ignore
