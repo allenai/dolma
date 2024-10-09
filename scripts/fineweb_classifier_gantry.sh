@@ -1,8 +1,8 @@
 #! /bin/bash
 
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/*zst'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/reddit/dolma_raw/source-added/documents/**/raw-0000*.gz'
 
-NUM_NODES=4
+NUM_NODES=1
 MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
 CLUSTER="ai2/jupiter*"
 BATCH_SIZE=1024
@@ -25,11 +25,11 @@ gantry run \
     --task-name "${RUN_NAME}" \
     --description "Score ${DOCUMENTS} with ${MODEL_NAME}" \
     --allow-dirty \
-    --workspace ai2/oe-data-model-based-cleanup \
+    --workspace ai2/reddit \
     --beaker-image 'lucas/refine1' \
     --host-networking \
     --venv 'base' \
-    --priority urgent \
+    --priority high \
     --leader-selection \
     --gpus 8 \
     --replicas ${NUM_NODES} \
