@@ -1,8 +1,8 @@
 #! /bin/bash
 
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/reddit/dolma_raw/source-added/documents/**/raw-0000*.gz'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/reddit/dolma_raw/source-added/documents/**/*.gz'
 
-NUM_NODES=1
+NUM_NODES=4
 MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
 CLUSTER="ai2/jupiter*"
 BATCH_SIZE=1024
