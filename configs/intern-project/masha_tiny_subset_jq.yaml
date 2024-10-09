@@ -5,10 +5,10 @@ streams:
 
     attributes:
       - cc_tiny_subset_analysis_october
-      - bff_duplicate_paragraph_spans
+      - bff_duplicate_paragraph_spans_new
 
     output:
-      path: s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset-october/mixed-output-with-bff
+      path: s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset-october/mixed-output-exclude-bff
       max_size_in_bytes: 4294967296  # 4GB, adjust as needed
       discard_fields:
         - attributes
@@ -28,7 +28,7 @@ streams:
         - (.attributes.cc_tiny_subset_analysis_october__gopher_v2__word_count | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] < 50 else false end)
         - (.attributes.cc_tiny_subset_analysis_october__gopher_v2__symbol_to_word_ratio | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] > 0.1 else false end)
         # Deduplication filter (BFF)
-        # - (.attributes.bff_duplicate_paragraph_spans | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] >= 1.0 else false end)
+        - (.attributes.bff_duplicate_paragraph_spans_new | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] >= 1.0 else false end)
         # C4 quality filter
         - (.attributes.cc_tiny_subset_analysis_october__c4_v2__line_bullets | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] > 0.5 else false end)
         - (.attributes.cc_tiny_subset_analysis_october__c4_v2__phrase_repeat | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] > 0.3 else false end)
