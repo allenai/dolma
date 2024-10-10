@@ -66,16 +66,51 @@ class TargetOutput(Struct, frozen=True):
 
 
 class Target(Struct, dict=True, omit_defaults=True):
-    selector: str
-    label: str
+    expression: str
+    label: str | None = None
 
     def __post_init__(self):
-        self._compiled_text_selector = jq.compile(self.selector)
+        assert self.label is None or ":" not in self.label, f"Label cannot contain ':'"
+        self._compiled_text_selector = jq.compile(self.expression)
+
+    @staticmethod
+    def join_labels(left: str | None, right: str | None) -> str | None:
+        if right is None:
+            return left
+        elif left is None:
+            return right
+        else:
+            return f"{left}:{right}"
+
+    def __or__(self, other: "Target") -> "Target":
+        new_expression = f"({self.expression}) | ({other.expression})"
+        new_label = self.join_labels(self.label, other.label)
+        return type(self)(expression=new_expression, label=new_label)
+
+    def __ror__(self, other: "Target") -> "Target":
+        return other | self
+
+    def __add__(self, other: "Target") -> "Target":
+        new_expression = f"({self.expression}) + ({other.expression})"
+        new_label = self.join_labels(self.label, other.label)
+        return type(self)(expression=new_expression, label=new_label)
+
+    def __radd__(self, other: "Target") -> "Target":
+        return self + other
+
+    def __str__(self) -> str:
+        return self.expression
+
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}(expression="{self.expression!r}", label={self.label})'
 
     def select(self, row: Row) -> Iterable[TargetOutput]:
+        assert self.label is not None, "Label is required for select() function"
+
         matches = {str(e) for e in flatten(self._compiled_text_selector.input(row.content).all())}
         for i, element in enumerate(matches):
             yield TargetOutput(target_id=f"{i}", text=element, label=self.label)
+
 
 
 class DocMeta(Struct, frozen=True):

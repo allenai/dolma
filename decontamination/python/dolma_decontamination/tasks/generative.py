@@ -1,36 +1,34 @@
 from .base import Task, Dataset, Target
 
 QA_FORMATS = [
-    ('"Question: " + .question + "\nAnswer: " + .answer', "qa_full_newline"),
-    ('"Q: " + .question + "\nA: " + .answer', "qa_short_newline"),
-    ('.question + "\n" + .answer', "qa_noprompt_newline"),
-    ('"Question: " + .question + "\nAnswer: " + .answer', "qa_full_space"),
-    ('"Q: " + .question + "\nA: " + .answer', "qa_short_space"),
-    ('.question + " " + .answer', "qa_noprompt_space"),
+    Target('"Question: " + .question + "\nAnswer: " + .answer', "qa_full_newline"),
+    Target('"Q: " + .question + "\nA: " + .answer', "qa_short_newline"),
+    Target('.question + "\n" + .answer', "qa_noprompt_newline"),
+    Target('"Question: " + .question + "\nAnswer: " + .answer', "qa_full_space"),
+    Target('"Q: " + .question + "\nA: " + .answer', "qa_short_space"),
+    Target('.question + " " + .answer', "qa_noprompt_space"),
 ]
 
 
 def squad() -> Task:
     datasets = [Dataset(path="rajpurkar/squad", split="validation", id_selector=".id")]
-    targets = [Target(selector=".context", label="context", id_selector=".id")]
 
-    for qa_format, qa_label in QA_FORMATS:
-        selector = "{question, answer: .answers.text[]} | " + qa_format
-        targets.append(Target(selector=selector, label=qa_label))
+    targets = [Target(expression=".context", label="context")]
+    base_target = Target("{question, answer: .answers.text[]}")
+    targets.extend([base_target + qa_format for qa_format in QA_FORMATS])
 
     return Task(name="squad", datasets=datasets, targets=targets)
 
 
 def coqa() -> Task:
-    datasets: list[Dataset] = []
-    for split in ["train", "validation"]:
-        datasets.append(Dataset(path="stanfordnlp/coqa", split=split))
+    datasets: list[Dataset] = [
+        Dataset(path="stanfordnlp/coqa", split="validation", id_selector=".id"),
+        Dataset(path="stanfordnlp/coqa", split="test", id_selector=".id"),
+    ]
+    targets = [Target(expression=".story", label="story")]
+    base_target = Target("{question, answer: .answers.input_text[]}")
+    targets.extend([base_target + qa_format for qa_format in QA_FORMATS])
 
-    targets = [Target(selector=".story", label="story")]
-
-    for qa_format, qa_label in QA_FORMATS:
-        selector = "{question: .questions[], answer: .answers.input_text[]} | " + qa_format
-        targets.append(Target(selector=selector, label=qa_label))
 
     return Task(name="coqa", datasets=datasets, targets=targets)
 

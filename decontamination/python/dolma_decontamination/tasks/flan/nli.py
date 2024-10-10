@@ -9,12 +9,12 @@ from ..base import Task, Dataset, Target
 
 
 ENTAILMENT_FORMATS = [
-    ('"Premise:\n" + .premise + "\nHypothesis:\n" + .hypothesis + "\n" + .label', "ent_full_newline"),
-    ('"Premise: " + .premise + "\nHypothesis: " + .hypothesis + "\n" + .label', "ent_part_newline"),
-    ('"Sentence 1:\n" + .premise + "\nSentence 2:\n" + .hypothesis + "\n" + .label', "ent_full_newline"),
-    ('"Sentence 1: " + .premise + "\nSentence 2: " + .hypothesis + "\n" + .label', "ent_part_newline"),
-    ('.premise + "\n" + .hypothesis + "\n" + .label', "ent_noprompt_newline"),
-    ('.premise + " " + .hypothesis + " " + .label', "ent_noprompt_space"),
+    Target('"Premise:\n" + .premise + "\nHypothesis:\n" + .hypothesis + "\n" + .label', "ent_full_newline"),
+    Target('"Premise: " + .premise + "\nHypothesis: " + .hypothesis + "\n" + .label', "ent_part_newline"),
+    Target('"Sentence 1:\n" + .premise + "\nSentence 2:\n" + .hypothesis + "\n" + .label', "ent_full_newline"),
+    Target('"Sentence 1: " + .premise + "\nSentence 2: " + .hypothesis + "\n" + .label', "ent_part_newline"),
+    Target('.premise + "\n" + .hypothesis + "\n" + .label', "ent_noprompt_newline"),
+    Target('.premise + " " + .hypothesis + " " + .label', "ent_noprompt_space"),
 ]
 
 
@@ -27,13 +27,9 @@ def anli() -> Task:
         Dataset(path="facebook/anli", split="test_r2", id_selector=".uid"),
         Dataset(path="facebook/anli", split="test_r3", id_selector=".uid"),
     ]
-    base_selector = '{premise: .premise, hypothesis: .hypothesis, label: (if .label == 0 then "entailment" elif .label == 1 then "neutral" else "contradiction" end)}'
-
-    targets: list[Target] = []
-
-    for format_, label in ENTAILMENT_FORMATS:
-        selector = base_selector + " | " + format_
-        targets.append(Target(selector=selector, label=label))
+    label_map_target = Target('(if .label == 0 then "entailment" elif .label == 1 then "neutral" else "contradiction" end)')
+    base_target = Target(f'{{premise: .premise, hypothesis: .hypothesis, label: {label_map_target}}}')
+    targets: list[Target] = [base_target + fmt for fmt in ENTAILMENT_FORMATS]
 
     return Task(name="anli", datasets=datasets, targets=targets)
 
@@ -43,13 +39,9 @@ def cb() -> Task:
         Dataset(path="aps/super_glue", name="cb", split="validation", id_selector=".idx", trust_remote_code=True),
         Dataset(path="aps/super_glue", name="cb", split="test", id_selector=".idx", trust_remote_code=True)
     ]
-    base_selector = '{premise: .premise, hypothesis: .hypothesis, label: (if .label == 0 then "entailment" elif .label == 1 then "contradiction" else "neutral" end)}'
-
-    targets: list[Target] = []
-
-    for format_, label in ENTAILMENT_FORMATS:
-        selector = base_selector + " | " + format_
-        targets.append(Target(selector=selector, label=label))
+    label_map_target = Target('(if .label == 0 then "entailment" elif .label == 1 then "contradiction" else "neutral" end)')
+    base_target = Target(f'{{premise: .premise, hypothesis: .hypothesis, label: {label_map_target}}}')
+    targets: list[Target] = [base_target + fmt for fmt in ENTAILMENT_FORMATS]
 
     return Task(name="cb", datasets=datasets, targets=targets)
 
@@ -61,13 +53,15 @@ def mnli() -> Task:
         for name in ["mnli", "mnli_matched", "mnli_mismatched"]:
             datasets.append(Dataset(path="nyu-mll/glue", name=name, split=split, id_selector=".idx"))
 
-    base_selector = '{premise: .premise, hypothesis: .hypothesis, label: (if .label == 0 then "entailment" elif .label == 1 then "neutral" else "contradiction" end)}'
+    label_map_target = Target('(if .label == 0 then "entailment" elif .label == 1 then "neutral" else "contradiction" end)')
+    base_target = Target(f'{{premise: .premise, hypothesis: .hypothesis, label: {label_map_target}}}')
+    targets: list[Target] = [base_target + fmt for fmt in ENTAILMENT_FORMATS]
 
     targets: list[Target] = []
 
     for format_, label in ENTAILMENT_FORMATS:
         selector = base_selector + " | " + format_
-        targets.append(Target(selector=selector, label=label))
+        targets.append(Target(expression=selector, label=label))
 
     return Task(name="mnli", datasets=datasets, targets=targets)
 
@@ -83,7 +77,7 @@ def qnli() -> Task:
 
     for format_, label in ENTAILMENT_FORMATS:
         selector = base_selector + " | " + format_
-        targets.append(Target(selector=selector, label=label))
+        targets.append(Target(expression=selector, label=label))
 
     return Task(name="qnli", datasets=datasets, targets=targets)
 
@@ -99,7 +93,7 @@ def rte() -> Task:
 
     for format_, label in ENTAILMENT_FORMATS:
         selector = base_selector + " | " + format_
-        targets.append(Target(selector=selector, label=label))
+        targets.append(Target(expression=selector, label=label))
 
     return Task(name="rte", datasets=datasets, targets=targets)
 
@@ -115,7 +109,7 @@ def snli() -> Task:
 
     for format_, label in ENTAILMENT_FORMATS:
         selector = base_selector + " | " + format_
-        targets.append(Target(selector=selector, label=label))
+        targets.append(Target(expression=selector, label=label))
 
     return Task(name="snli", datasets=datasets, targets=targets)
 
@@ -131,6 +125,6 @@ def wnli() -> Task:
 
     for format_, label in ENTAILMENT_FORMATS:
         selector = base_selector + " | " + format_
-        targets.append(Target(selector=selector, label=label))
+        targets.append(Target(expression=selector, label=label))
 
     return Task(name="wnli", datasets=datasets, targets=targets)

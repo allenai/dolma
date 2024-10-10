@@ -4,10 +4,11 @@
 
 # Function to display usage information
 usage() {
-    echo "Usage: $0 -c|--collection-id <collection_id> -d|--destination <destination> [-n|--num-processes <num_processes>]"
+    echo "Usage: $0 -c|--collection-id <collection_id> -d|--destination <destination> [-n|--num-processes <num_processes>] [-k|--num-chunks <num_chunks>]"
     echo "  -c, --collection-id   : The ID of the Internet Archive collection (required)"
     echo "  -d, --destination     : Location where to save each file from the collection (required)"
     echo "  -n, --num-processes   : Number of parallel downloads to use (default: 1)"
+    echo "  -k, --num-chunks      : Number of chunks to split the collection into (default: 1)"
     exit 1
 }
 
