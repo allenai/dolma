@@ -9,9 +9,10 @@ QA_FORMATS = [
     ('.question + " " + .answer', "qa_noprompt_space"),
 ]
 
+
 def squad() -> Task:
-    datasets = [Dataset(path="rajpurkar/squad", split="validation")]
-    targets = [Target(selector=".context", label="context")]
+    datasets = [Dataset(path="rajpurkar/squad", split="validation", id_selector=".id")]
+    targets = [Target(selector=".context", label="context", id_selector=".id")]
 
     for qa_format, qa_label in QA_FORMATS:
         selector = "{question, answer: .answers.text[]} | " + qa_format
@@ -21,10 +22,11 @@ def squad() -> Task:
 
 
 def coqa() -> Task:
-    datasets = []
+    datasets: list[Dataset] = []
     for split in ["train", "validation"]:
-        datasets.append(Dataset(path="stanfordnlp/coqa", split=split, id_selector=None))
-    targets = [Target(selector=".story", label="story"),]
+        datasets.append(Dataset(path="stanfordnlp/coqa", split=split))
+
+    targets = [Target(selector=".story", label="story")]
 
     for qa_format, qa_label in QA_FORMATS:
         selector = "{question: .questions[], answer: .answers.input_text[]} | " + qa_format

@@ -1,14 +1,13 @@
-from hashlib import md5
 from typing import Iterable, Any
 from msgspec import Struct
-from msgspec.msgpack import Encoder as MsgPackEncoder
+from .utils import JsonObjHasher
 import jq
 from datasets import load_dataset, Dataset as HFDataset
 from collections.abc import Sequence
 
 
-DATASET_SEPARATOR = "⁖"
-DOCUMENT_SEPARATOR = "⁘"
+DATASET_SEPARATOR = ":"
+DOCUMENT_SEPARATOR = ";"
 
 
 def flatten(element: Any) -> Iterable[Any]:
@@ -24,20 +23,18 @@ class Row(Struct, frozen=True):
     dataset_label: str
     content: dict
 
-
 class Dataset(Struct, dict=True, omit_defaults=True):
     path: str
     split: str
     name: str | None = None
-    id_selector: str | None = ".id"
+    id_selector: str | None = None
     trust_remote_code: bool = False
 
     def __post_init__(self):
         if self.id_selector is not None:
             self._compiled_id_selector = lambda row: jq.compile(self.id_selector).input(row).first()
         else:
-            encoder = MsgPackEncoder()
-            self._compiled_id_selector = lambda row: md5(encoder.encode(row)).hexdigest()
+            self._compiled_id_selector = JsonObjHasher()
 
     def label(self) -> str:
         return DATASET_SEPARATOR.join([self.path, self.name or "", self.split, self.id_selector or ""])
