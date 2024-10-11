@@ -10,6 +10,7 @@ import smart_open
 from typing_extensions import TypedDict
 
 from dolma.cli.__main__ import main
+from dolma.core.errors import DolmaConfigError
 from dolma.core.utils import split_words
 
 from .utils import (
@@ -24,6 +25,9 @@ from .utils import (
 
 TEST_DIR = Path(__file__).parent.parent
 DEDUPE_BY_URL = TEST_DIR / "config/dedupe-by-url.json"
+DEDUPE_BAD_FILENAME = TEST_DIR / "config/filepath-bad.json"
+DEDUPE_GOOD_FILENAME = TEST_DIR / "config/filepath-good.json"
+
 DEDUPE_PARAGRAPHS = TEST_DIR / "config/dedupe-paragraphs.json"
 DEDUPE_PARAGRAPH_NGRAMS = TEST_DIR / "config/dedupe-paragraph-ngrams.json"
 
@@ -48,13 +52,13 @@ class TestDeduper(TestCase):
 
             # upload test data
             upload_s3_prefix(
-                s3_prefix=f"{self.remote_test_prefix}", local_prefix="tests/data/provided/deduper/documents/*.gz"
+                s3_prefix=f"{self.remote_test_prefix}", local_prefix="tests/data/provided/deduper/*/*.gz"
             )
 
         # copy provided config files to local temp dir
         shutil.copytree(
-            "tests/data/provided/deduper/documents",
-            f"{self.local_temp_dir}/tests/data/provided/deduper/documents",
+            "tests/data/provided/deduper",
+            f"{self.local_temp_dir}/tests/data/provided/deduper",
             dirs_exist_ok=True,
         )
 
@@ -81,6 +85,33 @@ class TestDeduper(TestCase):
             f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_by_url/000.json.gz"
         )
         return self._compare_dedupe_output(expected, computed)  # pyright: ignore
+
+    def test_dedupe_bad_filepath(self):
+        with open(DEDUPE_BAD_FILENAME, "r") as f:
+            config = json.load(f)
+
+        config["documents"][0] = f'{self.local_temp_dir}/{config["documents"][0]}'
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            with self.assertRaises(DolmaConfigError):
+                main(argv=["-c", f.name, "dedupe"])
+
+    def test_dedupe_good_filepath(self):
+        with open(DEDUPE_GOOD_FILENAME, "r") as f:
+            config = json.load(f)
+
+        config["documents"][0] = f'{self.local_temp_dir}/{config["documents"][0]}'
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
 
     def test_dedupe_paragraphs(self):
         with open(DEDUPE_PARAGRAPHS, "r") as f:

@@ -100,7 +100,7 @@ jobs:
         if: steps.cache-venv.outputs.cache-hit != 'true'
         uses: actions/setup-python@v4
         with:
-          python-version: "3.8"
+          python-version: "3.9"
           architecture: "x64"
 
       - name: Create a new Python environment & install maturin
@@ -109,7 +109,7 @@ jobs:
           python -m venv .venv
           source .venv/bin/activate
           pip install -U pip
-          pip install maturin
+          pip install maturin==1.7.1
 
       - name: Install dolma wheels
         if: steps.cache-venv.outputs.cache-hit != 'true'
@@ -279,7 +279,7 @@ jobs:
     if: "startsWith(github.ref, 'refs/tags/')"
     needs: [build-linux, build-windows, build-macos, sdist]
     steps:
-      - uses: actions/download-artifact@v4.1.7
+      - uses: actions/download-artifact@v3
         with:
           name: wheels
       - name: Publish to PyPI
@@ -288,4 +288,5 @@ jobs:
           MATURIN_PYPI_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         with:
           command: upload
+          maturin-version: 1.7.1
           args: --skip-existing *

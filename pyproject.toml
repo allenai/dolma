@@ -1,10 +1,10 @@
 [project]
 name = "dolma"
-version = "1.0.12"
+version = "1.1.0"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "anyascii>=0.3.2",
     "blingfire==0.1.8",
@@ -196,12 +196,12 @@ exclude = '''
     | tests/work
 )
 '''
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py39", "py310", "py311", "py312"]
 
 
 [tool.isort]
 profile = "black"
-py_version = 38
+py_version = 39
 known_first_party = ["dolma"]
 known_local_folder = ["tests", "python"]
 extend_skip_glob = [
@@ -222,7 +222,7 @@ recursive = true
 aggressive = 3
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 ignore_missing_imports = true
 no_site_packages = true
 allow_redefinition = false

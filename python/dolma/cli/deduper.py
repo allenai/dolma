@@ -1,3 +1,5 @@
+import fnmatch
+import os
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,6 +101,13 @@ class DedupeConfig:
     partition_index: Optional[int] = field(
         default=0, help="The index of the partition being processed, in the range [0, num_partitions)."
     )
+    file_partition: Optional[bool] = field(
+        default=False, help="Whether or not to partition at the document level (vs at the span level)"
+    )
+    document_dir: Optional[str] = field(
+        default="documents",
+        help="The folder in source paths to replace with 'attributes' to store results, if not 'documents'",
+    )
 
 
 @dataclass
@@ -135,7 +144,6 @@ class DeduperCli(BaseCli):
         logger = get_logger("tagger")
 
         dict_config: Dict[str, Any] = {}
-
         with ExitStack() as stack:
             work_dirs = stack.enter_context(make_workdirs(parsed_config.work_dir))
 
@@ -146,6 +154,8 @@ class DeduperCli(BaseCli):
                 "min_words": parsed_config.dedupe.min_words,
                 "num_partitions": parsed_config.dedupe.num_partitions,
                 "partition_index": parsed_config.dedupe.partition_index,
+                "file_partition": parsed_config.dedupe.file_partition,
+                "document_dir": parsed_config.dedupe.document_dir,
             }
             try_name = parsed_config.dedupe.name if not om.is_missing(parsed_config.dedupe, "name") else None
 
@@ -182,7 +192,17 @@ class DeduperCli(BaseCli):
             # perform some path validation to make sure we don't call the mixer with invalid config
             total_matching_documents = 0
             for document in parsed_config.documents:
-                dict_config.setdefault("documents", []).append(str(document))
+
+                if not any(
+                    fnmatch.fnmatch(dict_config["dedupe"]["document_dir"], part) for part in document.split(os.sep)
+                ):
+                    raise DolmaConfigError(
+                        f"Path ({document}) does not contain expected document directory: '/{dict_config['dedupe']['document_dir']}/'. "
+                    )
+
+                doc = str(document)
+
+                dict_config.setdefault("documents", []).append(doc)
 
                 current_matching_documents = sum(1 for _ in glob_path(document))
                 if current_matching_documents == 0:
