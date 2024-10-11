@@ -19,6 +19,8 @@ import subprocess
 import signal
 import smart_open
 from tqdm import tqdm
+import importlib
+import traceback
 
 s3_client = boto3.client('s3')
 
@@ -133,7 +135,6 @@ def validate_s3_path(s3_path):
 
 def check_s3_path_exists(s3_path):
     """Check if an S3 path exists and is accessible."""
-    # s3_client = boto3.client('s3')
     try:
         bucket, key = s3_path[5:].split('/', 1)
         if key.endswith('/'):
@@ -150,7 +151,6 @@ def check_s3_path_exists(s3_path):
 
 def check_s3_path_writable(s3_path):
     """Check if an S3 path is writable."""
-    # s3_client = boto3.client('s3')
     try:
         bucket, key = s3_path[5:].split('/', 1)
         # Ensure the key ends with a '/' to treat it as a directory
@@ -210,35 +210,6 @@ def validate_jsonpath_expression(expr):
         return True, None
     except Exception as e:
         return False, str(e)
-    
-def split_complex_jsonpath(expr):
-    """Split a complex JSONPath expression into individual valid JSONPath expressions."""
-    # Extract the base path and the filter condition
-    match = re.match(r'(\$\.attributes\[?\??)\s*(.+?)\s*(\]?)$', expr)
-    if not match:
-        return [expr]  # Return the original expression if it doesn't match the expected pattern
-
-    base_path, conditions, closing_bracket = match.groups()
-    
-    # Split the conditions
-    split_conditions = re.split(r'\s*(?:&&|\|\|)\s*', conditions)
-    
-    # Reconstruct each condition into a valid JSONPath
-    valid_jsonpaths = []
-    for condition in split_conditions:
-        # Remove any opening and closing parentheses from the condition
-        condition = condition.strip('()')
-        # Extract the comparison part if present
-        comparison_match = re.search(r'([<>]=?)\s*([^)]+)$', condition)
-        if comparison_match:
-            comparison_op, comparison_value = comparison_match.groups()
-            # Remove the comparison part from the condition
-            condition = condition[:comparison_match.start()].rstrip()
-            # Add back the comparison
-            condition += f" {comparison_op} {comparison_value.rstrip(')')}"
-        valid_jsonpaths.append(f"{base_path}{condition}{closing_bracket}")
-    
-    return valid_jsonpaths
 
 def validate_filter_expressions(filter_config):
     """Validate filter expressions based on specified syntax."""
@@ -257,8 +228,20 @@ def validate_filter_expressions(filter_config):
         expressions = filter_config.get(filter_type, [])
         for expr in expressions:
             if syntax == 'jsonpath':
+                # Check for and remove '@' only if it appears in "$@." pattern at the beginning
+                if expr.startswith('$@.'):
+                    expr = '$' + expr[2:]
+                    warnings.append(f"Removed '@' from '$@.' at the beginning of the expression: {expr}")
+
+                # conditions = split_complex_jsonpath(expr)
                 conditions = split_complex_jsonpath(expr)
                 for condition in conditions:
+                    # Check for comparison operators
+                    skip_operators = ["==", "<=", ">=", "<", ">"]
+                    if any(op in condition for op in skip_operators):
+                        operator = next(op for op in skip_operators if op in condition)
+                        # warnings.append(f"Temporarily skipping expression because it contains '{operator}' operator: {condition}")
+                        continue
                     valid, error = validate_function(condition)
                     if not valid:
                         errors.append(f"Invalid {syntax.upper()} sub-expression in {filter_type}: {condition}. Error: {error}")
@@ -276,19 +259,38 @@ def sample_files(s3_path, num_samples):
     all_files = [f for f in all_files if not f.endswith('/')]
     chosen_files = random.sample(all_files, min(num_samples, len(all_files)))
     print(f"Sampled {len(chosen_files)} files from {len(all_files)} matching files")
-    # print("Sampled files:")
-    # print("\n".join(chosen_files))
     return chosen_files
 
 def download_file(s3_path, local_path):
-    # print("I'm in download_file")
-    # s3 = boto3.client('s3')
     bucket, key = s3_path.replace("s3://", "").split("/", 1)
     s3_client.download_file(bucket, key, local_path)
-    print(f"Successfully downloaded: {s3_path} -> {local_path}")
+
+# For local testing
+# def sample_and_download_files(stream, num_samples):
+#     temp_dir = "temp_sample_files"
+    
+#     # Hardcoded file names
+#     doc_file = "CC-MAIN-20240221102433-20240221132433-00460.jsonl.gz"
+#     attr_files = {
+#         "bff_duplicate_paragraph_spans": "CC-MAIN-20240221102433-20240221132433-00460-bff_duplicate_paragraph_spans.jsonl.gz",
+#         "cc_tiny_subset_analysis": "CC-MAIN-20240221102433-20240221132433-00460-cc_tiny_subset_analysis.jsonl"
+#     }
+    
+#     # Create full paths
+#     local_doc_samples = [os.path.join(temp_dir, doc_file)]
+#     local_attr_samples_dict = {
+#         attr_type: [os.path.join(temp_dir, file_name)]
+#         for attr_type, file_name in attr_files.items()
+#     }
+    
+#     print("Using hardcoded paths for troubleshooting:")
+#     print(f"Document: {local_doc_samples[0]}")
+#     for attr_type, paths in local_attr_samples_dict.items():
+#         print(f"{attr_type}: {paths[0]}")
+    
+#     return local_doc_samples, local_attr_samples_dict
 
 def sample_and_download_files(stream, num_samples):
-
     temp_dir = "temp_sample_files"
     
     # Create the temporary directory if it doesn't exist
@@ -313,9 +315,18 @@ def sample_and_download_files(stream, num_samples):
                 local_doc_samples.append(local_doc_path)
                 pbar.update(1)
                 
+                # Extract the base name and extension
+                base_name, extension = os.path.splitext(os.path.basename(doc_sample))
+                if extension == '.gz':
+                    # Handle double extensions like .jsonl.gz
+                    base_name, inner_extension = os.path.splitext(base_name)
+                    extension = inner_extension + extension
+                
                 for attr_type in stream['attributes']:
                     attr_sample = get_corresponding_attribute_path(doc_sample, base_doc_path, base_attr_path, attr_type)
-                    local_attr_path = os.path.join(temp_dir, f"{os.path.basename(doc_sample)}.{attr_type}")
+                    # Construct the new filename with the attribute type before the extension, using a hyphen
+                    new_filename = f"{base_name}-{attr_type}{extension}"
+                    local_attr_path = os.path.join(temp_dir, new_filename)
                     download_file(attr_sample, local_attr_path)
                     local_attr_samples_dict[attr_type].append(local_attr_path)
                     pbar.update(1)
@@ -345,9 +356,7 @@ def validate_jsonl(file_path, expected_fields):
     is_valid = True
 
     try:
-        print(f"Validating file: {file_path} in validate_jsonl")
         with smart_open.open(file_path, 'r') as f:
-            print(f"succesfully opened file: {file_path}")
             for i, line in enumerate(f, 1):
                 try:
                     data = json.loads(line)
@@ -372,38 +381,7 @@ def validate_jsonl(file_path, expected_fields):
     
     if unexpected_fields:
         error_messages.append(f"Additional fields found across the file: {unexpected_fields}")
-    print(f"Validation result in validate_jsonl: {is_valid}")
     return is_valid, error_messages
-
-# def count_file_lines(file_path):
-#     """
-#     Count the number of lines in a file (local or S3, compressed or not).
-    
-#     :param file_path: Path to the file (can be S3 or local)
-#     :return: Number of lines in the file
-#     """
-#     print(f"Counting lines in file: {file_path}")
-#     try:
-#         if file_path.startswith('s3://'):
-#             print("reading from s3")
-#             content = read_s3_file(file_path)
-#             f = io.StringIO(content)
-#         else:
-#             if file_path.endswith('.gz'):
-#                 f = gzip.open(file_path, 'rt')
-#             else:
-#                 f = open(file_path, 'r')
-#         # print("line count attempt")
-#         line_count = sum(1 for _ in f)
-        
-#         if not file_path.startswith('s3://'):
-#             f.close()
-        
-#         return line_count
-    
-#     except Exception as e:
-#         print(f"Error counting lines in file {file_path}: {str(e)}")
-#         return -1
     
 def count_file_lines(file_path):
     """
@@ -414,53 +392,13 @@ def count_file_lines(file_path):
     """
     # print(f"Counting lines in file: {file_path}")
     try:
-        with smart_open.open(file_path, 'r') as f:
-            print("successfully opened file in count_file_lines")
+        with smart_open.open(file_path, 'rb') as f:
+            # print("successfully opened file in count_file_lines")
             line_count = sum(1 for _ in f)
         return line_count
     except Exception as e:
         print(f"Error counting lines in file {file_path}: {str(e)}")
         return -1
-    
-def get_line_count(filename, buf_size=1024 * 1024):
-    """
-    Efficiently count lines in a file using buffered reading.
-    
-    :param filename: Path to the file (can be S3 or local)
-    :param buf_size: Size of the buffer for reading (default 1MB)
-    :return: Number of lines in the file
-    """
-    try:
-        with smart_open.open(filename, 'r') as f:
-            lines = 0
-            read_f = f.read  # For S3 files, we use smart_open's read method
-            buf = read_f(buf_size)
-            while buf:
-                lines += buf.count(b'\n')
-                buf = read_f(buf_size)
-            return lines
-    except Exception as e:
-        print(f"Error counting lines in file {filename}: {str(e)}")
-        return -1
-
-def apply_jq_filter(data, filter_expr):
-    """Apply a JQ filter to the data and return the result."""
-    try:
-        result = jq.compile(filter_expr).input(data).all()
-        return result
-    except Exception as e:
-        print(f"Error applying JQ filter '{filter_expr}': {str(e)}")
-        return None
-
-def apply_jsonpath_filter(data, filter_expr):
-    """Apply a JSONPath filter to the data and return the result."""
-    try:
-        jsonpath_expr = parse_jsonpath.parse(filter_expr)
-        result = [match.value for match in jsonpath_expr.find(data)]
-        return result
-    except Exception as e:
-        print(f"Error applying JSONPath filter '{filter_expr}': {str(e)}")
-        return None
 
 def check_attribute_name_typos(config_attributes, sample_attributes):
     """Check for typos in attribute names by comparing config and sample data."""
@@ -482,16 +420,13 @@ def validate_filters_and_check_typos(attr_file_paths, filter_config, stream_attr
     print("Validating filters and checking typos across all attribute files...")
     
     # Extract filter attributes from config
-    print("let's see the filter attributes")
     filter_attributes = extract_filter_attributes(filter_config)
-    print(f"Extracted filter attributes from config: {filter_attributes}")
     
     # Sample and extract attributes from all files
     all_sampled_attributes = set()
     for attr_file_path in attr_file_paths:
         sampled_attributes = sample_and_extract_attributes(attr_file_path)
         all_sampled_attributes.update(sampled_attributes)
-        print(f"Attributes found in {attr_file_path}: {sampled_attributes}")
     
     # Check if all mixer config filters are found
     missing_attributes = filter_attributes - all_sampled_attributes
@@ -508,7 +443,7 @@ def validate_filters_and_check_typos(attr_file_paths, filter_config, stream_attr
         for attr in sorted(all_sampled_attributes):
             print(f"  - {attr}")
         
-        print("\nThis detailed list is provided to help identify potential typos or misconfigurations.")
+        print("\nThis detailed list is provided to help identify potential typos or misconfigurations\n")
 
 
 def extract_filter_attributes(filter_config):
@@ -573,78 +508,214 @@ def sample_file_lines(file_path, num_lines=1):
         print(f"Error type: {type(e)}")
         print(f"File path type: {type(file_path)}")
         return None
-    
 
-def execute_filter_commands(doc_samples, attr_samples_dict, filter_config, num_lines=100):
+def evaluate_comparison(value, op, comparison_value):
+    if op == '==':
+        return value == comparison_value
+    elif op == '<':
+        return value < comparison_value
+    elif op == '>':
+        return value > comparison_value
+    elif op == '<=':
+        return value <= comparison_value
+    elif op == '>=':
+        return value >= comparison_value
+    else:
+        raise ValueError(f"Unsupported operator: {op}")
+
+def evaluate_jsonpath_condition(data, condition):
+    # print(f"\nEvaluating condition: {condition}")
+    try:
+        # Check if the condition contains a comparison
+        match = re.match(r'(.*?)\s*(==|<=|>=|<|>)\s*(.*)', condition)
+        if match:
+            path, op, comparison = match.groups()
+            comparison_value = float(comparison.strip())
+            
+            # Extract all indices from the path
+            indices = re.findall(r'\[(\d+)\]', path)
+            indices = [int(index) for index in indices]
+            
+            # Remove all indices from the path for evaluation
+            path = re.sub(r'\[\d+\]', '', path)
+            
+            # Evaluate the path part
+            jsonpath_expr = parse_jsonpath(path.strip())
+            matches = jsonpath_expr.find(data)
+            
+            if matches:
+                value = matches[0].value
+                # Apply all indices sequentially
+                for index in indices:
+                    if isinstance(value, list) and len(value) > index:
+                        value = value[index]
+                    else:
+                        print(f"  Index {index} is out of range or value is not a list")
+                        return False
+                
+                result = evaluate_comparison(value, op, comparison_value)
+                # print(f"  Comparison: {value} {op} {comparison_value}")
+                # print(f"  Result: {result}")
+                return result
+            else:
+                print("  No matches found for the path")
+                return False
+        else:
+            # Regular JSONPath without comparison
+            jsonpath_expr = parse_jsonpath(condition)
+            matches = jsonpath_expr.find(data)
+            return len(matches) > 0
+    except Exception as e:
+        print(f"Error evaluating condition: {e}")
+        return False
+    
+def split_complex_jsonpath(complex_expression):
+    # Remove the outer quotes, brackets, and any leading/trailing whitespace
+    expression = complex_expression.strip().strip('"- ').strip('[]')
+    
+    # Check for and remove '@' only if it appears in "$@." pattern at the beginning
+    if expression.startswith('$@.'):
+        expression = '$' + expression[2:]
+
+    # Remove the initial "$.attributes[?(" and the trailing ")]"
+    expression = re.sub(r'^\$\.attributes\[\?\(|\)\]$', '', expression)
+    
+    # Split the expression by '&&' but keep the JSONPath intact
+    parts = re.split(r'\s*&&\s*', expression)
+    
+    conditions = []
+    base_path = "$.attributes"
+    
+    for part in parts:
+        # Remove the '@.' at the beginning of each condition
+        part = part.replace('@.', '')
+        
+        # Remove any trailing parenthesis
+        part = part.rstrip(')')
+        
+        # Check if it's a comparison condition
+        if any(op in part for op in ['<', '>', '==', '<=', '>=']):
+            conditions.append(f"{base_path}.{part}")
+        else:
+            # For existence checks, we don't need to change anything
+            conditions.append(f"{base_path}.{part}")
+    
+    return conditions
+
+def prepare_filter(filter_expr, syntax):
+    if syntax == 'jsonpath':
+        return split_complex_jsonpath(filter_expr)
+    elif syntax == 'jq':
+        return jq.compile(filter_expr)
+    else:
+        raise ValueError(f"Unsupported filter syntax: {syntax}. Supported options are 'jsonpath' and 'jq'.")
+
+def execute_filter_commands(attr_samples_dict, attributes_list, filter_config, num_lines=100):
     """
     Execute filter commands on sampled lines from documents and their attributes.
-    
-    Args:
-    doc_samples (list): List of paths to sampled document files
-    attr_samples_dict (dict): Dictionary of attribute types to lists of attribute file paths
-    filter_config (dict): Filter configuration containing include and exclude filters
-    num_lines (int): Number of lines to sample from each file
-    
-    Returns:
-    dict: Results of filter command execution
+    Supports both JQ and JSONPath expressions based on the specified syntax.
     """
-    print(f"Executing filter commands on {len(doc_samples)} sampled documents, up to {num_lines} lines each")
+    print(f"Executing filter commands on attribute files, sampling {num_lines} lines from each.")
 
     results = {
-        'include': {'passed': 0, 'total': 0, 'errors': []},
-        'exclude': {'passed': 0, 'total': 0, 'errors': []}
+        'total_lines': 0,
+        'lines_excluded': 0,
+        'lines_passed': 0,
+        'errors': 0
     }
 
-    for doc_index, doc_path in enumerate(doc_samples):
-        doc_lines = sample_file_lines(doc_path, num_lines)
+    include_filters = filter_config.get('include', [])
+    exclude_filters = filter_config.get('exclude', [])
+    syntax = filter_config.get('syntax', 'jsonpath')
 
-        if doc_lines is None or len(doc_lines) == 0:
-            raise ValueError(f"Unable to sample lines from document file: {doc_path}")
-        print(f"sampled {len(doc_lines)} lines from {doc_path}")
-        return "success"
+    # Compile JQ expressions or prepare JSONPath expressions based on the specified syntax
+    try:
+        include_filters_compiled = [prepare_filter(filter_expr, syntax) for filter_expr in include_filters]
+        exclude_filters_compiled = [prepare_filter(filter_expr, syntax) for filter_expr in exclude_filters]
+    except ValueError as e:
+        print(f"Error preparing filters: {str(e)}")
+        return results
+
+    # Step 1: Sample lines from each attribute file and build a list of combined attribute data
+    attr_lines_list = []
+    for attr_name in attributes_list:
+        attr_paths = attr_samples_dict.get(attr_name, [])
+        if not attr_paths:
+            print(f"No attribute files found for '{attr_name}'.")
+            return results
+        attr_path = attr_paths[0]
+        attr_lines = sample_file_lines(attr_path, num_lines)
+        if not attr_lines:
+            print(f"No lines sampled from attribute file '{attr_path}'.")
+            return results
+        attr_lines_list.append(attr_lines)
+
+    for lines_tuple in zip(*attr_lines_list):
+        results['total_lines'] += 1
+        combined_attr_data = {'attributes': {}}
+        doc_id = None
+        for line in lines_tuple:
+            try:
+                attr_data = json.loads(line)
+                if doc_id is None:
+                    doc_id = attr_data.get('id')
+                    combined_attr_data['id'] = doc_id
+                elif doc_id != attr_data.get('id'):
+                    print(f"Mismatch in doc_ids: {doc_id} != {attr_data.get('id')}")
+                    results['errors'] += 1
+                    break
+                combined_attr_data['attributes'].update(attr_data.get('attributes', {}))
+            except json.JSONDecodeError:
+                results['errors'] += 1
+                break
+            except Exception as e:
+                print(f"Error processing line: {str(e)}")
+                results['errors'] += 1
+                break
+        else:
+            # No break occurred, so process filters
+            try:
+                # Apply include filters
+                if syntax == 'jsonpath':
+                    include_passed = all(
+                        all(evaluate_jsonpath_condition(combined_attr_data, condition) for condition in filter_expr)
+                        for filter_expr in include_filters_compiled
+                    )
+                else:  # JQ
+                    include_passed = all(
+                        filter_expr.input(combined_attr_data).first()
+                        for filter_expr in include_filters_compiled
+                    )
+
+                # Apply exclude filters if include filters passed
+                if include_passed:
+                    if syntax == 'jsonpath':
+                        exclude_matched = any(
+                            all(evaluate_jsonpath_condition(combined_attr_data, condition) for condition in filter_expr)
+                            for filter_expr in exclude_filters_compiled
+                        )
+                    else:  # JQ
+                        exclude_matched = any(
+                            filter_expr.input(combined_attr_data).first()
+                            for filter_expr in exclude_filters_compiled
+                        )
+                    
+                    if exclude_matched:
+                        results['lines_excluded'] += 1
+                    else:
+                        results['lines_passed'] += 1
+                else:
+                    results['lines_excluded'] += 1
+            except Exception as e:
+                print(f"Error applying filters: {str(e)}")
+                results['errors'] += 1
+
+    print("\nFilter execution results:")
+    print(f"Total lines processed: {results['total_lines']}")
+    print(f"Lines passed all filters: {results['lines_passed']}")
+    print(f"Lines excluded by filters: {results['lines_excluded']}")
+    print(f"Errors encountered: {results['errors']}")
     
-
-        # for line_index, doc_line in enumerate(doc_lines):
-        #     try:
-        #         doc = json.loads(doc_line)
-        #         combined_doc = doc.copy()
-        #         combined_doc['attributes'] = {}
-
-        #         # Process all attribute files
-        #         for attr_type, attr_paths in attr_samples_dict.items():
-        #             attr_path = attr_paths[doc_index]
-        #             attr_lines = sample_file_lines(attr_path, num_lines)
-        #             if attr_lines is None:
-        #                 print(f"Skipping attribute {attr_path} due to sampling error")
-        #                 continue
-        #             if line_index < len(attr_lines):
-        #                 attr = json.loads(attr_lines[line_index])
-        #                 combined_doc['attributes'].update(attr['attributes'])
-
-        #         for filter_type in ['include', 'exclude']:
-        #             for filter_expr in filter_config.get(filter_type, []):
-        #                 results[filter_type]['total'] += 1
-        #                 try:
-        #                     if filter_expr.startswith('$'):
-        #                         # JSONPath
-        #                         jsonpath_expr = parse_jsonpath(filter_expr)
-        #                         matches = jsonpath_expr.find(combined_doc)
-        #                     else:
-        #                         # JQ
-        #                         matches = jq.compile(filter_expr).input(combined_doc).all()
-
-        #                     if matches:
-        #                         results[filter_type]['passed'] += 1
-        #                     else:
-        #                         results[filter_type]['errors'].append(f"Filter '{filter_expr}' did not match for document {doc_path}, line {line_index+1}")
-        #                 except Exception as e:
-        #                     results[filter_type]['errors'].append(f"Error executing filter '{filter_expr}' on document {doc_path}, line {line_index+1}: {str(e)}")
-
-        #     except json.JSONDecodeError as e:
-        #         print(f"Error decoding JSON in file {doc_path}, line {line_index+1}: {str(e)}")
-        #     except Exception as e:
-        #         print(f"Error processing line {line_index+1} in file {doc_path}: {str(e)}")
-
     return results
 
 def sample_documents_with_attributes(doc_file_paths, attr_file_paths, num_samples=100):
@@ -670,42 +741,25 @@ def sample_documents_with_attributes(doc_file_paths, attr_file_paths, num_sample
 
     return sampled_docs
 
-
-def main(config_path, num_samples):
-    print("Loading configuration file...")
-    config = load_config(config_path)
-
-    print("Validating configuration structure...")
-    errors = validate_config_structure(config)
-
-    if errors:
-        print("Configuration validation failed. Errors:")
-        for error in errors:
-            print(f"- {error}")
-        sys.exit(1)
-
+def validate_s3_paths_and_permissions(config):
     print("Validating S3 paths and permissions...")
     for stream in config['streams']:
-        # Assuming the first document pattern is the base path for attributes
         base_doc_path = get_base_path(stream['documents'][0])
         base_attr_path = re.sub(r'/documents($|/)', r'/attributes\1', base_doc_path)
-        # print(f"Base document path: {base_doc_path}")
-        # print(f"Base attribute path: {base_attr_path}")
 
+        # Validate document patterns
         for doc_pattern in stream['documents']:
             is_valid, error = validate_s3_path(doc_pattern)
             if not is_valid:
                 print(f"Error: {error}")
             else:
-                # Check if at least one object matches the pattern
-                matching_objects = list(list_s3_objects(doc_pattern))
-                # Filter out folders (objects ending with '/')
-                matching_objects = [obj for obj in matching_objects if not obj.endswith('/')]
+                matching_objects = [obj for obj in list_s3_objects(doc_pattern) if not obj.endswith('/')]
                 if not matching_objects:
                     print(f"Warning: No objects found matching pattern: {doc_pattern}")
                 else:
                     print(f"Found {len(matching_objects)} objects matching pattern: {doc_pattern}")
 
+        # Validate output path
         output_path = stream['output']['path']
         is_valid, error = validate_s3_path(output_path)
         if not is_valid:
@@ -717,10 +771,9 @@ def main(config_path, num_samples):
             writable, error = check_s3_path_writable(output_path)
             if not writable:
                 print(f"Error: {error}")
-                sys.exit(1)
-            # else:
-            #     print(f"Output path is writable: {output_path}")
+                return False
 
+        # Validate attribute paths
         for attr in stream['attributes']:
             attr_path = f"{base_attr_path}/{attr}/"
             is_valid, error = validate_s3_path(attr_path)
@@ -730,15 +783,18 @@ def main(config_path, num_samples):
                 exists, error = check_s3_path_exists(attr_path)
                 if not exists:
                     print(f"Error: Attribute path does not exist: {attr_path}")
-                    sys.exit(1)
                 else:
                     print(f"Found attribute path: {attr_path}")
-                    # Check if there are any objects in this path
                     objects = list(list_s3_objects(attr_path))
                     if not objects:
                         print(f"  Warning: No objects found in this attribute path")
 
-    print("Validating filter expressions...")
+    return True  # All validations passed
+
+def validate_stream_filters(config):
+    print("\nValidating filter expressions...")
+    all_valid = True
+    
     for stream in config['streams']:
         if 'filter' in stream:
             filter_config = stream['filter']
@@ -750,70 +806,65 @@ def main(config_path, num_samples):
                     print(f"- Warning: {warning}")
 
             if filter_errors:
+                all_valid = False
                 print(f"Errors in filter expressions for stream '{stream['name']}':")
                 for error in filter_errors:
                     print(f"- {error}")
+    print("Filters validation complete.\n")
+    
+    return all_valid
 
-
-    print(f"Sampling and validating document-attribute alignment, filters, and attribute names...")
+def validate_documents_and_attributes(config, num_samples):
+    print("Sampling and validating document-attribute alignment, filters, and attribute names...")
     for stream in config['streams']:
-        # Extract filter attributes once per stream
-        doc_file_paths = stream['documents']
-        attr_file_paths = []
         filter_attributes = set()
         if 'filter' in stream:
             include_filters = stream['filter'].get('include', [])
             exclude_filters = stream['filter'].get('exclude', [])
             filter_attributes = extract_attribute_names_from_filters(include_filters + exclude_filters)
-        # print(f"Extracted filter attributes: {filter_attributes}")
 
         base_doc_path = get_base_path(stream['documents'][0])
         base_attr_path = re.sub(r'/documents($|/)', r'/attributes\1', base_doc_path)
 
-        # Sample and download files
-        local_doc_samples, local_attr_samples_dict = sample_and_download_files(stream, num_samples)
+        doc_samples, attr_samples_dict = sample_and_download_files(stream, num_samples)
 
-        for local_doc_sample in local_doc_samples:
-            print(f"\nValidating file: {local_doc_sample}")
+        for doc_sample in doc_samples:
+            print(f"\nValidating file: {doc_sample}")
             
-            # Count lines in the document
-            doc_line_count = count_file_lines(local_doc_sample)
+            doc_line_count = count_file_lines(doc_sample)
             if doc_line_count == -1:
                 print("Failed to count lines in document file. Check the file and try again.")
-                sys.exit(1)
+                return False
+
             print(f"Document has {doc_line_count} lines")
             
-            # Validate document JSONL
             doc_expected_fields = {'id', 'text', 'source', 'created', 'added', 'version', 'metadata', 'attributes'}
-            is_valid, error_messages = validate_jsonl(local_doc_sample, doc_expected_fields)
+            is_valid, error_messages = validate_jsonl(doc_sample, doc_expected_fields)
             if not is_valid:
                 print("Document validation failed:")
                 for error in error_messages:
                     print(f"  {error}")
-                sys.exit(1)
+                return False
             
             for attr_type in stream['attributes']:
-                local_attr_sample = local_attr_samples_dict[attr_type][local_doc_samples.index(local_doc_sample)]
-                print(f"\nValidating attribute file: {local_attr_sample}")
+                attr_sample = attr_samples_dict[attr_type][doc_samples.index(doc_sample)]
+                print(f"\nValidating attribute file: {attr_sample}")
                 
-                # Count lines in the attribute file
-                print(f"Counting lines in attribute file: {local_attr_sample}")
-                attr_line_count = count_file_lines(local_attr_sample)
+                attr_line_count = count_file_lines(attr_sample)
                 if attr_line_count == -1:
                     print("Failed to count lines in attribute file. Skipping further validation for this attribute.")
                     continue
+
                 print(f"Attribute file has {attr_line_count} lines")
                 
-                # Check if the number of lines in document and attribute files match
                 if doc_line_count != attr_line_count:
                     print(f"ERROR: Line count mismatch! Document has {doc_line_count} lines, but attribute file has {attr_line_count} lines.")
-                    sys.exit(1)
+                    return False
                 else:
                     print("Line count check passed: Document and attribute file have the same number of lines.")
                 
-                # Validate attribute JSONL
                 attr_expected_fields = {'id', 'attributes'}
-                is_valid, error_messages = validate_jsonl(local_attr_sample, attr_expected_fields)
+                is_valid, error_messages = validate_jsonl(attr_sample, attr_expected_fields)
                 if not is_valid:
                     print("Warning: possible attribute validation mismatch:")
                     for error in error_messages:
@@ -821,36 +872,49 @@ def main(config_path, num_samples):
                 else:
                     print("Attribute validation passed")
 
-        # Validate filters and check for attribute name typos
         if 'filter' in stream:
-            validate_filters_and_check_typos([local_attr_sample for attr_samples in local_attr_samples_dict.values() for local_attr_sample in attr_samples], stream['filter'], 
-    stream['attributes'])
+            validate_filters_and_check_typos([attr_sample for attr_samples in attr_samples_dict.values() for attr_sample in attr_samples], stream['filter'], stream['attributes'])
 
-        # Execute filter commands and analyze results
-        filter_execution_results = execute_filter_commands(local_doc_samples, local_attr_samples_dict, stream['filter'], num_lines=100)
+        filter_execution_results = execute_filter_commands(attr_samples_dict, stream['attributes'], stream['filter'], num_lines=100)
         print(filter_execution_results)
-                # print("\nFilter Execution Results:")
-                # for filter_type, results in filter_execution_results.items():
-                #     print(f"  {filter_type.capitalize()} filters:")
-                #     print(f"    Passed: {results['passed']}/{results['total']}")
-                #     if results['errors']:
-                #         print("    Errors:")
-                #         for error in results['errors']:
-                #             print(f"      - {error}")
 
-            
-    # print("Applying JQ/JSONPath filters to sampled data...")
-    # print("Checking for filter runtime errors...")
-    # print("Validating filter selection results...")
-    # print("Verifying attribute names in filters match attribute files...")
-    # print("Checking for existence of nested keys used in filter expressions...")
-    # print("Verifying file encoding and checking for encoding errors...")
+    return True
+
+def load_and_validate_config(config_path):
+    print("Loading configuration file...")
+    config = load_config(config_path)
+
+    print("Validating configuration structure...")
+    errors = validate_config_structure(config)
+
+    if errors:
+        print("Configuration validation failed. Errors:")
+        for error in errors:
+            print(f"- {error}")
+        return None
+    else:
+        print("Configuration validation successful.\n")
+        return config
+
+def main(config_path, num_samples):
+    config = load_and_validate_config(config_path)
+    if config is None:
+        print("Configuration loading or validation failed")
+
+    if not validate_s3_paths_and_permissions(config):
+        print("S3 path validation failed")
+
+    if not validate_stream_filters(config):
+        print("Filter validation failed. \n")
+
+    if not validate_documents_and_attributes(config, num_samples):
+        print("Document and attribute validation failed")
 
     print("Validation complete!")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2 or len(sys.argv) > 3:
-        print("Usage: python validate_mixer.py <path_to_config_file> [number_of_samples]")
+        print("Usage: python validate_mixer.py <path_to_config_file> [number_of_file_samples, default=1]")
         sys.exit(1)
     
     config_path = sys.argv[1]
