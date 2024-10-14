@@ -9,7 +9,7 @@ streams:
 
     output:
       path: s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset-october/mixed-output
-      max_size_in_bytes: 4294967296  # 4GB, adjust as needed
+      max_size_in_bytes: 4294967296
       discard_fields:
         - attributes
 
