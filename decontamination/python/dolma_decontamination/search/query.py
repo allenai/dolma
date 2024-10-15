@@ -6,6 +6,7 @@ from markdownify import markdownify as md
 from rich.markdown import Markdown
 from rich.console import Console
 from rich.table import Table
+from rich.text import Text
 from tantivy import SnippetGenerator
 
 
@@ -30,6 +31,12 @@ def make_search_parser():
         type=int,
         default=10,
         help="The number of hits to return."
+    )
+    parser.add_argument(
+        "-s",
+        "--show-snippets",
+        action="store_true",
+        help="Show snippets in the search results."
     )
     return parser
 
@@ -66,23 +73,21 @@ def search_data(args: argparse.Namespace):
         for hit_score, hit_doc_address in hits:
             document = searcher.doc(hit_doc_address)
             hit_id = document["id"][0]
-            hit_text = document["text"][0]
 
-            snippet_generator = SnippetGenerator.create(
+
+
+            if args.show_snippets:
+                snippet_generator = SnippetGenerator.create(
                 searcher, parsed_query, index.schema, "text"
-            )
-            snippet = snippet_generator.snippet_from_doc(document)
+                )
+                snippet = snippet_generator.snippet_from_doc(document)
+                hit_text = Markdown(md(snippet.to_html()).strip())
+            else:
+                hit_text = Text(document["text"][0].strip().replace("\n", " ⮑"))
 
-            table.add_row(
-                f"{hit_score:.4f}",
-                hit_id,
-                Markdown(md(snippet.to_html()).strip())
-            )
+            table.add_row(f"{hit_score:.2f}", hit_id, hit_text)
 
         console.print(table)
-
-
-
 
 
 
