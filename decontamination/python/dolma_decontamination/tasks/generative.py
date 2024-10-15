@@ -1,4 +1,5 @@
 from .base import Task, Dataset, Target
+from .registry import register_task
 
 QA_FORMATS = [
     Target('"Question: " + .question + "\nAnswer: " + .answer', "qa_full_newline"),
@@ -10,6 +11,7 @@ QA_FORMATS = [
 ]
 
 
+@register_task()
 def squad() -> Task:
     datasets = [Dataset(path="rajpurkar/squad", split="validation", id_selector=".id")]
 
@@ -20,6 +22,7 @@ def squad() -> Task:
     return Task(name="squad", datasets=datasets, targets=targets)
 
 
+@register_task()
 def coqa() -> Task:
     datasets: list[Dataset] = [
         Dataset(path="stanfordnlp/coqa", split="validation", id_selector=".id"),
@@ -33,5 +36,6 @@ def coqa() -> Task:
     return Task(name="coqa", datasets=datasets, targets=targets)
 
 
-def jeopardy() -> Task:
-    ...
+# @register_task()
+# def jeopardy() -> Task:
+#     ...

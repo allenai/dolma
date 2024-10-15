@@ -26,18 +26,19 @@ class Row(Struct, frozen=True):
 class Dataset(Struct, dict=True, omit_defaults=True):
     path: str
     split: str
+    data_files: str | None = None
     name: str | None = None
     id_selector: str | None = None
     trust_remote_code: bool = False
 
     def __post_init__(self):
         if self.id_selector is not None:
-            self._compiled_id_selector = lambda row: jq.compile(self.id_selector).input(row).first()
+            self._compiled_id_selector = lambda row: str(jq.compile(self.id_selector).input(row).first())
         else:
             self._compiled_id_selector = JsonObjHasher()
 
     def label(self) -> str:
-        return DATASET_SEPARATOR.join([self.path, self.name or "", self.split, self.id_selector or ""])
+        return DATASET_SEPARATOR.join([self.path, self.name or "", self.split])
 
     @classmethod
     def from_label(cls, label: str) -> "Dataset":
@@ -45,8 +46,15 @@ class Dataset(Struct, dict=True, omit_defaults=True):
         path, name, split, id_selector = label.split(DATASET_SEPARATOR)
         return cls(path=path, name=name or None, split=split, id_selector=id_selector or None)
 
-    def load(self) -> HFDataset:
-        return load_dataset(path=self.path, name=self.name, split=self.split, trust_remote_code=self.trust_remote_code)
+
+    def load(self) -> Iterable[dict]:
+        return load_dataset(
+            path=self.path,
+            name=self.name,
+            split=self.split,
+            data_files=self.data_files,
+            trust_remote_code=self.trust_remote_code
+        )
 
     def _row_id(self, row: dict) -> str:
         if (row_id := self._compiled_id_selector(row)) is None:
@@ -57,6 +65,12 @@ class Dataset(Struct, dict=True, omit_defaults=True):
         dataset_label = self.label()
         for row in self.load():
             yield Row(row_id=self._row_id(row), dataset_label=dataset_label, content=row)
+
+    def __repr__(self) -> str:
+        return self.label()
+
+    def __str__(self) -> str:
+        return self.label()
 
 
 class TargetOutput(Struct, frozen=True):
@@ -114,13 +128,13 @@ class Target(Struct, dict=True, omit_defaults=True):
 
 
 class DocMeta(Struct, frozen=True):
-    row_id: str
+    dataset_id: str
     target_id: str
-    field_label: str
     dataset_label: str
+    target_label: str
 
     def label(self) -> str:
-        return DOCUMENT_SEPARATOR.join([self.row_id, self.target_id, self.field_label, self.dataset_label])
+        return DOCUMENT_SEPARATOR.join([self.dataset_id, self.target_id, self.target_label, self.dataset_label])
 
 
 class Doc(Struct, frozen=True):
@@ -130,10 +144,10 @@ class Doc(Struct, frozen=True):
     @classmethod
     def make(cls, target_output: TargetOutput, dataset_row: Row) -> "Doc":
         meta = DocMeta(
-            row_id=dataset_row.row_id,
+            dataset_id=dataset_row.row_id,
             target_id=target_output.target_id,
-            field_label=target_output.label,
-            dataset_label=dataset_row.dataset_label
+            dataset_label=dataset_row.dataset_label,
+            target_label=target_output.label,
         )
         return cls(text=target_output.text, meta=meta)
 

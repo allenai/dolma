@@ -1,9 +1,19 @@
-from collections import namedtuple
+"""
+python -m dolma_decontamination.search.index \
+    -i /data/flan_index \
+    -d "s3://ai2-llm/pretraining-data/sources/tulu_flan/v1-decontaminated-60M-shots_all-upweight_1-dialog_false-sep_rulebased/documents/train/*.gz" \
+    -n 4 \
+    -N 12 \
+    -b 1000 \
+    -B 50000 \
+    -f
+"""
+
 from functools import partial
 import logging
 import json
 import shutil
-from queue import Queue, Empty as EmptyError
+from queue import Queue
 import argparse
 import tqdm
 from pathlib import Path
@@ -12,9 +22,11 @@ import fsspec
 import smart_open
 import time
 from urllib.parse import urlparse
-from multiprocessing import Pool, Manager, set_start_method, Process
-from multiprocessing.managers import BaseManager
+from multiprocessing import Pool, Manager, set_start_method
 from contextlib import ExitStack
+
+
+from .common import create_index
 
 
 QueueType = Queue[Document | None]
@@ -51,11 +63,11 @@ def read_file_for_indexing(file_path: str, docs_queue: Queue[Document], batch_si
             batch.append(doc)
 
             if len(batch) >= batch_size:
-                docs_queue.put_nowait(batch)
+                docs_queue.put(batch)
                 batch = []
 
     if batch:
-        docs_queue.put_nowait(batch)
+        docs_queue.put(batch)
 
 
 def read_many_and_index(
@@ -66,59 +78,54 @@ def read_many_and_index(
     indexer_batch_size: int = 1_000,
     reader_batch_size: int = 1_000,
     heap_size: int = 1024 * 1024 * 1024,
+    queue_size: int = 1000,
 ):
     with ExitStack() as stack:
         reader_pool = stack.enter_context(Pool(processes=num_readers))
+
+        files_pbar = stack.enter_context(tqdm.tqdm(desc="Reading files", unit=" files", unit_scale=True, total=len(paths)))
         docs_pbar = stack.enter_context(tqdm.tqdm(desc="Indexing documents", unit=" docs", unit_scale=True))
-        writer = index.writer(
-            num_threads=num_indexers,
-            heap_size=heap_size,
-        )
-        docs_queue: Queue[Document] = (manager := Manager()).Queue()
-        async_results = reader_pool.map_async(
-            partial(read_file_for_indexing, docs_queue=docs_queue, batch_size=reader_batch_size),
-            paths,
-        )
+
+        writer_fn = partial(index.writer, num_threads=num_indexers, heap_size=heap_size)
+        writer = writer_fn()
+
+        docs_queue: Queue[Document] = (manager := Manager()).Queue(queue_size)
+
+        fn = partial(read_file_for_indexing, docs_queue=docs_queue, batch_size=reader_batch_size)
+        async_results = [
+            reader_pool.apply_async(fn, [p], callback=lambda _: files_pbar.update(1))
+            for p in paths
+        ]
+        # for p in paths:
+        #     fn(p)
 
         indexed_count = 0
-        while not async_results.ready() or not docs_queue.empty():
+        while any(not r.ready() for r in async_results) or not docs_queue.empty():
             # check if there are any documents to index
             if docs_queue.empty():
                 time.sleep(0.1)
             else:
-                for doc in docs_queue.get():
+                batch = docs_queue.get()
+                for doc in batch:
                     writer.add_document(doc)
                     indexed_count += 1
-                docs_pbar.update(indexed_count)
+
                 if indexed_count >= indexer_batch_size:
+                    docs_pbar.update(indexed_count)
                     indexed_count = 0
                     writer.commit()
-        if indexed_count:
-            writer.commit()
 
+        for r in async_results:
+            r.wait()
+
+        if indexed_count:
+            docs_pbar.update(indexed_count)
+            writer.commit()
         writer.wait_merging_threads()
 
 
-def create_index(path: str | Path | None = None, reuse: bool = False) -> Index:
-    # Declaring our schema.
-    schema_builder = SchemaBuilder()
-    schema_builder.add_text_field("text", stored=True)
-    schema_builder.add_text_field("id", stored=True)
-    schema = schema_builder.build()
-
-    if path:
-        path = Path(path) / "index"
-        if not reuse and path.exists():
-            shutil.rmtree(path)
-        path.mkdir(parents=True, exist_ok=True)
-
-    # Creating our index (in memory)
-    index = Index(schema, path=str(path), reuse=reuse)
-    return index
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser()
+def make_index_parser():
+    parser = argparse.ArgumentParser("Index documents into a tantivy index")
     parser.add_argument(
         "-d",
         "--documents",
@@ -171,13 +178,19 @@ def parse_arguments():
         type=int,
         default=1024 * 1024 * 1024,
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "-q",
+        "--queue-size-per-thread",
+        type=int,
+        default=125,
+        help="The size of the queue to use for storing documents."
+    )
+    return parser
 
 
-def main():
+def index_data(args: argparse.Namespace):
     set_start_method("spawn")
 
-    args = parse_arguments()
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
@@ -196,9 +209,10 @@ def main():
         indexer_batch_size=args.indexer_batch_size,
         reader_batch_size=args.reader_batch_size,
         heap_size=args.heap_size,
+        queue_size=args.queue_size_per_thread * args.num_readers,
     )
     logger.info("Indexed all documents")
 
 
 if __name__ == "__main__":
-    main()
+    index_data(make_index_parser().parse_args())
