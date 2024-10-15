@@ -42,8 +42,11 @@ In this tutorial, we will show how to use the `tag`, `dedupe`, and `mix` command
 Run all following commands from root of this repository.
 
 ### Step 0: Obtain Wikipedia
-
-We use [this script](https://github.com/allenai/dolma/blob/main/scripts/make_wikipedia.py) to download and process Wikipedia:
+First, install the required dependencies:
+```bash
+pip install git+https://github.com/santhoshtr/wikiextractor.git requests smart_open tqdm
+```
+Next, use [this script](https://github.com/allenai/dolma/blob/main/scripts/make_wikipedia.py) to download and process Wikipedia:
 
 ```shell
 python scripts/make_wikipedia.py \
@@ -53,9 +56,9 @@ python scripts/make_wikipedia.py \
   --processes 16
 ```
 
-The code above will download and process Wikipedia articles in the `simple` language from the October 1, 2023 wikipedia dump.
-After running it, you will have a directory called `wikipedia/v0` with Wikipedia articles in it.
-Wikipedia articles are going to be grouped in compressed JSONL files in dolma
+This script will download and process Wikipedia articles in the `simple` language from the October 1, 2023 Wikipedia dump. After running it, you will find the articles stored in a directory named `wikipedia/v0`. The articles will be grouped into compressed JSONL files suitable for dolma.
+
+Note: Update the `--date 20231001` argument by selecting a specific dump date from the Wikimedia dump website. Make sure to use the date format `YYYYMMDD`.
 
 ### Step 1: Run Taggers
 
@@ -105,74 +108,19 @@ The above command will create an attribute directory called `bff_duplicate_parag
 
 ### Step 3: Run Mixer
 
-After running the taggers and and marking which paragraphs are duplicates, we can run the mixer to create a dataset with a subset of the languages and documents.
+After running the taggers and marking which paragraphs are duplicates, we can run the mixer to create a dataset with a subset of the languages and documents.
 
-For this step, we will pass a configuration file to the mix command instead of passing all the options on the command line. CLI invocation looks like this:
+For this step, we will pass a configuration file to the `mix` command instead of passing all the options on the command line. The CLI invocation looks like this:
 
 ```shell
-dolma -c wikipedia-mixer.json mix --processes 16
+dolma -c examples/wikipedia-mixer.json mix --processes 16
 ```
 
-Note how the configuration in this case is a JSON file; a YAML file would also work.
-Further, we override the number of processes to use to 96 using the `--processes` flag.
+In this case, the configuration is provided via a JSON file, though a YAML file would also work. Additionally, we override the number of processes to 16 using the `--processes` flag.
 
-`wikipedia-mixer.json` looks like the following (A YAML-equivalent version is available at [`wikipedia-mixer.yaml`](examples/wikipedia-mixer.yaml)):
+You can find the configuration file [`wikipedia-mixer.json`](examples/wikipedia-mixer.json) in the examples repository, along with its YAML-equivalent version at [`wikipedia-mixer.yaml`](examples/wikipedia-mixer.yaml).
 
-
-```yaml
-{
-  # mix command operates on one or more stream; each can correspond to a different data source
-  # and can have its own set of filters and transformations
-  "streams": [
-    {
-      # name of the stream; this will be used as a prefix for the output files
-      "name": "getting-started",
-      # the documents to mix; note how we use a glob pattern to match all documents
-      "documents": [
-        "wikipedia/v0/documents/*.gz",
-      ],
-      # this is the directory where the output will be written
-      # note how the toolkit will try to create files of size ~1GB
-      "output": {
-        "path": "wikipedia/example0/documents",
-        "max_size_in_bytes": 1000000000
-      },
-      "attributes": [
-        "exp",                           # load the attributes from the taggers
-        "bff_duplicate_paragraph_spans"  # load the attributes from the deduper
-      ],
-      # filers remove or include whole documents based on the value of their attributes
-      "filter": {
-        "include": [
-           # Include all documents with length less than 100,000 whitespace-separated words
-          "$.attributes[?(@.exp__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 100000)]"
-        ],
-        "exclude": [
-          # Remove any document that is shorter than 50 words
-          "$.attributes[?(@.exp__whitespace_tokenizer_with_paragraphs_v1__document[0][2] < 50)]",
-          # Remove any document whose total English fasttext score is below 0.5
-          "$.attributes[?(@.exp__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0][2] <= 0.5)]",
-          # Remove all documents that contain a duplicate paragraph
-          "$@.attributes[?(@.bff_duplicate_paragraph_spans && @.bff_duplicate_paragraph_spans[0] && @.bff_duplicate_paragraph_spans[0][2] >= 1.0)]"
-        ]
-      },
-      # span replacement allows you to replace spans of text with a different string
-      "span_replacement": [
-        {
-          # remove paragraphs whose not-English cld2 socre is below 0.9 in a document
-          "span": "$.attributes.exp__cld2_en_paragraph_with_doc_score_v2__not_en",
-          "min_score": 0.1,
-          "replacement": ""
-        }
-      ]
-    }
-  ],
-  # this process option is overridden by the command line flag
-  "processes": 1
-}
-```
-
-The above configuration will create a directory called `wikipedia/example0/documents` with a set of files that contain the documents that pass the filters.
+The configuration will create a directory named `wikipedia/example0/documents` with a set of files containing the documents that pass the filters.
 
 ### Step 4: Tokenize The Dataset
 
