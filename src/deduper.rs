@@ -1,7 +1,7 @@
 use human_bytes::human_bytes;
 use std::collections::VecDeque;
 use std::io;
-use std::io::{BufRead, Write, Error, ErrorKind};
+use std::io::{BufRead, Error, ErrorKind, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,16 +11,21 @@ use serde_json::{json, Value};
 
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
-
+use once_cell::sync::OnceCell;
 use crate::bloom_filter::BloomFilter;
 use crate::io::MultiStream;
+use crate::log_pbar::LogProgressBar;
 use crate::s3_util;
 use crate::shard::shard_config::{CompressionConfig, WorkDirConfig};
 use crate::shard::{find_objects_matching_patterns, FileCache};
 use crate::wimbd::tokens::tokenize;
-use crate::log_pbar::LogProgressBar; 
+
+
 
 use deduper_config::*;
+
+static GLOBAL_POOL: OnceCell<()> = OnceCell::new();
+
 
 fn build_pbar(num_items: usize) -> LogProgressBar {
     let mut pbar = LogProgressBar::new(num_items);
@@ -28,16 +33,18 @@ fn build_pbar(num_items: usize) -> LogProgressBar {
     pbar
 }
 
-
 pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     // Set global thread count for rayon parallelism
     let start_main = Instant::now();
 
     if config.processes > 0 {
-        ThreadPoolBuilder::new().num_threads(config.processes).build_global().unwrap();
+        GLOBAL_POOL.get_or_init(|| {
+            ThreadPoolBuilder::new()
+                .num_threads(config.processes)
+                .build_global()
+                .expect("Failed to build global thread pool")
+        });
     }
-
-
 
     let bloom_filter = BloomFilter::initialize(&config.bloom_filter).unwrap();
     let bloom_filter = Arc::new(bloom_filter);
@@ -45,41 +52,39 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
         .unwrap()
         .clone();
 
-
     let docs_processed = AtomicUsize::new(0);
     let seen_bytes = AtomicUsize::new(0);
     let removed_bytes = AtomicUsize::new(0);
     let failed_shard_count = AtomicU32::new(0);
     let failed_shard_count_ref = Arc::new(failed_shard_count);
     let pbar = Arc::new(Mutex::new(build_pbar(paths.len())));
-    
+
     println!("Starting par iter thing");
-    paths.par_iter()
-        .for_each(|p| {
-            let path = p.clone();
-            let work_dirs = config.work_dir.clone();
-            let dedupe = config.dedupe.clone();
-            let compression = match config.compression.clone() {
-                Some(c) => c,
-                None => CompressionConfig::infer(),
-            };            
-            let result = write_attributes(
-                path,
-                work_dirs,
-                dedupe, 
-                compression,
-                bloom_filter.clone(),
-                !config.is_s3_volume.unwrap_or(false),
-            );
-            if let Err(e) = result {
-                log::error!("Failed to process {:?}: {}", p, e);
-                failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
-            } else {
-                let (path_docs_processed, path_seen_bytes, path_removed_bytes) = result.unwrap();
-                docs_processed.fetch_add(path_docs_processed, Ordering::Relaxed);
-                seen_bytes.fetch_add(path_seen_bytes, Ordering::Relaxed);
-                removed_bytes.fetch_add(path_removed_bytes, Ordering::Relaxed);
-            }
+    paths.par_iter().for_each(|p| {
+        let path = p.clone();
+        let work_dirs = config.work_dir.clone();
+        let dedupe = config.dedupe.clone();
+        let compression = match config.compression.clone() {
+            Some(c) => c,
+            None => CompressionConfig::infer(),
+        };
+        let result = write_attributes(
+            path,
+            work_dirs,
+            dedupe,
+            compression,
+            bloom_filter.clone(),
+            !config.is_s3_volume.unwrap_or(false),
+        );
+        if let Err(e) = result {
+            log::error!("Failed to process {:?}: {}", p, e);
+            failed_shard_count_ref.fetch_add(1, Ordering::Relaxed);
+        } else {
+            let (path_docs_processed, path_seen_bytes, path_removed_bytes) = result.unwrap();
+            docs_processed.fetch_add(path_docs_processed, Ordering::Relaxed);
+            seen_bytes.fetch_add(path_seen_bytes, Ordering::Relaxed);
+            removed_bytes.fetch_add(path_removed_bytes, Ordering::Relaxed);
+        }
         pbar.lock().unwrap().inc(1);
     });
 
@@ -100,25 +105,44 @@ pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     let seen_bytes = seen_bytes.into_inner();
     let removed_bytes = removed_bytes.into_inner();
     log::info!("----------------------------------");
-    log::info!("Finished processing files in {:?} (s)", start_main.elapsed().as_secs());
-    log::info!("Was successful on {:?}/{:?} of the paths", paths.len() - failure_count as usize, paths.len());
+    log::info!(
+        "Finished processing files in {:?} (s)",
+        start_main.elapsed().as_secs()
+    );
+    log::info!(
+        "Was successful on {:?}/{:?} of the paths",
+        paths.len() - failure_count as usize,
+        paths.len()
+    );
     if failure_count > 0 {
         log::error!("FAILED ON {:?} PATHS", failure_count);
     }
-    log::info!("Bloom filter has sparsity {:?}", bloom_filter.calculate_sparsity());
-    log::info!("Processed {:?} documents in total", docs_processed.into_inner());
-    log::info!("Processed {} of data, removed {} of them | Removal rate of {:?}", 
-               human_bytes(seen_bytes as f32), human_bytes(removed_bytes as f32),
-               if seen_bytes == 0 {0.0} else {removed_bytes as f32 / seen_bytes as f32});
+    log::info!(
+        "Bloom filter has sparsity {:?}",
+        bloom_filter.calculate_sparsity()
+    );
+    log::info!(
+        "Processed {:?} documents in total",
+        docs_processed.into_inner()
+    );
+    log::info!(
+        "Processed {} of data, removed {} of them | Removal rate of {:?}",
+        human_bytes(seen_bytes as f32),
+        human_bytes(removed_bytes as f32),
+        if seen_bytes == 0 {
+            0.0
+        } else {
+            removed_bytes as f32 / seen_bytes as f32
+        }
+    );
+
 
     if failure_count == 0 {
         Ok(failure_count)
     } else {
         Err(failure_count)
     }
-
 }
-
 
 //Use the first hash to check if this dedupe key belongs to the current partition.
 //If it does, return all hashes. If it doesn't, return an empty list.
@@ -239,15 +263,16 @@ fn write_attributes(
             docs_processed += 1;
             let data: Value = serde_json::from_str(&line)?;
             let id = data["id"].clone();
-            let (attributes, doc_seen_bytes, doc_removed_bytes) = if dedupe_config.dedupe_method == "documents" {
-                dedupe_documents(data, dedupe_config.clone(), &bloom_filter)
-            } else if dedupe_config.dedupe_method == "paragraphs" {
-                dedupe_paragraphs(data, dedupe_config.clone(), &bloom_filter)
-            } else if dedupe_config.dedupe_method == "dclm" {
-                dedupe_dclm(data, dedupe_config.clone(), &bloom_filter)
-            } else {
-                (json!({}), 0, 0)
-            };
+            let (attributes, doc_seen_bytes, doc_removed_bytes) =
+                if dedupe_config.dedupe_method == "documents" {
+                    dedupe_documents(data, dedupe_config.clone(), &bloom_filter)
+                } else if dedupe_config.dedupe_method == "paragraphs" {
+                    dedupe_paragraphs(data, dedupe_config.clone(), &bloom_filter)
+                } else if dedupe_config.dedupe_method == "dclm" {
+                    dedupe_dclm(data, dedupe_config.clone(), &bloom_filter)
+                } else {
+                    (json!({}), 0, 0)
+                };
             seen_bytes += doc_seen_bytes;
             removed_bytes += doc_removed_bytes;
             let mut output_object = json!({});
@@ -273,7 +298,12 @@ fn write_attributes(
     }
 
     log::info!(
-        "{:?} | Saw {:?} docs and {:?} bytes, removed {:?} of them", docs_location, docs_processed, seen_bytes, removed_bytes);
+        "{:?} | Saw {:?} docs and {:?} bytes, removed {:?} of them",
+        docs_location,
+        docs_processed,
+        seen_bytes,
+        removed_bytes
+    );
     if label_temp {
         //Finalize output performs a rename operation, which isn't implemented in mountpoint-s3 (https://github.com/awslabs/mountpoint-s3/issues/506)
         cache.finalize_output(&attrs_location)?;
@@ -281,12 +311,11 @@ fn write_attributes(
     Ok((docs_processed, seen_bytes, removed_bytes))
 }
 
-
 /*=================================================================
 =                    DEDUP SINGLE-DOCUMENT METHODS                =
 =================================================================*/
 /* Methods to process a single document. Roughly shared signatures here:
-Inputs: 
+Inputs:
     data: serde_json::Value
     key: str key to dedup on (usually this should be "text")
     config: the DedupeConfig struct
@@ -294,8 +323,11 @@ Output:
     the json with the duplicate spans
 */
 
-
-pub fn dedupe_documents(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<BloomFilter>) -> (Value, usize, usize) {
+pub fn dedupe_documents(
+    data: Value,
+    dedupe_config: DedupeConfig,
+    bloom_filter: &Arc<BloomFilter>,
+) -> (Value, usize, usize) {
     let mut attributes = json!({});
     let cfg = dedupe_config.documents.unwrap();
     let min_word_count = dedupe_config.min_words.unwrap_or(0);
@@ -341,9 +373,7 @@ pub fn dedupe_documents(data: Value, dedupe_config: DedupeConfig, bloom_filter: 
     } else if document_key.len() < min_content_length {
         // skip length 0 documents
         attributes[attr_name] = Value::Array(Vec::new());
-    } else if dedupe_config.skip_empty.unwrap_or(false)
-        && document_key.trim().is_empty()
-    {
+    } else if dedupe_config.skip_empty.unwrap_or(false) && document_key.trim().is_empty() {
         // skip empty documents if dedupe_config.skip_empty is true
         // and the document key is empty after trimming (i.e., removing whitespace)
         attributes[attr_name] = Value::Array(Vec::new());
@@ -381,11 +411,15 @@ pub fn dedupe_documents(data: Value, dedupe_config: DedupeConfig, bloom_filter: 
             //The dedupe key doesn't belong to this partition
             attributes[attr_name] = Value::Array(Vec::new());
         }
-    }    
+    }
     (attributes, seen_bytes, removed_bytes)
 }
 
-pub fn dedupe_paragraphs(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<BloomFilter>) -> (Value, usize, usize) {
+pub fn dedupe_paragraphs(
+    data: Value,
+    dedupe_config: DedupeConfig,
+    bloom_filter: &Arc<BloomFilter>,
+) -> (Value, usize, usize) {
     let mut attributes = json!({});
     let cfg = dedupe_config.paragraphs.unwrap();
     let min_content_length = dedupe_config.min_length.unwrap_or(0);
@@ -396,10 +430,8 @@ pub fn dedupe_paragraphs(data: Value, dedupe_config: DedupeConfig, bloom_filter:
     let mut removed_bytes = 0;
     let mut offset = 0;
 
-
     if text_length > 0 {
-        let paragraphs =
-            text.split(cfg.paragraph_separator.as_deref().unwrap_or("\n"));
+        let paragraphs = text.split(cfg.paragraph_separator.as_deref().unwrap_or("\n"));
         let mut duplicate_paragraph_spans = Vec::new();
 
         // skip empty documents if text_length is 0
@@ -424,16 +456,12 @@ pub fn dedupe_paragraphs(data: Value, dedupe_config: DedupeConfig, bloom_filter:
                     // skip documents with fewer than min_words words
                     continue;
                 }
-            } else if dedupe_config.skip_empty.unwrap_or(false)
-                && p.trim().is_empty()
-            {
+            } else if dedupe_config.skip_empty.unwrap_or(false) && p.trim().is_empty() {
                 // skip empty paragraphs if dedupe_config.skip_empty is true
                 // and the paragraph is empty after trimming (i.e., removing whitespace)
                 continue;
             } else {
-                if cfg.by_ngram.is_none()
-                    || cfg.by_ngram.as_ref().unwrap().ngram_length == 0
-                {
+                if cfg.by_ngram.is_none() || cfg.by_ngram.as_ref().unwrap().ngram_length == 0 {
                     let dedupe_key = VecDeque::from([p]);
                     let hashes = build_hashes(
                         &bloom_filter,
@@ -463,8 +491,7 @@ pub fn dedupe_paragraphs(data: Value, dedupe_config: DedupeConfig, bloom_filter:
                     let by_ngram = cfg.clone().by_ngram.unwrap();
                     let ngram_length = by_ngram.ngram_length;
                     let stride = by_ngram.stride;
-                    let mut ngram: VecDeque<&str> =
-                        VecDeque::with_capacity(ngram_length);
+                    let mut ngram: VecDeque<&str> = VecDeque::with_capacity(ngram_length);
                     let mut word_index = 0;
                     let mut last_ngram_start = 0;
                     let mut ngram_count = 0;
@@ -473,9 +500,7 @@ pub fn dedupe_paragraphs(data: Value, dedupe_config: DedupeConfig, bloom_filter:
                         ngram.push_back(token);
                         if ngram.len() == ngram_length {
                             let ngram_start = word_index - (ngram_length - 1);
-                            if last_ngram_start == 0
-                                || ngram_start - last_ngram_start >= stride
-                            {
+                            if last_ngram_start == 0 || ngram_start - last_ngram_start >= stride {
                                 last_ngram_start = ngram_start;
                                 ngram_count += 1;
                                 let dedupe_key = VecDeque::from(ngram.clone());
@@ -499,9 +524,7 @@ pub fn dedupe_paragraphs(data: Value, dedupe_config: DedupeConfig, bloom_filter:
                         }
                         word_index += 1;
                     }
-                    if ngram_count < 2
-                        && !by_ngram.skip_short_paragraphs.unwrap_or(false)
-                    {
+                    if ngram_count < 2 && !by_ngram.skip_short_paragraphs.unwrap_or(false) {
                         // Too few ngrams to dedupe by overlap. Just compare the whole thing
                         let dedupe_key = VecDeque::from([p]);
                         let hashes = bloom_filter.hashes(&dedupe_key);
@@ -533,8 +556,7 @@ pub fn dedupe_paragraphs(data: Value, dedupe_config: DedupeConfig, bloom_filter:
                             duplicate_paragraph_spans.push(Value::Array(span));
                         }
                     } else {
-                        let overlap_fraction =
-                            duplicate_ngram_count as f32 / ngram_count as f32;
+                        let overlap_fraction = duplicate_ngram_count as f32 / ngram_count as f32;
 
                         if overlap_fraction >= by_ngram.overlap_threshold {
                             let span = vec![
@@ -562,13 +584,16 @@ pub fn dedupe_paragraphs(data: Value, dedupe_config: DedupeConfig, bloom_filter:
         } else {
             &cfg.attribute_name
         };
-        attributes[attr_name] = Value::Array(duplicate_paragraph_spans);    
+        attributes[attr_name] = Value::Array(duplicate_paragraph_spans);
     }
     (attributes, seen_bytes, removed_bytes)
-
 }
 
-pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<BloomFilter>) -> (Value, usize, usize) {
+pub fn dedupe_dclm(
+    data: Value,
+    dedupe_config: DedupeConfig,
+    bloom_filter: &Arc<BloomFilter>,
+) -> (Value, usize, usize) {
     // Setup/init for DCLM-style dedup
     // Break into paragraphs and skip the too-short paragraphs
     // For each paragraph: if >threshold of the ngrams are seen before, mark this paragraph as duplicate
@@ -580,10 +605,14 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
     let ngram_params = cfg.by_ngram;
     let min_content_length = dedupe_config.min_length.unwrap_or(0);
     let attr_name = if dedupe_config.num_partitions.unwrap_or(1) > 1 {
-        &format!("{}_{}",
-                 cfg.attribute_name,
-                 dedupe_config.partition_index.unwrap_or(0))
-    } else { &cfg.attribute_name };
+        &format!(
+            "{}_{}",
+            cfg.attribute_name,
+            dedupe_config.partition_index.unwrap_or(0)
+        )
+    } else {
+        &cfg.attribute_name
+    };
     let text = data["text"].as_str().unwrap();
     let text_length = text.len();
 
@@ -594,12 +623,12 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
     let mut total_contained_ngrams = 0;
     let seen_bytes = text.len();
     let mut removed_bytes = 0;
-    let mut hashes_to_insert : Vec<Vec<u64>> = Vec::new();
+    let mut hashes_to_insert: Vec<Vec<u64>> = Vec::new();
     let mut offset = 0;
     let effective_stride = ngram_params.stride + 1; // 0 means consecutive ngrams
     if text_length == 0 {
         return (attributes, seen_bytes, removed_bytes);
-    }    
+    }
     for p in paragraphs {
         // Loop over paragraphs
         let par_start = offset;
@@ -608,11 +637,11 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
         if offset < text_length - 1 {
             offset += splitter.len();
         }
-        let par_end = offset; 
-        if par_char_length < min_content_length { 
-            continue; 
+        let par_end = offset;
+        if par_char_length < min_content_length {
+            continue;
         } // Skip paragraph: too short (in chars)
-        
+
         // Now tokenize and make ngrams
         let mut stride_counter = 0;
         let mut hashes: Vec<Vec<u64>> = Vec::new();
@@ -627,28 +656,26 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
                 ngram.pop_front();
             }
         }
-        if hashes.len() == 0 { 
-            continue 
-
+        if hashes.len() == 0 {
+            continue;
         } // Skip paragraph: too short (in tokens )
-        // Check containment and keep track of whether we should keep/delete this para
+          // Check containment and keep track of whether we should keep/delete this para
         let contained_ngrams = hashes.iter().filter(|h| bloom_filter.contains(h)).count();
 
         total_ngrams += hashes.len();
         total_contained_ngrams += contained_ngrams;
         let paragraph_duplicate_score = (contained_ngrams / hashes.len()) as f32;
-        let should_remove =  paragraph_duplicate_score >= ngram_params.overlap_threshold;
+        let should_remove = paragraph_duplicate_score >= ngram_params.overlap_threshold;
         if should_remove {
             duplicate_paragraph_spans.push(Value::Array(vec![
                 Value::from(par_start),
                 Value::from(par_end),
-                Value::from(paragraph_duplicate_score)])
-            );
+                Value::from(paragraph_duplicate_score),
+            ]));
             removed_bytes += par_end - par_start;
         } else {
             hashes_to_insert.extend(hashes);
         }
-
     }
     if total_ngrams > 0 {
         let document_score = (total_contained_ngrams / total_ngrams) as f32;
@@ -656,8 +683,9 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
             duplicate_paragraph_spans.clear();
             duplicate_paragraph_spans.push(Value::Array(vec![
                 Value::from(0),
-                Value::from(text_length), 
-                Value::from(document_score)]));
+                Value::from(text_length),
+                Value::from(document_score),
+            ]));
             hashes_to_insert.clear();
         }
 
@@ -671,11 +699,9 @@ pub fn dedupe_dclm(data: Value, dedupe_config: DedupeConfig, bloom_filter: &Arc<
     (attributes, seen_bytes, removed_bytes)
 }
 
-
 /*=================================================================
 =                           CONFIG DEFINITIONS                    =
 =================================================================*/
-
 
 pub mod deduper_config {
     use serde::{Deserialize, Serialize};
@@ -728,7 +754,7 @@ pub mod deduper_config {
         // DCLMDedupeConfig does a hybrid of both fuzzy document and paragraph level deduplication
         pub attribute_name: String,
         pub by_ngram: NgramDedupeConfig, // NOT OPTIONAL
-        pub paragraph_separator: Option<String>
+        pub paragraph_separator: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Clone, Debug)]
