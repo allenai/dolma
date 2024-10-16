@@ -1,13 +1,25 @@
 import argparse
 
-from .common import create_index
+from .common import create_index, IndexFields
 
+import sys
+from typing import NamedTuple
 from markdownify import markdownify as md
+import json
 from rich.markdown import Markdown
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
-from tantivy import SnippetGenerator
+from tantivy import SnippetGenerator, Schema, Searcher
+from enum import Enum
+from typing import Generator
+import jq
+
+
+class DisplayFormat(Enum):
+    TABLE = "table"
+    JSON = "json"
+    SNIPPET = "snippet"
 
 
 def make_search_parser():
@@ -16,7 +28,8 @@ def make_search_parser():
         "-i",
         "--index-path",
         type=str,
-        help="The path to the index. If not provided, an in-memory index will be used."
+        required=True,
+        help="The path to the index."
     )
     parser.add_argument(
         "-q",
@@ -33,15 +46,24 @@ def make_search_parser():
         help="The number of hits to return."
     )
     parser.add_argument(
+        "-f",
+        "--display-format",
+        type=DisplayFormat,
+        default=DisplayFormat.JSON,
+        choices=list(DisplayFormat),
+        help="The format to display the search results in."
+    )
+    parser.add_argument(
         "-s",
-        "--show-snippets",
-        action="store_true",
-        help="Show snippets in the search results."
+        "--selector",
+        type=str,
+        default=None,
+        help="The selector used to process the queries. Uses jq syntax."
     )
     return parser
 
 
-def query_iterator(query: str | None):
+def query_iterator(query: str | None) -> Generator[str, None, None]:
     if query is None:
         while True:
             try:
@@ -54,7 +76,71 @@ def query_iterator(query: str | None):
         for line in sys.stdin:
             yield line.strip()
     else:
-        yield query
+        yield str(query)
+
+
+def apply_selector(queries: Generator[str, None, None], selector: str | None):
+    selector = jq.compile(selector) if selector else None
+    fn = (
+        lambda query: (str(e) for e in selector.input(json.loads(query)).all())
+        if selector
+        else (str(query),)
+    )
+    for query in queries:
+        yield from fn(query)
+
+
+class HitsTuple(NamedTuple):
+    score: float
+    doc: dict[str, list]
+    rank: int
+
+    def get(self, field: str) -> str:
+        return str(self.doc[field][0])
+
+    def to_dict(self) -> dict:
+        return {
+            "document": {f.value: self.get(f.value) for f in IndexFields},
+            "score": self.score,
+            "rank": self.rank
+        }
+
+    @classmethod
+    def from_hits(cls, hits: list[tuple[float, int]], searcher: Searcher) -> list["HitsTuple"]:
+        return [
+            cls(hit_score, searcher.doc(hit_doc_address), rank)
+            for rank, (hit_score, hit_doc_address) in enumerate(hits, start=1)
+        ]
+
+
+def print_hits_table(
+    hits: list[HitsTuple],
+    searcher: Searcher,
+    schema: Schema,
+    show_snippets: bool = False,
+    console: Console | None = None
+):
+    console = console or Console()
+
+    table = Table(title="Search Results", show_header=True, header_style="bold", show_lines=True)
+    table.add_column("Score", justify="right", style="green")
+    table.add_column(IndexFields.ID.value.upper(), style="magenta")
+    table.add_column(IndexFields.SOURCE.value.capitalize(), style="cyan")
+    table.add_column(IndexFields.TEXT.value.capitalize(), style="blue")
+
+    for hit in hits:
+        if show_snippets:
+            snippet_generator = SnippetGenerator.create(
+                searcher, parsed_query, schema, IndexFields.TEXT.value
+            )
+            snippet = snippet_generator.snippet_from_doc(document)
+            hit_text = Markdown(md(snippet.to_html()).strip())
+        else:
+            hit_text = Text(hit.get(IndexFields.TEXT.value).strip().replace("\n", "\\n"))
+
+        table.add_row(f"{hit_score:.2f}", str(hit_id), str(hit_source), str(hit_text))
+
+    console.print(table)
 
 
 def search_data(args: argparse.Namespace):
@@ -63,32 +149,26 @@ def search_data(args: argparse.Namespace):
 
     console = Console()
 
-    for query in query_iterator(args.query):
-        parsed_query = index.parse_query(query)
+    for query in apply_selector(query_iterator(args.query), args.selector):
+        try:
+            parsed_query = index.parse_query(query)
+        except ValueError as e:
+            raise ValueError(f"Error parsing query `{query}`: {e}")
+
         hits = searcher.search(parsed_query, limit=args.num_hits).hits
-        table = Table(title="Search Results", show_header=True, header_style="bold", show_lines=True)
-        table.add_column("Score", justify="right", style="green")
-        table.add_column("ID", style="magenta")
-        table.add_column("Text", style="blue")
-        for hit_score, hit_doc_address in hits:
-            document = searcher.doc(hit_doc_address)
-            hit_id = document["id"][0]
+        parsed_hits = HitsTuple.from_hits(hits, searcher)
 
-
-
-            if args.show_snippets:
-                snippet_generator = SnippetGenerator.create(
-                searcher, parsed_query, index.schema, "text"
-                )
-                snippet = snippet_generator.snippet_from_doc(document)
-                hit_text = Markdown(md(snippet.to_html()).strip())
-            else:
-                hit_text = Text(document["text"][0].strip().replace("\n", " ⮑"))
-
-            table.add_row(f"{hit_score:.2f}", hit_id, hit_text)
-
-        console.print(table)
-
+        if args.display_format == DisplayFormat.JSON:
+            for row in parsed_hits:
+                print(json.dumps(row.to_dict(), sort_keys=True))
+        else:
+            print_hits_table(
+                parsed_hits,
+                searcher,
+                index.schema,
+                show_snippets=args.display_format == DisplayFormat.SNIPPET,
+                console=console
+            )
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ from multiprocessing import Pool, Manager, set_start_method
 from contextlib import ExitStack
 
 
-from .common import create_index
+from .common import create_index, IndexFields
 
 
 QueueType = Queue[Document | None]
@@ -59,7 +59,7 @@ def read_file_for_indexing(file_path: str, docs_queue: Queue[Document], batch_si
     with smart_open.open(file_path, 'rt', encoding='utf-8') as stream:
         for line in stream:
             row = json.loads(line)
-            doc = Document(id=row["id"], text=row["text"])
+            doc = Document(**{f.value: (row[f.value] or "") for f in IndexFields})
             batch.append(doc)
 
             if len(batch) >= batch_size:

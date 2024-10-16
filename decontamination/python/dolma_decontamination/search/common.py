@@ -1,13 +1,21 @@
 from pathlib import Path
 from tantivy import SchemaBuilder, Index
 import shutil
+from enum import Enum
+
+
+class IndexFields(Enum):
+    TEXT = "text"
+    ID = "id"
+    SOURCE = "source"
 
 
 def create_index(path: str | Path | None = None, reuse: bool = False) -> Index:
     # Declaring our schema.
     schema_builder = SchemaBuilder()
-    schema_builder.add_text_field("text", stored=True)
-    schema_builder.add_text_field("id", stored=True)
+    schema_builder.add_text_field(IndexFields.TEXT.value, stored=True)
+    schema_builder.add_text_field(IndexFields.ID.value, stored=True)
+    schema_builder.add_text_field(IndexFields.SOURCE.value, stored=True)
     schema = schema_builder.build()
 
     if path:
