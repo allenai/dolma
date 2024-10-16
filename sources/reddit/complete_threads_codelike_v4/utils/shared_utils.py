@@ -7,7 +7,7 @@ from apache_beam.io.textio import WriteToText, ReadFromText
 from apache_beam.io.filesystem import CompressionTypes
 
 
-DATA_ACQUISITION_DATE = '2023-03-16T01:43:55.831260+00:00'
+DATA_ACQUISITION_DATE = "2023-03-16T01:43:55.831260+00:00"
 
 
 def positive_int(value):
@@ -29,6 +29,16 @@ def build_base_parser():
     )
     parser.add_argument(
         "--input_gcs_dir",
+        required=False,
+        help="Input google storage directory to read the data files from."
+    )
+    parser.add_argument(
+        "--input_gcs_dir_submissions",
+        required=False,
+        help="Input google storage directory to read the data files from."
+    )
+    parser.add_argument(
+        "--input_gcs_dir_comments",
         required=False,
         help="Input google storage directory to read the data files from."
     )
@@ -79,29 +89,29 @@ def isodatetime_from_epoch(epoch_time):
 
 def shuffle_posts(post_collection):
     post_collection |= "add random key" >> beam.Map(
-        lambda value: (value['id'], value))
+        lambda value: (value["id"], value))
     post_collection |= "group by key" >> beam.GroupByKey()
     post_collection |= "get shuffled values" >> beam.FlatMap(lambda t: t[1])
     return post_collection
 
 
-def convert_to_lm_format(example):
-    text_field = 'conversational_format' if 'conversational_format' in example else 'formatted_post'
+# def convert_to_lm_format(example):
+#     text_field = 'conversational_format' if 'conversational_format' in example else 'formatted_post'
 
-    formatted_data = {
-        'text': example[text_field],
-        'source': 'reddit',
-        'created': example['created'],
-        'added': example['added'],
-        'id': example['id'],
-        'metadata': {},
-    }
-    for k in list(example.keys()):
-        if k not in [text_field] + list(formatted_data.keys()):
-            formatted_data['metadata'][k] = example[k]
+#     formatted_data = {
+#         'text': example[text_field],
+#         'source': 'reddit',
+#         'created': example['created'],
+#         'added': example['added'],
+#         'id': example['id'],
+#         'metadata': {},
+#     }
+#     for k in list(example.keys()):
+#         if k not in [text_field] + list(formatted_data.keys()):
+#             formatted_data['metadata'][k] = example[k]
 
-    formatted_data = json.dumps(formatted_data)
-    return formatted_data
+#     formatted_data = json.dumps(formatted_data)
+#     return formatted_data
 
 
 def load_filtered_subreddit_lists(blocked_subreddits_file):
@@ -113,33 +123,34 @@ def load_filtered_subreddit_lists(blocked_subreddits_file):
     return blocked_subreddits
 
 
-def read_content_from_source(content, p, args):
+def read_content_from_source(content, p, input_dir, note):
     if content is not None:
         content = p | ("Read in-memory content") >> beam.Create(content)
     else:
-        content = p | ("Reading " + args.input_gcs_dir) >> Read(
-            ReadFromText(args.input_gcs_dir)
+        content = p | ("Reading " + input_dir) >> Read(
+            ReadFromText(input_dir)
         )
         content = content | (
-            "Parse JSON" >> beam.Map(safe_load_json)
+            f"Parse JSON {note}" >> beam.Map(safe_load_json)
         )
     return content
 
 
 def write_to_gcs(examples, banned_subreddits, args):
     examples = shuffle_posts(examples)
-    examples = examples | ("Filter examples from banned subreddits" >> beam.Filter(
-        lambda example: example['subreddit'].lower() not in banned_subreddits))
+    # examples = examples | ("Filter examples from banned subreddits" >> beam.Filter(
+    #     lambda example: example['subreddit'].lower() not in banned_subreddits))
 
     file_name_suffix = ".jsonl.gz"
-    serialize_fn = convert_to_lm_format
+    # serialize_fn = convert_to_lm_format
     write_sink = WriteToText
     compression_type = CompressionTypes.GZIP
 
     output_dir = args.output_dir
     name = 'sharded_output'
-    serialized_examples = examples | (
-        f'serialize {name} examples' >> beam.Map(serialize_fn))
+    serialized_examples = examples
+    # serialized_examples = examples | (
+    #     f'serialize {name} examples' >> beam.Map(serialize_fn))
     (
         serialized_examples | ("write " + name)
         >> write_sink(

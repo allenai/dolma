@@ -48,7 +48,7 @@ def parse_args(argv=None):
         help="Minimum characters in content to include.",
     )
     parser.add_argument(
-        "--min_conversational_length",
+        "--min_conversation_length",
         type=positive_int,
         default=500,
         help="Minimum characters in content to include.",
@@ -70,36 +70,56 @@ def normalize_comment(comment, max_length):
         return text[:-1]
 
     comment_score = comment.get('score', 0)
-    comment = {
-        'id': comment['id'],
-        'thread_id': normalize_id(comment['link_id']),
-        'parent_id': normalize_id(comment['parent_id']),
-        'body': trim(normalize_string(comment['body']), max_length),
-        'body_is_trimmed': len(comment['body']) > max_length,
-        'author': normalize_string(comment['author']),
-        'subreddit': normalize_string(comment['subreddit']),
-        'created_utc': comment['created_utc'],
-        'score': comment_score,
-        'link_id': comment['link_id']
-    }
+    
+    comment["thread_id"] = normalize_id(comment['link_id'])
+    comment["parent_id"] = normalize_id(comment['parent_id'])
+    comment["body"] = normalize_string(comment['body'])
+    comment["author"] = normalize_string(comment['author'])
+    comment["subreddit"] = normalize_string(comment['subreddit'])
+    comment["score"] = comment_score
+    
+    
+    # comment = {
+    #     'id': comment['id'],
+    #     'thread_id': normalize_id(comment['link_id']),
+    #     'parent_id': normalize_id(comment['parent_id']),
+    #     'body': trim(normalize_string(comment['body']), max_length),
+    #     'body_is_trimmed': len(comment['body']) > max_length,
+    #     'author': normalize_string(comment['author']),
+    #     'subreddit': normalize_string(comment['subreddit']),
+    #     'created_utc': comment['created_utc'],
+    #     'score': comment_score,
+    #     'link_id': comment['link_id']
+    # }
     return comment
 
 def normalize_post(post, max_length):
 
     body_key = "body" if "body" in post else "selftext"
-    post = {
-        "id": post['id'],
-        "title": normalize_string(post['title']) if 'title' in post else '',
-        "author": normalize_string(post['author']) if 'author' in post else '',
-        "subreddit": normalize_string(post['subreddit']) if 'subreddit' in post else '',
-        "subreddit_id": normalize_id(post['subreddit_id']) if 'subreddit_id' in post else '',
-        "body": normalize_string(post[body_key]),
-        "body_is_trimmed": len(post[body_key]) > max_length,
-        "created_utc": post['created_utc'] if 'created_utc' in post else None,
-        "score": post['score'] if 'score' in post else 0,
-        "over_18": post['over_18'] if 'over_18' in post else True,
-        "num_comments": post['num_comments'] if 'num_comments' in post else 0,
-    }
+    
+    post["title"] = normalize_string(post['title']) if 'title' in post else ""
+    post["author"] = normalize_string(post['author']) if 'author' in post else ""
+    post["subreddit"] = normalize_string(post['subreddit']) if 'subreddit' in post else ""
+    post["subreddit_id"] = normalize_id(post['subreddit_id']) if 'subreddit_id' in post else ""
+    post["body"] = normalize_string(post[body_key])
+    post["created_utc"] = post['created_utc'] if 'created_utc' in post else None
+    post["score"] = post['score'] if 'score' in post else 0
+    # post["over_18"] = post['over_18'] if 'over_18' in post else True
+    post["num_comments"] = post['num_comments'] if 'num_comments' in post else 0
+
+    # post = {
+    #     "id": post['id'],
+    #     "title": normalize_string(post['title']) if 'title' in post else '',
+    #     "author": normalize_string(post['author']) if 'author' in post else '',
+    #     "subreddit": normalize_string(post['subreddit']) if 'subreddit' in post else '',
+    #     "subreddit_id": normalize_id(post['subreddit_id']) if 'subreddit_id' in post else '',
+    #     "body": normalize_string(post[body_key]),
+    #     "body_is_trimmed": len(post[body_key]) > max_length,
+    #     "created_utc": post['created_utc'] if 'created_utc' in post else None,
+    #     "score": post['score'] if 'score' in post else 0,
+    #     "over_18": post['over_18'] if 'over_18' in post else True,
+    #     "num_comments": post['num_comments'] if 'num_comments' in post else 0,
+    # }
     return post
 
 
@@ -160,43 +180,53 @@ def create_examples(combined_thread, parent_depth, min_length):
     thread = combined_thread[1][0]
     thread_post = combined_thread[1][1]
 
-    if thread and thread_post:
-        thread_post = thread_post[0]
-        id_to_comment = {
-            comment['id']: comment for comment in list(thread)}
+    # print(thread_post)
+    example = {
+        "id": combined_thread[0],
+        "post": thread_post[0] if thread_post else "",
+        "comments_list": thread,
+        "created": isodatetime_from_epoch(thread_post[0]["created_utc"]) if thread_post else "",
+        "added": DATA_ACQUISITION_DATE
+    }
+    print(example)
+    # if thread and thread_post:
+    #     thread_post = thread_post[0]
+    #     id_to_comment = {
+    #         comment['id']: comment for comment in list(thread)}
 
-        anonymous_author_lookup = build_anonymous_author_names(thread)
+    #     anonymous_author_lookup = build_anonymous_author_names(thread)
 
-        if thread_post:
-            preamble = '#title#: ' + thread_post['title'] + '\n\n'
-            if thread_post.get('body', '') and not _should_skip(thread_post, min_length):
-                preamble += '#body#: ' + thread_post['body'] + '\n\n'
-        else:
-            preamble = ''
+    #     if thread_post:
+    #         preamble = '#title#: ' + thread_post['title'] + '\n\n'
+    #         if thread_post.get('body', '') and not _should_skip(thread_post, min_length):
+    #             preamble += '#body#: ' + thread_post['body'] + '\n\n'
+    #     else:
+    #         preamble = ''
 
-        conv_str = preamble + order_comments(
-            id_to_comment, anonymous_author_lookup)
+    #     conv_str = preamble + order_comments(
+    #         id_to_comment, anonymous_author_lookup)
 
-        example = {
-            'conversational_format': conv_str,
-            'subreddit': thread_post['subreddit'],
-            'thread_id': thread_post['id'],
-            'created': isodatetime_from_epoch(thread_post['created_utc']),
-            'added': DATA_ACQUISITION_DATE,
-            'id': uuid.uuid4().hex,
-        }
-        if len(conv_str) < 500:
-            example = None
-    else:
-        example = None
+    #     example = {
+    #         'conversational_format': conv_str,
+    #         'subreddit': thread_post['subreddit'],
+    #         'thread_id': thread_post['id'],
+    #         'created': isodatetime_from_epoch(thread_post['created_utc']),
+    #         'added': DATA_ACQUISITION_DATE,
+    #         'id': uuid.uuid4().hex,
+    #     }
+    #     if len(conv_str) < 500:
+    #         example = None
+    # else:
+    #     example = None
     yield example
 
 
 def run(argv=None, comments=None, posts=None):
 
     args, pipeline_args = parse_args(argv)
-    banned_subreddits_file = args.banned_subreddits_file
-    banned_subreddits = load_filtered_subreddit_lists(banned_subreddits_file)
+    banned_subreddits = None
+    # banned_subreddits_file = args.banned_subreddits_file
+    # banned_subreddits = load_filtered_subreddit_lists(banned_subreddits_file)
 
     pipeline_options = PipelineOptions(pipeline_args, save_main_session=True,
                                        dataflow_service_options=['enable_prime'],
@@ -206,13 +236,15 @@ def run(argv=None, comments=None, posts=None):
 
     p = beam.Pipeline(options=pipeline_options)
 
-    comments = read_content_from_source(comments, p, args.input_gcs_dir_comments)
+    comments = read_content_from_source(comments, p, args.input_gcs_dir_comments, "comments")
 
     comments |= (
         "normalize content" >> beam.Map(
             partial(normalize_comment, max_length=args.max_length)))
+    
 
-    posts = read_content_from_source(posts, p, args.input_gcs_dir_submissions)
+    posts = read_content_from_source(posts, p, args.input_gcs_dir_submissions, "subs")
+
 
     posts |= (
         "normalize posts" >> beam.Map(
@@ -221,11 +253,13 @@ def run(argv=None, comments=None, posts=None):
 
     comment_id_to_comments = comments | (
         "Key comments by thread id" >> beam.Map(
-            lambda comment: (comment['thread_id'], comment)))
+            lambda comment: (comment["thread_id"], comment)))
+    
+    
 
     post_id_to_posts = posts | (
         "Key posts by thread id" >> beam.Map(
-            lambda post: (post['id'], post)))
+            lambda post: (post["id"], post)))
 
     examples  = (
             (comment_id_to_comments, post_id_to_posts)
@@ -233,7 +267,6 @@ def run(argv=None, comments=None, posts=None):
             | beam.FlatMap(partial(create_examples,
                     parent_depth=args.parent_depth,
                     min_length=args.min_length,
-                    min_conversation_length=args.min_conversation_length
                     ))
     )
 
@@ -241,6 +274,8 @@ def run(argv=None, comments=None, posts=None):
                      beam.Filter(lambda example: example is not None))
 
     write_to_gcs(examples, banned_subreddits, args)
+
+    # import pdb; pdb.set_trace()
 
     result = p.run()
     result.wait_until_finish()
