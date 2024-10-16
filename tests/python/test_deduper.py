@@ -207,7 +207,7 @@ class TestDeduper(TestCase):
 
         config["documents"][0] = f'{self.local_temp_dir}/{config["documents"][0]}'
         config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
-
+        print("CONFIG", config)
         with NamedTemporaryFile("w") as f:
             json.dump(config, f)
             f.flush()
@@ -221,6 +221,8 @@ class TestDeduper(TestCase):
         computed = load_jsonl(
             f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraph_ngrams/000.json.gz"
         )
+
+
         return self._compare_dedupe_output(expected, computed)  # pyright: ignore
 
     def _compare_dedupe_output(self, expected: List[D], computed: List[D]):

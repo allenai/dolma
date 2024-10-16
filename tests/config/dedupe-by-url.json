@@ -18,7 +18,8 @@
     "size_in_bytes": 0,
     "read_only": false,
     "estimated_doc_count": 1000,
-    "desired_false_positive_rate": 0.001
+    "desired_false_positive_rate": 0.001,
+    "sysram_limit": 0.9
   },
   "processes": 1
 }

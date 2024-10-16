@@ -1,11 +1,11 @@
 from contextlib import ExitStack
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import smart_open
 from omegaconf import OmegaConf as om
-from enum import Enum
 
 from dolma import deduper
 from dolma.cli import BaseCli, field, print_config
@@ -18,7 +18,6 @@ from dolma.cli.shared import (
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path, is_local
-
 
 
 @dataclass
@@ -47,14 +46,18 @@ class ParagraphDedupeConfig:
         help="String to use to separate paragraphs. By default, paragraphs are separated by newlines.",
     )
 
-@dataclass 
+
+@dataclass
 class DCLMDedupeConfig:
     attribute_name: Optional[str] = field(help="Name of the output field in the tagger")
     by_ngram: Optional[NgramDedupeConfig] = field(
-        default=None, help="Configuration for fuzzy dedupe", default_factory=NgramDedupeConfig)
+        default=None, help="Configuration for fuzzy dedupe", default_factory=NgramDedupeConfig
+    )
     paragraph_separator: Optional[str] = field(
         default="\n",
-        help="String to use to separate paragraphs. By default, paragraphs are separated by newlines.")
+        help="String to use to separate paragraphs. By default, paragraphs are separated by newlines.",
+    )
+
 
 @dataclass
 class DocumentDedupeConfig:
@@ -88,11 +91,14 @@ class BloomFilterConfig:
         ),
     )
     save_to_disk: bool = field(
-        default=True,
-        help=(
-            "If False, ignore the 'file' field and do NOT save the populated bloom filter to disk")
+        default=True, help=("If False, ignore the 'file' field and do NOT save the populated bloom filter to disk")
     )
-
+    sysram_limit: float = field(
+        default=0.9,
+        help=(
+            "Maximum fraction of the system RAM we use -- will print out a warning if we really want more than this"
+        ),
+    )
 
 
 @dataclass
@@ -104,8 +110,7 @@ class DedupeConfig:
     paragraphs: Optional[ParagraphDedupeConfig] = field(
         default=None, help="Configuration for paragraph deduplication"
     )
-    dclm: Optional[DCLMDedupeConfig] = field(
-        default=None, help="Configuration for DCLM deduplication")
+    dclm: Optional[DCLMDedupeConfig] = field(default=None, help="Configuration for DCLM deduplication")
     skip_empty: Optional[bool] = field(default=False, help="If true, empty documents/paragraphs will be skipped")
     min_length: Optional[int] = field(default=0, help="Minimum length of documents/paragraphs to be deduplicated")
     min_words: Optional[int] = field(
@@ -117,7 +122,10 @@ class DedupeConfig:
     partition_index: Optional[int] = field(
         default=0, help="The index of the partition being processed, in the range [0, num_partitions)."
     )
-    dedupe_method: Optional[str] = field(default=None, help="Selects which dedupe method to use. Must be either empty or in the set {paragraphs, documents, dclm}")
+    dedupe_method: Optional[str] = field(
+        default=None,
+        help="Selects which dedupe method to use. Must be either empty or in the set {paragraphs, documents, dclm}",
+    )
 
 
 @dataclass
@@ -173,12 +181,14 @@ class DeduperCli(BaseCli):
             if dedupe_dict_config["min_words"] < 0:
                 raise ValueError("min_words must be >= 0")
 
-
             # add either the document or paragraph dedupe config and infer the dedup_method
-            dedupe_method = parsed_config.dedupe.dedupe_method # If is specified
-            if dedupe_method == None: #Else infer:
-                if not (om.is_missing(parsed_config.dedupe.documents, "attribute_name")
-                        and om.is_missing(parsed_config.dedupe.documents, "key")):
+            dedupe_method = parsed_config.dedupe.dedupe_method  # If is specified
+            if dedupe_method == None:
+                # Else infer the dedupe method:
+                if not (
+                    om.is_missing(parsed_config.dedupe.documents, "attribute_name")
+                    and om.is_missing(parsed_config.dedupe.documents, "key")
+                ):
                     dedupe_method = "documents"
                 elif not (om.is_missing(parsed_config.dedupe.paragraphs, "attribute_name")):
                     dedupe_method = "paragraphs"
@@ -188,7 +198,9 @@ class DeduperCli(BaseCli):
                     raise ValueError("Some dedupe method must be specified (either explicitly or implicitly)")
             dedupe_dict_config["dedupe_method"] = dedupe_method
             dedupe_dict_config[dedupe_method] = om.to_container(parsed_config.dedupe[dedupe_method])
-            assert dedupe_dict_config[dedupe_method].get("attribute_name") != None, "Need attribute name for deduplication"
+            assert (
+                dedupe_dict_config[dedupe_method].get("attribute_name") != None
+            ), "Need attribute name for deduplication"
             cfg = om.to_container(parsed_config.dedupe[dedupe_method])
             assert isinstance(cfg, dict), "Expected dedupe.%s to be a dict" % dedupe_meth
             try_name = try_name or cfg["attribute_name"]
@@ -269,7 +281,11 @@ class DeduperCli(BaseCli):
             deduper(dict_config)
 
             # upload to remote file if necessary
-            if not parsed_config.bloom_filter.read_only and not path_is_local and parsed_config.bloom_filter.save_to_disk:
+            if (
+                not parsed_config.bloom_filter.read_only
+                and not path_is_local
+                and parsed_config.bloom_filter.save_to_disk
+            ):
                 print(f"Pushing Bloom filter to {parsed_config.bloom_filter.file}")
                 local = stack.enter_context(smart_open.open(local_bloom_file, "rb"))
                 remote = stack.enter_context(smart_open.open(parsed_config.bloom_filter.file, "wb"))

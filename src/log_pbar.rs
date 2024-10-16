@@ -1,20 +1,21 @@
 use indicatif::{ProgressBar, ProgressStyle};
 use log::info;
 
-
 pub struct LogProgressBar {
     progress_bar: ProgressBar,
     last_logged_position: u64,
 }
 
- impl LogProgressBar {
+impl LogProgressBar {
     pub fn new(total: usize) -> Self {
         let progress_bar = ProgressBar::new(total.try_into().unwrap());
-        progress_bar.set_style(ProgressStyle::default_bar()
-            .template("{elapsed_precise} [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
-            .unwrap()
-            .progress_chars("#>-"));
-        
+        progress_bar.set_style(
+            ProgressStyle::default_bar()
+                .template("{elapsed_precise} [{bar:40.cyan/blue}] {pos}/{len} ({eta}) {msg}")
+                .unwrap()
+                .progress_chars("#>-"),
+        );
+
         Self {
             progress_bar,
             last_logged_position: 0,
@@ -33,7 +34,8 @@ pub struct LogProgressBar {
 
     fn log_progress_if_needed(&mut self) {
         let current_position = self.progress_bar.position();
-        if current_position - self.last_logged_position >= self.progress_bar.length().unwrap() / 10 {
+        if current_position - self.last_logged_position >= self.progress_bar.length().unwrap() / 10
+        {
             self.log_progress();
         }
     }

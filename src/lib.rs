@@ -9,11 +9,11 @@ pub mod bloom_filter;
 pub mod deduper;
 pub mod filters;
 pub mod io;
+pub mod log_pbar;
 pub mod mixer;
 pub mod s3_util;
 pub mod shard;
 pub mod wimbd;
-pub mod log_pbar;
 
 use crate::deduper::deduper_config::DeduperConfig;
 use crate::mixer::mixer_config::MixerConfig;
