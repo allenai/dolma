@@ -72,7 +72,7 @@ def search_data(args: argparse.Namespace):
 
         output_id = 0
 
-        output_path = f"{args.output}/{output_id}.jsonl.zst"
+        output_path = f"{args.output}/{output_id:06d}.jsonl.zst"
         output_file = stack.enter_context(smart_open.open(output_path, "wt", encoding="utf-8"))
 
         for path in files_pbar:
@@ -97,7 +97,7 @@ def search_data(args: argparse.Namespace):
                     queries_pbar.update(1)
                     output_file.write(json.dumps(output) + "\n")
 
-                    if queries_pbar.n % 100_000 == 0:
+                    if queries_pbar.n % 50_000 == 0:
                         output_file.close()
                         output_id += 1
                         output_path = f"{args.output}/{output_id:06d}.jsonl.zst"
