@@ -111,6 +111,8 @@ def sample_and_extract_attributes(attr_file_path: str, num_samples: int = 5) -> 
 def evaluate_comparison(value: Union[int, float], op: str, comparison_value: Union[int, float]) -> bool:
     if op == '==':
         return value == comparison_value
+    elif op == '!=':
+        return value != comparison_value
     elif op == '<':
         return value < comparison_value
     elif op == '>':
