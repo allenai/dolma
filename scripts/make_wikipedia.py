@@ -19,37 +19,18 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Union
 
-import requests
-import smart_open
-from dolma.core.parallel import BaseParallelProcessor, QueueType
-from uniseg.wordbreak import words as uniseg_get_words
-
-CMD_INSTALL = "pip install git+https://github.com/santhoshtr/wikiextractor.git requests smart_open tqdm"
-
 try:
+    import requests
+    import smart_open
+    import tqdm
+    from dolma.core.parallel import BaseParallelProcessor, QueueType
+    from uniseg.wordbreak import words as uniseg_get_words
     from wikiextractor import WikiExtractor
-except ImportError:
-    print(f"Please install wikiextractor with `{CMD_INSTALL}`")
+except ImportError as e:
+    CMD_INSTALL = "pip install git+https://github.com/santhoshtr/wikiextractor.git requests smart_open tqdm"
+    missing_module = e.name
+    print(f"Please install {missing_module} with `{CMD_INSTALL}`")
     sys.exit(1)
-
-try:
-    import requests  # noqa
-except ImportError:
-    print(f"Please install requests with `{CMD_INSTALL}`")
-    sys.exit(1)
-
-try:
-    import smart_open  # noqa
-except ImportError:
-    print(f"Please install smart_open with `{CMD_INSTALL}`")
-    sys.exit(1)
-
-try:
-    import tqdm  # noqa
-except ImportError:
-    print(f"Please install tqdm with `{CMD_INSTALL}`")
-    sys.exit(1)
-
 
 DUMP_URL = "https://dumps.wikimedia.org/{lang}wiki/{date}/{lang}wiki-{date}-pages-articles-multistream.xml.bz2"
 LOGGER = logging.getLogger(__name__)
