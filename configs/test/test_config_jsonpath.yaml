@@ -1,0 +1,50 @@
+streams:
+  - name: cc_tiny_subset
+    documents:
+      - s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset-october/documents/**/*.jsonl.gz
+
+    attributes:
+      - cc_tiny_subset_analysis_october
+      - bff_duplicate_paragraph_spans_new
+
+    output:
+      path: s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset-october/mixed-output
+      max_size_in_bytes: 4294967296
+      discard_fields:
+        - attributes
+
+    filter:
+      include: []
+      exclude:
+        # Language filter (using both cld2 and fasttext)
+        - "$.attributes[?(@.cc_tiny_subset_analysis_october__cld2_en_paragraph_with_doc_score_v2__doc_en && @.cc_tiny_subset_analysis_october__cld2_en_paragraph_with_doc_score_v2__doc_en[0] && @.cc_tiny_subset_analysis_october__cld2_en_paragraph_with_doc_score_v2__doc_en[0][2] < 0.8)]"
+        - "$.attributes[?(@.cc_tiny_subset_analysis_october__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en && @.cc_tiny_subset_analysis_october__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0] && @.cc_tiny_subset_analysis_october__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en[0][2] < 0.8)]"
+        # Document length filter
+        - "$.attributes[?(@.cc_tiny_subset_analysis_october__char_length_with_paragraphs_v1__document && @.cc_tiny_subset_analysis_october__char_length_with_paragraphs_v1__document[0] && @.cc_tiny_subset_analysis_october__char_length_with_paragraphs_v1__document[0][2] < 100)]"
+        # Deduplication filter
+        - "$@.attributes[?(@.bff_duplicate_paragraph_spans_new && @.bff_duplicate_paragraph_spans_new[0] && @.bff_duplicate_paragraph_spans_new[0][2] >= 1.0)]"
+        # NSFW content filter
+        - "$.attributes[?(@.cc_tiny_subset_analysis_october__jigsaw_nsfw_document_v1____label__nsfw && @.cc_tiny_subset_analysis_october__jigsaw_nsfw_document_v1____label__nsfw[0] && @.cc_tiny_subset_analysis_october__jigsaw_nsfw_document_v1____label__nsfw[0][2] > 0.5)]"
+        # Gopher quality filter (example, adjust threshold as needed)
+        - "$.attributes[?(@.cc_tiny_subset_analysis_october__gopher_v2__word_count && @.cc_tiny_subset_analysis_october__gopher_v2__word_count[0] && @.cc_tiny_subset_analysis_october__gopher_v2__word_count[0][2] < 50)]"
+        - "$.attributes[?(@.cc_tiny_subset_analysis_october__gopher_v2__symbol_to_word_ratio && @.cc_tiny_subset_analysis_october__gopher_v2__symbol_to_word_ratio[0] && @.cc_tiny_subset_analysis_october__gopher_v2__symbol_to_word_ratio[0][2] > 0.1)]"
+        # C4 quality filter (example, adjust threshold as needed)
+        - "$.attributes[?(@.cc_tiny_subset_analysis_october__c4_v2__line_bullets && @.cc_tiny_subset_analysis_october__c4_v2__line_bullets[0] && @.cc_tiny_subset_analysis_october__c4_v2__line_bullets[0][2] > 0.5)]"
+        - "$.attributes[?(@.cc_tiny_subset_analysis_october__c4_v2__phrase_repeat && @.cc_tiny_subset_analysis_october__c4_v2__phrase_repeat[0] && @.cc_tiny_subset_analysis_october__c4_v2__phrase_repeat[0][2] > 0.3)]"
+
+    span_replacement:
+      - span: "$.attributes.cc_tiny_subset_analysis_october__pii_regex_with_counts_fast_v2__EMAIL_ADDRESS"
+        min_score: 0.5
+        replacement: " |||EMAIL_ADDRESS||| "
+      - span: "$.attributes.cc_tiny_subset_analysis_october__pii_regex_with_counts_fast_v2__PHONE_NUMBER"
+        min_score: 0.5
+        replacement: " |||PHONE_NUMBER||| "
+      - span: "$.attributes.cc_tiny_subset_analysis_october__pii_regex_with_counts_fast_v2__IP_ADDRESS"
+        min_score: 0.5
+        replacement: " |||IP_ADDRESS||| "
+
+work_dir:
+  input: "/tmp/cc_tiny_subset_mix/input"
+  output: "/tmp/cc_tiny_subset_mix/output"
+
+processes: 16

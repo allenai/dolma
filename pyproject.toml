@@ -13,6 +13,8 @@ dependencies = [
     # "fasttext==0.9.2",    # broken with new version of setuptools; using fasttext-wheel instead
     "fasttext-wheel==0.9.2",
     "fsspec>=2023.6.0",
+    "jsonpath-ng",
+    "jq",
     "msgspec>=0.14.2",
     "nltk>=3.9.1",
     "omegaconf>=2.3.0",
@@ -20,6 +22,7 @@ dependencies = [
     # "pycld3==0.22",       # does not install correctly
     "platformdirs>=4.2.0",
     "pyyaml",
+    "python-dotenv>=0.19.0",
     "requests",
     "rich",
     "s3fs>=2023.6.0",
