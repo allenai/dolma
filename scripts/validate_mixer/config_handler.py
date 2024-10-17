@@ -1,17 +1,21 @@
 import yaml
 import json
 from typing import Dict, Any, List, Union, Type
+from env_handler import expand_env_vars_in_config
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """Load the configuration file (YAML or JSON)."""
     try:
         with open(config_path, 'r') as file:
             if config_path.endswith('.yaml') or config_path.endswith('.yml'):
-                return yaml.safe_load(file)
+                config = yaml.safe_load(file)
             elif config_path.endswith('.json'):
-                return json.load(file)
+                config = json.load(file)
             else:
                 raise ValueError("Unsupported file format. Use .yaml, .yml, or .json")
+            
+        config = expand_env_vars_in_config(config)
+        return config
     except Exception as e:
         raise ValueError(f"Error loading config file: {str(e)}")
 
@@ -57,7 +61,7 @@ def validate_stream(stream: Dict[str, Any], index: int) -> List[str]:
     errors = []
 
     for field in required_fields:
-        errors.extend(check_type_if_present(stream, field, expected_type[field], index))
+        errors.extend(validate_field(stream, field, expected_type[field], index))
 
     if 'output' in stream:
         output_errors = validate_output(stream['output'], index)
@@ -68,7 +72,7 @@ def validate_stream(stream: Dict[str, Any], index: int) -> List[str]:
         errors.extend(filter_errors)
     return errors
 
-def check_type_if_present(stream: Dict[str, Any], field: str, expected_type: Union[Type, List[Type]], stream_index: int) -> List[str]:
+def validate_field(stream: Dict[str, Any], field: str, expected_type: Union[Type, List[Type]], stream_index: int) -> List[str]:
     """Check if a field is present in the stream and has the expected type."""
     errors = []
     if field not in stream:

@@ -22,6 +22,7 @@ dependencies = [
     # "pycld3==0.22",       # does not install correctly
     "platformdirs>=4.2.0",
     "pyyaml",
+    "python-dotenv>=0.19.0",
     "requests",
     "rich",
     "s3fs>=2023.6.0",

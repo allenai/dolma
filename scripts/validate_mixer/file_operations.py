@@ -8,6 +8,7 @@ from tqdm import tqdm
 import smart_open
 
 from s3_utils import s3_client, list_s3_objects, get_base_path, get_corresponding_attribute_path
+from utils import vprint
 
 def sample_files(s3_path: str, num_samples: int) -> List[str]:
     """Sample a subset of files from an S3 path."""

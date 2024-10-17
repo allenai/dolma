@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Tuple, Union
 import jq
 from jsonpath_ng.ext import parse as parse_jsonpath
 from file_operations import sample_file_lines
+from utils import vprint
 
 def validate_jq_expression(expr: str) -> Tuple[bool, Union[str, None]]:
     """Validate a JQ expression."""
@@ -65,7 +66,7 @@ def validate_filter_expressions(filter_config: Dict[str, Any]) -> Tuple[List[str
 
 def validate_filters_and_check_typos(attr_file_paths: List[str], filter_config: Dict[str, Any], stream_attributes: List[str]):
     """Validate filters and check for attribute name typos across multiple attribute files."""
-    print("Validating filters and checking typos across all attribute files...")
+    vprint("Validating filters and checking typos across all attribute files...")
     
     # Extract filter attributes from config
     filter_attributes = extract_filter_attributes(filter_config)
@@ -80,18 +81,18 @@ def validate_filters_and_check_typos(attr_file_paths: List[str], filter_config: 
     missing_attributes = filter_attributes - all_sampled_attributes
     
     if not missing_attributes:
-        print("All mixer config filters were found in the attribute files.")
+        print("All mixer config filters are FOUND in the attribute files.\n")
     else:
         print("Warning: Some mixer config filters were not found in the attribute files.")
         print("Missing attributes:")
         for attr in missing_attributes:
             print(f"  - {attr}")
         
-        print("\nAll attributes found in files:")
+        vprint("\nAll attributes found in files:")
         for attr in sorted(all_sampled_attributes):
-            print(f"  - {attr}")
+            vprint(f"  - {attr}")
         
-        print("\nThis detailed list is provided to help identify potential typos or misconfigurations\n")
+        vprint("\nThis detailed list is provided to help identify potential typos or misconfigurations\n")
 
 def sample_and_extract_attributes(attr_file_path: str, num_samples: int = 5) -> set:
     """Sample lines from the attribute file and extract unique attributes."""
@@ -213,7 +214,7 @@ def execute_filter_commands(attr_samples_dict: Dict[str, List[str]], attributes_
     Execute filter commands on sampled lines from documents and their attributes.
     Supports both JQ and JSONPath expressions based on the specified syntax.
     """
-    print(f"Executing filter commands on attribute files, sampling {num_lines} for 1 file and their attributes.")
+    print(f"Executing filter commands on attribute files, sampling {num_lines} lines for 1 file and their attributes.")
 
     results = {
         'total_lines': 0,
@@ -312,7 +313,7 @@ def execute_filter_commands(attr_samples_dict: Dict[str, List[str]], attributes_
     print(f"Total lines processed: {results['total_lines']}")
     print(f"Lines passed all filters: {results['lines_passed']}")
     print(f"Lines excluded by filters: {results['lines_excluded']}")
-    print(f"Errors encountered: {results['errors']}")
+    print(f"Errors encountered: {results['errors']}\n")
     
     return results
 

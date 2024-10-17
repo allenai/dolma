@@ -4,3 +4,4 @@ from .file_operations import sample_files, download_file, sample_and_download_fi
 from .filter_operations import validate_jq_expression, validate_jsonpath_expression, validate_filter_expressions, evaluate_comparison, evaluate_jsonpath_condition, split_complex_jsonpath,  prepare_filter, execute_filter_commands, extract_attribute_names_from_filters, extract_filter_attributes
 from .s3_utils import validate_s3_path, check_s3_path_exists, check_s3_path_writable, check_s3_parent_exists, list_s3_objects, get_base_path, get_corresponding_attribute_path
 from .utils import keyboard_interrupt_handler
+from .env_handler import load_env_variables, expand_env_vars

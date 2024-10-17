@@ -2,36 +2,42 @@ import sys
 import signal
 import sys
 import signal
+import argparse
 from validator import load_and_validate_config, validate_s3_paths_and_permissions, validate_stream_filters, validate_documents_and_attributes
-from utils import keyboard_interrupt_handler
+from utils import keyboard_interrupt_handler, set_verbose
+from env_handler import load_env_variables
 
-def main(config_path, num_samples):
+def main(config_path, num_samples, verbose):
     # Register the keyboard interrupt handler
     signal.signal(signal.SIGINT, keyboard_interrupt_handler)
 
+    # Set verbose mode
+    set_verbose(args.verbose)
+
+    load_env_variables()
     config = load_and_validate_config(config_path)
     if config is None:
-        print("Configuration loading or validation failed")
+        print("Configuration loading or validation FAILED")
 
     if not validate_s3_paths_and_permissions(config):
-        print("S3 path validation failed")
+        print("S3 path validation FAILED")
         return
 
     if not validate_stream_filters(config):
-        print("Filter validation failed.\n")
+        print("Filter validation FAILED.\n")
         return
 
     if not validate_documents_and_attributes(config, num_samples):
-        print("Document and attribute validation failed")
+        print("Document and attribute validation FAILED")
         return
 
-    print("Validation complete!")
+    print("Validation SUCCEEDED!")
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
-        print("Usage: python -m validate_mixer <path_to_config_file> [number_of_file_samples, default=1]")
-        sys.exit(1)
-    
-    config_path = sys.argv[1]
-    num_samples = int(sys.argv[2]) if len(sys.argv) > 2 else 1
-    main(config_path, num_samples)
+    parser = argparse.ArgumentParser(description="Validate mixer configuration")
+    parser.add_argument("config_path", help="Path to the configuration file")
+    parser.add_argument("--num_samples", type=int, default=1, help="Number of file samples to validate")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    args = parser.parse_args()
+
+    main(args.config_path, args.num_samples, args.verbose)
