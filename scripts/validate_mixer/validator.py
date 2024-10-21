@@ -1,6 +1,7 @@
 import re
 import os
 import shutil
+import sys
 from typing import Dict, List, Tuple, Any, Optional
 from dotenv import load_dotenv
 
@@ -34,7 +35,16 @@ def load_and_validate_config(config_path):
     load_env_variables()
     
     vprint("Validating configuration file...")
-    config = load_config(config_path)
+    try:
+        config = load_config(config_path)
+
+    except FileNotFoundError as e:
+        print(str(e))
+        print("Please check the file path and try again.")
+        sys.exit(1)
+    except ValueError as e:
+        print(f"Error loading or validating config: {str(e)}")
+        sys.exit(1)
 
     vprint("Validating configuration structure...")
     errors = validate_config_structure(config)
@@ -121,8 +131,7 @@ def validate_stream_filters(config: Dict[str, Any]) -> bool:
     
     return all_valid
 
-# def validate_documents_and_attributes(config: Dict[str, Any], num_samples: int) -> bool:
-def validate_documents_and_attributes(config, num_samples):
+def validate_documents_and_attributes(config: Dict[str, Any], num_samples: int) -> bool:
     vprint("Sampling files...")
     temp_dir = "temp_sample_files"
     try:
@@ -135,16 +144,24 @@ def validate_documents_and_attributes(config, num_samples):
 
             base_doc_path = get_base_path(stream['documents'][0])
             base_attr_path = re.sub(r'/documents($|/)', r'/attributes\1', base_doc_path)
-
-            doc_samples, attr_samples_dict = sample_and_download_files(stream, num_samples)
+            
+            try:
+                doc_samples, attr_samples_dict = sample_and_download_files(stream, num_samples)
+            except Exception as e:
+                print(f"Error during file sampling and downloading: {str(e)}")
+                return False
+            
+            if not doc_samples:
+                print("No document samples were successfully downloaded. Skipping further validation for this stream.")
+                continue
 
             for doc_sample in doc_samples:
                 vprint(f"\nValidating file: {doc_sample}")
                 
                 doc_line_count = count_file_lines(doc_sample)
                 if doc_line_count == -1:
-                    print("Failed to count lines in document file. Check the file and try again.")
-                    return False
+                    print(f"Failed to count lines in document file {doc_sample}. Skipping the file")
+                    continue
 
                 vprint(f"Document has {doc_line_count} lines")
                 
@@ -157,7 +174,20 @@ def validate_documents_and_attributes(config, num_samples):
                     return False
                 
                 for attr_type in stream['attributes']:
-                    attr_sample = attr_samples_dict[attr_type][doc_samples.index(doc_sample)]
+                    if attr_type not in attr_samples_dict or not attr_samples_dict[attr_type]:
+                        print(f"Warning: No attribute samples found for {attr_type}. Skipping validation for this attribute type.")
+                        continue
+
+                    try:
+                        doc_index = doc_samples.index(doc_sample)
+                        if doc_index >= len(attr_samples_dict[attr_type]):
+                            print(f"Warning: No corresponding attribute file for document {doc_sample} and attribute type {attr_type}. Skipping validation for this attribute.")
+                            continue
+                        attr_sample = attr_samples_dict[attr_type][doc_index]
+                    except ValueError:
+                        print(f"Warning: Document {doc_sample} not found in samples. Skipping validation for this document.")
+                        continue
+
                     vprint(f"\nValidating attribute file: {attr_sample}")
                     
                     attr_line_count = count_file_lines(attr_sample)

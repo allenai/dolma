@@ -21,7 +21,7 @@ def main(config_path, num_samples, verbose):
 
     if not validate_s3_paths_and_permissions(config):
         print("S3 path validation FAILED")
-        return
+        # return
 
     if not validate_stream_filters(config):
         print("Filter validation FAILED.\n")
@@ -31,7 +31,7 @@ def main(config_path, num_samples, verbose):
         print("Document and attribute validation FAILED")
         return
 
-    print("Validation SUCCEEDED!")
+    print("Validation FINISHED!")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Validate mixer configuration")

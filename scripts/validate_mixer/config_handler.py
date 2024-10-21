@@ -1,10 +1,13 @@
 import yaml
 import json
+import os
 from typing import Dict, Any, List, Union, Type
 from env_handler import expand_env_vars_in_config
 
 def load_config(config_path: str) -> Dict[str, Any]:
     """Load the configuration file (YAML or JSON)."""
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(f"Config file not found at path: {config_path}")
     try:
         with open(config_path, 'r') as file:
             if config_path.endswith('.yaml') or config_path.endswith('.yml'):

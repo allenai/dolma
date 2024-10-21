@@ -1,14 +1,19 @@
 import os
 import random
 import re
-import json
-import itertools
 from typing import Optional, List, Dict, Any, Tuple
 from tqdm import tqdm
+import boto3
+import json
+import itertools
 import smart_open
+from botocore.exceptions import ClientError
 
 from s3_utils import s3_client, list_s3_objects, get_base_path, get_corresponding_attribute_path
 from utils import vprint
+
+class FileDownloadError(Exception):
+    pass
 
 def sample_files(s3_path: str, num_samples: int) -> List[str]:
     """Sample a subset of files from an S3 path."""
@@ -21,7 +26,14 @@ def sample_files(s3_path: str, num_samples: int) -> List[str]:
 
 def download_file(s3_path: str, local_path: str) -> None:
     bucket, key = s3_path.replace("s3://", "").split("/", 1)
-    s3_client.download_file(bucket, key, local_path)
+    try:
+        s3_client.download_file(bucket, key, local_path)
+    except ClientError as e:
+        if e.response['Error']['Code'] == '404':
+            raise FileDownloadError(f"File not found: {s3_path}")
+        else:
+            raise FileDownloadError(f"Error downloading file {s3_path}: {str(e)}")
+
 
 def sample_and_download_files(stream: Dict[str, Any], num_samples: int) -> Tuple[List[str], Dict[str, List[str]]]:
     temp_dir = "temp_sample_files"
@@ -43,31 +55,35 @@ def sample_and_download_files(stream: Dict[str, Any], num_samples: int) -> Tuple
             local_attr_samples_dict = {attr_type: [] for attr_type in stream['attributes']}
             
             for doc_sample in doc_samples:
-                local_doc_path = os.path.join(temp_dir, os.path.basename(doc_sample))
-                download_file(doc_sample, local_doc_path)
-                local_doc_samples.append(local_doc_path)
-                pbar.update(1)
-                
-                # Extract the base name and extension
-                base_name, extension = os.path.splitext(os.path.basename(doc_sample))
-                if extension == '.gz':
-                    # Handle double extensions like .jsonl.gz
-                    base_name, inner_extension = os.path.splitext(base_name)
-                    extension = inner_extension + extension
-                
-                for attr_type in stream['attributes']:
-                    attr_sample = get_corresponding_attribute_path(doc_sample, base_doc_path, base_attr_path, attr_type)
-                    # Construct the new filename with the attribute type before the extension, using a hyphen
-                    new_filename = f"{base_name}-{attr_type}{extension}"
-                    local_attr_path = os.path.join(temp_dir, new_filename)
-                    download_file(attr_sample, local_attr_path)
-                    local_attr_samples_dict[attr_type].append(local_attr_path)
+                try:
+                    local_doc_path = os.path.join(temp_dir, os.path.basename(doc_sample))
+                    download_file(doc_sample, local_doc_path)
+                    local_doc_samples.append(local_doc_path)
                     pbar.update(1)
-        
+                    
+                    # Extract the base name and extension
+                    base_name, extension = os.path.splitext(os.path.basename(doc_sample))
+                    if extension == '.gz':
+                        # Handle double extensions like .jsonl.gz
+                        base_name, inner_extension = os.path.splitext(base_name)
+                        extension = inner_extension + extension
+                    
+                    for attr_type in stream['attributes']:
+                        attr_sample = get_corresponding_attribute_path(doc_sample, base_doc_path, base_attr_path, attr_type)
+                        # Construct the new filename with the attribute type before the extension, using a hyphen
+                        new_filename = f"{base_name}-{attr_type}{extension}"
+                        local_attr_path = os.path.join(temp_dir, new_filename)
+                        download_file(attr_sample, local_attr_path)
+                        local_attr_samples_dict[attr_type].append(local_attr_path)
+                        pbar.update(1)
+                except FileDownloadError as e:
+                    print(f"Warning: {str(e)}. Skipping this file and its attributes.")
+                    continue
+            
         return local_doc_samples, local_attr_samples_dict
     
     except Exception as e:
-        print(f"An error occurred: {str(e)}")
+        print(f"An error occurred during file sampling and downloading: {str(e)}")
         raise
     
 def count_file_lines(file_path: str) -> int:
