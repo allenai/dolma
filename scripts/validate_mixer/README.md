@@ -24,7 +24,7 @@ The validator performs the following checks:
 Run the validator using the following command:
 
 ```
-python main.py <path_to_config_file> [--num_samples <number>] [--verbose]
+python scripts/validate_mixer/main.py <path_to_config_file> [--num_samples <number>] [--verbose]
 ```
 
 - `<path_to_config_file>`: Path to your Dolma Mixer configuration file (required)
