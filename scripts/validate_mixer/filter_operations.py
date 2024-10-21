@@ -1,12 +1,12 @@
 import re
 import json
-from typing import List, Dict, Any, Tuple, Union
+from typing import Optional, Union, List, Dict, Any, Tuple
 import jq
 from jsonpath_ng.ext import parse as parse_jsonpath
 from file_operations import sample_file_lines
 from utils import vprint
 
-def validate_jq_expression(expr: str) -> Tuple[bool, Union[str, None]]:
+def validate_jq_expression(expr: str) -> Tuple[bool, Optional[str]]:
     """Validate a JQ expression."""
     try:
         jq.compile(expr)
@@ -14,7 +14,7 @@ def validate_jq_expression(expr: str) -> Tuple[bool, Union[str, None]]:
     except ValueError as e:
         return False, str(e)
     
-def validate_jsonpath_expression(expr: str) -> Tuple[bool, Union[str, None]]:
+def validate_jsonpath_expression(expr: str) -> Tuple[bool, Optional[str]]:
     """Validate a JSONPath expression."""
     try:
         parse_jsonpath(expr)

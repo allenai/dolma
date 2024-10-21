@@ -3,7 +3,7 @@ import random
 import re
 import json
 import itertools
-from typing import List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple
 from tqdm import tqdm
 import smart_open
 
@@ -102,7 +102,7 @@ def check_attribute_name_typos(config_attributes: set, sample_attributes: set) -
         for attr in extra_in_sample:
             print(f"  - {attr}")
 
-def sample_file_lines(file_path: str, num_lines: int = 1) -> List[str] | None:
+def sample_file_lines(file_path: str, num_lines: int = 1) -> Optional[List[str]]:
     """
     Sample N lines from a file, handling both local and S3 paths, and compression.
     

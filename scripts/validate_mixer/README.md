@@ -24,12 +24,21 @@ The validator performs the following checks:
 Run the validator using the following command:
 
 ```
-python scripts/validate_mixer/main.py <path_to_config_file> <optional: number of files to sample>
+python main.py <path_to_config_file> [--num_samples <number>] [--verbose]
 ```
 
-- `<path_to_config_file>`: Path to your Dolma Mixer configuration file (YAML or JSON)
-- `<number_of_files_to_sample>`: (Optional) Number of files to sample for detailed checks (default: 1)
+- `<path_to_config_file>`: Path to your Dolma Mixer configuration file (required)
+- `--num_samples <number>`: (Optional) Number of file samples to validate (default: 1)
+- `--verbose`: (Optional) Enable verbose output
 
 ## Output
 
 The script provides detailed progress information and error messages for any validation failures, helping you troubleshoot configuration issues before running the main Dolma Mixer process.
+
+## Keyboard Interrupt
+
+The script handles keyboard interrupts (Ctrl+C) gracefully.
+
+## Exit Status
+
+The script will exit with a non-zero status if any validation step fails.
