@@ -1,0 +1,51 @@
+streams:
+  - name: cc_tiny_subset
+    documents:
+      - s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset-october/documents/**/*.jsonl.gz
+
+    attributes:
+      - cc_tiny_subset_analysis_october
+      - bff_duplicate_paragraph_spans_new
+
+    output:
+      path: s3://ai2-oe-data/mashai/tiny-DCLM-pool-subset-october/mixed-output-exclude-bff
+      max_size_in_bytes: 4294967296
+      discard_fields:
+        - attributes
+
+    filter:
+      syntax: jq
+      include: []
+      exclude:
+        # Language filter (using both cld2 and fasttext)
+        - (.attributes.cc_tiny_subset_analysis_october__cld2_en_paragraph_with_doc_score_v2__doc_en | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] < 0.8 else false end)
+        - (.attributes.cc_tiny_subset_analysis_october__ft_lang_id_en_paragraph_with_doc_score_v2__doc_en | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] < 0.8 else false end)
+        # Document length filter
+        - (.attributes.cc_tiny_subset_analysis_october__char_length_with_paragraphs_v1__document | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] < 100 else false end)
+        # NSFW content filter
+        - (.attributes.cc_tiny_subset_analysis_october__jigsaw_nsfw_document_v1____label__nsfw | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] > 0.5 else false end)
+        # Gopher quality filter
+        - (.attributes.cc_tiny_subset_analysis_october__gopher_v2__word_count | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] < 50 else false end)
+        - (.attributes.cc_tiny_subset_analysis_october__gopher_v2__symbol_to_word_ratio | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] > 0.1 else false end)
+        # Deduplication filter (BFF)
+        - (.attributes.bff_duplicate_paragraph_spans_new | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] >= 1.0 else false end)
+        # C4 quality filter
+        - (.attributes.cc_tiny_subset_analysis_october__c4_v2__line_bullets | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] > 0.5 else false end)
+        - (.attributes.cc_tiny_subset_analysis_october__c4_v2__phrase_repeat | if type == "array" and length > 0 and .[0] != null and .[0][2] != null then .[0][2] > 0.3 else false end)
+
+    span_replacement:
+      - span: "$.attributes.cc_tiny_subset_analysis_october__pii_regex_with_counts_fast_v2__EMAIL_ADDRESS"
+        min_score: 0.5
+        replacement: " |||EMAIL_ADDRESS||| "
+      - span: "$.attributes.cc_tiny_subset_analysis_october__pii_regex_with_counts_fast_v2__PHONE_NUMBER"
+        min_score: 0.5
+        replacement: " |||PHONE_NUMBER||| "
+      - span: "$.attributes.cc_tiny_subset_analysis_october__pii_regex_with_counts_fast_v2__IP_ADDRESS"
+        min_score: 0.5
+        replacement: " |||IP_ADDRESS||| "
+
+work_dir:
+  input: "/tmp/cc_tiny_subset_mix/input"
+  output: "/tmp/cc_tiny_subset_mix/output"
+
+processes: 16
