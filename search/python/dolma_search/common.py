@@ -1,7 +1,8 @@
-from pathlib import Path
-from tantivy import SchemaBuilder, Index
 import shutil
 from enum import Enum
+from pathlib import Path
+
+from tantivy import Index, SchemaBuilder
 
 
 class IndexFields(Enum):

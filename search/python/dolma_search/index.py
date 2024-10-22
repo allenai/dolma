@@ -9,25 +9,24 @@ python -m dolma_decontamination.search.index \
     -f
 """
 
-from functools import partial
-import logging
-import json
-import shutil
-from queue import Queue
 import argparse
-import tqdm
+import json
+import logging
+import shutil
+import time
+from contextlib import ExitStack
+from functools import partial
+from multiprocessing import Manager, Pool, set_start_method
 from pathlib import Path
-from tantivy import Document, SchemaBuilder, Index
+from queue import Queue
+from urllib.parse import urlparse
+
 import fsspec
 import smart_open
-import time
-from urllib.parse import urlparse
-from multiprocessing import Pool, Manager, set_start_method
-from contextlib import ExitStack
+import tqdm
+from tantivy import Document, Index, SchemaBuilder
 
-
-from .common import create_index, IndexFields
-
+from .common import IndexFields, create_index
 
 INDEX_DESCRIPTION = "Index documents into a tantivy index"
 
@@ -54,12 +53,12 @@ def list_path(pattern: str) -> list[str]:
 
 def list_paths(glob_patterns: list[str], num_workers: int = 1) -> list[str]:
     with Pool(processes=num_workers) as pool:
-       return [p for ps in pool.map(list_path, glob_patterns) for p in ps]
+        return [p for ps in pool.map(list_path, glob_patterns) for p in ps]
 
 
 def read_file_for_indexing(file_path: str, docs_queue: Queue[list[Document]], batch_size: int = 1_000):
     batch: list[Document] = []
-    with smart_open.open(file_path, 'rt', encoding='utf-8') as stream:
+    with smart_open.open(file_path, "rt", encoding="utf-8") as stream:
         for line in stream:
             row = json.loads(line)
             doc = Document(**{f.value: (row[f.value] or "") for f in IndexFields})
@@ -86,7 +85,9 @@ def read_many_and_index(
     with ExitStack() as stack:
         reader_pool = stack.enter_context(Pool(processes=num_readers))
 
-        files_pbar = stack.enter_context(tqdm.tqdm(desc="Reading files", unit=" files", unit_scale=True, total=len(paths)))
+        files_pbar = stack.enter_context(
+            tqdm.tqdm(desc="Reading files", unit=" files", unit_scale=True, total=len(paths))
+        )
         docs_pbar = stack.enter_context(tqdm.tqdm(desc="Indexing documents", unit=" docs", unit_scale=True))
 
         writer_fn = partial(index.writer, num_threads=num_indexers, heap_size=heap_size)
@@ -95,10 +96,7 @@ def read_many_and_index(
         docs_queue: Queue[list[Document]] = (manager := Manager()).Queue(queue_size)
 
         fn = partial(read_file_for_indexing, docs_queue=docs_queue, batch_size=reader_batch_size)
-        async_results = [
-            reader_pool.apply_async(fn, [p], callback=lambda _: files_pbar.update(1))
-            for p in paths
-        ]
+        async_results = [reader_pool.apply_async(fn, [p], callback=lambda _: files_pbar.update(1)) for p in paths]
         # for p in paths:
         #     fn(p)
 
@@ -135,34 +133,19 @@ def make_index_parser(parser: argparse.ArgumentParser | None = None):
         type=str,
         required=True,
         nargs="+",
-        help="The documents to index. Can be any glob pattern supported by smart-open library."
+        help="The documents to index. Can be any glob pattern supported by smart-open library.",
     )
     parser.add_argument(
         "-i",
         "--index-path",
         type=str,
-        help="The path to the index. If not provided, an in-memory index will be used."
+        help="The path to the index. If not provided, an in-memory index will be used.",
     )
     parser.add_argument(
-        "-f",
-        "--force",
-        action="store_true",
-        help="If the index already exists, delete it and create a new one."
+        "-f", "--force", action="store_true", help="If the index already exists, delete it and create a new one."
     )
-    parser.add_argument(
-        "-n",
-        "--num-readers",
-        type=int,
-        default=1,
-        help="The number of readers to use."
-    )
-    parser.add_argument(
-        "-N",
-        "--num-indexers",
-        type=int,
-        default=1,
-        help="The number of indexers to use."
-    )
+    parser.add_argument("-n", "--num-readers", type=int, default=1, help="The number of readers to use.")
+    parser.add_argument("-N", "--num-indexers", type=int, default=1, help="The number of indexers to use.")
     parser.add_argument(
         "-b",
         "--reader-batch-size",
@@ -186,7 +169,7 @@ def make_index_parser(parser: argparse.ArgumentParser | None = None):
         "--queue-size-per-thread",
         type=int,
         default=125,
-        help="The size of the queue to use for storing documents."
+        help="The size of the queue to use for storing documents.",
     )
     return parser
 

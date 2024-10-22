@@ -1,8 +1,7 @@
 import argparse
 import sys
-from . import index
-from . import query
 
+from . import index, query
 
 CLI_DESCRIPTION = "Dolma Search CLI"
 
@@ -28,7 +27,6 @@ def main():
     else:
         parser.print_help()
         sys.exit(1)
-
 
 
 if __name__ == "__main__":
