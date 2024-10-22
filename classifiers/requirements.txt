@@ -1,0 +1,9 @@
+msgspec
+fsspec[s3]
+smart_open>=7.0.4
+tqdm
+torch
+transformers
+wandb
+jq
+necessary
