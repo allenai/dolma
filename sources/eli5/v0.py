@@ -12,6 +12,7 @@ import tqdm
 DESTINATION_S3 = "s3://ai2-llm/pretraining-data/sources/max-hoffman_eli5/v0"
 DCLM_SUBMISSION_SCORE = 3
 DCLM_COMMENT_SCORE = 5
+DCLM_MIN_ANSWERS = 3
 ELI5_CREATED_AT = datetime.datetime(2019, 7, 22)
 
 
@@ -72,7 +73,7 @@ def read_eli5_data(split: str, data_dir: str = "/Users/lucas/code/eli5/data"):
 
 def main():
 
-    for split in ["train", "test", "validation"]:
+    for split in ["test", "validation", "train"]:
         df = read_eli5_data(split)
         eli5_created_at = format_to_dolma_timestamp(ELI5_CREATED_AT)
 
@@ -80,15 +81,25 @@ def main():
             full_file = stack.enter_context(smart_open.open(f"{DESTINATION_S3}/conversation/{split}.jsonl.gz", "w"))
             dclm_file = stack.enter_context(smart_open.open(f"{DESTINATION_S3}/dclm/{split}.jsonl.gz", "w"))
             format_file = stack.enter_context(smart_open.open(f"{DESTINATION_S3}/individual/{split}.jsonl.gz", "w"))
+            screen_file = stack.enter_context(smart_open.open(f"{DESTINATION_S3}/individual_filtered/{split}.jsonl.gz", "w"))
 
             for i, row in tqdm.tqdm(df.iterrows(), total=len(df), desc=f"Processing {split}"):
                 all_text_and_answers = (
-                    row["title_with_urls"] + row["selftext_with_urls"], *row['answers_with_urls']['text']
+                    str(row["title_with_urls"]),
+                    str(row["selftext_with_urls"]),
+                    *[str(text) for text in row['answers_with_urls']['text']]
                 )
-                full_text = "\n\n".join(
-                    [re.sub(r"\n+", "\n", fix_text(str(text))) for text in all_text_and_answers]
+
+                # use two newlines as separator or maximum number of newlines in the text, plus one
+                newlines_as_separator = max(
+                    2, max(text.count('\n') for text in all_text_and_answers) + 1
                 )
-                answer_urls = {f"_URL_{i}_": url for i, url in enumerate(row['answers_urls']['url'])}
+                # separate the text with one newline
+                full_text = ("\n" * newlines_as_separator).join(all_text_and_answers)
+
+                answer_urls = {
+                    f"_URL_{i}_": url for i, url in enumerate(row['answers_urls']['url'])
+                }
 
                 metadata = {
                     "q_id": str(row["q_id"]),
@@ -126,14 +137,14 @@ def main():
 
                 dclm_answer = None
 
+                title = fix_text(str(row["title"]))
+
                 for score, a_id, answer in sorted(
                     zip(row['answers']['score'], row['answers']['a_id'], row['answers_with_urls']['text']),
                     key=lambda x: float(f"{x[0]}.{len(x[2])}")
                 ):
-                    text = (
-                        re.sub(r"\n+", "\n", fix_text(str(row['title']))) + "\n\n" +
-                        re.sub(r"\n+", "\n", fix_text(str(answer)))
-                    )
+                    newlines_as_separator = max(2, answer.count('\n') + 1, title.count('\n') + 1)
+                    text = ("\n" * newlines_as_separator).join([title, fix_text(answer)])
                     answer_metadata = {
                         **{k: v for k, v in metadata.items() if k != "answers"},
                         **[answer for answer in metadata["answers"] if answer["a_id"] == a_id][0]  # pyright: ignore
@@ -148,10 +159,14 @@ def main():
                         "metadata": answer_metadata
                     }
 
-                    if score >= DCLM_SUBMISSION_SCORE:
+                    format_file.write(json.dumps(answer_document) + "\n")
+
+                    if score >= DCLM_COMMENT_SCORE and len(row['answers']['a_id']) >= DCLM_MIN_ANSWERS:
                         dclm_answer = {**answer_document, "version": "v0_dclm"}
 
-                    format_file.write(json.dumps(answer_document) + "\n")
+                    if score >= DCLM_COMMENT_SCORE:
+                        screen_document = {**answer_document, "version": "v0_screen"}
+                        screen_file.write(json.dumps(screen_document) + "\n")
 
                 if dclm_answer:
                     dclm_file.write(json.dumps(dclm_answer) + "\n")
