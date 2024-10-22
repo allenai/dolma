@@ -3,17 +3,20 @@ import argparse
 from .common import create_index, IndexFields
 
 import sys
-from typing import NamedTuple
+from typing import Any, NamedTuple, Type
 from markdownify import markdownify as md
 import json
 from rich.markdown import Markdown
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
-from tantivy import SnippetGenerator, Schema, Searcher
+from tantivy import Document, Query, SnippetGenerator, Schema, Searcher
 from enum import Enum
 from typing import Generator
 import jq
+
+
+QUERY_DESCRIPTION = "Interactive search tool on a tantivy index"
 
 
 class DisplayFormat(Enum):
@@ -22,8 +25,8 @@ class DisplayFormat(Enum):
     SNIPPET = "snippet"
 
 
-def make_search_parser():
-    parser = argparse.ArgumentParser("Interactive search tool on a tantivy index")
+def make_search_parser(parser: argparse.ArgumentParser | None = None):
+    parser = parser or argparse.ArgumentParser(QUERY_DESCRIPTION)
     parser.add_argument(
         "-i",
         "--index-path",
@@ -92,13 +95,13 @@ def apply_selector(queries: Generator[str, None, None], selector: str | None):
 
 class HitsTuple(NamedTuple):
     score: float
-    doc: dict[str, list]
+    doc: dict[str, list[Any]]
     rank: int
 
     def get(self, field: str) -> str:
         return str(self.doc[field][0])
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "document": {f.value: self.get(f.value) for f in IndexFields},
             "score": self.score,
@@ -106,9 +109,13 @@ class HitsTuple(NamedTuple):
         }
 
     @classmethod
-    def from_hits(cls, hits: list[tuple[float, int]], searcher: Searcher) -> list["HitsTuple"]:
+    def from_hits(cls: Type["HitsTuple"], hits: list[tuple[float, int]], searcher: Searcher) -> list["HitsTuple"]:
         return [
-            cls(hit_score, searcher.doc(hit_doc_address), rank)
+            cls(
+                score=hit_score,
+                doc=searcher.doc(hit_doc_address),  # pyright: ignore
+                rank=rank
+            )
             for rank, (hit_score, hit_doc_address) in enumerate(hits, start=1)
         ]
 
@@ -117,8 +124,9 @@ def print_hits_table(
     hits: list[HitsTuple],
     searcher: Searcher,
     schema: Schema,
+    query: Query,
     show_snippets: bool = False,
-    console: Console | None = None
+    console: Console | None = None,
 ):
     console = console or Console()
 
@@ -131,14 +139,14 @@ def print_hits_table(
     for hit in hits:
         if show_snippets:
             snippet_generator = SnippetGenerator.create(
-                searcher, parsed_query, schema, IndexFields.TEXT.value
+                searcher=searcher, query=query, schema=schema, field_name=IndexFields.TEXT.value
             )
-            snippet = snippet_generator.snippet_from_doc(document)
+            snippet = snippet_generator.snippet_from_doc(hit.doc)   # pyright: ignore
             hit_text = Markdown(md(snippet.to_html()).strip())
         else:
             hit_text = Text(hit.get(IndexFields.TEXT.value).strip().replace("\n", "\\n"))
 
-        table.add_row(f"{hit_score:.2f}", str(hit_id), str(hit_source), str(hit_text))
+        table.add_row(f"{hit.score:.2f}", hit.get("id"), hit.get("source"), str(hit_text))
 
     console.print(table)
 
@@ -156,17 +164,18 @@ def search_data(args: argparse.Namespace):
             raise ValueError(f"Error parsing query `{query}`: {e}")
 
         hits = searcher.search(parsed_query, limit=args.num_hits).hits
-        parsed_hits = HitsTuple.from_hits(hits, searcher)
+        parsed_hits = HitsTuple.from_hits(hits, searcher)   # pyright: ignore
 
         if args.display_format == DisplayFormat.JSON:
             for row in parsed_hits:
                 print(json.dumps(row.to_dict(), sort_keys=True))
         else:
             print_hits_table(
-                parsed_hits,
-                searcher,
-                index.schema,
-                show_snippets=args.display_format == DisplayFormat.SNIPPET,
+                hits=parsed_hits,
+                searcher=searcher,
+                schema=index.schema,
+                query=parsed_query,
+                show_snippets=(args.display_format == DisplayFormat.SNIPPET),
                 console=console
             )
 

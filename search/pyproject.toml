@@ -1,7 +1,7 @@
 [project]
-name = "dolma-decontamination"
-version = "0.0.1"
-description = "Toolkit for decontaminating data in Dolma format."
+name = "dolma-search"
+version = "0.1.0"
+description = "Toolkit for easy indexing of data in Dolma format."
 authors = [
     {name = "Luca Soldaini", email = "lucas@allenai.org" }
 ]
@@ -9,9 +9,7 @@ license = {text = "Apache-2.0"}
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "rusty-dawg>=0.2.2",
     "msgspec>=0.18.6",
-    "datasets>=3.0.1,<3.1.0",
     "jq>=1.8.0,<2.0.0",
     "fsspec[http]<=2024.6.1,>=2023.1.0",
     "tantivy>=0.18.0",
@@ -30,7 +28,12 @@ dependencies = [
 where = ["python"]
 
 [tool.setuptools.package-data]
-dolma_decontamination = ["py.typed", "*.pyi"]
+dolma_search = ["py.typed", "*.pyi"]
+
+
+[project.scripts]
+dolma-search = "dolma_search.__main__:main"
+
 
 [build-system]
 build-backend = "setuptools.build_meta"

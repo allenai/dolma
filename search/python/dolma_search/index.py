@@ -29,6 +29,9 @@ from contextlib import ExitStack
 from .common import create_index, IndexFields
 
 
+INDEX_DESCRIPTION = "Index documents into a tantivy index"
+
+
 QueueType = Queue[Document | None]
 
 
@@ -54,8 +57,8 @@ def list_paths(glob_patterns: list[str], num_workers: int = 1) -> list[str]:
        return [p for ps in pool.map(list_path, glob_patterns) for p in ps]
 
 
-def read_file_for_indexing(file_path: str, docs_queue: Queue[Document], batch_size: int = 1_000):
-    batch = []
+def read_file_for_indexing(file_path: str, docs_queue: Queue[list[Document]], batch_size: int = 1_000):
+    batch: list[Document] = []
     with smart_open.open(file_path, 'rt', encoding='utf-8') as stream:
         for line in stream:
             row = json.loads(line)
@@ -89,7 +92,7 @@ def read_many_and_index(
         writer_fn = partial(index.writer, num_threads=num_indexers, heap_size=heap_size)
         writer = writer_fn()
 
-        docs_queue: Queue[Document] = (manager := Manager()).Queue(queue_size)
+        docs_queue: Queue[list[Document]] = (manager := Manager()).Queue(queue_size)
 
         fn = partial(read_file_for_indexing, docs_queue=docs_queue, batch_size=reader_batch_size)
         async_results = [
@@ -124,8 +127,8 @@ def read_many_and_index(
         writer.wait_merging_threads()
 
 
-def make_index_parser():
-    parser = argparse.ArgumentParser("Index documents into a tantivy index")
+def make_index_parser(parser: argparse.ArgumentParser | None = None):
+    parser = parser or argparse.ArgumentParser(INDEX_DESCRIPTION)
     parser.add_argument(
         "-d",
         "--documents",
