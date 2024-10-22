@@ -9,7 +9,7 @@ import datetime
 
 import tqdm
 
-DESTINATION_S3 = "s3://ai2-llm/pretraining-data/sources/max-hoffman_eli5/v0"
+DESTINATION_S3 = "s3://ai2-llm/pretraining-data/sources/max-hoffman_eli5/v0/documents"
 DCLM_SUBMISSION_SCORE = 3
 DCLM_COMMENT_SCORE = 5
 DCLM_MIN_ANSWERS = 3
@@ -91,11 +91,12 @@ def main():
                 )
 
                 # use two newlines as separator or maximum number of newlines in the text, plus one
-                newlines_as_separator = max(
-                    2, max(text.count('\n') for text in all_text_and_answers) + 1
+                spacing = max(
+                    [len(span) for text in all_text_and_answers for span in re.findall(r'\n+', text)] + [1]
                 )
+
                 # separate the text with one newline
-                full_text = ("\n" * newlines_as_separator).join(all_text_and_answers)
+                full_text = ("\n" * (spacing + 1)).join(all_text_and_answers)
 
                 answer_urls = {
                     f"_URL_{i}_": url for i, url in enumerate(row['answers_urls']['url'])
@@ -143,8 +144,13 @@ def main():
                     zip(row['answers']['score'], row['answers']['a_id'], row['answers_with_urls']['text']),
                     key=lambda x: float(f"{x[0]}.{len(x[2])}")
                 ):
-                    newlines_as_separator = max(2, answer.count('\n') + 1, title.count('\n') + 1)
-                    text = ("\n" * newlines_as_separator).join([title, fix_text(answer)])
+                    # use two newlines as separator or maximum number of newlines in the text, plus one
+                    spacing = max(
+                        [len(span) for span in re.findall(r'\n+', title)] +
+                        [len(span) for span in re.findall(r'\n+', answer)] +
+                        [1]
+                    )
+                    text = ("\n" * (spacing + 1)).join([title, fix_text(answer)])
                     answer_metadata = {
                         **{k: v for k, v in metadata.items() if k != "answers"},
                         **[answer for answer in metadata["answers"] if answer["a_id"] == a_id][0]  # pyright: ignore
