@@ -1,7 +1,7 @@
 import argparse
-from collections import defaultdict
 import multiprocessing as mp
 import time
+from collections import defaultdict
 from contextlib import ExitStack
 from functools import partial
 from itertools import zip_longest
@@ -26,7 +26,13 @@ from transformers import BatchEncoding, PreTrainedTokenizer
 
 from .loggers import ProgressLogger, WandbLogger, get_logger
 from .models import Prediction, Registry
-from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup
+from .utils import (
+    KeyedExitStack,
+    cleanup,
+    get_local_gpu_rank,
+    sanitize_model_name,
+    setup,
+)
 
 
 class Batch(NamedTuple):
@@ -136,9 +142,8 @@ def writer_worker(
     console_logger = get_logger("writer_worker")
 
     files_writers = {}
-    with ExitStack() as stack:
+    with KeyedExitStack() as stack:
         encoder = msgspec.json.Encoder()
-        writers = {}
         counts = defaultdict(int)
         total_count = 0
 
@@ -151,14 +156,15 @@ def writer_worker(
             if element is None:
                 break
 
-            if element.source not in writers:
+            if element.source not in stack:
                 destination_path = source_destination_mapping[element.source]
-                writers[element.source] = stack.enter_context(
+                stack.push(
+                    element.source,
                     smart_open.open(destination_path, "wt", encoding="utf-8")
                 )
                 console_logger.info(f"Opened {destination_path} for writing")
 
-            writers[element.source].write(
+            stack[element.source].write(
                 encoder.encode_lines(element.attributes).decode("utf-8")
             )
             progress_logger.increment(docs=len(element.attributes))
@@ -176,7 +182,8 @@ def writer_worker(
                         break
 
                     # I've finished processing this source; close the file
-                    writers.pop(path.source).close()
+                    stack.pop(path.source).close()
+
                     console_logger.info(f"Closed {source_destination_mapping[path.source]}")
                     progress_logger.increment(files=1)
 

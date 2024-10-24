@@ -1,6 +1,7 @@
 import os
 import re
-from typing import Any
+from contextlib import ExitStack
+from typing import Any, ContextManager, Dict
 
 import torch
 import torch.distributed as dist
@@ -47,6 +48,56 @@ def sanitize_model_name(model_name: str, suffix_data: Any = None) -> str:
         stripped_trailing_underscores += f"_{md5(encoder.encode(suffix_data)).hexdigest()[:6]}"
 
     return stripped_trailing_underscores
+
+
+class KeyedExitStack:
+    """From https://claude.site/artifacts/7150ff45-3cb1-41e5-be5c-0f0890aa332e"""
+
+    def __init__(self):
+        self.stack = ExitStack()
+        self.resources: Dict[str, ContextManager] = {}
+
+    def __enter__(self):
+        self.stack.__enter__()
+        return self
+
+    def __exit__(self, *exc_details):
+        return self.stack.__exit__(*exc_details)
+
+    def push(self, key: str, cm: ContextManager) -> Any:
+        """Push a context manager onto the stack with an associated key."""
+        resource = self.stack.enter_context(cm)
+        self.resources[key] = resource
+        return resource
+
+    def __contains__(self, key: str) -> bool:
+        """Check if a resource with the given key is in the stack."""
+        return key in self.resources
+
+    def __getitem__(self, key: str) -> Any:
+        """Get a resource by key."""
+        return self.resources[key]
+
+    def pop(self, key: str) -> None:
+        """Close a specific resource and remove it from the stack."""
+        if key not in self.resources:
+            raise KeyError(f"No resource found with key: {key}")
+
+        resource = self.resources[key]
+        # Create a new stack for remaining resources
+        new_stack = ExitStack()
+        remaining_resources = {k: v for k, v in self.resources.items() if k != key}
+
+        # Transfer all resources except the one being popped
+        for k, v in remaining_resources.items():
+            new_stack.push(self.stack.pop_all())
+
+        # Close the old stack (which now only contains the resource we want to pop)
+        self.stack.close()
+
+        # Update our stack and resources
+        self.stack = new_stack
+        self.resources = remaining_resources
 
 
 if ".zstd" not in get_supported_compression_types():
