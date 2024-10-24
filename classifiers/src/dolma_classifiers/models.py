@@ -27,7 +27,7 @@ class Prediction(NamedTuple):
 class BaseQualityClassifier:
     model: PreTrainedModel
     tokenizer: PreTrainedTokenizer
-    input_template: str = ".text"
+    input_template: str
     def __init__(
         self,
         model_name: str,
@@ -35,6 +35,8 @@ class BaseQualityClassifier:
         dtype: str,
         compile: bool = False,
         trust_remote_code: bool = False,
+        input_template: str = ".text"
+
     ):
         self.model = self._make_model(
             model_name=model_name,
@@ -44,6 +46,7 @@ class BaseQualityClassifier:
             trust_remote_code=trust_remote_code,
         )
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.input_template = input_template
 
         if len(self.model.config.id2label) > 1:
             label_name_fn = lambda label: f"{sanitize_model_name(model_name)}_{sanitize_model_name(label)}"
@@ -140,9 +143,23 @@ class QualityModel(nn.Module, PyTorchModelHubMixin):
 #Alexw classifier
 @Registry.add("data-delve/gte-base-en-v1.5_topic-v3.8_url1")
 class DataDelveClassifier(BaseQualityClassifier):
-    input_template = ".metadata.url\n.text"
-    trust_remote_code = True
-    pass
+    def __init__(
+        self,
+        model_name: str,
+        device: str,
+        dtype: str,
+        compile: bool = False,
+        trust_remote_code: bool = False,
+        input_template: str = ".metadata.url\n.text"
+    ):
+        super().__init__(
+            model_name=model_name,
+            device=device,
+            dtype=dtype,
+            compile=compile,
+            trust_remote_code=trust_remote_code,
+            input_template=input_template
+        )
 
 
 @Registry.add("nvidia/quality-classifier-deberta")
