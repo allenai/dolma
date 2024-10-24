@@ -74,15 +74,22 @@ class KeyedExitStack(Generic[T]):
         self.resources[key] = resource
         return resource
 
+    def __len__(self) -> int:
+        """Get the number of resources in the stack."""
+        return len(self.resources)
+
     def __contains__(self, key: str) -> bool:
         """Check if a resource with the given key is in the stack."""
         return key in self.resources
 
     def __getitem__(self, key: str) -> T:
         """Get a resource by key."""
-        return self.resources[key]
+        try:
+            return self.resources[key]
+        except KeyError as e:
+            raise KeyError(f"No resource found with key: {key}") from e
 
-    def pop(self, key: str) -> None:
+    def pop(self, key: str) -> T:
         """Close a specific resource and remove it from the stack."""
         if key not in self.resources:
             raise KeyError(f"No resource found with key: {key}")
@@ -102,6 +109,8 @@ class KeyedExitStack(Generic[T]):
         # Update our stack and resources
         self.stack = new_stack
         self.resources = remaining_resources
+
+        return resource
 
 
 if ".zstd" not in get_supported_compression_types():
