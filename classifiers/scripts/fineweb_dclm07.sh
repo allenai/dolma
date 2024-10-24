@@ -41,9 +41,9 @@ gantry run \
     --env LOG_FILTER_TYPE=local_rank0_only \
     --env OMP_NUM_THREADS=8 \
     --env BEAKER_USER_ID=$(beaker account whoami --format json | jq '.[0].name' -cr) \
-    --env-secret AWS_ACCESS_KEY_ID=S2_AWS_ACCESS_KEY_ID \
-    --env-secret AWS_SECRET_ACCESS_KEY=S2_AWS_SECRET_ACCESS_KEY \
-    --env-secret WANDB_API_KEY=WANDB_API_KEY \
+    --env-secret AWS_ACCESS_KEY_ID=lucas-AWS_ACCESS_KEY_ID \
+    --env-secret AWS_SECRET_ACCESS_KEY=lucas-AWS_SECRET_ACCESS_KEY \
+    --env-secret WANDB_API_KEY=lucas-WANDB_API_KEY \
     --shared-memory 10GiB \
     --install "pip install -e classifiers/" \
     --yes \
