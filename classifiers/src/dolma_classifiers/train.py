@@ -17,7 +17,10 @@ from torch.utils.data import Dataset, Subset
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, TrainingArguments, Trainer, AutoTokenizer
 
-from dolma.core.utils import add_compression
+from smart_open.compression import (
+    _handle_zstd,
+    register_compressor,
+)
 
 POSITIVE_LABEL = 1
 NEGATIVE_LABEL = 0
@@ -41,9 +44,6 @@ def read_file(path: str, label: int | None = None, selector: str | None = None, 
 
     decoder = Decoder()
     documents = []
-
-    # add support to zstd compression
-    add_compression()
 
     with smart_open.open(path) as f:
         for line in f:
@@ -288,4 +288,8 @@ def main(args: argparse.Namespace):
 
 if __name__ == "__main__":
     args = parse_args()
+
+    # add additional extension for smart_open
+    register_compressor(".zstd", _handle_zstd)
+
     main(args)
