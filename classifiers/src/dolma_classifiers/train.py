@@ -69,6 +69,7 @@ def upload_directory_to_s3(directory_path: str, bucket: str, folder: str) -> Non
     s3 = boto3.client("s3")
     for root, dirs, files in os.walk(directory_path):
         for file in files:
+            print(f"Uploading {file}")
             file_path: str = os.path.join(root, file)
             s3_path: str = os.path.join(folder, os.path.relpath(file_path, directory_path))
             s3.upload_file(file_path, bucket, s3_path)
@@ -306,6 +307,7 @@ def main(args: argparse.Namespace):
     if args.upload_to_s3:
         run_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         upload_path = os.path.join(args.s3_path, args.run_name, run_date)
+        print(f"Uploading model to S3. source={args.local_save_path}, bucket={args.s3_bucket}, path={upload_path}")
         upload_directory_to_s3(args.local_save_path, args.s3_bucket, upload_path)
 
 
