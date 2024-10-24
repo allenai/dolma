@@ -38,11 +38,16 @@ class Batch(NamedTuple):
         return len(self.ids)
 
 
+class OutputPath(NamedTuple):
+    source: str
+    count: int
+
+
 class DocumentsIterableDataset(IterableDataset[Batch]):
     def __init__(
         self,
         input_paths_queue: QueueType[str],
-        output_paths_queue: QueueType[str],
+        output_paths_queue: QueueType[OutputPath],
         tokenizer: PreTrainedTokenizer,
         max_length: int | None,
         text_selector: str = '.text',
@@ -90,7 +95,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                     count += 1
 
             self.logger.info(f"Read {count:,} documents from {path}")
-            self.output_paths_queue.put(path)
+            self.output_paths_queue.put(OutputPath(source=path, count=count))
 
 
 
@@ -121,7 +126,7 @@ class AttributeRow(NamedTuple):
 
 def writer_worker(
     scores_queue: QueueType[AttributeRow | None],
-    output_paths_queue: QueueType[str],
+    output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
     log_every: int = 10_000,
 ):
@@ -133,8 +138,9 @@ def writer_worker(
     with ExitStack() as stack:
         encoder = msgspec.json.Encoder()
         writers = {}
+        counts: dict[str, int] = {}
+        total_count = 0
 
-        written = 0
         while True:
             if scores_queue.qsize() == 0:
                 time.sleep(0.1)
@@ -144,24 +150,33 @@ def writer_worker(
             if element is None:
                 break
 
-            if (destination_path := source_destination_mapping[element.source]) not in writers:
+            if element.source not in writers:
+                destination_path = source_destination_mapping[element.source]
                 writers[destination_path] = stack.enter_context(
                     smart_open.open(destination_path, "wt", encoding="utf-8")
                 )
                 console_logger.info(f"Opened {destination_path} for writing")
 
-            writers[destination_path].write(
+            writers[element.source].write(
                 encoder.encode_lines(element.attributes).decode("utf-8")
             )
             progress_logger.increment(docs=len(element.attributes))
+            counts[element.source] += len(element.attributes)
+            total_count += len(element.attributes)
 
-            written += len(element.attributes)
-
-            if written > log_every:
-                while output_paths_queue.qsize() > 0:
+            if total_count > log_every:
+                # we iterate at most once over the output queue (this avoids infinite loops if elements are popped back into the queue)
+                for _ in range(output_paths_queue.qsize()):
+                    # get the paths from the output queue (these have been fully processed)
                     path = output_paths_queue.get()
-                    writers.pop(path).close()
-                    console_logger.info(f"Closed {path}")
+                    if path.count > counts[path.source]:
+                        # more documents still to be written for this source; put it back
+                        output_paths_queue.put(path)
+                        break
+
+                    # I've finished processing this source; close the file
+                    writers.pop(path.source).close()
+                    console_logger.info(f"Closed {source_destination_mapping[path.source]}")
                     progress_logger.increment(files=1)
 
 
@@ -306,7 +321,12 @@ def main(args: argparse.Namespace) -> None:
 
     # Filter out existing files unless --override is set
     if not args.override:
-        existing_destinations = set(f"{scheme}://{p}" for p in fs.glob(f'{args.output_prefix.rstrip("/")}/**'))
+
+        # possible existing destinations might contain more files than destination_paths because it glob
+        # at the attribute name level, while destination_paths might only be about a subset of documents.
+        possible_existing_destinations = set(f"{scheme}://{p}" for p in fs.glob(f'{args.output_prefix.rstrip("/")}/**'))
+        existing_destinations = {p for p in destination_paths if p in possible_existing_destinations}
+
         console_logger.info(f"Found {len(existing_destinations)} existing files in {args.output_prefix}")
 
         if len(existing_destinations) >= len(source_paths):
