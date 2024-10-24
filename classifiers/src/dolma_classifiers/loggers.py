@@ -78,7 +78,7 @@ class ProgressLogger:
     def __init__(self, log_every: int = 10_000, wandb_logger: WandbLogger | None = None):
         self.log_every = log_every
         self.logger = get_logger(self.__class__.__name__)
-        self.prev_time = time.time()
+        self.start_time = self.prev_time = time.time()
         self.total_docs = 0
         self.current_docs = 0
         self.current_files = 0
@@ -103,8 +103,11 @@ class ProgressLogger:
             if self.wandb_logger is not None:
                 self.wandb_logger.log(
                     step=self.total_docs,
-                    docs_throughput=docs_throughput,
-                    files_throughput=files_throughput,
+                    instant_doc_throughput=docs_throughput,
+                    total_doc_throughput=self.total_docs / (current_time - self.start_time),
+                    instant_file_throughput=files_throughput,
+                    total_file_throughput=self.total_files / (current_time - self.start_time),
+                    total_files=self.total_files,
                 )
 
             self.prev_time = current_time
