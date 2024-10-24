@@ -59,15 +59,7 @@ class WandbLogger:
         self.rank, self.world_size = get_rank_and_world_size()
 
     def log(self, **kwargs):
-        print(
-            "{wandb}{rank}/{world_size}: {kwargs}".format(
-                wandb="[wandb]" if (to_wandb := (self.rank == 0) and (self.use_wandb)) else "",
-                rank=self.rank,
-                world_size=self.world_size,
-                kwargs=", ".join(f"{k}={v}" for k, v in kwargs.items()),
-            )
-        )
-        if to_wandb:
+        if (self.rank == 0) and (self.use_wandb):
             if step := kwargs.pop("step", None):
                 wandb.log(kwargs, step=step)
             else:

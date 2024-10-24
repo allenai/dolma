@@ -1,50 +1,21 @@
-"""
-Author: Luca Soldaini (@soldni)
-Email:  lucas@allenai.org
-
-To run this script with torchrun, use the following command:
-torchrun --nproc_per_node=<num_gpus> scripts/fineweb_classifier.py \
-    --source-prefix s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/dclm-1969.json.zst \
-    --output-prefix s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/attributes/fineweb-edu-classifier
-    --batch-size 512 # 128 on A6000
-
-Replace <num_gpus> with the number of GPUs you want to use.
-"""
-
 import argparse
-import logging
 import multiprocessing as mp
-import os
-import re
 import time
-from collections import abc
+from contextlib import ExitStack
 from functools import partial
 from hashlib import md5
 from itertools import chain, zip_longest
-from math import ceil
+from queue import Empty
 from queue import Queue as QueueType
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Dict,
-    Generator,
-    List,
-    NamedTuple,
-    Optional,
-    Tuple,
-    TypedDict,
-    Union,
-)
+from typing import Generator, NamedTuple
 from urllib.parse import urlparse
 
 import fsspec
 import jq
 import msgspec
 import smart_open
-import torch  # pyright: ignore
-import tqdm
-import wandb
-from smart_open.compression import _handle_zstd
+import torch
+import torch.multiprocessing as mp
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import (  # pyright: ignore
     DataLoader,
@@ -54,19 +25,15 @@ from torch.utils.data import (  # pyright: ignore
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from .loggers import ProgressLogger, WandbLogger, get_logger
-from .models import Registry
+from .models import Prediction, Registry
 from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup
-
-
-class Document(NamedTuple):
-    id: str
-    text: str
 
 
 class Batch(NamedTuple):
     encoding: BatchEncoding | dict[str, torch.Tensor]
     ids: list[str]
-    length: list[int]
+    lengths: list[int]
+    sources: list[str]
 
     def __len__(self):
         return len(self.ids)
@@ -75,14 +42,16 @@ class Batch(NamedTuple):
 class DocumentsIterableDataset(IterableDataset[Batch]):
     def __init__(
         self,
-        path: str,
+        input_paths_queue: QueueType[str],
+        output_paths_queue: QueueType[str],
         tokenizer: PreTrainedTokenizer,
         max_length: int | None,
         text_selector: str = '.text',
         id_selector: str = ".id",
     ):
-        self.queue: QueueType[Document | None] = mp.Queue()  # pyright: ignore
-        self.path = path
+        self.input_paths_queue = input_paths_queue
+        self.output_paths_queue = output_paths_queue
+
         self.text_selector = text_selector
         self.id_selector = id_selector
         self.tokenizer = tokenizer
@@ -103,29 +72,26 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
         text_selector = jq.compile(self.text_selector)
         id_selector = jq.compile(self.id_selector)
 
-        self.logger.info(f"Reading {self.path}")
-        count = 0
-        worker_rank, world_size = self.worker_info
+        while self.input_paths_queue.qsize() > 0:
+            path = self.input_paths_queue.get()
+            self.logger.info(f"Reading {path}")
+            count = 0
+            with smart_open.open(path, "rt") as source_file:
+                for line in source_file:
+                    doc = decoder.decode(line)
+                    text = str(text_selector.input(doc).first())
+                    id_ = str(id_selector.input(doc).first())
+                    encoding = self.tokenizer(
+                        text,
+                        return_tensors="pt",
+                        truncation=True,
+                        max_length=self.max_length,
+                    )
+                    yield Batch(encoding=encoding, ids=[id_], lengths=[len(text)], sources=[path])
+                    count += 1
 
-        with smart_open.open(self.path, "rt") as source_file:
-            for i, line in enumerate(source_file):
-                if i % world_size != worker_rank:
-                    # skip lines that are not assigned to this worker
-                    continue
-
-                doc = decoder.decode(line)
-                text = str(text_selector.input(doc).first())
-                id_ = str(id_selector.input(doc).first())
-                encoding = self.tokenizer(
-                    text,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=self.max_length,
-                )
-                yield Batch(encoding=encoding, ids=[id_], length=[len(text)])
-                count += 1
-
-        self.logger.info(f"Read {count:,} documents from {self.path}")
+            self.logger.info(f"Read {count:,} documents from {path}")
+            self.output_paths_queue.put(path)
 
 
 
@@ -143,9 +109,58 @@ def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
     return Batch(
         encoding=padded_encodings,
         ids=[id_ for elem in batch for id_ in elem.ids],
-        length=[length for elem in batch for length in elem.length],
+        lengths=[length for elem in batch for length in elem.lengths],
+        sources=[source for elem in batch for source in elem.sources],
     )
 
+
+
+class AttributeRow(NamedTuple):
+    source: str
+    attributes: list[dict]
+
+
+def writer_worker(
+    scores_queue: QueueType[AttributeRow | None],
+    output_paths_queue: QueueType[str],
+    source_destination_mapping: dict[str, str],
+    log_every: int = 10_000,
+):
+
+    progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())
+
+    files_writers = {}
+    with ExitStack() as stack:
+        encoder = msgspec.json.Encoder()
+        writers = {}
+
+        written = 0
+        while True:
+            try:
+                element = scores_queue.get_nowait()
+            except Empty:
+                time.sleep(0.1)
+                continue
+
+            if element is None:
+                break
+
+            if (destination_path := source_destination_mapping[element.source]) not in writers:
+                writers[destination_path] = stack.enter_context(
+                    smart_open.open(destination_path, "wt", encoding="utf-8")
+                )
+
+            writers[destination_path].write(
+                encoder.encode_lines(element.attributes).decode("utf-8")
+            )
+            progress_logger.increment(docs=len(element.attributes))
+
+            written += len(element.attributes)
+
+            if written > log_every:
+                while output_paths_queue.qsize() > 0:
+                    path = output_paths_queue.get()
+                    progress_logger.increment(files=1)
 
 
 def process_documents(
@@ -175,49 +190,68 @@ def process_documents(
     # to check if destination path exists (file already processed)
     fs = fsspec.get_filesystem_class(urlparse(source_paths[0]).scheme)()
 
-    wandb_logger = WandbLogger()
-    progress_logger = ProgressLogger(log_every=log_every, wandb_logger=wandb_logger)
-
     # this encoder will be used to write the attributes to the destination file
     encoder = msgspec.json.Encoder()
 
-    for source_path, destination_path in zip(source_paths, destination_paths):
-        if fs.exists(destination_path):
-            console_logger.info(f"Skipping {source_path} because {destination_path} already exists")
-            continue
+    source_destination_mapping = {
+        source_path: destination_path
+        for source_path, destination_path in zip(source_paths, destination_paths)
+        if not fs.exists(destination_path)
+    }
 
-        with torch.no_grad(), smart_open.open(destination_path, "wt") as destination_file:
-            source_dataset = DocumentsIterableDataset(
-                path=source_path,
-                tokenizer=classifier.tokenizer,
-                max_length=max_length,
-                text_selector=text_selector,
-                id_selector=id_selector,
-            )
+    with torch.no_grad(), mp.Manager() as manager:
+        input_paths_queue: QueueType[str] = manager.Queue()
+        output_paths_queue: QueueType[str] = manager.Queue()
+        scores_queue: QueueType[AttributeRow | None] = manager.Queue()
+        for source_path in source_destination_mapping:
+            input_paths_queue.put(source_path)
 
-            data_loader = DataLoader(
-                source_dataset,
-                batch_size=batch_size,
-                shuffle=False,
-                num_workers=num_workers,
-                collate_fn=partial(collate_batch, pad_token_id=getattr(classifier.tokenizer, "pad_token_id", 0)),
-            )
+        writer_process = mp.Process(
+            target=writer_worker,
+            kwargs=dict(
+                scores_queue=scores_queue,
+                output_paths_queue=output_paths_queue,
+                source_destination_mapping=source_destination_mapping,
+                log_every=log_every,
+            ),
+        )
+        writer_process.start()
 
-            for batch in data_loader:
-                inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
-                scores = classifier.score(**inputs)
+        source_dataset = DocumentsIterableDataset(
+            # path=source_path,
+            input_paths_queue=input_paths_queue,
+            output_paths_queue=output_paths_queue,
+            tokenizer=classifier.tokenizer,
+            max_length=max_length,
+            text_selector=text_selector,
+            id_selector=id_selector,
+        )
 
-                attributes = [
-                    {"id": doc_id, "attributes": {pred.label: [0, doc_length, pred.score] for pred in doc_preds}}
-                    for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.length)
-                ]
-                progress_logger.increment(docs=len(batch))
-                destination_file.write(encoder.encode_lines(attributes).decode("utf-8"))
-        progress_logger.increment(files=1)
+        data_loader = DataLoader(
+            source_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers,
+            collate_fn=partial(collate_batch, pad_token_id=getattr(classifier.tokenizer, "pad_token_id", 0)),
+        )
+
+        for batch in data_loader:
+            inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
+            scores = classifier.score(**inputs)
+
+            attributes = [
+                {"id": doc_id, "attributes": {pred.label: [0, doc_length, pred.score] for pred in doc_preds}}
+                for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.lengths)
+            ]
+            scores_queue.put(AttributeRow(source=batch.sources[0], attributes=attributes))
+
+        scores_queue.put(None)
+        writer_process.join()
+
     cleanup()
 
 
-def longest_common_sequence(paths: List[str]) -> str:
+def longest_common_sequence(paths: list[str]) -> str:
     # Split each string by "/"
     split_strings = [s.split("/") for s in paths]
 
