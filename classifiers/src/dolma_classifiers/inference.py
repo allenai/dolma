@@ -208,7 +208,7 @@ def process_documents(
     model_compile: bool,
     log_every: int,
     max_length: int | None = None,
-    text_selector: str = ".text",
+    text_selector: str | None = None,
     id_selector: str = ".id",
     num_workers: int = 1,
     prefetch_factor: int = 2,
@@ -225,6 +225,8 @@ def process_documents(
         compile=model_compile,
     )
 
+    if not text_selector:
+        text_selector = classifier.input_template
     # get filesystem for first source path (we assume is the same for all source paths); we will use this
     # to check if destination path exists (file already processed)
     fs = fsspec.get_filesystem_class(urlparse(source_paths[0]).scheme)()

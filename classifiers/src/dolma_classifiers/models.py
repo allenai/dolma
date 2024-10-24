@@ -27,7 +27,7 @@ class Prediction(NamedTuple):
 class BaseQualityClassifier:
     model: PreTrainedModel
     tokenizer: PreTrainedTokenizer
-
+    input_template: str = ".text"
     def __init__(
         self,
         model_name: str,
@@ -100,9 +100,10 @@ class Registry:
         return cls
 
     @classmethod
-    def add(cls, classifier_name: str):
+    def add(cls, classifier_name: str ):
         def _add(classifier: Type[BaseQualityClassifier]):
             cls._registry[classifier_name] = classifier
+
         return _add
 
     @classmethod
@@ -136,6 +137,11 @@ class QualityModel(nn.Module, PyTorchModelHubMixin):
         outputs = self.fc(dropped)
         return SequenceClassifierOutput(logits=outputs[:, 0, :])
 
+#Alexw classifier
+@Registry.add("data-delve/gte-base-en-v1.5_topic-v3.8_url1")
+class DataDelveClassifier(BaseQualityClassifier):
+    input_template = ".metadata.url\n.text"
+    pass
 
 
 @Registry.add("nvidia/quality-classifier-deberta")
