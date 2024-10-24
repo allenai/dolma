@@ -2,9 +2,9 @@ import argparse
 import multiprocessing as mp
 import time
 from collections import defaultdict
-from contextlib import ExitStack
 from functools import partial
 from itertools import zip_longest
+from multiprocessing import Event, Process
 from queue import Empty
 from queue import Queue as QueueType
 from typing import Any, Generator, NamedTuple
@@ -26,13 +26,7 @@ from transformers import BatchEncoding, PreTrainedTokenizer
 
 from .loggers import ProgressLogger, WandbLogger, get_logger
 from .models import Prediction, Registry
-from .utils import (
-    KeyedExitStack,
-    cleanup,
-    get_local_gpu_rank,
-    sanitize_model_name,
-    setup,
-)
+from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup
 
 
 class Batch(NamedTuple):
@@ -127,7 +121,7 @@ def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
 
 
 class AttributeRow(NamedTuple):
-    source: str
+    sources: list[str]
     attributes: list[dict[str, Any]]
 
 
@@ -156,17 +150,22 @@ def writer_worker(
             if element is None:
                 break
 
-            if element.source not in files_writers:
-                destination_path = source_destination_mapping[element.source]
-                files_writers[element.source] = smart_open.open(destination_path, "wt", encoding="utf-8")
-                console_logger.info(f"Opened {destination_path} for writing")
+            group_by_source = defaultdict(list)
+            for source, attribute in zip(element.sources, element.attributes):
+                group_by_source[source].append(attribute)
+                if source not in files_writers:
+                    destination_path = source_destination_mapping[source]
+                    files_writers[source] = smart_open.open(destination_path, "wt", encoding="utf-8")
+                    console_logger.info(f"Opened {destination_path} for writing")
 
-            files_writers[element.source].write(
-                encoder.encode_lines(element.attributes).decode("utf-8")
-            )
-            progress_logger.increment(docs=len(element.attributes))
-            counts[element.source] += len(element.attributes)
-            total_count += len(element.attributes)
+
+            for source, attributes in group_by_source.items():
+                files_writers[source].write(
+                    encoder.encode_lines(attributes).decode("utf-8")
+                )
+                progress_logger.increment(docs=len(attributes))
+                counts[source] += len(attributes)
+                total_count += len(attributes)
 
             if total_count > log_every:
                 # we at most close one file per log_every documents
@@ -182,6 +181,11 @@ def writer_worker(
                     f.close()
                     console_logger.info(f"Closed {source_destination_mapping[path.source]}")
                     progress_logger.increment(files=1)
+                elif path is not None and path.count > counts[path.source]:
+                    raise RuntimeError(
+                        f"More documents ({path.count}) than expected ({counts[path.source]}) " +
+                        f"for source {path.source}. This should not happen!"
+                    )
                 elif path is not None:
                     console_logger.info(
                         f"Tried to close {source_destination_mapping[path.source]}, " +
@@ -193,67 +197,6 @@ def writer_worker(
     finally:
         for f in files_writers.values():
             f.close()
-
-# def writer_worker(
-#     scores_queue: QueueType[AttributeRow | None],
-#     output_paths_queue: QueueType[OutputPath],
-#     source_destination_mapping: dict[str, str],
-#     log_every: int = 10_000,
-# ):
-
-#     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())
-#     console_logger = get_logger("writer_worker")
-
-#     files_writers = {}
-#     with KeyedExitStack() as stack:
-#         encoder = msgspec.json.Encoder()
-#         counts = defaultdict(int)
-#         total_count = 0
-
-#         while True:
-#             if scores_queue.qsize() == 0:
-#                 time.sleep(0.1)
-#                 continue
-
-#             element = scores_queue.get()
-#             if element is None:
-#                 break
-
-#             if element.source not in stack:
-#                 destination_path = source_destination_mapping[element.source]
-#                 stack.push(
-#                     element.source,
-#                     smart_open.open(destination_path, "wt", encoding="utf-8")
-#                 )
-#                 console_logger.info(f"Opened {destination_path} for writing")
-
-#             stack[element.source].write(
-#                 encoder.encode_lines(element.attributes).decode("utf-8")
-#             )
-#             progress_logger.increment(docs=len(element.attributes))
-#             counts[element.source] += len(element.attributes)
-#             total_count += len(element.attributes)
-
-#             if total_count > log_every:
-#                 # we at most close one file per log_every documents
-#                 try:
-#                     # get the paths from the output queue (these have been fully processed)
-#                     path = output_paths_queue.get_nowait()
-#                 except Empty:
-#                     path = None
-
-#                 if path is not None and path.count == counts[path.source]:
-#                     # I've finished processing this source; close the file
-#                     # print(len(stack))
-#                     f = stack.pop(path.source)
-#                     # print(len(stack))
-#                     # breakpoint()
-#                     f.close()
-#                     console_logger.info(f"Closed {source_destination_mapping[path.source]}")
-#                     progress_logger.increment(files=1)
-#                 elif path is not None:
-#                     # more documents still to be written for this source; put it back
-#                     output_paths_queue.put(path)
 
 
 def process_documents(
@@ -268,6 +211,7 @@ def process_documents(
     text_selector: str = ".text",
     id_selector: str = ".id",
     num_workers: int = 1,
+    prefetch_factor: int = 2,
     suffix: str | None = None
 ):
     """Processes a batch of files using distributed processing."""
@@ -301,49 +245,67 @@ def process_documents(
         for source_path in source_destination_mapping:
             input_paths_queue.put(source_path)
 
-        writer_process = mp.Process(
-            target=writer_worker,
+        writer_process_error = Event()
+        writer_process = Process(
+            target=writer_worker_wrapper,
             kwargs=dict(
                 scores_queue=scores_queue,
                 output_paths_queue=output_paths_queue,
                 source_destination_mapping=source_destination_mapping,
                 log_every=log_every,
+                error_event=writer_process_error,
             ),
         )
         writer_process.start()
 
-        source_dataset = DocumentsIterableDataset(
-            # path=source_path,
-            input_paths_queue=input_paths_queue,
-            output_paths_queue=output_paths_queue,
-            tokenizer=classifier.tokenizer,
-            max_length=max_length,
-            text_selector=text_selector,
-            id_selector=id_selector,
-        )
+        try:
+            source_dataset = DocumentsIterableDataset(
+                # path=source_path,
+                input_paths_queue=input_paths_queue,
+                output_paths_queue=output_paths_queue,
+                tokenizer=classifier.tokenizer,
+                max_length=max_length,
+                text_selector=text_selector,
+                id_selector=id_selector,
+            )
 
-        data_loader = DataLoader(
-            source_dataset,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers,
-            collate_fn=partial(collate_batch, pad_token_id=getattr(classifier.tokenizer, "pad_token_id", 0)),
-        )
+            data_loader = DataLoader(
+                source_dataset,
+                batch_size=batch_size,
+                shuffle=False,
+                num_workers=num_workers,
+                prefetch_factor=prefetch_factor,
+                collate_fn=partial(collate_batch, pad_token_id=getattr(classifier.tokenizer, "pad_token_id", 0)),
+            )
 
-        for batch in data_loader:
-            inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
-            scores = classifier.score(**inputs)
+            for batch in data_loader:
+                if writer_process_error.is_set():
+                    raise RuntimeError("Writer process encountered an error")
 
-            attributes = [
-                {"id": doc_id, "attributes": {pred.label: [0, doc_length, pred.score] for pred in doc_preds}}
-                for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.lengths)
-            ]
-            scores_queue.put_nowait(AttributeRow(source=batch.sources[0], attributes=attributes))
+                inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
+                scores = classifier.score(**inputs)
 
-        scores_queue.put(None)
-        writer_process.join()
+                attributes = [
+                    {"id": doc_id, "attributes": {pred.label: [0, doc_length, pred.score] for pred in doc_preds}}
+                    for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.lengths)
+                ]
+                scores_queue.put_nowait(AttributeRow(sources=batch.sources, attributes=attributes))
+
+            scores_queue.put(None)
+        finally:
+            writer_process.join()
+            if writer_process_error.is_set():
+                raise RuntimeError("Writer process encountered an error")
 
     cleanup()
+
+def writer_worker_wrapper(error_event: Event, **kwargs):
+    try:
+        writer_worker(**kwargs)
+    except Exception as e:
+        console_logger = get_logger("writer_worker_wrapper")
+        console_logger.error(f"Writer process encountered an error: {e}")
+        error_event.set()
 
 
 def longest_common_sequence(paths: list[str]) -> str:
@@ -439,6 +401,7 @@ def main(args: argparse.Namespace) -> None:
         id_selector=args.id_key,
         suffix=args.attribute_suffix,
         model_compile=args.model_compile,
+        prefetch_factor=args.prefetch_factor,
     )
 
 
@@ -471,6 +434,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--log-every", type=int, default=10000, help="Log every n documents")
     parser.add_argument("--model-dtype", type=str, default="float16", help="Data type for model")
     parser.add_argument("--attribute-suffix", type=str, default=None, help="Optional suffix for attribute keys")
+    parser.add_argument("--prefetch-factor", type=int, default=2, help="Prefetch factor for DataLoader")
     opts = parser.parse_args()
 
     if opts.output_prefix is None:

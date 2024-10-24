@@ -1,8 +1,7 @@
 import os
 import re
-from contextlib import ExitStack
 from hashlib import md5
-from typing import Any, ContextManager, Dict, Generic, TypeVar
+from typing import Any
 
 import msgspec
 import torch
@@ -50,67 +49,6 @@ def sanitize_model_name(model_name: str, suffix_data: Any = None) -> str:
         stripped_trailing_underscores += f"_{md5(encoder.encode(suffix_data)).hexdigest()[:6]}"
 
     return stripped_trailing_underscores
-
-
-T = TypeVar("T")
-
-class KeyedExitStack(Generic[T]):
-    """From https://claude.site/artifacts/7150ff45-3cb1-41e5-be5c-0f0890aa332e"""
-
-    def __init__(self):
-        self.stack = ExitStack()
-        self.resources: Dict[str, T] = {}
-
-    def __enter__(self):
-        self.stack.__enter__()
-        return self
-
-    def __exit__(self, *exc_details):
-        return self.stack.__exit__(*exc_details)
-
-    def push(self, key: str, cm: ContextManager[T]) -> T:
-        """Push a context manager onto the stack with an associated key."""
-        resource = self.stack.enter_context(cm)
-        self.resources[key] = resource
-        return resource
-
-    def __len__(self) -> int:
-        """Get the number of resources in the stack."""
-        return len(self.resources)
-
-    def __contains__(self, key: str) -> bool:
-        """Check if a resource with the given key is in the stack."""
-        return key in self.resources
-
-    def __getitem__(self, key: str) -> T:
-        """Get a resource by key."""
-        try:
-            return self.resources[key]
-        except KeyError as e:
-            raise KeyError(f"No resource found with key: {key}") from e
-
-    def pop(self, key: str) -> T:
-        """Close a specific resource and remove it from the stack."""
-        if key not in self.resources:
-            raise KeyError(f"No resource found with key: {key}")
-
-        resource = self.resources[key]
-        # Create a new stack for remaining resources
-        new_stack = ExitStack()
-        remaining_resources = {k: v for k, v in self.resources.items() if k != key}
-
-        # Transfer all resources except the one being popped
-        for k, v in remaining_resources.items():
-            new_stack.push(self.stack.pop_all())
-
-        # Close the old stack (which now only contains the resource we want to pop)
-        self.stack.close()
-
-        # Update our stack and resources
-        self.stack = new_stack
-        self.resources = remaining_resources
-
-        return resource
 
 
 if ".zstd" not in get_supported_compression_types():
