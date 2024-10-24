@@ -174,8 +174,9 @@ def process_documents(
     # to check if destination path exists (file already processed)
     fs = fsspec.get_filesystem_class(urlparse(source_paths[0]).scheme)()
 
-    progress_logger = ProgressLogger(log_every=log_every)
     wandb_logger = WandbLogger()
+    progress_logger = ProgressLogger(log_every=log_every, wandb_logger=wandb_logger)
+
 
     # this encoder will be used to write the attributes to the destination file
     encoder = msgspec.json.Encoder()
@@ -323,7 +324,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--text-key", type=str, default=".text", help="JQ key to extract text from documents")
     parser.add_argument("--id-key", type=str, default=".id", help="JQ key to extract id from documents")
     parser.add_argument("--num-workers", type=int, default=1, help="Number of workers for processing")
-    parser.add_argument("--log-every", type=int, default=1000, help="Log every n documents")
+    parser.add_argument("--log-every", type=int, default=10000, help="Log every n documents")
     parser.add_argument("--model-dtype", type=str, default="float16", help="Data type for model")
     parser.add_argument("--attribute-suffix", type=str, default=None, help="Optional suffix for attribute keys")
     opts = parser.parse_args()
