@@ -167,6 +167,7 @@ def process_documents(
     batch_size: int,
     model_name: str,
     model_dtype: str,
+    model_compile: bool,
     log_every: int,
     max_length: int | None = None,
     text_selector: str = ".text",
@@ -181,7 +182,8 @@ def process_documents(
     classifier = Registry.get(
         model_name=model_name,
         device=f'cuda:{get_local_gpu_rank()}',
-        dtype='float16'
+        dtype='float16',
+        compile=model_compile,
     )
 
     # get filesystem for first source path (we assume is the same for all source paths); we will use this
@@ -330,6 +332,7 @@ def main(args: argparse.Namespace) -> None:
         text_selector=args.text_key,
         id_selector=args.id_key,
         suffix=args.attribute_suffix,
+        model_compile=args.model_compile,
     )
 
 
@@ -350,6 +353,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-length", type=int, default=None, help="Maximum sequence length for tokenization (default: None)"
     )
+    parser.add_argument("--model-compile", action="store_true", help="Compile the model using torch.compile")
     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
     parser.add_argument("--wandb-project", type=str, default=None, help="Weights & Biases project name")
     parser.add_argument("--wandb-entity", type=str, default=None, help="Weights & Biases entity name")

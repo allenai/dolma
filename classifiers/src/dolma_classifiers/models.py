@@ -23,12 +23,16 @@ class BaseQualityClassifier:
     model: PreTrainedModel
     tokenizer: PreTrainedTokenizer
 
-    def __init__(self, model_name: str, device: str, dtype: str):
+    def __init__(self, model_name: str, device: str, dtype: str, compile: bool = False):
         self.model = AutoModelForSequenceClassification.from_pretrained(
             pretrained_model_name_or_path=model_name,
             torch_dtype=getattr(torch, dtype),
             trust_remote_code=True,
         ).to(torch.device(device))
+
+        if compile:
+            self.model = torch.compile(self.model)
+
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model.eval()
 
