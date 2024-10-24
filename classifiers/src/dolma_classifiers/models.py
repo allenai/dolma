@@ -43,7 +43,7 @@ class BaseQualityClassifier:
             compile=compile,
             trust_remote_code=trust_remote_code,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name,trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         if len(self.model.config.id2label) > 1:
             label_name_fn = lambda label: f"{sanitize_model_name(model_name)}_{sanitize_model_name(label)}"
@@ -141,6 +141,7 @@ class QualityModel(nn.Module, PyTorchModelHubMixin):
 @Registry.add("data-delve/gte-base-en-v1.5_topic-v3.8_url1")
 class DataDelveClassifier(BaseQualityClassifier):
     input_template = ".metadata.url\n.text"
+    trust_remote_code = True
     pass
 
 
