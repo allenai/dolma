@@ -3,8 +3,7 @@ import multiprocessing as mp
 import time
 from contextlib import ExitStack
 from functools import partial
-from hashlib import md5
-from itertools import chain, zip_longest
+from itertools import zip_longest
 from queue import Empty
 from queue import Queue as QueueType
 from typing import Generator, NamedTuple
@@ -136,12 +135,11 @@ def writer_worker(
 
         written = 0
         while True:
-            try:
-                element = scores_queue.get_nowait()
-            except Empty:
+            if scores_queue.qsize() == 0:
                 time.sleep(0.1)
                 continue
 
+            element = scores_queue.get()
             if element is None:
                 break
 
@@ -243,7 +241,7 @@ def process_documents(
                 {"id": doc_id, "attributes": {pred.label: [0, doc_length, pred.score] for pred in doc_preds}}
                 for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.lengths)
             ]
-            scores_queue.put(AttributeRow(source=batch.sources[0], attributes=attributes))
+            scores_queue.put_nowait(AttributeRow(source=batch.sources[0], attributes=attributes))
 
         scores_queue.put(None)
         writer_process.join()
@@ -288,7 +286,7 @@ def main(args: argparse.Namespace) -> None:
 
     assert len(source_paths) > 0, f"No files found in {args.source_prefix}"
 
-    print(f"Tagging {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
+
 
     if all("/documents/" in p for p in source_paths):
         source_prefix = longest_common_sequence([p.split("/documents/", 1)[0] for p in source_paths])
@@ -299,14 +297,16 @@ def main(args: argparse.Namespace) -> None:
     destination_paths = [
         f'{args.output_prefix.rstrip("/")}/{p.replace(source_prefix, "").lstrip("/")}' for p in source_paths
     ]
-
     # Filter out existing files unless --override is set
     if not args.override:
         existing_destinations = set(f"{scheme}://{p}" for p in fs.glob(f'{args.output_prefix.rstrip("/")}/**'))
+        console_logger.info(f"Found {len(existing_destinations)} existing files in {args.output_prefix}")
         source_paths, destination_paths = map(
             lambda t: list(t),
             zip(*[(p, d) for p, d in zip(source_paths, destination_paths) if d not in existing_destinations]),
         )
+
+    console_logger.info(f"Tagging {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
 
     # Distribute files across processes
     files_per_process = len(source_paths) / world_size
