@@ -1,12 +1,17 @@
 from functools import partial
-import torch
-from typing import Type, NamedTuple
+from typing import NamedTuple, Type
 
 import torch
 from torch.nn import functional as F
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
-from .utils import get_local_gpu_rank, sanitize_model_name
+from transformers import (
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizer,
+)
+
 from .loggers import get_logger
+from .utils import get_local_gpu_rank, sanitize_model_name
 
 
 class Prediction(NamedTuple):

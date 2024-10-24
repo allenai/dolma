@@ -2,10 +2,13 @@ import os
 import re
 from typing import Any
 
-
-from smart_open.compression import _handle_zstd, get_supported_compression_types, register_compressor
 import torch
 import torch.distributed as dist
+from smart_open.compression import (
+    _handle_zstd,
+    get_supported_compression_types,
+    register_compressor,
+)
 
 
 def get_rank_and_world_size():

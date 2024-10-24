@@ -12,17 +12,16 @@ Replace <num_gpus> with the number of GPUs you want to use.
 """
 
 import argparse
-from functools import partial
-from hashlib import md5
-from collections import abc
+import logging
 import multiprocessing as mp
 import os
-import logging
 import re
 import time
-from itertools import chain
+from collections import abc
+from functools import partial
+from hashlib import md5
+from itertools import chain, zip_longest
 from math import ceil
-from itertools import zip_longest
 from queue import Queue as QueueType
 from typing import (
     TYPE_CHECKING,
@@ -38,23 +37,25 @@ from typing import (
 )
 from urllib.parse import urlparse
 
-import msgspec
 import fsspec
-import smart_open
-from smart_open.compression import _handle_zstd
-import tqdm
-
-import torch  # pyright: ignore
-from torch.utils.data import IterableDataset, DataLoader, get_worker_info  # pyright: ignore
-from torch.nn.utils.rnn import pad_sequence
-
-from transformers import BatchEncoding, PreTrainedTokenizer
-import wandb
 import jq
+import msgspec
+import smart_open
+import torch  # pyright: ignore
+import tqdm
+import wandb
+from smart_open.compression import _handle_zstd
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import (  # pyright: ignore
+    DataLoader,
+    IterableDataset,
+    get_worker_info,
+)
+from transformers import BatchEncoding, PreTrainedTokenizer
 
+from .loggers import ProgressLogger, WandbLogger, get_logger
 from .models import Registry
-from .utils import setup, cleanup, get_local_gpu_rank, sanitize_model_name
-from .loggers import get_logger, WandbLogger, ProgressLogger
+from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup
 
 
 class Document(NamedTuple):
