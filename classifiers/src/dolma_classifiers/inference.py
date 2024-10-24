@@ -301,16 +301,24 @@ def main(args: argparse.Namespace) -> None:
     destination_paths = [
         f'{args.output_prefix.rstrip("/")}/{p.replace(source_prefix, "").lstrip("/")}' for p in source_paths
     ]
+
+    console_logger.info(f"Processing up to {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
+
     # Filter out existing files unless --override is set
     if not args.override:
         existing_destinations = set(f"{scheme}://{p}" for p in fs.glob(f'{args.output_prefix.rstrip("/")}/**'))
         console_logger.info(f"Found {len(existing_destinations)} existing files in {args.output_prefix}")
+
+        if len(existing_destinations) >= len(source_paths):
+            console_logger.info("No files left to process, exiting")
+            return
+
         source_paths, destination_paths = map(
             lambda t: list(t),
             zip(*[(p, d) for p, d in zip(source_paths, destination_paths) if d not in existing_destinations]),
         )
 
-    console_logger.info(f"Tagging {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
+    console_logger.info(f"After filtering, tagging {len(source_paths)} files")
 
     # Distribute files across processes
     files_per_process = len(source_paths) / world_size
