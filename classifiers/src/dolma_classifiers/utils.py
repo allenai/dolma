@@ -1,8 +1,10 @@
 import os
 import re
 from contextlib import ExitStack
-from typing import Any, ContextManager, Dict
+from hashlib import md5
+from typing import Any, ContextManager, Dict, Generic, TypeVar
 
+import msgspec
 import torch
 import torch.distributed as dist
 from smart_open.compression import (
@@ -50,12 +52,14 @@ def sanitize_model_name(model_name: str, suffix_data: Any = None) -> str:
     return stripped_trailing_underscores
 
 
-class KeyedExitStack:
+T = TypeVar("T")
+
+class KeyedExitStack(Generic[T]):
     """From https://claude.site/artifacts/7150ff45-3cb1-41e5-be5c-0f0890aa332e"""
 
     def __init__(self):
         self.stack = ExitStack()
-        self.resources: Dict[str, ContextManager] = {}
+        self.resources: Dict[str, T] = {}
 
     def __enter__(self):
         self.stack.__enter__()
@@ -64,7 +68,7 @@ class KeyedExitStack:
     def __exit__(self, *exc_details):
         return self.stack.__exit__(*exc_details)
 
-    def push(self, key: str, cm: ContextManager) -> Any:
+    def push(self, key: str, cm: ContextManager[T]) -> T:
         """Push a context manager onto the stack with an associated key."""
         resource = self.stack.enter_context(cm)
         self.resources[key] = resource
@@ -74,7 +78,7 @@ class KeyedExitStack:
         """Check if a resource with the given key is in the stack."""
         return key in self.resources
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> T:
         """Get a resource by key."""
         return self.resources[key]
 
