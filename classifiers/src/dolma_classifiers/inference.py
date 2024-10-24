@@ -126,6 +126,7 @@ class AttributeRow(NamedTuple):
 
 
 def writer_worker(
+    error_event: Event,
     scores_queue: QueueType[AttributeRow | None],
     output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
@@ -158,7 +159,6 @@ def writer_worker(
                     files_writers[source] = smart_open.open(destination_path, "wt", encoding="utf-8")
                     console_logger.info(f"Opened {destination_path} for writing")
 
-
             for source, attributes in group_by_source.items():
                 files_writers[source].write(
                     encoder.encode_lines(attributes).decode("utf-8")
@@ -181,9 +181,9 @@ def writer_worker(
                     f.close()
                     console_logger.info(f"Closed {source_destination_mapping[path.source]}")
                     progress_logger.increment(files=1)
-                elif path is not None and path.count > counts[path.source]:
+                elif path is not None and counts[path.source] > path.count:
                     raise RuntimeError(
-                        f"More documents ({path.count}) than expected ({counts[path.source]}) " +
+                        f"More documents ({counts[path.source]}) than expected ({path.count}) " +
                         f"for source {path.source}. This should not happen!"
                     )
                 elif path is not None:
@@ -194,6 +194,9 @@ def writer_worker(
                     # more documents still to be written for this source; put it back
                     output_paths_queue.put(path)
                 total_count = 0
+    except Exception as e:
+        console_logger.error(f"Writer process encountered an error: {e}")
+        error_event.set()
     finally:
         for f in files_writers.values():
             f.close()
@@ -247,7 +250,7 @@ def process_documents(
 
         writer_process_error = Event()
         writer_process = Process(
-            target=writer_worker_wrapper,
+            target=writer_worker,
             kwargs=dict(
                 scores_queue=scores_queue,
                 output_paths_queue=output_paths_queue,
@@ -278,7 +281,12 @@ def process_documents(
                 collate_fn=partial(collate_batch, pad_token_id=getattr(classifier.tokenizer, "pad_token_id", 0)),
             )
 
+            counts = defaultdict(int)
+
             for batch in data_loader:
+                for s in batch.sources:
+                    counts[s] += 1
+
                 if writer_process_error.is_set():
                     raise RuntimeError("Writer process encountered an error")
 
@@ -298,14 +306,6 @@ def process_documents(
                 raise RuntimeError("Writer process encountered an error")
 
     cleanup()
-
-def writer_worker_wrapper(error_event: Event, **kwargs):
-    try:
-        writer_worker(**kwargs)
-    except Exception as e:
-        console_logger = get_logger("writer_worker_wrapper")
-        console_logger.error(f"Writer process encountered an error: {e}")
-        error_event.set()
 
 
 def longest_common_sequence(paths: list[str]) -> str:

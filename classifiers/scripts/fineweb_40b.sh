@@ -2,9 +2,8 @@
 
 DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/*/*zstd'
 NUM_NODES=1
-MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
-CLUSTER="ai2/jupiter*"
 BATCH_SIZE=1024
+CLUSTER="ai2/neptune*"
 PRIORITY="high"
 
 
