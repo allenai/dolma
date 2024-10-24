@@ -2,7 +2,7 @@
 
 DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100*/*.jsonl.zstd'
 
-NUM_NODES=2
+NUM_NODES=4
 MODEL_NAME="nvidia/quality-classifier-deberta"
 CLUSTER="ai2/jupiter*"
 BATCH_SIZE=512
