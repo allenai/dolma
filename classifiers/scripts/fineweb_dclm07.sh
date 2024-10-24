@@ -12,8 +12,9 @@ PRIORITY="urgent"
 DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b-01/*zstd'
 NUM_NODES=1
 BATCH_SIZE=128
-CLUSTER="ai2/s2-cirrascale-l40"
-PRIORITY="urgent"
+# CLUSTER="ai2/s2-cirrascale-l40"
+CLUSTER="ai2/neptune*"
+PRIORITY="high"
 
 # Generate a hash for the run name by combining model name and documents
 RUN_HASH=$(echo -n "${MODEL_NAME}${DOCUMENTS}" | md5sum | awk '{print $1}')
@@ -29,6 +30,8 @@ gantry run \
     --allow-dirty \
     --workspace ai2/davidw-oe-annealing \
     --beaker-image 'petew/olmo-torch23-gantry' \
+    --timeout -1 \
+    --show-logs \
     --host-networking \
     --venv 'base' \
     --priority "${PRIORITY}" \
@@ -47,5 +50,4 @@ gantry run \
     --shared-memory 10GiB \
     --install "pip install -e classifiers/" \
     --yes \
-    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=420' -m dolma_classifiers.inference --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --use-wandb --model-name ${MODEL_NAME} --num-workers 6"
-    # -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --standalone --nproc_per_node=8 scripts/fineweb_classifier.py --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --model-name ${MODEL_NAME}"
+    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=420' -m dolma_classifiers.inference --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --use-wandb --model-name ${MODEL_NAME} --num-workers 4"

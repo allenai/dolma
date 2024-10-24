@@ -71,4 +71,10 @@ class Registry:
         if model_name not in cls._registry:
             cls._logger.warning(f"Classifier {model_name} not found in registry; using default classifier")
             return BaseQualityClassifier(model_name=model_name, **kwargs)
-        return cls._registry[model_name](**kwargs)
+        else:
+            return cls._registry[model_name](model_name=model_name, **kwargs)
+
+
+@Registry.add("HuggingFaceFW/fineweb-edu-classifier")
+class FineWebEduClassifier(BaseQualityClassifier):
+    pass
