@@ -95,23 +95,24 @@ def shuffle_posts(post_collection):
     return post_collection
 
 
-# def convert_to_lm_format(example):
-#     text_field = 'conversational_format' if 'conversational_format' in example else 'formatted_post'
+def convert_to_lm_format(example):
+    # text_field = 'conversational_format' if 'conversational_format' in example else 'formatted_post'
 
-#     formatted_data = {
-#         'text': example[text_field],
-#         'source': 'reddit',
-#         'created': example['created'],
-#         'added': example['added'],
-#         'id': example['id'],
-#         'metadata': {},
-#     }
-#     for k in list(example.keys()):
-#         if k not in [text_field] + list(formatted_data.keys()):
-#             formatted_data['metadata'][k] = example[k]
+    # formatted_data = {
+    #     'text': example[text_field],
+    #     'source': 'reddit',
+    #     'created': example['created'],
+    #     'added': example['added'],
+    #     'id': example['id'],
+    #     'metadata': {},
+    # }
+    # for k in list(example.keys()):
+    #     if k not in [text_field] + list(formatted_data.keys()):
+    #         formatted_data['metadata'][k] = example[k]
 
-#     formatted_data = json.dumps(formatted_data)
-#     return formatted_data
+    # formatted_data = json.dumps(formatted_data)
+    formatted_data = json.dumps(example)
+    return formatted_data
 
 
 def load_filtered_subreddit_lists(blocked_subreddits_file):
@@ -127,7 +128,7 @@ def read_content_from_source(content, p, input_dir, note):
     if content is not None:
         content = p | ("Read in-memory content") >> beam.Create(content)
     else:
-        content = p | ("Reading " + input_dir) >> Read(
+        content = p | ("Reading " + note) >> Read(
             ReadFromText(input_dir)
         )
         content = content | (
@@ -142,15 +143,15 @@ def write_to_gcs(examples, banned_subreddits, args):
     #     lambda example: example['subreddit'].lower() not in banned_subreddits))
 
     file_name_suffix = ".jsonl.gz"
-    # serialize_fn = convert_to_lm_format
+    serialize_fn = convert_to_lm_format
     write_sink = WriteToText
     compression_type = CompressionTypes.GZIP
 
     output_dir = args.output_dir
     name = 'sharded_output'
-    serialized_examples = examples
-    # serialized_examples = examples | (
-    #     f'serialize {name} examples' >> beam.Map(serialize_fn))
+    # serialized_examples = examples
+    serialized_examples = examples | (
+        f'serialize {name} examples' >> beam.Map(serialize_fn))
     (
         serialized_examples | ("write " + name)
         >> write_sink(

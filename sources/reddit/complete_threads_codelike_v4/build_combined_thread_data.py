@@ -12,6 +12,7 @@ from functools import partial
 from collections import defaultdict
 import uuid
 import random
+import json
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions
 from utils.shared_utils import (
@@ -58,16 +59,16 @@ def parse_args(argv=None):
 
 def normalize_comment(comment, max_length):
 
-    def trim(text, max_length):
-        if len(text) <= max_length:
-            return text
-        text = text[:max_length + 1]
+    # def trim(text, max_length):
+    #     if len(text) <= max_length:
+    #         return text
+    #     text = text[:max_length + 1]
 
-        # Trim until the last two characters are the boundary between an
-        # alphanumeric character, and a non-alphanumeric character.
-        while len(text) > 1 and (text[-1].isalnum() == text[-2].isalnum()):
-            text = text[:-1]
-        return text[:-1]
+    #     # Trim until the last two characters are the boundary between an
+    #     # alphanumeric character, and a non-alphanumeric character.
+    #     while len(text) > 1 and (text[-1].isalnum() == text[-2].isalnum()):
+    #         text = text[:-1]
+    #     return text[:-1]
 
     comment_score = comment.get('score', 0)
     
@@ -96,7 +97,7 @@ def normalize_comment(comment, max_length):
 def normalize_post(post, max_length):
 
     body_key = "body" if "body" in post else "selftext"
-    
+
     post["title"] = normalize_string(post['title']) if 'title' in post else ""
     post["author"] = normalize_string(post['author']) if 'author' in post else ""
     post["subreddit"] = normalize_string(post['subreddit']) if 'subreddit' in post else ""
@@ -125,57 +126,57 @@ def normalize_post(post, max_length):
 
 def create_examples(combined_thread, parent_depth, min_length):
 
-    def _should_skip(comment, min_length):
-        if comment['body_is_trimmed']:
-            return True
-        if comment['body'] in {
-            "[deleted]",
-            "[removed]",
-            "[UNICODE ENCODE ERROR]"}:
-            return True
-        if comment['subreddit'] in {
-            "[deleted]",
-            "[removed]",
-            "[UNICODE ENCODE ERROR]"}:
-            return True
-        if len(comment['body']) < min_length:
-            return True
-        return False
+    # def _should_skip(comment, min_length):
+    #     if comment['body_is_trimmed']:
+    #         return True
+    #     if comment['body'] in {
+    #         "[deleted]",
+    #         "[removed]",
+    #         "[UNICODE ENCODE ERROR]"}:
+    #         return True
+    #     if comment['subreddit'] in {
+    #         "[deleted]",
+    #         "[removed]",
+    #         "[UNICODE ENCODE ERROR]"}:
+    #         return True
+    #     if len(comment['body']) < min_length:
+    #         return True
+    #     return False
 
-    def build_anonymous_author_names(thread):
-        author_to_anonymous_name = {}
-        for comment in list(thread):
-            rand_int = random.randrange(1, 10 ** 4)
-            random_author_name = f'user_{str(rand_int).zfill(4)}'
-            author_to_anonymous_name[comment['author']] = random_author_name
-        return author_to_anonymous_name
+    # def build_anonymous_author_names(thread):
+    #     author_to_anonymous_name = {}
+    #     for comment in list(thread):
+    #         rand_int = random.randrange(1, 10 ** 4)
+    #         random_author_name = f'user_{str(rand_int).zfill(4)}'
+    #         author_to_anonymous_name[comment['author']] = random_author_name
+    #     return author_to_anonymous_name
 
-    def assemble_convo_string(cid, thread, anonymous_author_lookup, nodes, level):
-        if level == parent_depth:
-            return ''
-        comment = thread[cid]
-        convo_string = ''
-        indent = ' ' * 4
-        text = comment['body']
-        author = anonymous_author_lookup[comment['author']]
-        convo_string += f'{indent * level }#{author}#: {text}\n\n'
-        for child in sorted(nodes.get(cid, []), key=lambda x: thread[x]['score'], reverse=True):
-            convo_string += assemble_convo_string(child, thread, anonymous_author_lookup, nodes, level + 1)
-        return convo_string
+    # def assemble_convo_string(cid, thread, anonymous_author_lookup, nodes, level):
+    #     if level == parent_depth:
+    #         return ''
+    #     comment = thread[cid]
+    #     convo_string = ''
+    #     indent = ' ' * 4
+    #     text = comment['body']
+    #     author = anonymous_author_lookup[comment['author']]
+    #     convo_string += f'{indent * level }#{author}#: {text}\n\n'
+    #     for child in sorted(nodes.get(cid, []), key=lambda x: thread[x]['score'], reverse=True):
+    #         convo_string += assemble_convo_string(child, thread, anonymous_author_lookup, nodes, level + 1)
+    #     return convo_string
 
-    def order_comments(thread, anonymous_author_lookup):
-        nodes, roots = defaultdict(set), set()
-        for cid, comment in thread.items():
-            if _should_skip(comment, 1):
-                continue
-            if comment['link_id'].split('_')[1] == comment['parent_id']:
-                roots.add(cid)
-            else:
-                nodes[comment['parent_id']].add(cid)
-        thread_string = ''
-        for cid in sorted(roots, key=lambda x: thread[x]['score'], reverse=True):
-            thread_string += assemble_convo_string(cid, thread, anonymous_author_lookup, nodes, 0)
-        return thread_string
+    # def order_comments(thread, anonymous_author_lookup):
+    #     nodes, roots = defaultdict(set), set()
+    #     for cid, comment in thread.items():
+    #         if _should_skip(comment, 1):
+    #             continue
+    #         if comment['link_id'].split('_')[1] == comment['parent_id']:
+    #             roots.add(cid)
+    #         else:
+    #             nodes[comment['parent_id']].add(cid)
+    #     thread_string = ''
+    #     for cid in sorted(roots, key=lambda x: thread[x]['score'], reverse=True):
+    #         thread_string += assemble_convo_string(cid, thread, anonymous_author_lookup, nodes, 0)
+    #     return thread_string
 
     thread = combined_thread[1][0]
     thread_post = combined_thread[1][1]
@@ -183,12 +184,12 @@ def create_examples(combined_thread, parent_depth, min_length):
     # print(thread_post)
     example = {
         "id": combined_thread[0],
-        "post": thread_post[0] if thread_post else "",
-        "comments_list": thread,
         "created": isodatetime_from_epoch(thread_post[0]["created_utc"]) if thread_post else "",
-        "added": DATA_ACQUISITION_DATE
+        "added": DATA_ACQUISITION_DATE,
+        "source": "reddit",
+        "post": thread_post[0] if thread_post else "",
+        "comments_list": thread
     }
-    print(example)
     # if thread and thread_post:
     #     thread_post = thread_post[0]
     #     id_to_comment = {
@@ -238,6 +239,9 @@ def run(argv=None, comments=None, posts=None):
 
     comments = read_content_from_source(comments, p, args.input_gcs_dir_comments, "comments")
 
+    comments = comments | ("Filtering comments that are skipped" >>
+                     beam.Filter(lambda comment: comment is not None))
+
     comments |= (
         "normalize content" >> beam.Map(
             partial(normalize_comment, max_length=args.max_length)))
@@ -245,6 +249,8 @@ def run(argv=None, comments=None, posts=None):
 
     posts = read_content_from_source(posts, p, args.input_gcs_dir_submissions, "subs")
 
+    posts = posts | ("Filtering posts that are skipped" >>
+                     beam.Filter(lambda post: post is not None))
 
     posts |= (
         "normalize posts" >> beam.Map(
@@ -270,8 +276,8 @@ def run(argv=None, comments=None, posts=None):
                     ))
     )
 
-    examples = examples | ("Filtering posts that are skipped" >>
-                     beam.Filter(lambda example: example is not None))
+    # examples = examples | ("Filtering posts that are skipped" >>
+    #                  beam.Filter(lambda example: example is not None))
 
     write_to_gcs(examples, banned_subreddits, args)
 
