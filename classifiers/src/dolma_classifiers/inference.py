@@ -1,4 +1,5 @@
 import argparse
+from collections import defaultdict
 import multiprocessing as mp
 import time
 from contextlib import ExitStack
@@ -138,7 +139,7 @@ def writer_worker(
     with ExitStack() as stack:
         encoder = msgspec.json.Encoder()
         writers = {}
-        counts: dict[str, int] = {}
+        counts = defaultdict(int)
         total_count = 0
 
         while True:
@@ -220,7 +221,7 @@ def process_documents(
 
     with torch.no_grad(), mp.Manager() as manager:
         input_paths_queue: QueueType[str] = manager.Queue()
-        output_paths_queue: QueueType[str] = manager.Queue()
+        output_paths_queue: QueueType[OutputPath] = manager.Queue()
         scores_queue: QueueType[AttributeRow | None] = manager.Queue()
         for source_path in source_destination_mapping:
             input_paths_queue.put(source_path)
