@@ -14,7 +14,7 @@ dependencies = [
     "smart_open[s3]>=7.0.4",
     "tqdm",
     "torch",
-    "transformers",
+    "transformers[torch]",
     "wandb",
     "jq",
     "evaluate"
