@@ -152,7 +152,7 @@ def writer_worker(
 
             if element.source not in writers:
                 destination_path = source_destination_mapping[element.source]
-                writers[destination_path] = stack.enter_context(
+                writers[element.source] = stack.enter_context(
                     smart_open.open(destination_path, "wt", encoding="utf-8")
                 )
                 console_logger.info(f"Opened {destination_path} for writing")
