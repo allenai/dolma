@@ -177,7 +177,6 @@ def writer_worker(
                     path = None
 
                 if path is not None and path.count == counts[path.source]:
-                # if path is not None:
                     # I've finished processing this source; close the file
                     f = files_writers.pop(path.source)
                     f.close()
@@ -190,6 +189,7 @@ def writer_worker(
                     )
                     # more documents still to be written for this source; put it back
                     output_paths_queue.put(path)
+                total_count = 0
     finally:
         for f in files_writers.values():
             f.close()
