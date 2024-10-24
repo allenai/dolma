@@ -15,7 +15,7 @@ Run [Huggingface FineWeb classifier](https://huggingface.co/HuggingFaceFW/finewe
 
 ```bash
 python -m dolma_classifiers.inference \
-    -s 's3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/*/*zstd' \
+    -s 's3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b-01/*zstd' \
     -m HuggingFaceFW/fineweb-edu-classifier
 ```
 
