@@ -149,6 +149,14 @@ class BotAuthor(ListMembership):
     def predict(self, doc: Document) -> DocResult:
         score = doc.metadata["author"] in self.blocklist
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
+    
+@TaggerRegistry.add("comment_bot_author")
+class BotAuthor(ListMembership):
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/thresholded_botlist.txt")
+
+    def predict(self, doc: Document) -> DocResult:
+        score = any(auth in self.blocklist for auth in doc.metadata["comment_authors"])
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
 
 # @TaggerRegistry.add("wildguard_classifier")
 # class WildGuardClassifier(BaseTagger):
