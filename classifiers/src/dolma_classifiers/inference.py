@@ -127,6 +127,7 @@ def writer_worker(
 ):
 
     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())
+    console_logger = get_logger("writer_worker")
 
     files_writers = {}
     with ExitStack() as stack:
@@ -147,6 +148,7 @@ def writer_worker(
                 writers[destination_path] = stack.enter_context(
                     smart_open.open(destination_path, "wt", encoding="utf-8")
                 )
+                console_logger.info(f"Opened {destination_path} for writing")
 
             writers[destination_path].write(
                 encoder.encode_lines(element.attributes).decode("utf-8")
@@ -158,6 +160,8 @@ def writer_worker(
             if written > log_every:
                 while output_paths_queue.qsize() > 0:
                     path = output_paths_queue.get()
+                    writers.pop(path).close()
+                    console_logger.info(f"Closed {path}")
                     progress_logger.increment(files=1)
 
 
@@ -287,8 +291,6 @@ def main(args: argparse.Namespace) -> None:
     source_paths = [(f"{scheme}://{p}" if scheme else p) for p in fs.glob(args.source_prefix)]
 
     assert len(source_paths) > 0, f"No files found in {args.source_prefix}"
-
-
 
     if all("/documents/" in p for p in source_paths):
         source_prefix = longest_common_sequence([p.split("/documents/", 1)[0] for p in source_paths])
