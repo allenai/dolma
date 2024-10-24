@@ -53,7 +53,7 @@ import wandb
 import jq
 
 from .models import Registry
-from .utils import setup, cleanup, get_local_gpu_rank
+from .utils import setup, cleanup, get_local_gpu_rank, sanitize_model_name
 from .loggers import get_logger, WandbLogger, ProgressLogger
 
 
@@ -65,6 +65,7 @@ class Document(NamedTuple):
 class Batch(NamedTuple):
     encoding: BatchEncoding | dict[str, torch.Tensor]
     ids: list[str]
+    length: list[int]
 
     def __len__(self):
         return len(self.ids)
@@ -120,7 +121,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                     truncation=True,
                     max_length=self.max_length,
                 )
-                yield Batch(encoding=encoding, ids=[id_])
+                yield Batch(encoding=encoding, ids=[id_], length=[len(text)])
                 count += 1
 
         self.logger.info(f"Read {count:,} documents from {self.path}")
@@ -138,7 +139,11 @@ def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
         )
         for key in batch[0].encoding.keys()
     }
-    return Batch(encoding=padded_encodings, ids=[id_ for elem in batch for id_ in elem.ids])
+    return Batch(
+        encoding=padded_encodings,
+        ids=[id_ for elem in batch for id_ in elem.ids],
+        length=[length for elem in batch for length in elem.length],
+    )
 
 
 
@@ -147,12 +152,13 @@ def process_documents(
     destination_paths: list[str],
     batch_size: int,
     model_name: str,
+    model_dtype: str,
+    log_every: int,
     max_length: int | None = None,
     text_selector: str = ".text",
     id_selector: str = ".id",
     num_workers: int = 1,
-    suffix: str | None = None,
-    trust_remote_code: bool = False,
+    suffix: str | None = None
 ):
     """Processes a batch of files using distributed processing."""
     console_logger = get_logger("process_documents")
@@ -168,8 +174,7 @@ def process_documents(
     # to check if destination path exists (file already processed)
     fs = fsspec.get_filesystem_class(urlparse(source_paths[0]).scheme)()
 
-    progress_logger = ProgressLogger()
-    model_name_attributes = sanitize_model_name(model_name)
+    progress_logger = ProgressLogger(log_every=log_every)
     wandb_logger = WandbLogger()
 
     # this encoder will be used to write the attributes to the destination file
@@ -193,42 +198,21 @@ def process_documents(
                 source_dataset,
                 batch_size=batch_size,
                 shuffle=False,
-                # num_workers=num_workers,
-                num_workers=0,
+                num_workers=num_workers,
                 collate_fn=partial(collate_batch, pad_token_id=getattr(classifier.tokenizer, "pad_token_id", 0)),
             )
 
             for batch in data_loader:
                 inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
-                breakpoint()
-                score = classifier.score(**inputs)
+                scores = classifier.score(**inputs)
 
-                continue
-
-                scores = outputs.logits.squeeze(-1).float().cpu().tolist()
-
-                progress_logger.increment(steps=len(batch))
-
-
-
-
-                attributes = format_prediction(
-                    docs=batch,
-                    scores=scores,
-                    model_name=model_name_attributes,
-                    text_selector=text_selector,
-                    suffix=suffix,
-                )
-                output = encoder.encode_lines(attributes)
-                destination_file.write(output.decode("utf-8"))
-
-                batch = []
-
-            if batch:
-                scores = make_prediction(tokenizer, batch, model, max_length)  # type: ignore
-                attributes = format_prediction(batch, scores, model_name, suffix=suffix)
-                output = encoder.encode_lines(attributes)
-                destination_file.write(output.decode("utf-8"))
+                attributes = [
+                    {"id": doc_id, "attributes": {pred.label: [0, doc_length, pred.score] for pred in doc_preds}}
+                    for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.length)
+                ]
+                progress_logger.increment(docs=len(batch))
+                destination_file.write(encoder.encode_lines(attributes).decode("utf-8"))
+        progress_logger.increment(files=1)
     cleanup()
 
 
@@ -251,7 +235,6 @@ def longest_common_sequence(paths: List[str]) -> str:
 
 def main(args: argparse.Namespace) -> None:
     # disable multiprocessing for tokenizer
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
     console_logger = get_logger("main")
 
     # initialize distributed processing
@@ -302,27 +285,17 @@ def main(args: argparse.Namespace) -> None:
 
     process_documents(
         model_name=args.model_name,
+        model_dtype=args.model_dtype,
+        log_every=args.log_every,
         source_paths=partition_source_paths,
         destination_paths=partition_destination_paths,
         batch_size=args.batch_size,
+        num_workers=args.num_workers,
         max_length=args.max_length,
         text_selector=args.text_key,
+        id_selector=args.id_key,
         suffix=args.attribute_suffix,
-        trust_remote_code=args.trust_remote_code,
     )
-
-
-def sanitize_model_name(model_name: str, suffix_data: Any | None = None) -> str:
-    replaced_with_underscores = re.sub("[^a-zA-Z0-9_-]", "_", model_name)
-    removed_duplicates = re.sub("_{2,}", "_", replaced_with_underscores)
-    stripped_trailing_underscores = removed_duplicates.strip("_")
-
-    if suffix_data:
-        # encode suffix_data and use first 6 characters of md5 hash as suffix
-        encoder = msgspec.json.Encoder()
-        stripped_trailing_underscores += f"_{md5(encoder.encode(suffix_data)).hexdigest()[:6]}"
-
-    return stripped_trailing_underscores
 
 
 def parse_args() -> argparse.Namespace:
@@ -337,18 +310,21 @@ def parse_args() -> argparse.Namespace:
         help="S3 glob pattern for input files (e.g., s3://path/to/docs/*/*.jsonl.gz)",
     )
     parser.add_argument("--output-prefix", type=str, default=None, help="S3 prefix to save the results")
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size for processing (default: 32)")
+    parser.add_argument("-b", "--batch-size", type=int, default=32, help="Batch size for processing (default: 32)")
     parser.add_argument("-m", "--model-name", type=str, required=True, help="Hugging Face model name")
     parser.add_argument(
         "--max-length", type=int, default=None, help="Maximum sequence length for tokenization (default: None)"
     )
-    parser.add_argument("--trust-remote-code", action="store_true", help="Trust remote code for model loading")
     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
     parser.add_argument("--wandb-project", type=str, default=None, help="Weights & Biases project name")
     parser.add_argument("--wandb-entity", type=str, default=None, help="Weights & Biases entity name")
     parser.add_argument("--wandb-name", type=str, default=None, help="Gantry task name")
     parser.add_argument("--override", action="store_true", help="Override existing files")
     parser.add_argument("--text-key", type=str, default=".text", help="JQ key to extract text from documents")
+    parser.add_argument("--id-key", type=str, default=".id", help="JQ key to extract id from documents")
+    parser.add_argument("--num-workers", type=int, default=1, help="Number of workers for processing")
+    parser.add_argument("--log-every", type=int, default=1000, help="Log every n documents")
+    parser.add_argument("--model-dtype", type=str, default="float16", help="Data type for model")
     parser.add_argument("--attribute-suffix", type=str, default=None, help="Optional suffix for attribute keys")
     opts = parser.parse_args()
 

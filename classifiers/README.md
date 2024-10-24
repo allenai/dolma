@@ -1,6 +1,13 @@
-# Classifiers
+# Dolma Classifiers
 
 
+## Getting Started
+
+From root directory, install the package:
+
+```bash
+pip install -e classifiers
+```
 
 ## Examples
 

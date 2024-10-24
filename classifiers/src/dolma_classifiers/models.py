@@ -1,11 +1,17 @@
 from functools import partial
 import torch
-from typing import Type
+from typing import Type, NamedTuple
 
 import torch
+from torch.nn import functional as F
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
-from .utils import get_local_gpu_rank
+from .utils import get_local_gpu_rank, sanitize_model_name
 from .loggers import get_logger
+
+
+class Prediction(NamedTuple):
+    label: str
+    score: float
 
 
 class BaseQualityClassifier:
@@ -21,13 +27,30 @@ class BaseQualityClassifier:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model.eval()
 
+
+        if len(self.model.config.id2label) > 1:
+            label_name_fn = lambda label: f"{sanitize_model_name(model_name)}_{sanitize_model_name(label)}"
+        else:
+            label_name_fn = lambda label: sanitize_model_name(model_name)
+
+        self.labels_map = {
+            id_: label_name_fn(label)
+            for id_, label in self.model.config.id2label.items()
+        }
+
     @property
     def device(self) -> torch.device:
         return self.model.device
 
-    def score(self, **batch: torch.Tensor) -> list[float]:
+    def score(self, **batch: torch.Tensor) -> list[list[Prediction]]:
         outputs = self.model(**batch)
-        return outputs.logits.squeeze(-1).float().detach().tolist()
+        scores = (
+            F.softmax(outputs.logits, dim=-1) if outputs.logits.size(-1) != 1 else outputs.logits
+        )
+        return [
+            [Prediction(label=self.labels_map[i], score=float(score)) for i, score in enumerate(row)]
+            for row in scores.float().cpu().numpy()
+        ]
 
 
 class Registry:

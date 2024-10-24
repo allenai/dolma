@@ -79,27 +79,27 @@ class ProgressLogger:
         self.log_every = log_every
         self.logger = get_logger(self.__class__.__name__)
         self.prev_time = time.time()
-        self.total_steps = 0
-        self.current_steps = 0
+        self.total_docs = 0
+        self.current_docs = 0
         self.current_files = 0
         self.total_files = 0
 
-    def increment(self, steps: int = 0, files: int = 0):
-        self.current_steps += steps
+    def increment(self, docs: int = 0, files: int = 0):
+        self.current_docs += docs
         self.current_files += files
-        self.total_steps += steps
+        self.total_docs += docs
         self.total_files += files
 
-        if self.current_steps >= self.log_every or files > 0:
+        if self.current_docs >= self.log_every or files > 0:
             current_time = time.time()
-            steps_throughput = self.current_steps / (current_time - self.prev_time)
+            docs_throughput = self.current_docs / (current_time - self.prev_time)
             files_throughput = self.current_files / (current_time - self.prev_time)
 
             self.logger.info(
-                f"Throughput: {steps_throughput:.2f} steps/s, {files_throughput:.2f} files/s " +
-                f" ({self.total_steps:,} steps; {self.total_files:,} files)"
+                f"Throughput: {docs_throughput:.2f} docs/s, {files_throughput:.2f} files/s " +
+                f" ({self.total_docs:.1e} docs; {self.total_files:,} files)"
             )
 
             self.prev_time = current_time
-            self.current_steps = 0
+            self.current_docs = 0
             self.current_files = 0
