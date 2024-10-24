@@ -1,7 +1,0 @@
-documents:
-  - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2024-18/*/warc/*zst
-  - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2024-10/*/warc/*zst
-  - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2023-50/*/warc/*zst
-  - s3://ai2-llm/pretraining-data/sources/cccc/v0/documents/CC-MAIN-2023-40/*/warc/*zst
-
-taggers:

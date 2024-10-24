@@ -1,13 +1,30 @@
-# Classifiers
+# Dolma Classifiers
 
 
+## Getting Started
+
+From root directory, install the package:
+
+```bash
+pip install -e classifiers
+```
 
 ## Examples
 
-Run [NVIDIA's Deberta quality classifier](https://huggingface.co/nvidia/quality-classifier-deberta) on S3 data:
+Run [Huggingface FineWeb classifier](https://huggingface.co/HuggingFaceFW/fineweb-edu-classifier) on S3 data:
 
 ```bash
-python classifiers/inference.py \
-    -s '/ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/*/*zstd' \
-    -m nvidia/quality-classifier-deberta
+python -m dolma_classifiers.inference \
+    -s 's3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b-01/*zstd' \
+    -m HuggingFaceFW/fineweb-edu-classifier
+```
+
+Run [NVIDIA's Deberta quality classifier](https://huggingface.co/nvidia/quality-classifier-deberta) on S3 data with model compilation:
+
+```bash
+python -m dolma_classifiers.inference \
+    -s 's3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/*/*zstd' \
+    -m nvidia/quality-classifier-deberta \
+    --model-compile \
+    --max-length 1024
 ```
