@@ -9,11 +9,11 @@ BATCH_SIZE=1024
 PRIORITY="urgent"
 
 # Test Values
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b-01/*zstd'
-NUM_NODES=1
-BATCH_SIZE=1024
-CLUSTER="ai2/neptune*"
-PRIORITY="high"
+# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b-01/*zstd'
+# NUM_NODES=1
+# BATCH_SIZE=1024
+# CLUSTER="ai2/neptune*"
+# PRIORITY="high"
 
 # Generate a hash for the run name by combining model name and documents
 RUN_HASH=$(echo -n "${MODEL_NAME}${DOCUMENTS}" | md5sum | awk '{print $1}')
