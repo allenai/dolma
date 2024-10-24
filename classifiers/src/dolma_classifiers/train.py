@@ -88,7 +88,9 @@ class DataConfig:
         paths = [str(p) for p in fs.glob(self.path)] if "*" in self.path else [self.path]
         paths = [path if path.startswith(base_url_scheme) else f"{base_url_scheme}{path}" for path in paths]
 
-        return [DataConfig(path=path, label=self.label, selector=self.selector, limit=self.limit) for path in paths]
+        limit_per_file = self.limit // len(paths) if self.limit is not None else None
+
+        return [DataConfig(path=path, label=self.label, selector=self.selector, limit=limit_per_file) for path in paths]
 
 
 def expand_config(config: DataConfig) -> list[DataConfig]:
@@ -114,7 +116,7 @@ class ClassifierDataset(Dataset):
                 )
             )
 
-        expanded_configs = [item for sublist in expanded_configs for item in sublist][:10]
+        expanded_configs = [item for sublist in expanded_configs for item in sublist]
 
         with multiprocessing.Pool(workers) as pool:
             self.documents = list(
@@ -196,6 +198,7 @@ class Classifier:
             per_device_eval_batch_size=args.batch_size,
             num_train_epochs=1,
             evaluation_strategy="steps",
+            save_strategy="steps",
             eval_steps=50,
             save_steps=50,
             max_steps=max_steps,
@@ -203,6 +206,7 @@ class Classifier:
             save_total_limit=1,
             run_name=args.run_name,
             log_level="debug",
+            save_only_model=True,
         )
 
         if args.use_wandb:
@@ -269,6 +273,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-p", "--positive-sources", type=str, nargs="+", required=True, help="Positive data sources")
     parser.add_argument("-n", "--negative-sources", type=str, nargs="+", required=True, help="Negative data sources")
     parser.add_argument("-r", "--run-name", type=str, default="qc_train", help="Run name")
+    parser.add_argument("--max-num-positive", type=int, default=10000, help="Maximum number of positive instances to load")
+    parser.add_argument("--max-num-negative", type=int, default=10000, help="Maximum number of negative instances to load")
     parser.add_argument("--test-source", type=str, help="Test data source to score (no labels)")
     parser.add_argument("--test-source-instance-limit", type=int, default=100000, help="Number of instances to load from the test source")
     parser.add_argument("--test-results-path", type=str, default="test_results.jsonl", help="Path to jsonl filename to write test scores")
@@ -288,8 +294,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace):
-    positive_configs = [DataConfig(path=path, label=POSITIVE_LABEL, limit=10000) for path in args.positive_sources]
-    negative_configs = [DataConfig(path=path, label=NEGATIVE_LABEL, limit=10000) for path in args.negative_sources]
+    num_positive_per_source = args.max_num_positive // len(args.positive_sources)
+    num_negative_per_source = args.max_num_negative // len(args.negative_sources)
+    positive_configs = [DataConfig(path=path, label=POSITIVE_LABEL, limit=num_positive_per_source) for path in args.positive_sources]
+    negative_configs = [DataConfig(path=path, label=NEGATIVE_LABEL, limit=num_negative_per_source) for path in args.negative_sources]
 
     dataset = ClassifierDataset(positive_configs + negative_configs, workers=args.num_workers)
 
