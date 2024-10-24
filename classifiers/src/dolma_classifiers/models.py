@@ -31,7 +31,7 @@ class BaseQualityClassifier:
         ).to(torch.device(device))
 
         if compile:
-            self.model = torch.compile(self.model)
+            self.model = torch.compile(self.model)  # pyright: ignore
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model.eval()

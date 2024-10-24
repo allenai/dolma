@@ -6,7 +6,7 @@ from functools import partial
 from itertools import zip_longest
 from queue import Empty
 from queue import Queue as QueueType
-from typing import Generator, NamedTuple
+from typing import Any, Generator, NamedTuple
 from urllib.parse import urlparse
 
 import fsspec
@@ -116,7 +116,7 @@ def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
 
 class AttributeRow(NamedTuple):
     source: str
-    attributes: list[dict]
+    attributes: list[dict[str, Any]]
 
 
 def writer_worker(
