@@ -5,7 +5,7 @@ DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100*/*.jsonl.
 NUM_NODES=2
 MODEL_NAME="nvidia/quality-classifier-deberta"
 CLUSTER="ai2/jupiter*"
-BATCH_SIZE=1024
+BATCH_SIZE=512
 PRIORITY="high"
 
 # Generate a hash for the run name by combining model name and documents
