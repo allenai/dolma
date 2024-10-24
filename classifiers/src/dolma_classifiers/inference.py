@@ -182,7 +182,7 @@ def writer_worker(
                         break
 
                     # I've finished processing this source; close the file
-                    stack.pop(path.source).close()  # pyright: ignore
+                    stack.pop(path.source).close()
                     console_logger.info(f"Closed {source_destination_mapping[path.source]}")
                     progress_logger.increment(files=1)
 
