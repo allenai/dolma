@@ -35,8 +35,8 @@ class Document:
     label: int
 
 
-def read_file(path: str, label: int | None = None, selector: str | None = None, instances_limit: int = None,
-              length_limit: int = None) -> list[Document]:
+def read_file(path: str, label: int | None = None, selector: str | None = None, instances_read_limit: int = 500_000,
+              sample_per_file: int | None = None) -> list[Document]:
     if selector is not None:
         compiled_selector = jq.compile(selector)
         label_fn = lambda row: str(compiled_selector.input(row).first())
@@ -54,13 +54,14 @@ def read_file(path: str, label: int | None = None, selector: str | None = None, 
             label = label_fn(row)
 
             text = row["text"]
-            if length_limit is not None:
-                text = text[:length_limit]
 
             documents.append(Document(text=text, label=label))
 
-            if instances_limit is not None and len(documents) >= instances_limit:
+            if 0 < instances_read_limit <= len(documents):
                 break
+
+    if len(documents) > sample_per_file:
+        documents = random.sample(documents, sample_per_file)
 
     return documents
 
@@ -80,7 +81,7 @@ class DataConfig:
     path: str
     label: str | None = None
     selector: str | None = None
-    limit: int | None = None
+    sample: int | None = None
 
     def expand(self, fs: fsspec.AbstractFileSystem | None = None) -> list["DataConfig"]:
         fs = fs or fsspec.get_filesystem_class(urlparse(self.path).scheme)()
@@ -88,9 +89,14 @@ class DataConfig:
         paths = [str(p) for p in fs.glob(self.path)] if "*" in self.path else [self.path]
         paths = [path if path.startswith(base_url_scheme) else f"{base_url_scheme}{path}" for path in paths]
 
-        limit_per_file = self.limit // len(paths) if self.limit is not None else None
+        sample_per_file = self.sample // len(paths) if self.sample is not None else 0
+        sample_per_file_remainder = self.sample % len(paths) if self.sample is not None else 0
 
-        return [DataConfig(path=path, label=self.label, selector=self.selector, limit=limit_per_file) for path in paths]
+        data_configs = [DataConfig(path=path, label=self.label, selector=self.selector, sample=sample_per_file) for path in paths]
+        if sample_per_file_remainder > 0:
+            data_configs[-1] = DataConfig(path=paths[-1], label=self.label, selector=self.selector, sample=sample_per_file_remainder)
+
+        return data_configs
 
 
 def expand_config(config: DataConfig) -> list[DataConfig]:
@@ -98,7 +104,7 @@ def expand_config(config: DataConfig) -> list[DataConfig]:
 
 
 def process_file(config: DataConfig) -> list[Document]:
-    return read_file(path=config.path, label=config.label, selector=config.selector, instances_limit=config.limit)
+    return read_file(path=config.path, label=config.label, selector=config.selector, sample_per_file=config.sample)
 
 
 class ClassifierDataset(Dataset):
@@ -273,6 +279,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("-p", "--positive-sources", type=str, nargs="+", required=True, help="Positive data sources")
     parser.add_argument("-n", "--negative-sources", type=str, nargs="+", required=True, help="Negative data sources")
     parser.add_argument("-r", "--run-name", type=str, default="qc_train", help="Run name")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--max-num-positive", type=int, default=10000, help="Maximum number of positive instances to load")
     parser.add_argument("--max-num-negative", type=int, default=10000, help="Maximum number of negative instances to load")
     parser.add_argument("--test-source", type=str, help="Test data source to score (no labels)")
@@ -294,18 +301,23 @@ def parse_args() -> argparse.Namespace:
 
 
 def main(args: argparse.Namespace):
+    random.seed(args.seed)
+
     num_positive_per_source = args.max_num_positive // len(args.positive_sources)
     num_negative_per_source = args.max_num_negative // len(args.negative_sources)
-    positive_configs = [DataConfig(path=path, label=POSITIVE_LABEL, limit=num_positive_per_source) for path in args.positive_sources]
-    negative_configs = [DataConfig(path=path, label=NEGATIVE_LABEL, limit=num_negative_per_source) for path in args.negative_sources]
+    positive_configs = [DataConfig(path=path, label=POSITIVE_LABEL, sample=num_positive_per_source) for path in args.positive_sources]
+    negative_configs = [DataConfig(path=path, label=NEGATIVE_LABEL, sample=num_negative_per_source) for path in args.negative_sources]
 
     dataset = ClassifierDataset(positive_configs + negative_configs, workers=args.num_workers)
+
+    if len(dataset.documents) != args.max_num_positive + args.max_num_negative:
+        raise ValueError(f"Expected {args.max_num_positive + args.max_num_negative} documents, got {len(dataset.documents)}")
 
     classifier = Classifier(base_model_name=args.model_name)
     classifier.fit(dataset, max_steps=args.max_steps)
 
     if args.test_source:
-        test_config = DataConfig(path=args.test_source, label=-1, limit=args.test_source_instance_limit)
+        test_config = DataConfig(path=args.test_source, label=-1, sample=args.test_source_instance_limit)
         test_dataset = ClassifierDataset([test_config], workers=args.num_workers)
         test_results = classifier.score(test_dataset)
 
