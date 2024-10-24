@@ -177,7 +177,6 @@ def process_documents(
     wandb_logger = WandbLogger()
     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=wandb_logger)
 
-
     # this encoder will be used to write the attributes to the destination file
     encoder = msgspec.json.Encoder()
 
