@@ -4,6 +4,7 @@ import multiprocessing
 import os
 import random
 from dataclasses import dataclass
+from datetime import datetime
 from urllib.parse import urlparse
 
 import evaluate
@@ -12,6 +13,8 @@ import jq
 import numpy as np
 import smart_open
 import torch
+import boto3
+
 from msgspec.json import Decoder
 from torch.utils.data import Dataset, Subset
 from tqdm import tqdm
@@ -60,6 +63,15 @@ def read_file(path: str, label: int | None = None, selector: str | None = None, 
                 break
 
     return documents
+
+
+def upload_directory_to_s3(directory_path: str, bucket: str, folder: str) -> None:
+    s3 = boto3.client("s3")
+    for root, dirs, files in os.walk(directory_path):
+        for file in files:
+            file_path: str = os.path.join(root, file)
+            s3_path: str = os.path.join(folder, os.path.relpath(file_path, directory_path))
+            s3.upload_file(file_path, bucket, s3_path)
 
 
 @dataclass(frozen=True)
@@ -176,7 +188,7 @@ class Classifier:
         freeze_model_except_classifier(self._model)
 
         training_args = TrainingArguments(
-            output_dir="test_trainer",
+            output_dir=args.local_save_path,
             report_to="wandb" if args.use_wandb else "none",
             dataloader_num_workers=args.num_workers,
             per_device_train_batch_size=args.batch_size,
@@ -188,6 +200,7 @@ class Classifier:
             max_steps=max_steps,
             load_best_model_at_end=True,
             save_total_limit=1,
+            run_name=args.run_name,
         )
 
         if args.use_wandb:
@@ -253,6 +266,7 @@ def parse_args() -> argparse.Namespace:
                         default="Snowflake/snowflake-arctic-embed-m")
     parser.add_argument("-p", "--positive-sources", type=str, nargs="+", required=True, help="Positive data sources")
     parser.add_argument("-n", "--negative-sources", type=str, nargs="+", required=True, help="Negative data sources")
+    parser.add_argument("-r", "--run-name", type=str, default="qc_train", help="Run name")
     parser.add_argument("--test-source", type=str, help="Test data source to score (no labels)")
     parser.add_argument("--test-source-instance-limit", type=int, default=100000, help="Number of instances to load from the test source")
     parser.add_argument("--test-results-path", type=str, default="test_results.jsonl", help="Path to jsonl filename to write test scores")
@@ -262,6 +276,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
     parser.add_argument("--wandb-project", type=str, default="qc", help="Weights & Biases project name")
     parser.add_argument("--wandb-entity", type=str, default="ai2-llm", help="Weights & Biases entity name")
+    parser.add_argument("--local-save-path", type=str, default="qc_model", help="Local path to save model")
+    parser.add_argument("--upload-to-s3", action="store_true", help="Upload model to S3")
+    parser.add_argument("--s3-bucket", type=str, default="ai2-benb", help="S3 bucket name")
+    parser.add_argument("--s3-path", type=str, default="qc", help="S3 path to upload model to")
     opts = parser.parse_args()
 
     return opts
@@ -284,6 +302,11 @@ def main(args: argparse.Namespace):
         with open(args.test_results_path, "w") as f:
             for result in test_results:
                 f.write(json.dumps(result) + "\n")
+
+    if args.upload_to_s3:
+        run_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        upload_path = os.path.join(args.s3_path, args.run_name, run_date)
+        upload_directory_to_s3(args.local_save_path, args.s3_bucket, upload_path)
 
 
 if __name__ == "__main__":
