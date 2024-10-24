@@ -149,7 +149,7 @@ class DataDelveClassifier(BaseQualityClassifier):
         device: str,
         dtype: str,
         compile: bool = False,
-        trust_remote_code: bool = False,
+        trust_remote_code: bool = True,
         input_template: str = ".metadata.url\n.text"
     ):
         super().__init__(
