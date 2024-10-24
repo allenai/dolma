@@ -202,6 +202,7 @@ class Classifier:
             load_best_model_at_end=True,
             save_total_limit=1,
             run_name=args.run_name,
+            log_level="debug",
         )
 
         if args.use_wandb:
@@ -277,7 +278,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
     parser.add_argument("--wandb-project", type=str, default="qc", help="Weights & Biases project name")
     parser.add_argument("--wandb-entity", type=str, default="ai2-llm", help="Weights & Biases entity name")
-    parser.add_argument("--local-save-path", type=str, default="qc_model", help="Local path to save model")
+    parser.add_argument("--local-save-path", type=str, default="/tmp/qc_model", help="Local path to save model")
     parser.add_argument("--upload-to-s3", action="store_true", help="Upload model to S3")
     parser.add_argument("--s3-bucket", type=str, default="ai2-benb", help="S3 bucket name")
     parser.add_argument("--s3-path", type=str, default="qc", help="S3 path to upload model to")
