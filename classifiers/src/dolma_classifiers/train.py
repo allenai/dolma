@@ -35,7 +35,7 @@ class Document:
     label: int
 
 
-def read_file(path: str, label: int | None = None, selector: str | None = None, instances_read_limit: int = 500_000,
+def read_file(path: str, label: int | None = None, selector: str | None = None, instances_read_limit: int = None,
               sample_per_file: int | None = None) -> list[Document]:
     if selector is not None:
         compiled_selector = jq.compile(selector)
@@ -93,8 +93,7 @@ class DataConfig:
         sample_per_file_remainder = self.sample % len(paths) if self.sample is not None else 0
 
         data_configs = [DataConfig(path=path, label=self.label, selector=self.selector, sample=sample_per_file) for path in paths]
-        if sample_per_file_remainder > 0:
-            data_configs[-1] = DataConfig(path=paths[-1], label=self.label, selector=self.selector, sample=sample_per_file_remainder)
+        data_configs[-1] = DataConfig(path=paths[-1], label=self.label, selector=self.selector, sample=sample_per_file + sample_per_file_remainder)
 
         return data_configs
 
@@ -104,7 +103,10 @@ def expand_config(config: DataConfig) -> list[DataConfig]:
 
 
 def process_file(config: DataConfig) -> list[Document]:
-    return read_file(path=config.path, label=config.label, selector=config.selector, sample_per_file=config.sample)
+    print(f"Reading {config.path}")
+    instances_read_limit = config.sample * 100  # read 100x the sample size to ensure we get a random sample yet do not read too much
+    return read_file(path=config.path, label=config.label, selector=config.selector, sample_per_file=config.sample,
+                     instances_read_limit=instances_read_limit)
 
 
 class ClassifierDataset(Dataset):
@@ -123,6 +125,8 @@ class ClassifierDataset(Dataset):
             )
 
         expanded_configs = [item for sublist in expanded_configs for item in sublist]
+
+        print(f"Expanded {len(configs)} configs to {len(expanded_configs)} configs")
 
         with multiprocessing.Pool(workers) as pool:
             self.documents = list(
