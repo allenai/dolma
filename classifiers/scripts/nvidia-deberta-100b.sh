@@ -2,11 +2,23 @@
 
 DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100*/*.jsonl.zstd'
 
+
+# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b/*_dclm_shard_0000*.jsonl.zstd'
+# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b/*_dclm_shard_0001*.jsonl.zstd'
+# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b/*_dclm_shard_0002*.jsonl.zstd'
+
+# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b-extras/*_dclm_shard_0000*.jsonl.zstd'
+# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b-extras/*_dclm_shard_0001*.jsonl.zstd'
+# DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b-extras/*_dclm_shard_0002*.jsonl.zstd'
+
+
 NUM_NODES=4
+# NUM_NODES=1
 MODEL_NAME="nvidia/quality-classifier-deberta"
 CLUSTER="ai2/jupiter*"
 BATCH_SIZE=512
 PRIORITY="high"
+# PRIORITY="urgent"
 
 # Generate a hash for the run name by combining model name and documents
 RUN_HASH=$(echo -n "${MODEL_NAME}${DOCUMENTS}" | md5sum | awk '{print $1}')
@@ -42,4 +54,4 @@ gantry run \
     --shared-memory 10GiB \
     --install "pip install -e classifiers/" \
     --yes \
-    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=420' -m dolma_classifiers.inference --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --use-wandb --wandb-project 'dolma-classifiers' --wandb-entity ai2-llm --model-name ${MODEL_NAME} --num-workers 4 --model-compile --max-length 1024"
+    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=3600' -m dolma_classifiers.inference --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --use-wandb --wandb-project 'dolma-classifiers' --wandb-entity ai2-llm --model-name ${MODEL_NAME} --num-workers 4 --model-compile --max-length 1024"

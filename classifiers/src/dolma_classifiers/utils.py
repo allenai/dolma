@@ -35,7 +35,8 @@ def setup() -> tuple[int, int]:
 
 
 def cleanup():
-    dist.destroy_process_group()
+    if dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def sanitize_model_name(model_name: str, suffix_data: Any = None) -> str:

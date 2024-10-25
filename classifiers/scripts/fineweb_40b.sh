@@ -2,9 +2,8 @@
 
 DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/*/*zstd'
 NUM_NODES=1
-MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
-CLUSTER="ai2/jupiter*"
 BATCH_SIZE=1024
+CLUSTER="ai2/neptune*"
 PRIORITY="high"
 
 
@@ -42,4 +41,4 @@ gantry run \
     --shared-memory 10GiB \
     --install "pip install -e classifiers/" \
     --yes \
-    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=420' -m dolma_classifiers.inference --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --use-wandb --wandb-project 'dolma-classifiers' --wandb-entity ai2-llm --model-name ${MODEL_NAME} --num-workers 4"
+    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=420' -m dolma_classifiers.inference --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --use-wandb --wandb-project 'dolma-classifiers' --wandb-entity ai2-llm --model-name ${MODEL_NAME} --num-workers 4 --prefetch-factor 8"
