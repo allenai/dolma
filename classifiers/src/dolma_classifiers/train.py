@@ -15,6 +15,7 @@ import smart_open
 import torch
 import boto3
 
+from multiprocessing.dummy import Pool as ThreadPool
 from msgspec.json import Decoder
 from torch.utils.data import Dataset, Subset
 from tqdm import tqdm
@@ -28,6 +29,8 @@ from smart_open.compression import (
 POSITIVE_LABEL = 1
 NEGATIVE_LABEL = 0
 
+LOCAL_TMP_PATH = "/tmp/qc_model"
+
 
 @dataclass(frozen=True)
 class Document:
@@ -39,7 +42,7 @@ def read_file(path: str, label: int | None = None, selector: str | None = None, 
               sample_per_file: int | None = None) -> list[Document]:
     if selector is not None:
         compiled_selector = jq.compile(selector)
-        label_fn = lambda row: str(compiled_selector.input(row).first())
+        label_fn = lambda row: compiled_selector.input(row).first()
     elif label is not None:
         label_fn = lambda row: label
     else:
@@ -66,6 +69,14 @@ def read_file(path: str, label: int | None = None, selector: str | None = None, 
     return documents
 
 
+def download_model_from_s3(remote_path: str, bucket: str, local_path: str) -> None:
+    s3 = boto3.client("s3")
+    for file in ["model.safetensors", "config.json"]:
+        print(f"Downloading {file}")
+        remote_file = os.path.join(remote_path, file)
+        local_file = os.path.join(local_path, file)
+        s3.download_file(bucket, remote_file.lstrip("/"), local_file)
+
 def upload_directory_to_s3(directory_path: str, bucket: str, folder: str) -> None:
     s3 = boto3.client("s3")
     for root, dirs, files in os.walk(directory_path):
@@ -85,7 +96,7 @@ class DataConfig:
 
     def expand(self, fs: fsspec.AbstractFileSystem | None = None) -> list["DataConfig"]:
         fs = fs or fsspec.get_filesystem_class(urlparse(self.path).scheme)()
-        base_url_scheme = f"{urlparse(self.path).scheme}://"
+        base_url_scheme = f"{urlparse(self.path).scheme}://" if urlparse(self.path).scheme else ""
         paths = [str(p) for p in fs.glob(self.path)] if "*" in self.path else [self.path]
         paths = [path if path.startswith(base_url_scheme) else f"{base_url_scheme}{path}" for path in paths]
 
@@ -103,7 +114,6 @@ def expand_config(config: DataConfig) -> list[DataConfig]:
 
 
 def process_file(config: DataConfig) -> list[Document]:
-    print(f"Reading {config.path}")
     instances_read_limit = config.sample * 100  # read 100x the sample size to ensure we get a random sample yet do not read too much
     return read_file(path=config.path, label=config.label, selector=config.selector, sample_per_file=config.sample,
                      instances_read_limit=instances_read_limit)
@@ -127,8 +137,9 @@ class ClassifierDataset(Dataset):
         expanded_configs = [item for sublist in expanded_configs for item in sublist]
 
         print(f"Expanded {len(configs)} configs to {len(expanded_configs)} configs")
+        print(f"Loading {sum(c.sample for c in expanded_configs):,} samples")
 
-        with multiprocessing.Pool(workers) as pool:
+        with ThreadPool(workers) as pool:
             self.documents = list(
                 tqdm(
                     pool.imap_unordered(process_file, expanded_configs),
@@ -180,12 +191,31 @@ def collate_fn(batch, tokenizer):
 class Classifier:
     def __init__(
             self,
-            base_model_name: str,
+            base_model_name: str | None = None,
+            load_model: str | None = None,
     ):
+        if not base_model_name and not load_model:
+            raise ValueError("Either `base_model_name` or `load_model` must be provided")
+
         self._base_model_name = base_model_name
 
         self._tokenizer = None
         self._model = None
+
+        if load_model:
+            parsed = urlparse(str(load_model))
+            if parsed.scheme == "s3":
+                os.makedirs(LOCAL_TMP_PATH, exist_ok=True)
+                load_model = LOCAL_TMP_PATH
+                download_model_from_s3(remote_path=parsed.path, bucket=parsed.netloc, local_path=load_model)
+            self._model = AutoModelForSequenceClassification.from_pretrained(load_model).cuda()
+            try:
+                self._tokenizer = AutoTokenizer.from_pretrained(load_model)
+            except OSError:
+                # not sure why this doesn't work out of the box, but in case there's an error we can load the original
+                # base model from the config file
+                config = json.load(open(os.path.join(load_model, "config.json")))
+                self._tokenizer = AutoTokenizer.from_pretrained(config["_name_or_path"])
 
     def fit(
             self,
@@ -246,11 +276,11 @@ class Classifier:
         val_dataset = Subset(dataset, eval_indices)
         return train_dataset, val_dataset
 
-    def score(self, test_dataset: ClassifierDataset):
+    def score(self, test_dataset: ClassifierDataset, batch_size: int = 64):
         if self._model is None:
             raise ValueError("Model must be fit before testing")
 
-        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size,
+        test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size,
                                                   collate_fn=lambda batch: collate_fn(batch, self._tokenizer))
 
         results = []
@@ -286,9 +316,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--max-num-positive", type=int, default=10000, help="Maximum number of positive instances to load")
     parser.add_argument("--max-num-negative", type=int, default=10000, help="Maximum number of negative instances to load")
-    parser.add_argument("--test-source", type=str, help="Test data source to score (no labels)")
-    parser.add_argument("--test-source-instance-limit", type=int, default=100000, help="Number of instances to load from the test source")
-    parser.add_argument("--test-results-path", type=str, default="test_results.jsonl", help="Path to jsonl filename to write test scores")
     parser.add_argument("--num-workers", type=int, default=4, help="Number of workers to use")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--max-steps", type=int, default=500, help="Maximum number of training steps")
@@ -319,15 +346,6 @@ def main(args: argparse.Namespace):
 
     classifier = Classifier(base_model_name=args.model_name)
     classifier.fit(dataset, max_steps=args.max_steps)
-
-    if args.test_source:
-        test_config = DataConfig(path=args.test_source, label=-1, sample=args.test_source_instance_limit)
-        test_dataset = ClassifierDataset([test_config], workers=args.num_workers)
-        test_results = classifier.score(test_dataset)
-
-        with open(args.test_results_path, "w") as f:
-            for result in test_results:
-                f.write(json.dumps(result) + "\n")
 
     if args.upload_to_s3:
         run_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")

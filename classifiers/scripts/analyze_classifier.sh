@@ -29,4 +29,4 @@ gantry run \
     --env-secret AWS_SECRET_ACCESS_KEY=AWS_SECRET_ACCESS_KEY \
     --install "pip install -e classifiers/" \
     --yes \
-    -- /bin/bash -c "python -m dolma_classifiers.train $ARGS"
+    -- /bin/bash -c "python -m dolma_classifiers.analyze $ARGS"
