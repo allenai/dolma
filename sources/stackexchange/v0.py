@@ -1,6 +1,7 @@
 import argparse
 import io
 import os
+import re
 import sys
 from contextlib import ExitStack
 from io import BytesIO
@@ -11,6 +12,7 @@ import libarchive
 import py7zr
 import pyarrow as pa
 import pyarrow.parquet as pq
+from libarchive.entry import ArchiveEntry
 from lxml import etree
 from tqdm import tqdm
 
@@ -61,46 +63,21 @@ def stream_xml_from_7z(
                 unit="B",
                 unit_scale=True,
             )
-
-            # Create a buffer for reading blocks
-            buffer = BytesIO()
-
-            # Read the file in blocks
-            for block in entry.get_blocks(block_size):
-                buffer.write(block)
-                pbar.update(len(block))
-
-                # Feed the current block to the parser
-                parser.feed(block)
-
-                # Process any completed elements
-                for event, element in parser.read_events():
-                    # Only process 'end' events for complete elements
-                    if event == "end":
-                        # Check if the element matches our xpath
-                        if element.xpath(target_xpath):
-                            yield element
-                        # Clear element to free memory
-                        element.clear()
-
-            # Process any remaining data
-            parser.feed(b"")  # Signal EOF to parser
-            for event, element in parser.read_events():
-                if event == "end" and element.xpath(target_xpath):
-                    yield element
-                    element.clear()
-
-            return  # Exit after processing the target file
-
-    # If we get here, the file wasn't found
-    raise FileNotFoundError(f"File {filename} not found in archive {archive_path}")
+            prev_line = b""
+            for chunk in entry.get_blocks(block_size):
+                pbar.update(len(chunk))
+                first_seg, *segments = re.split(b"\r*\n|\r", chunk)
+                yield prev_line + first_seg
+                yield from segments[:-1]
+                prev_line = segments[-1]
 
 
 def process_file(
     archive_path: str,
     output_dir: str,
     entry_name: str,
-    batch_size: int = 100000,
+    batch_size: int = 100_000,
+    block_size: int = 8192,
 ):
     entry_prefix, _ = os.path.basename(entry_name.lower()).split(".", 1)
     output_dir = os.path.join(output_dir, entry_prefix)
@@ -111,15 +88,20 @@ def process_file(
     schema = None
 
     with ExitStack() as stack:
-        xml_elements = stream_xml_from_7z(archive_path, entry_name)
+        xml_elements = stream_xml_from_7z(archive_path, entry_name, block_size=block_size)
         files_pbar = tqdm(desc=f"Files {archive_name}::{entry_name}")
         elements_pbar = tqdm(xml_elements, desc=f"Rows {archive_name}::{entry_name}")
 
-        for element in elements_pbar:
-            if not element.attrib:
+        for row in elements_pbar:
+            if not row.strip().startswith(b"<row"):
                 continue
 
-            data.append(dict(element.attrib))
+            row = etree.fromstring(row)
+
+            if not row.attrib:
+                continue
+
+            data.append(dict(row.attrib))
 
             if schema is None:
                 schema = pa.Table.from_pylist(data).schema
@@ -150,6 +132,7 @@ def main():
     parser.add_argument(
         "--batch-size", type=int, default=100000, help="Number of rows to process at once (default: 100000)"
     )
+    parser.add_argument("--block-size", type=int, default=8192, help="Size of blocks to read (default: 8192)")
 
     args = parser.parse_args()
 
@@ -171,6 +154,7 @@ def main():
                 output_dir=output_path,
                 entry_name=entry_name,
                 batch_size=args.batch_size,
+                block_size=args.block_size,
             )
 
 
