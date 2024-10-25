@@ -15,6 +15,7 @@ from smart_open.compression import (
 from classifiers.src.dolma_classifiers.train import Classifier, DataConfig, ClassifierDataset
 
 PERCENTILE_RANGES = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 99, 99.9, 100]
+MINIMUM_FINEWEB_EDU_SCORE = 3.5
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -78,13 +79,18 @@ def analyze(test_rows, fineweb_edu_rows):
     }
 
 
+def filter_fineweb_edu(row):
+    return float(row["metadata"]["score"]) > MINIMUM_FINEWEB_EDU_SCORE
+
+
 def main(args: argparse.Namespace):
     random.seed(args.seed)
 
     classifier = Classifier(load_model=args.model_path)
 
     # score the fineweb-edu data
-    fineweb_edu_config = DataConfig(path=args.fineweb_edu_path, label=-1, sample=args.fineweb_edu_instance_limit)
+    fineweb_edu_config = DataConfig(path=args.fineweb_edu_path, label=-1, sample=args.fineweb_edu_instance_limit,
+                                    filter=filter_fineweb_edu)
     fineweb_edu_dataset = ClassifierDataset([fineweb_edu_config], workers=args.num_workers)
     fineweb_edu_scores = classifier.score(fineweb_edu_dataset)
 

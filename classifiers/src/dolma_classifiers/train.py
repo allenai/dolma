@@ -5,6 +5,7 @@ import os
 import random
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Callable
 from urllib.parse import urlparse
 
 import evaluate
@@ -39,7 +40,7 @@ class Document:
 
 
 def read_file(path: str, label: int | None = None, selector: str | None = None, instances_read_limit: int = None,
-              sample_per_file: int | None = None) -> list[Document]:
+              sample_per_file: int | None = None, filter_rows: Callable[[dict], bool] = None) -> list[Document]:
     if selector is not None:
         compiled_selector = jq.compile(selector)
         label_fn = lambda row: compiled_selector.input(row).first()
@@ -57,6 +58,9 @@ def read_file(path: str, label: int | None = None, selector: str | None = None, 
             label = label_fn(row)
 
             text = row["text"]
+
+            if filter_rows is not None and not filter_rows(row):
+                continue
 
             documents.append(Document(text=text, label=label))
 
@@ -93,6 +97,7 @@ class DataConfig:
     label: str | None = None
     selector: str | None = None
     sample: int | None = None
+    filter: str | None = None
 
     def expand(self, fs: fsspec.AbstractFileSystem | None = None) -> list["DataConfig"]:
         fs = fs or fsspec.get_filesystem_class(urlparse(self.path).scheme)()
@@ -103,8 +108,8 @@ class DataConfig:
         sample_per_file = self.sample // len(paths) if self.sample is not None else 0
         sample_per_file_remainder = self.sample % len(paths) if self.sample is not None else 0
 
-        data_configs = [DataConfig(path=path, label=self.label, selector=self.selector, sample=sample_per_file) for path in paths]
-        data_configs[-1] = DataConfig(path=paths[-1], label=self.label, selector=self.selector, sample=sample_per_file + sample_per_file_remainder)
+        data_configs = [DataConfig(path=path, label=self.label, selector=self.selector, sample=sample_per_file, filter=self.filter) for path in paths]
+        data_configs[-1] = DataConfig(path=paths[-1], label=self.label, selector=self.selector, sample=sample_per_file + sample_per_file_remainder, filter=self.filter)
 
         return data_configs
 
@@ -116,7 +121,7 @@ def expand_config(config: DataConfig) -> list[DataConfig]:
 def process_file(config: DataConfig) -> list[Document]:
     instances_read_limit = config.sample * 100  # read 100x the sample size to ensure we get a random sample yet do not read too much
     return read_file(path=config.path, label=config.label, selector=config.selector, sample_per_file=config.sample,
-                     instances_read_limit=instances_read_limit)
+                     instances_read_limit=instances_read_limit, filter_rows=config.filter)
 
 
 class ClassifierDataset(Dataset):
