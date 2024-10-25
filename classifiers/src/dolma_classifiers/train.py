@@ -104,7 +104,10 @@ def expand_config(config: DataConfig) -> list[DataConfig]:
 
 
 def process_file(config: DataConfig) -> list[Document]:
-    return read_file(path=config.path, label=config.label, selector=config.selector, sample_per_file=config.sample)
+    print(f"Reading {config.path}")
+    instances_read_limit = config.sample * 100  # read 100x the sample size to ensure we get a random sample yet do not read too much
+    return read_file(path=config.path, label=config.label, selector=config.selector, sample_per_file=config.sample,
+                     instances_read_limit=instances_read_limit)
 
 
 class ClassifierDataset(Dataset):
@@ -123,6 +126,8 @@ class ClassifierDataset(Dataset):
             )
 
         expanded_configs = [item for sublist in expanded_configs for item in sublist]
+
+        print(f"Expanded {len(configs)} configs to {len(expanded_configs)} configs")
 
         with multiprocessing.Pool(workers) as pool:
             self.documents = list(
