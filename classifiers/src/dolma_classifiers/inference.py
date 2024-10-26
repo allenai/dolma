@@ -156,11 +156,14 @@ def writer_worker(
 
             group_by_source = defaultdict(list)
             for source, attribute in zip(element.sources, element.attributes):
-                group_by_source[source].append(attribute)
-                if source not in files_writers:
-                    destination_path = source_destination_mapping[source]
-                    files_writers[source] = smart_open.open(destination_path, "wt", encoding="utf-8")
-                    console_logger.info(f"Opened {destination_path} for writing")
+                try:
+                    group_by_source[source].append(attribute)
+                    if source not in files_writers:
+                        destination_path = source_destination_mapping[source]
+                        files_writers[source] = smart_open.open(destination_path, "wt", encoding="utf-8")
+                        console_logger.info(f"Opened {destination_path} for writing")
+                except Exception e:
+                    console_logger.info(f"Something went wrong writing {source}'s destination : {e}")
 
             for source, attributes in group_by_source.items():
                 files_writers[source].write(
