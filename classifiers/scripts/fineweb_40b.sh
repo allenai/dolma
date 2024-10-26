@@ -5,6 +5,7 @@ NUM_NODES=1
 BATCH_SIZE=1024
 CLUSTER="ai2/neptune*"
 PRIORITY="high"
+MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
 
 
 # Generate a hash for the run name by combining model name and documents
