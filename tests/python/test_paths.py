@@ -295,7 +295,6 @@ class TestPaths(TestCase):
 
 class TestSplitExt(TestCase):
     def test_file(self):
-
         prot, parts, ext = split_ext("file.txt")
 
         self.assertEqual(prot, "")
@@ -318,7 +317,6 @@ class TestSplitExt(TestCase):
         self.assertEqual(ext, ".")
 
     def test_path(self):
-
         prot, parts, ext = split_ext("path/to/file.txt")
 
         self.assertEqual(prot, "")
