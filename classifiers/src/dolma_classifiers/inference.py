@@ -77,24 +77,26 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
         text_selector = jq.compile(self.text_selector)
         id_selector = jq.compile(self.id_selector)
 
-        while self.input_paths_queue.qsize() > 0:
-            path = self.input_paths_queue.get()
-            self.logger.info(f"Reading {path}")
-            count = 0
-            with smart_open.open(path, "rt") as source_file:
-                for line in source_file:
-                    doc = decoder.decode(line)
-                    text = str(text_selector.input(doc).first())
-                    id_ = str(id_selector.input(doc).first())
-                    encoding = self.tokenizer(
-                        text,
-                        return_tensors="pt",
-                        truncation=True,
-                        max_length=self.max_length,
-                    )
-                    yield Batch(encoding=encoding, ids=[id_], lengths=[len(text)], sources=[path])
-                    count += 1
-
+        try:
+            while self.input_paths_queue.qsize() > 0:
+                path = self.input_paths_queue.get()
+                self.logger.info(f"Reading {path}")
+                count = 0
+                with smart_open.open(path, "rt") as source_file:
+                    for line in source_file:
+                        doc = decoder.decode(line)
+                        text = str(text_selector.input(doc).first())
+                        id_ = str(id_selector.input(doc).first())
+                        encoding = self.tokenizer(
+                            text,
+                            return_tensors="pt",
+                            truncation=True,
+                            max_length=self.max_length,
+                        )
+                        yield Batch(encoding=encoding, ids=[id_], lengths=[len(text)], sources=[path])
+                        count += 1
+            except Exception as e:
+                print(f"Something went wrong reading {path}: {e}")
             self.logger.info(f"Read {count:,} documents from {path}")
             self.output_paths_queue.put(OutputPath(source=path, count=count))
 

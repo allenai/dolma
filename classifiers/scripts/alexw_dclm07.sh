@@ -1,6 +1,6 @@
 #! /bin/bash
 
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/40b-split/20b-01/0003_dclm_shard_0001*zstd' #'s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b/0000_dclm_shard_0000*zstd'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/smol-test/*' #40b-split/20b-01/0003_dclm_shard_0001*zstd' #'s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b/0000_dclm_shard_0000*zstd'
 #DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/*zst'
 
 NUM_NODES=1
