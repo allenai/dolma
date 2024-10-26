@@ -150,7 +150,7 @@ class DataDelveClassifier(BaseQualityClassifier):
         dtype: str,
         compile: bool = False,
         trust_remote_code: bool = True,
-        input_template: str = ".metadata.url\n.text"
+        input_template: str = ".id\n.text"
     ):
         super().__init__(
             model_name=model_name,
