@@ -162,7 +162,7 @@ def writer_worker(
                         destination_path = source_destination_mapping[source]
                         files_writers[source] = smart_open.open(destination_path, "wt", encoding="utf-8")
                         console_logger.info(f"Opened {destination_path} for writing")
-                except Exception e:
+                except Exception as e:
                     console_logger.info(f"Something went wrong writing {source}'s destination : {e}")
 
             for source, attributes in group_by_source.items():
