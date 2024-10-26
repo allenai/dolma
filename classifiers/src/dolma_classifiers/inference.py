@@ -99,7 +99,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                 self.output_paths_queue.put(OutputPath(source=path, count=count))
 
         except Exception as e:
-            print(f"Something went wrong reading {path}: {e}")
+            self.logger.info(f"Something went wrong reading {path}: {e}")
     
 
 
