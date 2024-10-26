@@ -3,3 +3,5 @@ py7zr
 lxml
 pyarrow
 tqdm
+markdownify
+resiliparse
