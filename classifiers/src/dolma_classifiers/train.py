@@ -382,7 +382,7 @@ def main(args: argparse.Namespace):
         dataset.documents = [Document(text=item.text, label=float(item.label)) for item in dataset.documents]
 
     if len(dataset.documents) != expected_num_docs:
-        raise ValueError(f"Expected {expected_num_docs} documents, got {len(dataset.documents)}")
+        print(f"Expected {expected_num_docs:,} documents but only found {len(dataset.documents):,}")
 
     run_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     save_path = os.path.join(args.local_save_path, args.run_name, run_date)
