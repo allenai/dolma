@@ -74,8 +74,12 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
 
     def __iter__(self) -> Generator[Batch, None, None]:
         decoder = msgspec.json.Decoder()
-        text_selector = jq.compile(self.text_selector)
+
+        text_selectors = [jq.compile(selector) for selector in self.id_selector.strip().split('\\n')]
         id_selector = jq.compile(self.id_selector)
+
+        def format_text(text):
+            return '\n'.join([str(selector.input(text).first()) for selector in text_selectors])
 
         try:
             while self.input_paths_queue.qsize() > 0:
@@ -85,7 +89,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                 with smart_open.open(path, "rt") as source_file:
                     for line in source_file:
                         doc = decoder.decode(line)
-                        text = str(text_selector.input(doc).first())
+                        text = format_text(doc)
                         id_ = str(id_selector.input(doc).first())
                         encoding = self.tokenizer(
                             text,
@@ -99,7 +103,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                 self.output_paths_queue.put(OutputPath(source=path, count=count))
 
         except Exception as e:
-            self.logger.i(f"Something went wrong reading {path}: {e}")
+            self.logger.info(f"Something went wrong reading {path}: {e}")
     
 
 
@@ -225,7 +229,6 @@ def process_documents(
     """Processes a batch of files using distributed processing."""
     console_logger = get_logger("process_documents")
 
-
     classifier = Registry.get(
         model_name=model_name,
         device=f'cuda:{get_local_gpu_rank()}',
@@ -247,7 +250,6 @@ def process_documents(
         for source_path, destination_path in zip(source_paths, destination_paths)
         if not fs.exists(destination_path)
     }
-
     with torch.no_grad(), mp.Manager() as manager:
         input_paths_queue: QueueType[str] = manager.Queue()
         output_paths_queue: QueueType[OutputPath] = manager.Queue()
@@ -267,7 +269,6 @@ def process_documents(
             ),
         )
         writer_process.start()
-
         try:
             source_dataset = DocumentsIterableDataset(
                 # path=source_path,
@@ -307,11 +308,12 @@ def process_documents(
                 scores_queue.put_nowait(AttributeRow(sources=batch.sources, attributes=attributes))
 
             scores_queue.put(None)
+        except Exception as e:
+            console_logger.info(f"Something went wrong in writer loop: {e}")
         finally:
             writer_process.join()
             if writer_process_error.is_set():
                 raise RuntimeError("Writer process encountered an error")
-
     cleanup()
 
 
