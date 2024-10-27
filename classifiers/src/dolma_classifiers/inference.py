@@ -348,6 +348,7 @@ def main(args: argparse.Namespace) -> None:
     if not torch.cuda.is_available():
         raise RuntimeError("No GPUs available, but the script is designed to use multiple GPUs.")
 
+    torch.set_default_device(f'cuda:{get_local_gpu_rank()}')
     # if necessary, unglob source prefix
     fs = fsspec.get_filesystem_class((scheme := urlparse(args.source_prefix).scheme))()
     source_paths = [(f"{scheme}://{p}" if scheme else p) for p in fs.glob(args.source_prefix)]
