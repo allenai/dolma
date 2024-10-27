@@ -255,7 +255,7 @@ class Classifier:
             dataloader_num_workers=args.num_workers,
             per_device_train_batch_size=args.batch_size,
             per_device_eval_batch_size=args.batch_size,
-            num_train_epochs=20,
+            num_train_epochs=args.num_epochs,
             evaluation_strategy="steps",
             save_strategy="steps",
             eval_steps=250,
@@ -346,6 +346,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-workers", type=int, default=4, help="Number of workers to use")
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--max-steps", type=int, default=500, help="Maximum number of training steps")
+    parser.add_argument("--num-epochs", type=int, default=20, help="Number of epochs")
     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
     parser.add_argument("--wandb-project", type=str, default="qc", help="Weights & Biases project name")
     parser.add_argument("--wandb-entity", type=str, default="ai2-llm", help="Weights & Biases entity name")
