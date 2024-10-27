@@ -22,10 +22,10 @@ def get_rank_and_world_size():
 
 def get_local_gpu_rank() -> int:
     """Returns the local GPU rank for the current process using torch.distributed."""
-    if dist.is_initialized():
-        return dist.get_rank() % torch.cuda.device_count()
-    else:
-        return 0
+    #if dist.is_initialized():
+   #     return dist.get_rank() % torch.cuda.device_count()
+   # else:
+    return 0
 
 
 def setup() -> tuple[int, int]:
