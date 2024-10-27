@@ -275,7 +275,7 @@ class Classifier:
             run_name=args.run_name,
             log_level="debug",
             save_only_model=True,
-            learning_rate=3e-4,
+            learning_rate=args.lr,
         )
 
         if args.use_wandb:
@@ -357,6 +357,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=500, help="Maximum number of training steps")
     parser.add_argument("--num-epochs", type=int, default=20, help="Number of epochs")
     parser.add_argument("--num-layer-to-freeze", type=int, default=0, help="Number of layers to freeze")
+    parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
     parser.add_argument("--wandb-project", type=str, default="qc", help="Weights & Biases project name")
     parser.add_argument("--wandb-entity", type=str, default="ai2-llm", help="Weights & Biases entity name")
