@@ -1,6 +1,6 @@
 #! /bin/bash
 
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100*/*.jsonl.zstd'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/full/*.jsonl.zstd'
 
 
 # DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b/*_dclm_shard_0000*.jsonl.zstd'
