@@ -30,17 +30,16 @@ from smart_open.compression import (
 POSITIVE_LABEL = 1
 NEGATIVE_LABEL = 0
 
-LOCAL_TMP_PATH = "/tmp/qc_model"
-
 
 @dataclass(frozen=True)
 class Document:
     text: str
     label: int
+    metadata: dict | None = None
 
 
 def read_file(path: str, label: int | None = None, selector: str | None = None, instances_read_limit: int = None,
-              sample_per_file: int | None = None, filter_rows: Callable[[dict], bool] = None) -> list[Document]:
+              sample_per_file: int | None = None, filter_rows: Callable[[dict], bool] = None, keep_metadata: bool = False) -> list[Document]:
     if selector is not None:
         compiled_selector = jq.compile(selector)
         label_fn = lambda row: compiled_selector.input(row).first()
@@ -62,7 +61,9 @@ def read_file(path: str, label: int | None = None, selector: str | None = None, 
             if filter_rows is not None and not filter_rows(row):
                 continue
 
-            documents.append(Document(text=text, label=label))
+            metadata = row.get("metadata") if keep_metadata else None
+
+            documents.append(Document(text=text, label=label, metadata=metadata))
 
             if 0 < instances_read_limit <= len(documents):
                 break
@@ -98,6 +99,7 @@ class DataConfig:
     selector: str | None = None
     sample: int | None = None
     filter: str | None = None
+    keep_metadata: bool = False
 
     def expand(self, fs: fsspec.AbstractFileSystem | None = None) -> list["DataConfig"]:
         fs = fs or fsspec.get_filesystem_class(urlparse(self.path).scheme)()
@@ -108,8 +110,8 @@ class DataConfig:
         sample_per_file = self.sample // len(paths) if self.sample is not None else 0
         sample_per_file_remainder = self.sample % len(paths) if self.sample is not None else 0
 
-        data_configs = [DataConfig(path=path, label=self.label, selector=self.selector, sample=sample_per_file, filter=self.filter) for path in paths]
-        data_configs[-1] = DataConfig(path=paths[-1], label=self.label, selector=self.selector, sample=sample_per_file + sample_per_file_remainder, filter=self.filter)
+        data_configs = [DataConfig(path=path, label=self.label, selector=self.selector, sample=sample_per_file, filter=self.filter, keep_metadata=self.keep_metadata) for path in paths]
+        data_configs[-1] = DataConfig(path=paths[-1], label=self.label, selector=self.selector, sample=sample_per_file + sample_per_file_remainder, filter=self.filter, keep_metadata=self.keep_metadata)
 
         return data_configs
 
@@ -121,7 +123,7 @@ def expand_config(config: DataConfig) -> list[DataConfig]:
 def process_file(config: DataConfig) -> list[Document]:
     instances_read_limit = config.sample * 100  # read 100x the sample size to ensure we get a random sample yet do not read too much
     return read_file(path=config.path, label=config.label, selector=config.selector, sample_per_file=config.sample,
-                     instances_read_limit=instances_read_limit, filter_rows=config.filter)
+                     instances_read_limit=instances_read_limit, filter_rows=config.filter, keep_metadata=config.keep_metadata)
 
 
 class ClassifierDataset(Dataset):
@@ -130,6 +132,9 @@ class ClassifierDataset(Dataset):
             configs: list[DataConfig],
             workers: int = 1,
     ):
+        # add additional extension for smart_open
+        register_compressor(".zstd", _handle_zstd)
+
         with multiprocessing.Pool(workers) as pool:
             expanded_configs = list(
                 tqdm(
@@ -164,12 +169,18 @@ class ClassifierDataset(Dataset):
         return self.documents[idx]
 
 
-def compute_metrics(eval_pred):
+def compute_accuracy_metrics(eval_pred):
     metric = evaluate.load("accuracy")
 
     logits, labels = eval_pred
     predictions = np.argmax(logits, axis=-1)
     return metric.compute(predictions=predictions, references=labels)
+
+def compute_regression_metrics(eval_pred):
+    metric = evaluate.load("mse")
+
+    logits, labels = eval_pred
+    return metric.compute(predictions=logits, references=labels)
 
 
 def freeze_model_except_classifier(model):
@@ -198,11 +209,13 @@ class Classifier:
             self,
             base_model_name: str | None = None,
             load_model: str | None = None,
+            save_path: str | None = "/tmp/qc_model",
     ):
         if not base_model_name and not load_model:
             raise ValueError("Either `base_model_name` or `load_model` must be provided")
 
         self._base_model_name = base_model_name
+        self._save_path = save_path
 
         self._tokenizer = None
         self._model = None
@@ -210,8 +223,8 @@ class Classifier:
         if load_model:
             parsed = urlparse(str(load_model))
             if parsed.scheme == "s3":
-                os.makedirs(LOCAL_TMP_PATH, exist_ok=True)
-                load_model = LOCAL_TMP_PATH
+                os.makedirs(save_path, exist_ok=True)
+                load_model = save_path
                 download_model_from_s3(remote_path=parsed.path, bucket=parsed.netloc, local_path=load_model)
             self._model = AutoModelForSequenceClassification.from_pretrained(load_model).cuda()
             try:
@@ -227,36 +240,40 @@ class Classifier:
             dataset: ClassifierDataset,
             validation_set_size: int = 1000,
             max_steps: int = 500,
+            num_labels: int = 2,
     ) -> AutoModelForSequenceClassification:
         train_dataset, val_dataset = self._shuffle_split_test_val(dataset, validation_set_size)
 
         self._tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
-        self._model = AutoModelForSequenceClassification.from_pretrained(args.model_name, num_labels=2)
+        self._model = AutoModelForSequenceClassification.from_pretrained(args.model_name, num_labels=num_labels)
         freeze_model_except_classifier(self._model)
 
         training_args = TrainingArguments(
-            output_dir=args.local_save_path,
+            output_dir=self._save_path,
             report_to="wandb" if args.use_wandb else "none",
             dataloader_num_workers=args.num_workers,
             per_device_train_batch_size=args.batch_size,
             per_device_eval_batch_size=args.batch_size,
-            num_train_epochs=1,
+            num_train_epochs=20,
             evaluation_strategy="steps",
             save_strategy="steps",
-            eval_steps=50,
-            save_steps=50,
+            eval_steps=250,
+            save_steps=250,
             max_steps=max_steps,
             load_best_model_at_end=True,
             save_total_limit=1,
             run_name=args.run_name,
             log_level="debug",
             save_only_model=True,
+            learning_rate=3e-4,
         )
 
         if args.use_wandb:
             os.environ["WANDB_PROJECT"] = args.wandb_project
             os.environ["WANDB_ENTITY"] = args.wandb_entity
+
+        compute_metrics = compute_regression_metrics if num_labels == 1 else compute_accuracy_metrics
 
         trainer = Trainer(
             model=self._model,
@@ -298,7 +315,10 @@ class Classifier:
 
                 outputs = self._model(**batch)
                 logits = outputs.logits
-                score = torch.softmax(logits, dim=-1)[:, POSITIVE_LABEL]
+                if logits.size(-1) > 1:
+                    score = torch.softmax(logits, dim=-1)[:, POSITIVE_LABEL]
+                else:
+                    score = logits
                 text = self._tokenizer.batch_decode(batch["input_ids"], skip_special_tokens=True)
 
                 for i in range(len(logits)):
@@ -315,10 +335,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("-m", "--model-name", type=str, help="Hugging Face model name",
                         default="Snowflake/snowflake-arctic-embed-m")
-    parser.add_argument("-p", "--positive-sources", type=str, nargs="+", required=True, help="Positive data sources")
-    parser.add_argument("-n", "--negative-sources", type=str, nargs="+", required=True, help="Negative data sources")
+    parser.add_argument("-p", "--positive-sources", type=str, nargs="+", help="Positive data sources")
+    parser.add_argument("-n", "--negative-sources", type=str, nargs="+", help="Negative data sources")
+    parser.add_argument("-l", "--regression-sources", type=str, nargs="+", help="Regression data sources")
     parser.add_argument("-r", "--run-name", type=str, default="qc_train", help="Run name")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--max-num-regression", type=int, default=10000, help="Maximum number of regression instances to load")
     parser.add_argument("--max-num-positive", type=int, default=10000, help="Maximum number of positive instances to load")
     parser.add_argument("--max-num-negative", type=int, default=10000, help="Maximum number of negative instances to load")
     parser.add_argument("--num-workers", type=int, default=4, help="Number of workers to use")
@@ -339,30 +361,41 @@ def parse_args() -> argparse.Namespace:
 def main(args: argparse.Namespace):
     random.seed(args.seed)
 
-    num_positive_per_source = args.max_num_positive // len(args.positive_sources)
-    num_negative_per_source = args.max_num_negative // len(args.negative_sources)
-    positive_configs = [DataConfig(path=path, label=POSITIVE_LABEL, sample=num_positive_per_source) for path in args.positive_sources]
-    negative_configs = [DataConfig(path=path, label=NEGATIVE_LABEL, sample=num_negative_per_source) for path in args.negative_sources]
+    if args.regression_sources:
+        num_regression_per_source = args.max_num_regression // len(args.regression_sources)
+        configs = [DataConfig(path=path, selector=".score", sample=num_regression_per_source) for path in args.regression_sources]
+        expected_num_docs = args.max_num_regression
+    elif args.positive_sources and args.negative_sources:
+        num_positive_per_source = args.max_num_positive // len(args.positive_sources)
+        num_negative_per_source = args.max_num_negative // len(args.negative_sources)
+        positive_configs = [DataConfig(path=path, label=POSITIVE_LABEL, sample=num_positive_per_source) for path in args.positive_sources]
+        negative_configs = [DataConfig(path=path, label=NEGATIVE_LABEL, sample=num_negative_per_source) for path in args.negative_sources]
+        configs = positive_configs + negative_configs
+        expected_num_docs = args.max_num_positive + args.max_num_negative
+    else:
+        raise ValueError("Either `regression_sources` or both `positive_sources` and `negative_sources` must be provided")
 
-    dataset = ClassifierDataset(positive_configs + negative_configs, workers=args.num_workers)
+    dataset = ClassifierDataset(configs, workers=args.num_workers)
 
-    if len(dataset.documents) != args.max_num_positive + args.max_num_negative:
-        raise ValueError(f"Expected {args.max_num_positive + args.max_num_negative} documents, got {len(dataset.documents)}")
+    if args.regression_sources:
+        dataset.documents = [Document(text=item.text, label=float(item.label)) for item in dataset.documents]
 
-    classifier = Classifier(base_model_name=args.model_name)
-    classifier.fit(dataset, max_steps=args.max_steps)
+    if len(dataset.documents) != expected_num_docs:
+        raise ValueError(f"Expected {expected_num_docs} documents, got {len(dataset.documents)}")
+
+    run_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    save_path = os.path.join(args.local_save_path, args.run_name, run_date)
+
+    classifier = Classifier(base_model_name=args.model_name, save_path=save_path)
+    classifier.fit(dataset, max_steps=args.max_steps, num_labels=1 if args.regression_sources else 2)
 
     if args.upload_to_s3:
-        run_date = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         upload_path = os.path.join(args.s3_path, args.run_name, run_date)
-        print(f"Uploading model to S3. source={args.local_save_path}, bucket={args.s3_bucket}, path={upload_path}")
-        upload_directory_to_s3(args.local_save_path, args.s3_bucket, upload_path)
+        print(f"Uploading model to S3. source={save_path}, bucket={args.s3_bucket}, path={upload_path}")
+        upload_directory_to_s3(save_path, args.s3_bucket, upload_path)
 
 
 if __name__ == "__main__":
     args = parse_args()
-
-    # add additional extension for smart_open
-    register_compressor(".zstd", _handle_zstd)
 
     main(args)
