@@ -9,6 +9,7 @@ from queue import Empty
 from queue import Queue as QueueType
 from typing import Any, Generator, NamedTuple
 from urllib.parse import urlparse
+import traceback
 
 import fsspec
 import jq
@@ -103,8 +104,8 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                 self.output_paths_queue.put(OutputPath(source=path, count=count))
 
         except Exception as e:
-            self.logger.info(f"Something went wrong reading {path}: {e}")
-    
+            self.logger.error(f"❌ Something went wrong processing {path}: {e}\n{traceback.format_exc()}")
+
 
 
 def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
@@ -348,7 +349,6 @@ def main(args: argparse.Namespace) -> None:
     if not torch.cuda.is_available():
         raise RuntimeError("No GPUs available, but the script is designed to use multiple GPUs.")
 
-    torch.set_default_device(f'cuda:{get_local_gpu_rank()}')
     # if necessary, unglob source prefix
     fs = fsspec.get_filesystem_class((scheme := urlparse(args.source_prefix).scheme))()
     source_paths = [(f"{scheme}://{p}" if scheme else p) for p in fs.glob(args.source_prefix)]
