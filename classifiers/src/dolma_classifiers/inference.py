@@ -99,7 +99,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                 self.output_paths_queue.put(OutputPath(source=path, count=count))
 
         except Exception as e:
-            self.logger.info(f"Something went wrong reading {path}: {e}")
+            self.logger.i(f"Something went wrong reading {path}: {e}")
     
 
 
@@ -156,14 +156,11 @@ def writer_worker(
 
             group_by_source = defaultdict(list)
             for source, attribute in zip(element.sources, element.attributes):
-                try:
-                    group_by_source[source].append(attribute)
-                    if source not in files_writers:
-                        destination_path = source_destination_mapping[source]
-                        files_writers[source] = smart_open.open(destination_path, "wt", encoding="utf-8")
-                        console_logger.info(f"Opened {destination_path} for writing")
-                except Exception as e:
-                    console_logger.info(f"Something went wrong writing {source}'s destination : {e}")
+                group_by_source[source].append(attribute)
+                if source not in files_writers:
+                    destination_path = source_destination_mapping[source]
+                    files_writers[source] = smart_open.open(destination_path, "wt", encoding="utf-8")
+                    console_logger.info(f"Opened {destination_path} for writing")
 
             for source, attributes in group_by_source.items():
                 files_writers[source].write(
@@ -201,6 +198,8 @@ def writer_worker(
                     output_paths_queue.put(path)
                 total_count = 0
     except Exception as e:
+        console_logger.info(f"Writer process encountered an error: {e}")
+
         console_logger.error(f"Writer process encountered an error: {e}")
         error_event.set()
     finally:
