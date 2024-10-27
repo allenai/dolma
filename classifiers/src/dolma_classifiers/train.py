@@ -183,7 +183,7 @@ def compute_regression_metrics(eval_pred):
     return metric.compute(predictions=logits, references=labels)
 
 
-def freeze_model_except_classifier(model):
+def freeze_model_except_classifier(model, num_layers_to_freeze: int = 0):
     # Freeze all layers
     for param in model.base_model.parameters():
         param.requires_grad = False
@@ -191,6 +191,14 @@ def freeze_model_except_classifier(model):
     # Unfreeze the classifier layer
     for param in model.classifier.parameters():
         param.requires_grad = True
+
+    num_layers = len(model.base_model.encoder.layer)
+    # freeze last num_layers_to_freeze layers
+    for layer in range(num_layers - num_layers_to_freeze, num_layers):
+        print(f"Unfreezing layer {layer+1}/{num_layers}")
+        for param in model.base_model.encoder.layer[layer].parameters():
+            param.requires_grad = True
+
 
 
 def collate_fn(batch, tokenizer):
@@ -241,13 +249,14 @@ class Classifier:
             validation_set_size: int = 1000,
             max_steps: int = 500,
             num_labels: int = 2,
+            num_layers_to_freeze: int = 0,
     ) -> AutoModelForSequenceClassification:
         train_dataset, val_dataset = self._shuffle_split_test_val(dataset, validation_set_size)
 
         self._tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
         self._model = AutoModelForSequenceClassification.from_pretrained(args.model_name, num_labels=num_labels)
-        freeze_model_except_classifier(self._model)
+        freeze_model_except_classifier(self._model, num_layers_to_freeze)
 
         training_args = TrainingArguments(
             output_dir=self._save_path,
@@ -347,6 +356,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64, help="Batch size")
     parser.add_argument("--max-steps", type=int, default=500, help="Maximum number of training steps")
     parser.add_argument("--num-epochs", type=int, default=20, help="Number of epochs")
+    parser.add_argument("--num-layer-to-freeze", type=int, default=0, help="Number of layers to freeze")
     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
     parser.add_argument("--wandb-project", type=str, default="qc", help="Weights & Biases project name")
     parser.add_argument("--wandb-entity", type=str, default="ai2-llm", help="Weights & Biases entity name")
@@ -388,7 +398,12 @@ def main(args: argparse.Namespace):
     save_path = os.path.join(args.local_save_path, args.run_name, run_date)
 
     classifier = Classifier(base_model_name=args.model_name, save_path=save_path)
-    classifier.fit(dataset, max_steps=args.max_steps, num_labels=1 if args.regression_sources else 2)
+    classifier.fit(
+        dataset,
+        max_steps=args.max_steps,
+        num_labels=1 if args.regression_sources else 2,
+        num_layers_to_freeze=args.num_layer_to_freeze,
+    )
 
     if args.upload_to_s3:
         upload_path = os.path.join(args.s3_path, args.run_name, run_date)
