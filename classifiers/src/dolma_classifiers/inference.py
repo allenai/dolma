@@ -312,7 +312,7 @@ def process_documents(
 
             scores_queue.put(None)
         except Exception as e:
-            console_logger.info(f"❌ Something went wrong processing {path}: {e}\n{traceback.format_exc()}")
+            console_logger.info(f"Something went wrong in writer loop {path}: {e}\n{traceback.format_exc()}")
         finally:
             writer_process.join()
             if writer_process_error.is_set():
