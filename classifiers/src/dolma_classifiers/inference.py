@@ -315,6 +315,7 @@ def process_documents(
 
                 inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
                 console_logger.info(f"Going to score!")
+                console_logger.info(f"Device is :{classifier.device}")
                 console_logger.info(f"Model device is :{classifier.model.device}")
                 scores = classifier.score(**inputs)
                 console_logger.info(f"Generated scores")
