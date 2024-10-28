@@ -130,7 +130,7 @@ def main(args: argparse.Namespace):
             f.write(json.dumps(row) + "\n")
 
     with open(os.path.join(args.local_save_path, "test_scores.jsonl"), "w") as f:
-        test_scores = sorted(test_scores, key=lambda x: x["score"])
+        test_scores = sorted(test_scores, key=lambda x: x["classifier_score"])
         for row in test_scores:
             f.write(json.dumps(row) + "\n")
 
