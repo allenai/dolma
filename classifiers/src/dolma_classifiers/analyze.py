@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     return opts
 
 
-def get_percentile_samples(rows, percentiles):
+def get_percentile_samples(rows, percentiles, n=15):
     # Create a dictionary to store examples for each percentile
     percentile_samples = {}
 
@@ -46,10 +46,10 @@ def get_percentile_samples(rows, percentiles):
         upper_bound = percentiles[i + 1]
 
         # Get the samples in this percentile range
-        samples_in_percentile = [item for item in rows if lower_bound <= item["score"] <= upper_bound]
+        samples_in_percentile = [item for item in rows if lower_bound <= item["classifier_score"] <= upper_bound]
 
         # Randomly sample 10 examples, or take all if less than 10 are available
-        sampled_examples = random.sample(samples_in_percentile, min(10, len(samples_in_percentile)))
+        sampled_examples = random.sample(samples_in_percentile, min(n, len(samples_in_percentile)))
 
         # Store the sampled examples
         percentile_label = f"{PERCENTILE_RANGES[i]}% - {PERCENTILE_RANGES[i + 1]}% Percentile"
@@ -58,17 +58,17 @@ def get_percentile_samples(rows, percentiles):
     return percentile_samples
 
 
-def analyze(test_rows, fineweb_edu_rows, test_rows_by_fineweb_edu_classifier):
+def analyze(test_rows, fineweb_edu_rows):
     # find percentiles of the test set scores
-    test_scores = [item["score"] for item in test_rows]
-    percentiles = np.percentile(test_scores, PERCENTILE_RANGES)
+    classifier_test_scores = [item["classifier_score"] for item in test_rows]
+    percentiles = np.percentile(classifier_test_scores, PERCENTILE_RANGES)
 
     # get the samples for each percentile to allow for manual inspection
     percentiles_samples = get_percentile_samples(test_rows, percentiles)
 
     # calculate the average percentile of the fineweb-edu scores
     fineweb_edu_scores = [item["score"] for item in fineweb_edu_rows]
-    fineweb_edu_percentiles = [percentileofscore(test_scores, score) for score in fineweb_edu_scores]
+    fineweb_edu_percentiles = [percentileofscore(classifier_test_scores, score) for score in fineweb_edu_scores]
 
     average_percentile = np.mean(fineweb_edu_percentiles)
 
@@ -77,13 +77,9 @@ def analyze(test_rows, fineweb_edu_rows, test_rows_by_fineweb_edu_classifier):
     # examples where classifier gives > 3.5, and fine-web-edu gives < 2.5
     low_fineweb_edu_high_classifier = []
 
-    for test_row, fineweb_edu_classifier_row in zip(test_rows, test_rows_by_fineweb_edu_classifier):
-        if float(fineweb_edu_classifier_row["score"]) < 2.5 and test_row["score"] > 3.5:
-            low_fineweb_edu_high_classifier.append({
-                "text": test_row["text"],
-                "fineweb_edu_score": fineweb_edu_classifier_row["score"],
-                "classifier_score": test_row["score"]
-            })
+    for test_row in test_rows:
+        if test_row["classifier_score"] > 3.5 and test_row["fineweb_edu_classifier_score"] < 2.5:
+            low_fineweb_edu_high_classifier.append(test_row)
     low_fineweb_edu_high_classifier = random.sample(low_fineweb_edu_high_classifier, min(30, len(low_fineweb_edu_high_classifier)))
 
     return {
@@ -117,7 +113,13 @@ def main(args: argparse.Namespace):
     classifier = Classifier(load_model="HuggingFaceTB/fineweb-edu-classifier")
     test_scores_by_fineweb_edu_classifier = classifier.score(test_dataset)
 
-    analysis = analyze(test_scores, fineweb_edu_scores, test_scores_by_fineweb_edu_classifier)
+    # merge the scores
+    for test_row, fineweb_edu_classifier_row in zip(test_scores, test_scores_by_fineweb_edu_classifier):
+        test_row["fineweb_edu_classifier_score"] = fineweb_edu_classifier_row["score"]
+        test_row["classifier_score"] = test_row["score"]
+        del test_row["score"]
+
+    analysis = analyze(test_scores, fineweb_edu_scores)
 
     with open(os.path.join(args.local_save_path, "analysis.json"), "w") as f:
         json.dump(analysis, f, indent=4)
