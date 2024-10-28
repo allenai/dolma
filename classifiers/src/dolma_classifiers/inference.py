@@ -237,7 +237,6 @@ def process_documents(
         dtype='float16',
         compile=model_compile,
     )
-    classifier.to(f'cuda:{get_local_gpu_rank()}')
 
     if not text_selector:
         text_selector = classifier.input_template
@@ -293,6 +292,7 @@ def process_documents(
             )
 
             counts = defaultdict(int)
+            conse_logger.info(f"Device is : {classifier.device}")
 
             for batch in data_loader:
                 for s in batch.sources:

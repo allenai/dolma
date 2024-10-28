@@ -27,7 +27,6 @@ class Prediction(NamedTuple):
 class BaseQualityClassifier:
     model: PreTrainedModel
     tokenizer: PreTrainedTokenizer
-    input_template: str
     def __init__(
         self,
         model_name: str,
@@ -71,6 +70,7 @@ class BaseQualityClassifier:
             torch_dtype=getattr(torch, dtype),
             trust_remote_code=trust_remote_code,
         )
+        
         model = model.to(torch.device(device))
 
         if compile:
@@ -160,7 +160,7 @@ class DataDelveClassifier(BaseQualityClassifier):
             trust_remote_code=trust_remote_code,
             input_template=input_template
         )
-
+        self.model = self.model.to(device)
 
 @Registry.add("nvidia/quality-classifier-deberta")
 class DebertaQualityClassifier(BaseQualityClassifier):
