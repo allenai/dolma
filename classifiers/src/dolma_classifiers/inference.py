@@ -206,6 +206,8 @@ def writer_worker(
                 total_count = 0
     except Exception as e:
         console_logger.error(f"Writer process encountered an error: {e}")
+        console_logger.info(f"Writer process encountered an error: {e} {traceback.format_exc}")
+
         error_event.set()
         error_traceback = traceback.format_exc()
         error_queue.put(error_traceback)
@@ -297,7 +299,7 @@ def process_documents(
 
             counts = defaultdict(int)
             console_logger.info(f"Device is : {classifier.device}")
-
+            tracebacks = []
             for batch in data_loader:
                 for s in batch.sources:
                     counts[s] += 1
@@ -305,7 +307,8 @@ def process_documents(
                 if writer_process_error.is_set():
                     try:
                         error_traceback = error_queue.get_nowait()
-                        console_logger.error(f"Writer process error traceback:\n{error_traceback}")
+                        tracebacks.append(error_traceback)
+                        console_logger.info(f"Writer process error traceback:\n{error_traceback}")
                     except Empty:
                         pass
                     raise RuntimeError("Writer process encountered an error")
@@ -321,7 +324,7 @@ def process_documents(
 
             scores_queue.put(None)
         except Exception as e:
-            console_logger.info(f"Something went wrong in writer loop: {e}")
+            console_logger.info(f"Something went wrong in writer loop: {e} {tracebacks}")
         finally:
             writer_process.join()
             if writer_process_error.is_set():
