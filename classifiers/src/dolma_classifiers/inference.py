@@ -292,7 +292,7 @@ def process_documents(
             )
 
             counts = defaultdict(int)
-            conse_logger.info(f"Device is : {classifier.device}")
+            console_logger.info(f"Device is : {classifier.device}")
 
             for batch in data_loader:
                 for s in batch.sources:
