@@ -139,6 +139,7 @@ def writer_worker(
     scores_queue: QueueType[AttributeRow | None],
     output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
+    error_queue: mp.Queue,
     log_every: int = 10_000,
 ):
 
