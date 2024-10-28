@@ -314,8 +314,10 @@ def process_documents(
                     raise RuntimeError("Writer process encountered an error")
 
                 inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
-                scores = classifier.score(**inputs)
+                console_logger.info(f"Going to score!")
 
+                scores = classifier.score(**inputs)
+                console_logger.info(f"Generated scores")
                 attributes = [
                     {"id": doc_id, "attributes": {pred.label: [[0, doc_length, pred.score]] for pred in doc_preds}}
                     for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.lengths)
