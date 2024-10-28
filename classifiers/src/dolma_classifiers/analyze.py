@@ -58,7 +58,7 @@ def get_percentile_samples(rows, percentiles):
     return percentile_samples
 
 
-def analyze(test_rows, fineweb_edu_rows):
+def analyze(test_rows, fineweb_edu_rows, test_rows_by_fineweb_edu_classifier):
     # find percentiles of the test set scores
     test_scores = [item["score"] for item in test_rows]
     percentiles = np.percentile(test_scores, PERCENTILE_RANGES)
@@ -72,10 +72,24 @@ def analyze(test_rows, fineweb_edu_rows):
 
     average_percentile = np.mean(fineweb_edu_percentiles)
 
+    print(f"Average percentile of fineweb-edu scores: {average_percentile}")
+
+    # examples where classifier gives > 3.5, and fine-web-edu gives < 2.5
+    low_fineweb_edu_high_classifier = []
+
+    for test_row, fineweb_edu_classifier_row in zip(test_rows, test_rows_by_fineweb_edu_classifier):
+        if float(fineweb_edu_classifier_row["score"]) < 2.5 and test_row["score"] > 3.5:
+            low_fineweb_edu_high_classifier.append({
+                "text": test_row["text"],
+                "fineweb_edu_score": fineweb_edu_classifier_row["score"],
+                "classifier_score": test_row["score"]
+            })
+    low_fineweb_edu_high_classifier = random.sample(low_fineweb_edu_high_classifier, min(30, len(low_fineweb_edu_high_classifier)))
+
     return {
         "percentiles_samples": percentiles_samples,
-        "fineweb_edu_scores": fineweb_edu_rows,
         "average_percentile": average_percentile,
+        "low_fineweb_edu_high_classifier": low_fineweb_edu_high_classifier
     }
 
 
@@ -99,7 +113,11 @@ def main(args: argparse.Namespace):
     test_dataset = ClassifierDataset([test_config], workers=args.num_workers)
     test_scores = classifier.score(test_dataset)
 
-    analysis = analyze(test_scores, fineweb_edu_scores)
+    # use fineweb_edu classifier to score the test set
+    classifier = Classifier(load_model="HuggingFaceTB/fineweb-edu-classifier")
+    test_scores_by_fineweb_edu_classifier = classifier.score(test_dataset)
+
+    analysis = analyze(test_scores, fineweb_edu_scores, test_scores_by_fineweb_edu_classifier)
 
     with open(os.path.join(args.local_save_path, "analysis.json"), "w") as f:
         json.dump(analysis, f, indent=4)
