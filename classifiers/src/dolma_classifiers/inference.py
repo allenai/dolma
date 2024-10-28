@@ -5,11 +5,11 @@ from collections import defaultdict
 from functools import partial
 from itertools import zip_longest
 from multiprocessing import Event, Process
-from queue import Empty
 from queue import Queue as QueueType
 from typing import Any, Generator, NamedTuple
 from urllib.parse import urlparse
 import traceback
+from queue import Empty
 
 import fsspec
 import jq
@@ -204,10 +204,10 @@ def writer_worker(
                     output_paths_queue.put(path)
                 total_count = 0
     except Exception as e:
-        console_logger.info(f"Writer process encountered an error: {e}")
-
         console_logger.error(f"Writer process encountered an error: {e}")
         error_event.set()
+        error_traceback = traceback.format_exc()
+        error_queue.put(error_traceback)
     finally:
         for f in files_writers.values():
             f.close()
@@ -256,6 +256,8 @@ def process_documents(
         input_paths_queue: QueueType[str] = manager.Queue()
         output_paths_queue: QueueType[OutputPath] = manager.Queue()
         scores_queue: QueueType[AttributeRow | None] = manager.Queue()
+        error_queue: mp.Queue = manager.Queue()
+        
         for source_path in source_destination_mapping:
             input_paths_queue.put(source_path)
 
@@ -268,6 +270,7 @@ def process_documents(
                 source_destination_mapping=source_destination_mapping,
                 log_every=log_every,
                 error_event=writer_process_error,
+                error_queue=error_queue,        
             ),
         )
         writer_process.start()
@@ -299,6 +302,11 @@ def process_documents(
                     counts[s] += 1
 
                 if writer_process_error.is_set():
+                    try:
+                        error_traceback = error_queue.get_nowait()
+                        console_logger.error(f"Writer process error traceback:\n{error_traceback}")
+                    except Empty:
+                        pass
                     raise RuntimeError("Writer process encountered an error")
 
                 inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
@@ -312,7 +320,7 @@ def process_documents(
 
             scores_queue.put(None)
         except Exception as e:
-            console_logger.info(f"Something went wrong in writer loop {path}: {e}\n{traceback.format_exc()}")
+            console_logger.info(f"Something went wrong in writer loop: {e}")
         finally:
             writer_process.join()
             if writer_process_error.is_set():
