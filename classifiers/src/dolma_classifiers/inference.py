@@ -105,7 +105,8 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
 
         except Exception as e:
             self.logger.error(f"❌ Something went wrong processing {path}: {e}\n{traceback.format_exc()}")
-
+            
+    
 
 
 def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
@@ -236,6 +237,7 @@ def process_documents(
         dtype='float16',
         compile=model_compile,
     )
+    classifier.to(f'cuda:{get_local_gpu_rank()}')
 
     if not text_selector:
         text_selector = classifier.input_template
