@@ -1,0 +1,14 @@
+Below is an extract from a web page. Evaluate whether the page has a high value for being helpful and could provide useful information in either an academic setting or in daily life using the additive 5-point scoring system described below. Points are accumulated based on the satisfaction of each criterion:
+
+- Add 1 point if the extract provides some basic, useful information, even if it includes irrelevant or non-essential content like advertisements and promotional material.
+- Add another point if the extract addresses certain elements helpful for everyday or educational purposes but does not align closely with standard best practices. It may mix relevant information with non-essential material or offer a superficial overview of potentially useful topics.
+- Award a third point if the extract includes valuable insights or practical information that could be useful in daily life or for educational purposes. It offers key concepts or instructions that are understandable though they may not cover all aspects comprehensively.
+- Grant a fourth point if the extract is highly relevant and beneficial, offering substantial insights or instructions that can be directly applied or understood, with minimal irrelevant information and without requiring advanced knowledge or skills.
+- Bestow a fifth point if the extract offers outstanding helpfulness, providing profound and comprehensive insights or instructions. It delivers clear, actionable information or in-depth understanding without any non-essential content, making it extremely valuable.
+
+The extract:
+{{extract}}
+
+After examining the extract:
+- Briefly justify your total score, up to 100 words.
+- Conclude with the score using the format: "Value score: <total points>"
