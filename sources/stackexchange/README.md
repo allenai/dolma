@@ -34,21 +34,26 @@ Create posts table:
 
 ```sql
 CREATE EXTERNAL TABLE IF NOT EXISTS `lucas`.`se_posts_20240930` (
-    Id STRING,
-    PostTypeId STRING,
-    AcceptedAnswerId STRING,
-    CreationDate STRING,
-    Score STRING,
-    ViewCount STRING,
+    AcceptedAnswerId BIGINT,
+    AnswerCount BIGINT,
     Body STRING,
-    OwnerUserId STRING,
-    LastActivityDate STRING,
-    Title STRING,
-    Tags STRING,
-    AnswerCount STRING,
-    CommentCount STRING,
     ClosedDate STRING,
-    ContentLicense STRING
+    CommentCount BIGINT,
+    ContentLicense STRING,
+    CreationDate STRING,
+    Id BIGINT,
+    LastActivityDate STRING,
+    LastEditDate STRING,
+    LastEditorDisplayName STRING,
+    LastEditorUserId BIGINT,
+    OwnerDisplayName STRING,
+    OwnerUserId BIGINT,
+    ParentId BIGINT,
+    PostTypeId STRING,
+    Score BIGINT,
+    Tags STRING,
+    Title STRING,
+    ViewCount BIGINT
 )
 PARTITIONED BY (forum STRING)
 STORED AS PARQUET
@@ -62,738 +67,195 @@ Then run the following to load the partitions:
 MSCK REPAIR TABLE lucas.se_posts_20240930;
 ```
 
-## Statistics
+# Selecting QA pairs
 
-Post count:
 
-|forum                                     |cnt     |
-|------------------------------------------|--------|
-|stackoverflow_com                         |60186326|
-|math_stackexchange_com                    |3850129 |
-|superuser_com                             |1256664 |
-|ru_stackoverflow_com                      |979132  |
-|askubuntu_com                             |955851  |
-|serverfault_com                           |849573  |
-|tex_stackexchange_com                     |604035  |
-|unix_stackexchange_com                    |601567  |
-|physics_stackexchange_com                 |590851  |
-|electronics_stackexchange_com             |546272  |
-|stats_stackexchange_com                   |432419  |
-|english_stackexchange_com                 |429048  |
-|es_stackoverflow_com                      |417778  |
-|gis_stackexchange_com                     |354373  |
-|pt_stackoverflow_com                      |349343  |
-|mathoverflow_net                          |349220  |
-|apple_stackexchange_com                   |325257  |
-|salesforce_stackexchange_com              |294644  |
-|ell_stackexchange_com                     |284543  |
-|gaming_stackexchange_com                  |274494  |
-|wordpress_stackexchange_com               |261928  |
-|magento_stackexchange_com                 |260359  |
-|meta_stackexchange_com                    |253506  |
-|dba_stackexchange_com                     |246677  |
-|softwareengineering_stackexchange_com     |245914  |
-|sharepoint_stackexchange_com              |238759  |
-|diy_stackexchange_com                     |231863  |
-|mathematica_stackexchange_com             |231170  |
-|blender_stackexchange_com                 |227114  |
-|scifi_stackexchange_com                   |219920  |
-|codegolf_stackexchange_com                |219699  |
-|worldbuilding_stackexchange_com           |218292  |
-|drupal_stackexchange_com                  |204165  |
-|codereview_stackexchange_com              |203673  |
-|security_stackexchange_com                |190776  |
-|rpg_stackexchange_com                     |166341  |
-|academia_stackexchange_com                |152667  |
-|workplace_stackexchange_com               |145391  |
-|gamedev_stackexchange_com                 |140963  |
-|travel_stackexchange_com                  |132421  |
-|android_stackexchange_com                 |130696  |
-|ux_stackexchange_com                      |119015  |
-|meta_stackoverflow_com                    |118130  |
-|ethereum_stackexchange_com                |117622  |
-|money_stackexchange_com                   |114090  |
-|cs_stackexchange_com                      |107250  |
-|judaism_stackexchange_com                 |106801  |
-|graphicdesign_stackexchange_com           |102528  |
-|robotics_stackexchange_com                |101111  |
-|chemistry_stackexchange_com               |99613   |
-|webmasters_stackexchange_com              |96132   |
-|photo_stackexchange_com                   |95845   |
-|music_stackexchange_com                   |95252   |
-|puzzling_stackexchange_com                |94122   |
-|cooking_stackexchange_com                 |93111   |
-|raspberrypi_stackexchange_com             |88220   |
-|webapps_stackexchange_com                 |86529   |
-|philosophy_stackexchange_com              |79539   |
-|datascience_stackexchange_com             |79389   |
-|aviation_stackexchange_com                |77596   |
-|law_stackexchange_com                     |76028   |
-|bitcoin_stackexchange_com                 |75895   |
-|japanese_stackexchange_com                |72767   |
-|bicycles_stackexchange_com                |72140   |
-|crypto_stackexchange_com                  |69885   |
-|ja_stackoverflow_com                      |69784   |
-|mechanics_stackexchange_com               |69222   |
-|rus_stackexchange_com                     |68856   |
-|movies_stackexchange_com                  |65929   |
-|dsp_stackexchange_com                     |64365   |
-|biology_stackexchange_com                 |62857   |
-|hermeneutics_stackexchange_com            |61760   |
-|emacs_stackexchange_com                   |60356   |
-|politics_stackexchange_com                |59331   |
-|christianity_stackexchange_com            |59004   |
-|arduino_stackexchange_com                 |58979   |
-|german_stackexchange_com                  |58502   |
-|writers_stackexchange_com                 |53063   |
-|quant_stackexchange_com                   |50120   |
-|space_stackexchange_com                   |49879   |
-|softwarerecs_stackexchange_com            |48100   |
-|gardening_stackexchange_com               |45080   |
-|history_stackexchange_com                 |44938   |
-|networkengineering_stackexchange_com      |44300   |
-|french_stackexchange_com                  |42157   |
-|chinese_stackexchange_com                 |41769   |
-|boardgames_stackexchange_com              |41637   |
-|hinduism_stackexchange_com                |40917   |
-|islam_stackexchange_com                   |39613   |
-|engineering_stackexchange_com             |38669   |
-|buddhism_stackexchange_com                |38238   |
-|sqa_stackexchange_com                     |37141   |
-|astronomy_stackexchange_com               |36898   |
-|sound_stackexchange_com                   |36422   |
-|civicrm_stackexchange_com                 |36220   |
-|economics_stackexchange_com               |35260   |
-|vi_stackexchange_com                      |34955   |
-|anime_stackexchange_com                   |33950   |
-|craftcms_stackexchange_com                |31845   |
-|chess_stackexchange_com                   |31810   |
-|sitecore_stackexchange_com                |31099   |
-|cstheory_stackexchange_com                |30475   |
-|parenting_stackexchange_com               |30116   |
-|fitness_stackexchange_com                 |29903   |
-|spanish_stackexchange_com                 |29610   |
-|linguistics_stackexchange_com             |29224   |
-|expressionengine_stackexchange_com        |29161   |
-|ai_stackexchange_com                      |27764   |
-|skeptics_stackexchange_com                |27126   |
-|quantumcomputing_stackexchange_com        |26728   |
-|pm_stackexchange_com                      |26204   |
-|scicomp_stackexchange_com                 |26168   |
-|math_meta_stackexchange_com               |24502   |
-|outdoors_stackexchange_com                |22620   |
-|retrocomputing_stackexchange_com          |22604   |
-|pets_stackexchange_com                    |21571   |
-|reverseengineering_stackexchange_com      |21482   |
-|avp_stackexchange_com                     |21112   |
-|literature_stackexchange_com              |21050   |
-|homebrew_stackexchange_com                |20703   |
-|joomla_stackexchange_com                  |19175   |
-|interpersonal_stackexchange_com           |18791   |
-|elementaryos_stackexchange_com            |18643   |
-|tridion_stackexchange_com                 |18297   |
-|cogsci_stackexchange_com                  |17231   |
-|russian_stackexchange_com                 |17107   |
-|matheducators_stackexchange_com           |17063   |
-|latin_stackexchange_com                   |16748   |
-|earthscience_stackexchange_com            |16698   |
-|expatriates_stackexchange_com             |16640   |
-|sports_stackexchange_com                  |16064   |
-|3dprinting_stackexchange_com              |15583   |
-|health_stackexchange_com                  |15120   |
-|lifehacks_stackexchange_com               |14976   |
-|meta_askubuntu_com                        |14855   |
-|bioinformatics_stackexchange_com          |14623   |
-|ham_stackexchange_com                     |14458   |
-|opendata_stackexchange_com                |14135   |
-|devops_stackexchange_com                  |13615   |
-|solana_stackexchange_com                  |13493   |
-|tor_stackexchange_com                     |13164   |
-|gaming_meta_stackexchange_com             |12891   |
-|codegolf_meta_stackexchange_com           |12818   |
-|meta_superuser_com                        |12775   |
-|patents_stackexchange_com                 |12581   |
-|bricks_stackexchange_com                  |12571   |
-|opensource_stackexchange_com              |12303   |
-|ru_meta_stackoverflow_com                 |12083   |
-|woodworking_stackexchange_com             |12035   |
-|hsm_stackexchange_com                     |11063   |
-|substrate_stackexchange_com               |10966   |
-|genealogy_stackexchange_com               |10891   |
-|or_stackexchange_com                      |10560   |
-|monero_stackexchange_com                  |10483   |
-|english_meta_stackexchange_com            |10474   |
-|scifi_meta_stackexchange_com              |10373   |
-|materials_stackexchange_com               |9909    |
-|martialarts_stackexchange_com             |9702    |
-|italian_stackexchange_com                 |9621    |
-|physics_meta_stackexchange_com            |9474    |
-|rpg_meta_stackexchange_com                |9179    |
-|hardwarerecs_stackexchange_com            |9068    |
-|computergraphics_stackexchange_com        |8414    |
-|softwareengineering_meta_stackexchange_com|7652    |
-|tex_meta_stackexchange_com                |7472    |
-|worldbuilding_meta_stackexchange_com      |7241    |
-|meta_serverfault_com                      |7230    |
-|portuguese_stackexchange_com              |7151    |
-|crafts_stackexchange_com                  |7084    |
-|poker_stackexchange_com                   |7043    |
-|freelancing_stackexchange_com             |6990    |
-|pt_meta_stackoverflow_com                 |6873    |
-|cardano_stackexchange_com                 |6804    |
-|sustainability_stackexchange_com          |6771    |
-|cseducators_stackexchange_com             |6421    |
-|codereview_meta_stackexchange_com         |6385    |
-|musicfans_stackexchange_com               |6087    |
-|stackapps_com                             |6062    |
-|workplace_meta_stackexchange_com          |5854    |
-|ukrainian_stackexchange_com               |5838    |
-|mythology_stackexchange_com               |5740    |
-|esperanto_stackexchange_com               |5555    |
-|electronics_meta_stackexchange_com        |5531    |
-|iot_stackexchange_com                     |5520    |
-|travel_meta_stackexchange_com             |5435    |
-|eosio_stackexchange_com                   |5421    |
-|korean_stackexchange_com                  |5297    |
-|stats_meta_stackexchange_com              |5073    |
-|christianity_meta_stackexchange_com       |5008    |
-|es_meta_stackoverflow_com                 |4935    |
-|meta_mathoverflow_net                     |4929    |
-|unix_meta_stackexchange_com               |4846    |
-|tezos_stackexchange_com                   |4816    |
-|skeptics_meta_stackexchange_com           |4619    |
-|photo_meta_stackexchange_com              |4602    |
-|coffee_stackexchange_com                  |4572    |
-|judaism_meta_stackexchange_com            |4362    |
-|puzzling_meta_stackexchange_com           |4181    |
-|ebooks_stackexchange_com                  |4136    |
-|academia_meta_stackexchange_com           |4129    |
-|languagelearning_stackexchange_com        |4117    |
-|apple_meta_stackexchange_com              |3955    |
-|beer_stackexchange_com                    |3937    |
-|langdev_stackexchange_com                 |3790    |
-|politics_meta_stackexchange_com           |3732    |
-|ell_meta_stackexchange_com                |3620    |
-|movies_meta_stackexchange_com             |3607    |
-|stellar_stackexchange_com                 |3278    |
-|security_meta_stackexchange_com           |3197    |
-|chemistry_meta_stackexchange_com          |3132    |
-|proofassistants_stackexchange_com         |3117    |
-|gis_meta_stackexchange_com                |3100    |
-|ja_meta_stackoverflow_com                 |2913    |
-|music_meta_stackexchange_com              |2881    |
-|gamedev_meta_stackexchange_com            |2803    |
-|interpersonal_meta_stackexchange_com      |2776    |
-|webapps_meta_stackexchange_com            |2770    |
-|cooking_meta_stackexchange_com            |2696    |
-|graphicdesign_meta_stackexchange_com      |2682    |
-|drones_stackexchange_com                  |2670    |
-|wordpress_meta_stackexchange_com          |2653    |
-|android_meta_stackexchange_com            |2534    |
-|writers_meta_stackexchange_com            |2483    |
-|drupal_meta_stackexchange_com             |2475    |
-|iota_stackexchange_com                    |2474    |
-|philosophy_meta_stackexchange_com         |2469    |
-|mathematica_meta_stackexchange_com        |2468    |
-|anime_meta_stackexchange_com              |2454    |
-|vegetarianism_stackexchange_com           |2425    |
-|dba_meta_stackexchange_com                |2368    |
-|islam_meta_stackexchange_com              |2335    |
-|history_meta_stackexchange_com            |2318    |
-|aviation_meta_stackexchange_com           |2317    |
-|ux_meta_stackexchange_com                 |2284    |
-|biology_meta_stackexchange_com            |2242    |
-|japanese_meta_stackexchange_com           |2234    |
-|hinduism_meta_stackexchange_com           |2119    |
-|salesforce_meta_stackexchange_com         |2077    |
-|boardgames_meta_stackexchange_com         |2049    |
-|money_meta_stackexchange_com              |2034    |
-|conlang_stackexchange_com                 |2013    |
-|space_meta_stackexchange_com              |2011    |
-|moderators_stackexchange_com              |2009    |
-|cstheory_meta_stackexchange_com           |1976    |
-|blender_meta_stackexchange_com            |1930    |
-|softwarerecs_meta_stackexchange_com       |1891    |
-|hermeneutics_meta_stackexchange_com       |1850    |
-|law_meta_stackexchange_com                |1801    |
-|cs_meta_stackexchange_com                 |1745    |
-|diy_meta_stackexchange_com                |1731    |
-|german_meta_stackexchange_com             |1726    |
-|webmasters_meta_stackexchange_com         |1699    |
-|literature_meta_stackexchange_com         |1685    |
-|bioacoustics_stackexchange_com            |1674    |
-|outdoors_meta_stackexchange_com           |1630    |
-|crypto_meta_stackexchange_com             |1613    |
-|buddhism_meta_stackexchange_com           |1578    |
-|genealogy_meta_stackexchange_com          |1534    |
-|magento_meta_stackexchange_com            |1533    |
-|cogsci_meta_stackexchange_com             |1531    |
-|bicycles_meta_stackexchange_com           |1501    |
-|sharepoint_meta_stackexchange_com         |1453    |
-|parenting_meta_stackexchange_com          |1448    |
-|spanish_meta_stackexchange_com            |1383    |
-|health_meta_stackexchange_com             |1346    |
-|raspberrypi_meta_stackexchange_com        |1297    |
-|pets_meta_stackexchange_com               |1267    |
-|retrocomputing_meta_stackexchange_com     |1237    |
-|economics_meta_stackexchange_com          |1179    |
-|bitcoin_meta_stackexchange_com            |1153    |
-|chess_meta_stackexchange_com              |1128    |
-|mechanics_meta_stackexchange_com          |1106    |
-|linguistics_meta_stackexchange_com        |1069    |
-|sports_meta_stackexchange_com             |1045    |
-|networkengineering_meta_stackexchange_com |996     |
-|earthscience_meta_stackexchange_com       |945     |
-|gardening_meta_stackexchange_com          |940     |
-|chinese_meta_stackexchange_com            |935     |
-|french_meta_stackexchange_com             |904     |
-|pm_meta_stackexchange_com                 |901     |
-|opensource_meta_stackexchange_com         |889     |
-|astronomy_meta_stackexchange_com          |887     |
-|fitness_meta_stackexchange_com            |882     |
-|lifehacks_meta_stackexchange_com          |857     |
-|genai_stackexchange_com                   |837     |
-|ai_meta_stackexchange_com                 |828     |
-|dsp_meta_stackexchange_com                |796     |
-|hardwarerecs_meta_stackexchange_com       |750     |
-|matheducators_meta_stackexchange_com      |735     |
-|arduino_meta_stackexchange_com            |731     |
-|languagelearning_meta_stackexchange_com   |712     |
-|ethereum_meta_stackexchange_com           |710     |
-|musicfans_meta_stackexchange_com          |707     |
-|quant_meta_stackexchange_com              |702     |
-|martialarts_meta_stackexchange_com        |678     |
-|latin_meta_stackexchange_com              |657     |
-|engineering_meta_stackexchange_com        |646     |
-|datascience_meta_stackexchange_com        |630     |
-|scicomp_meta_stackexchange_com            |627     |
-|crafts_meta_stackexchange_com             |621     |
-|emacs_meta_stackexchange_com              |618     |
-|langdev_meta_stackexchange_com            |601     |
-|quantumcomputing_meta_stackexchange_com   |601     |
-|bricks_meta_stackexchange_com             |590     |
-|3dprinting_meta_stackexchange_com         |587     |
-|vi_meta_stackexchange_com                 |583     |
-|mythology_meta_stackexchange_com          |582     |
-|sqa_meta_stackexchange_com                |579     |
-|avp_meta_stackexchange_com                |573     |
-|rus_meta_stackexchange_com                |540     |
-|robotics_meta_stackexchange_com           |508     |
-|homebrew_meta_stackexchange_com           |502     |
-|russian_meta_stackexchange_com            |498     |
-|sound_meta_stackexchange_com              |496     |
-|ham_meta_stackexchange_com                |491     |
-|opendata_meta_stackexchange_com           |480     |
-|italian_meta_stackexchange_com            |476     |
-|cseducators_meta_stackexchange_com        |471     |
-|expatriates_meta_stackexchange_com        |467     |
-|tridion_meta_stackexchange_com            |464     |
-|vegetarianism_meta_stackexchange_com      |440     |
-|joomla_meta_stackexchange_com             |432     |
-|materials_meta_stackexchange_com          |431     |
-|sustainability_meta_stackexchange_com     |418     |
-|iot_meta_stackexchange_com                |409     |
-|reverseengineering_meta_stackexchange_com |408     |
-|moderators_meta_stackexchange_com         |408     |
-|tor_meta_stackexchange_com                |405     |
-|woodworking_meta_stackexchange_com        |402     |
-|hsm_meta_stackexchange_com                |394     |
-|sitecore_meta_stackexchange_com           |388     |
-|patents_meta_stackexchange_com            |381     |
-|devops_meta_stackexchange_com             |372     |
-|or_meta_stackexchange_com                 |369     |
-|portuguese_meta_stackexchange_com         |366     |
-|expressionengine_meta_stackexchange_com   |353     |
-|freelancing_meta_stackexchange_com        |350     |
-|computergraphics_meta_stackexchange_com   |347     |
-|bioinformatics_meta_stackexchange_com     |338     |
-|poker_meta_stackexchange_com              |338     |
-|ebooks_meta_stackexchange_com             |310     |
-|coffee_meta_stackexchange_com             |289     |
-|ukrainian_meta_stackexchange_com          |288     |
-|elementaryos_meta_stackexchange_com       |270     |
-|beer_meta_stackexchange_com               |264     |
-|esperanto_meta_stackexchange_com          |249     |
-|monero_meta_stackexchange_com             |233     |
-|korean_meta_stackexchange_com             |225     |
-|proofassistants_meta_stackexchange_com    |219     |
-|conlang_meta_stackexchange_com            |216     |
-|drones_meta_stackexchange_com             |215     |
-|bioacoustics_meta_stackexchange_com       |207     |
-|genai_meta_stackexchange_com              |204     |
-|civicrm_meta_stackexchange_com            |195     |
-|stellar_meta_stackexchange_com            |191     |
-|craftcms_meta_stackexchange_com           |169     |
-|substrate_meta_stackexchange_com          |167     |
-|cardano_meta_stackexchange_com            |127     |
-|iota_meta_stackexchange_com               |104     |
-|tezos_meta_stackexchange_com              |85      |
-|eosio_meta_stackexchange_com              |76      |
-|solana_meta_stackexchange_com             |59      |
+```sql
+UNLOAD (
+    WITH valid_questions AS (
+        SELECT
+            posts.Body,
+            posts.Id,
+            posts.CommentCount,
+            posts.ContentLicense,
+            posts.CreationDate,
+            posts.LastActivityDate,
+            posts.LastEditDate,
+            posts.LastEditorDisplayName,
+            posts.LastEditorUserId,
+            posts.OwnerUserId,
+            posts.OwnerDisplayName,
+            posts.Score,
+            posts.Tags,
+            posts.ViewCount,
+            posts.Title,
+            posts.Forum,
+            posts.AcceptedAnswerid
+        FROM "lucas"."se_posts_20240930" as posts
+        WHERE
+            posttypeid = 'Question'
+            AND posts.AnswerCount > 0
+            AND posts.acceptedanswerid >= 0
 
-Comments count:
-
-|forum                                     |cnt     |
-|------------------------------------------|--------|
-|stackoverflow_com                         |91012063|
-|math_stackexchange_com                    |7241857 |
-|superuser_com                             |1917482 |
-|ru_stackoverflow_com                      |1883860 |
-|askubuntu_com                             |1557072 |
-|electronics_stackexchange_com             |1343644 |
-|tex_stackexchange_com                     |1332993 |
-|physics_stackexchange_com                 |1165101 |
-|serverfault_com                           |1071871 |
-|unix_stackexchange_com                    |1010902 |
-|english_stackexchange_com                 |957127  |
-|mathoverflow_net                          |838333  |
-|stats_stackexchange_com                   |836878  |
-|meta_stackexchange_com                    |803926  |
-|es_stackoverflow_com                      |704775  |
-|worldbuilding_stackexchange_com           |620138  |
-|meta_stackoverflow_com                    |613693  |
-|pt_stackoverflow_com                      |588424  |
-|scifi_stackexchange_com                   |561778  |
-|softwareengineering_stackexchange_com     |548953  |
-|mathematica_stackexchange_com             |525148  |
-|gis_stackexchange_com                     |516856  |
-|ell_stackexchange_com                     |490941  |
-|diy_stackexchange_com                     |488199  |
-|apple_stackexchange_com                   |472391  |
-|salesforce_stackexchange_com              |401390  |
-|blender_stackexchange_com                 |395147  |
-|wordpress_stackexchange_com               |383667  |
-|workplace_stackexchange_com               |376287  |
-|academia_stackexchange_com                |376088  |
-|codegolf_stackexchange_com                |375475  |
-|magento_stackexchange_com                 |371105  |
-|security_stackexchange_com                |359170  |
-|dba_stackexchange_com                     |351447  |
-|codereview_stackexchange_com              |348304  |
-|gaming_stackexchange_com                  |338017  |
-|travel_stackexchange_com                  |311991  |
-|judaism_stackexchange_com                 |298370  |
-|rpg_stackexchange_com                     |291257  |
-|sharepoint_stackexchange_com              |250577  |
-|drupal_stackexchange_com                  |250324  |
-|puzzling_stackexchange_com                |249701  |
-|gamedev_stackexchange_com                 |237455  |
-|money_stackexchange_com                   |232283  |
-|philosophy_stackexchange_com              |231628  |
-|politics_stackexchange_com                |204558  |
-|cs_stackexchange_com                      |198615  |
-|chemistry_stackexchange_com               |189715  |
-|aviation_stackexchange_com                |187422  |
-|android_stackexchange_com                 |178323  |
-|photo_stackexchange_com                   |170955  |
-|ux_stackexchange_com                      |168852  |
-|bicycles_stackexchange_com                |168046  |
-|law_stackexchange_com                     |167212  |
-|music_stackexchange_com                   |161525  |
-|raspberrypi_stackexchange_com             |156216  |
-|graphicdesign_stackexchange_com           |151293  |
-|space_stackexchange_com                   |145861  |
-|cooking_stackexchange_com                 |144540  |
-|christianity_stackexchange_com            |143345  |
-|crypto_stackexchange_com                  |142806  |
-|history_stackexchange_com                 |139742  |
-|dsp_stackexchange_com                     |132953  |
-|arduino_stackexchange_com                 |127342  |
-|skeptics_stackexchange_com                |126208  |
-|german_stackexchange_com                  |126172  |
-|ethereum_stackexchange_com                |124285  |
-|webmasters_stackexchange_com              |121979  |
-|mechanics_stackexchange_com               |117115  |
-|biology_stackexchange_com                 |111068  |
-|hermeneutics_stackexchange_com            |110498  |
-|math_meta_stackexchange_com               |107215  |
-|hinduism_stackexchange_com                |105941  |
-|japanese_stackexchange_com                |105767  |
-|movies_stackexchange_com                  |104848  |
-|emacs_stackexchange_com                   |101860  |
-|rus_stackexchange_com                     |88289   |
-|bitcoin_stackexchange_com                 |85097   |
-|retrocomputing_stackexchange_com          |84187   |
-|astronomy_stackexchange_com               |83691   |
-|datascience_stackexchange_com             |81708   |
-|writers_stackexchange_com                 |77742   |
-|ja_stackoverflow_com                      |76832   |
-|quant_stackexchange_com                   |76514   |
-|webapps_stackexchange_com                 |76122   |
-|linguistics_stackexchange_com             |75442   |
-|french_stackexchange_com                  |74761   |
-|engineering_stackexchange_com             |72747   |
-|cstheory_stackexchange_com                |72719   |
-|networkengineering_stackexchange_com      |71731   |
-|gardening_stackexchange_com               |61817   |
-|vi_stackexchange_com                      |61579   |
-|softwarerecs_stackexchange_com            |59371   |
-|economics_stackexchange_com               |56240   |
-|boardgames_stackexchange_com              |56029   |
-|scicomp_stackexchange_com                 |54868   |
-|parenting_stackexchange_com               |53183   |
-|chinese_stackexchange_com                 |52729   |
-|spanish_stackexchange_com                 |48267   |
-|buddhism_stackexchange_com                |48018   |
-|islam_stackexchange_com                   |48003   |
-|ru_meta_stackoverflow_com                 |46950   |
-|chess_stackexchange_com                   |46032   |
-|outdoors_stackexchange_com                |45297   |
-|fitness_stackexchange_com                 |45043   |
-|matheducators_stackexchange_com           |44907   |
-|civicrm_stackexchange_com                 |44753   |
-|codegolf_meta_stackexchange_com           |41088   |
-|english_meta_stackexchange_com            |40831   |
-|sqa_stackexchange_com                     |39415   |
-|sitecore_stackexchange_com                |38882   |
-|quantumcomputing_stackexchange_com        |37146   |
-|interpersonal_stackexchange_com           |35269   |
-|sound_stackexchange_com                   |35198   |
-|anime_stackexchange_com                   |34834   |
-|craftcms_stackexchange_com                |34692   |
-|scifi_meta_stackexchange_com              |34546   |
-|gaming_meta_stackexchange_com             |33982   |
-|earthscience_stackexchange_com            |33143   |
-|physics_meta_stackexchange_com            |32076   |
-|meta_superuser_com                        |32011   |
-|meta_askubuntu_com                        |31959   |
-|expressionengine_stackexchange_com        |31753   |
-|russian_stackexchange_com                 |30937   |
-|latin_stackexchange_com                   |30813   |
-|expatriates_stackexchange_com             |30716   |
-|ai_stackexchange_com                      |30386   |
-|rpg_meta_stackexchange_com                |29275   |
-|reverseengineering_stackexchange_com      |29207   |
-|woodworking_stackexchange_com             |28112   |
-|robotics_stackexchange_com                |27929   |
-|pm_stackexchange_com                      |27886   |
-|cogsci_stackexchange_com                  |26851   |
-|pets_stackexchange_com                    |26812   |
-|health_stackexchange_com                  |26414   |
-|3dprinting_stackexchange_com              |25959   |
-|pt_meta_stackoverflow_com                 |25937   |
-|opensource_stackexchange_com              |25634   |
-|ham_stackexchange_com                     |25601   |
-|joomla_stackexchange_com                  |25528   |
-|tridion_stackexchange_com                 |24209   |
-|italian_stackexchange_com                 |23491   |
-|hsm_stackexchange_com                     |23466   |
-|homebrew_stackexchange_com                |23373   |
-|avp_stackexchange_com                     |22903   |
-|literature_stackexchange_com              |22148   |
-|meta_mathoverflow_net                     |21582   |
-|worldbuilding_meta_stackexchange_com      |21345   |
-|softwareengineering_meta_stackexchange_com|21161   |
-|tex_meta_stackexchange_com                |21133   |
-|bioinformatics_stackexchange_com          |20545   |
-|or_stackexchange_com                      |20218   |
-|lifehacks_stackexchange_com               |19945   |
-|materials_stackexchange_com               |19038   |
-|elementaryos_stackexchange_com            |18437   |
-|portuguese_stackexchange_com              |18239   |
-|workplace_meta_stackexchange_com          |17846   |
-|stats_meta_stackexchange_com              |17003   |
-|es_meta_stackoverflow_com                 |16969   |
-|meta_serverfault_com                      |16588   |
-|sports_stackexchange_com                  |15744   |
-|genealogy_stackexchange_com               |15457   |
-|electronics_meta_stackexchange_com        |15017   |
-|martialarts_stackexchange_com             |14666   |
-|computergraphics_stackexchange_com        |14514   |
-|hardwarerecs_stackexchange_com            |14279   |
-|bricks_stackexchange_com                  |14243   |
-|cseducators_stackexchange_com             |13771   |
-|patents_stackexchange_com                 |13239   |
-|tor_stackexchange_com                     |13221   |
-|codereview_meta_stackexchange_com         |12628   |
-|christianity_meta_stackexchange_com       |12446   |
-|opendata_stackexchange_com                |12236   |
-|devops_stackexchange_com                  |11401   |
-|sustainability_stackexchange_com          |11159   |
-|stackapps_com                             |11087   |
-|skeptics_meta_stackexchange_com           |10798   |
-|politics_meta_stackexchange_com           |10759   |
-|ell_meta_stackexchange_com                |10658   |
-|judaism_meta_stackexchange_com            |10517   |
-|academia_meta_stackexchange_com           |10328   |
-|unix_meta_stackexchange_com               |10180   |
-|crafts_stackexchange_com                  |10016   |
-|interpersonal_meta_stackexchange_com      |9915    |
-|substrate_stackexchange_com               |9760    |
-|solana_stackexchange_com                  |9536    |
-|monero_stackexchange_com                  |9405    |
-|langdev_stackexchange_com                 |9284    |
-|puzzling_meta_stackexchange_com           |9113    |
-|travel_meta_stackexchange_com             |8986    |
-|poker_stackexchange_com                   |8836    |
-|chemistry_meta_stackexchange_com          |8462    |
-|movies_meta_stackexchange_com             |8290    |
-|ukrainian_stackexchange_com               |8108    |
-|iot_stackexchange_com                     |8030    |
-|photo_meta_stackexchange_com              |7920    |
-|hinduism_meta_stackexchange_com           |7722    |
-|mathematica_meta_stackexchange_com        |7530    |
-|freelancing_stackexchange_com             |7514    |
-|philosophy_meta_stackexchange_com         |6462    |
-|apple_meta_stackexchange_com              |6439    |
-|mythology_stackexchange_com               |6302    |
-|proofassistants_stackexchange_com         |5914    |
-|cstheory_meta_stackexchange_com           |5911    |
-|musicfans_stackexchange_com               |5902    |
-|korean_stackexchange_com                  |5837    |
-|esperanto_stackexchange_com               |5816    |
-|cooking_meta_stackexchange_com            |5775    |
-|music_meta_stackexchange_com              |5706    |
-|security_meta_stackexchange_com           |5483    |
-|graphicdesign_meta_stackexchange_com      |5286    |
-|history_meta_stackexchange_com            |5242    |
-|cardano_stackexchange_com                 |5232    |
-|biology_meta_stackexchange_com            |5037    |
-|coffee_stackexchange_com                  |5022    |
-|writers_meta_stackexchange_com            |5018    |
-|hermeneutics_meta_stackexchange_com       |4910    |
-|wordpress_meta_stackexchange_com          |4855    |
-|gis_meta_stackexchange_com                |4851    |
-|languagelearning_stackexchange_com        |4827    |
-|cs_meta_stackexchange_com                 |4587    |
-|anime_meta_stackexchange_com              |4531    |
-|dba_meta_stackexchange_com                |4525    |
-|eosio_stackexchange_com                   |4459    |
-|gamedev_meta_stackexchange_com            |4417    |
-|space_meta_stackexchange_com              |4365    |
-|tezos_stackexchange_com                   |4347    |
-|blender_meta_stackexchange_com            |4317    |
-|japanese_meta_stackexchange_com           |4293    |
-|android_meta_stackexchange_com            |4129    |
-|beer_stackexchange_com                    |4019    |
-|ebooks_stackexchange_com                  |3998    |
-|boardgames_meta_stackexchange_com         |3950    |
-|aviation_meta_stackexchange_com           |3924    |
-|softwarerecs_meta_stackexchange_com       |3815    |
-|islam_meta_stackexchange_com              |3780    |
-|german_meta_stackexchange_com             |3770    |
-|health_meta_stackexchange_com             |3757    |
-|salesforce_meta_stackexchange_com         |3736    |
-|money_meta_stackexchange_com              |3633    |
-|drupal_meta_stackexchange_com             |3583    |
-|webapps_meta_stackexchange_com            |3553    |
-|ja_meta_stackoverflow_com                 |3543    |
-|literature_meta_stackexchange_com         |3528    |
-|ux_meta_stackexchange_com                 |3497    |
-|buddhism_meta_stackexchange_com           |3391    |
-|cogsci_meta_stackexchange_com             |3224    |
-|vegetarianism_stackexchange_com           |3187    |
-|spanish_meta_stackexchange_com            |3047    |
-|genealogy_meta_stackexchange_com          |3017    |
-|outdoors_meta_stackexchange_com           |2898    |
-|parenting_meta_stackexchange_com          |2878    |
-|conlang_stackexchange_com                 |2802    |
-|drones_stackexchange_com                  |2630    |
-|crypto_meta_stackexchange_com             |2583    |
-|law_meta_stackexchange_com                |2548    |
-|webmasters_meta_stackexchange_com         |2517    |
-|bicycles_meta_stackexchange_com           |2507    |
-|magento_meta_stackexchange_com            |2435    |
-|iota_stackexchange_com                    |2434    |
-|retrocomputing_meta_stackexchange_com     |2338    |
-|diy_meta_stackexchange_com                |2257    |
-|raspberrypi_meta_stackexchange_com        |2232    |
-|pets_meta_stackexchange_com               |2223    |
-|sharepoint_meta_stackexchange_com         |2093    |
-|economics_meta_stackexchange_com          |2024    |
-|linguistics_meta_stackexchange_com        |1996    |
-|stellar_stackexchange_com                 |1929    |
-|moderators_stackexchange_com              |1880    |
-|opensource_meta_stackexchange_com         |1869    |
-|sports_meta_stackexchange_com             |1859    |
-|mechanics_meta_stackexchange_com          |1747    |
-|networkengineering_meta_stackexchange_com |1683    |
-|earthscience_meta_stackexchange_com       |1638    |
-|bioacoustics_stackexchange_com            |1598    |
-|astronomy_meta_stackexchange_com          |1549    |
-|matheducators_meta_stackexchange_com      |1522    |
-|quantumcomputing_meta_stackexchange_com   |1508    |
-|french_meta_stackexchange_com             |1501    |
-|bitcoin_meta_stackexchange_com            |1475    |
-|fitness_meta_stackexchange_com            |1463    |
-|dsp_meta_stackexchange_com                |1439    |
-|pm_meta_stackexchange_com                 |1372    |
-|lifehacks_meta_stackexchange_com          |1366    |
-|hardwarerecs_meta_stackexchange_com       |1321    |
-|chinese_meta_stackexchange_com            |1314    |
-|vi_meta_stackexchange_com                 |1275    |
-|arduino_meta_stackexchange_com            |1254    |
-|italian_meta_stackexchange_com            |1241    |
-|latin_meta_stackexchange_com              |1225    |
-|chess_meta_stackexchange_com              |1222    |
-|musicfans_meta_stackexchange_com          |1220    |
-|gardening_meta_stackexchange_com          |1163    |
-|ai_meta_stackexchange_com                 |1049    |
-|martialarts_meta_stackexchange_com        |1042    |
-|engineering_meta_stackexchange_com        |1042    |
-|rus_meta_stackexchange_com                |1006    |
-|crafts_meta_stackexchange_com             |1004    |
-|emacs_meta_stackexchange_com              |969     |
-|langdev_meta_stackexchange_com            |944     |
-|portuguese_meta_stackexchange_com         |903     |
-|scicomp_meta_stackexchange_com            |896     |
-|cseducators_meta_stackexchange_com        |875     |
-|quant_meta_stackexchange_com              |867     |
-|russian_meta_stackexchange_com            |864     |
-|3dprinting_meta_stackexchange_com         |842     |
-|languagelearning_meta_stackexchange_com   |831     |
-|bricks_meta_stackexchange_com             |830     |
-|ham_meta_stackexchange_com                |812     |
-|materials_meta_stackexchange_com          |787     |
-|mythology_meta_stackexchange_com          |780     |
-|sound_meta_stackexchange_com              |775     |
-|ukrainian_meta_stackexchange_com          |727     |
-|ethereum_meta_stackexchange_com           |719     |
-|genai_stackexchange_com                   |713     |
-|datascience_meta_stackexchange_com        |663     |
-|moderators_meta_stackexchange_com         |629     |
-|avp_meta_stackexchange_com                |621     |
-|joomla_meta_stackexchange_com             |610     |
-|woodworking_meta_stackexchange_com        |610     |
-|expatriates_meta_stackexchange_com        |609     |
-|sqa_meta_stackexchange_com                |601     |
-|homebrew_meta_stackexchange_com           |581     |
-|reverseengineering_meta_stackexchange_com |580     |
-|tridion_meta_stackexchange_com            |580     |
-|bioinformatics_meta_stackexchange_com     |560     |
-|vegetarianism_meta_stackexchange_com      |547     |
-|devops_meta_stackexchange_com             |543     |
-|opendata_meta_stackexchange_com           |540     |
-|hsm_meta_stackexchange_com                |531     |
-|robotics_meta_stackexchange_com           |519     |
-|or_meta_stackexchange_com                 |502     |
-|freelancing_meta_stackexchange_com        |449     |
-|iot_meta_stackexchange_com                |447     |
-|ebooks_meta_stackexchange_com             |441     |
-|sitecore_meta_stackexchange_com           |431     |
-|sustainability_meta_stackexchange_com     |421     |
-|computergraphics_meta_stackexchange_com   |419     |
-|expressionengine_meta_stackexchange_com   |414     |
-|poker_meta_stackexchange_com              |409     |
-|elementaryos_meta_stackexchange_com       |401     |
-|patents_meta_stackexchange_com            |381     |
-|korean_meta_stackexchange_com             |379     |
-|tor_meta_stackexchange_com                |372     |
-|beer_meta_stackexchange_com               |367     |
-|coffee_meta_stackexchange_com             |359     |
-|genai_meta_stackexchange_com              |359     |
-|bioacoustics_meta_stackexchange_com       |342     |
-|esperanto_meta_stackexchange_com          |287     |
-|craftcms_meta_stackexchange_com           |267     |
-|proofassistants_meta_stackexchange_com    |266     |
-|conlang_meta_stackexchange_com            |246     |
-|drones_meta_stackexchange_com             |229     |
-|substrate_meta_stackexchange_com          |213     |
-|monero_meta_stackexchange_com             |207     |
-|cardano_meta_stackexchange_com            |149     |
-|civicrm_meta_stackexchange_com            |121     |
-|tezos_meta_stackexchange_com              |79      |
-|iota_meta_stackexchange_com               |75      |
-|eosio_meta_stackexchange_com              |52      |
-|solana_meta_stackexchange_com             |44      |
-|stellar_meta_stackexchange_com            |25      |
+    ),
+    valid_answers AS  (
+        SELECT
+            posts.Body,
+            posts.Id,
+            posts.CommentCount,
+            posts.ContentLicense,
+            posts.CreationDate,
+            posts.LastActivityDate,
+            posts.LastEditDate,
+            posts.LastEditorDisplayName,
+            posts.LastEditorUserId,
+            posts.OwnerUserId,
+            posts.OwnerDisplayName,
+            posts.Score,
+            posts.ViewCount,
+            posts.Forum
+        FROM "lucas"."se_posts_20240930" as posts
+        WHERE posttypeid = 'Answer'
+    ),
+    joined_questions_answers AS (
+        SELECT
+            valid_answers.Body AS answer_body,
+            valid_answers.Id AS answer_id,
+            valid_answers.CommentCount AS answer_comment_count,
+            valid_answers.ContentLicense AS answer_content_license,
+            valid_answers.CreationDate AS answer_creation_date,
+            valid_answers.LastActivityDate AS answer_last_activity_date,
+            valid_answers.LastEditDate AS answer_last_edit_date,
+            valid_answers.LastEditorDisplayName AS answer_last_editor_display_name,
+            valid_answers.LastEditorUserId AS answer_last_editor_user_id,
+            valid_answers.OwnerUserId AS answer_owner_user_id,
+            valid_answers.OwnerDisplayName AS answer_owner_display_name,
+            valid_answers.Score AS answer_score,
+            valid_answers.ViewCount AS answer_view_count,
+            valid_answers.Forum AS answer_forum,
+            valid_questions.Title AS question_title,
+            valid_questions.Body AS question_body,
+            valid_questions.Id AS question_id,
+            valid_questions.CommentCount AS question_comment_count,
+            valid_questions.ContentLicense AS question_content_license,
+            valid_questions.CreationDate AS question_creation_date,
+            valid_questions.LastActivityDate AS question_last_activity_date,
+            valid_questions.LastEditDate AS question_last_edit_date,
+            valid_questions.LastEditorDisplayName AS question_last_editor_display_name,
+            valid_questions.LastEditorUserId AS question_last_editor_user_id,
+            valid_questions.OwnerUserId AS question_owner_user_id,
+            valid_questions.OwnerDisplayName AS question_owner_display_name,
+            valid_questions.Score AS question_score,
+            valid_questions.Tags AS question_tags,
+            valid_questions.ViewCount AS question_view_count,
+            valid_questions.Forum AS question_forum,
+            CAST (
+                ARRAY_MAX(
+                    TRANSFORM(
+                        regexp_extract_all(valid_answers.body, '\n+'),
+                        x -> LENGTH(x)
+                    )
+                    || ARRAY [1]
+                ) AS INTEGER
+            ) as question_max_newline,
+            CAST (
+                ARRAY_MAX(
+                    TRANSFORM(
+                        regexp_extract_all(valid_questions.body, '\n+'),
+                        x -> LENGTH(x)
+                    )
+                    || ARRAY [1]
+                ) AS INTEGER
+            ) as answer_max_newline
+        FROM valid_answers
+        INNER JOIN valid_questions
+            ON valid_questions.forum = valid_answers.forum
+            AND valid_questions.acceptedanswerid = valid_answers.id
+    )
+    SELECT
+        (
+            question_forum
+            || '-'
+            || CAST(question_id AS VARCHAR)
+            || '-'
+            || CAST(answer_id AS VARCHAR)
+        ) as id,
+        (
+            TRIM(question_title)
+            || ARRAY_JOIN(
+                REPEAT(
+                    CHR(10),
+                    question_max_newline + 1
+                ),
+                ''
+            )
+            || TRIM(question_body)
+            || ARRAY_JOIN(
+                REPEAT(
+                    CHR(10),
+                    IF(
+                        question_max_newline > answer_max_newline,
+                        question_max_newline + 1,
+                        answer_max_newline + 1
+                    )
+                ),
+                ''
+            )
+            || TRIM(answer_body)
+        ) as text,
+        question_creation_date AS created,
+        answer_last_activity_date AS added,
+        'stackexchange' AS source,
+        '20240930' as version,
+        CAST(
+            ROW(
+                question_forum,
+                question_id,
+                answer_id,
+                question_owner_user_id,
+                answer_owner_user_id,
+                question_last_editor_user_id,
+                answer_last_editor_user_id,
+                question_last_edit_date,
+                answer_last_edit_date,
+                question_last_activity_date,
+                answer_last_activity_date,
+                question_content_license,
+                answer_content_license,
+                question_score,
+                answer_score,
+                question_view_count,
+                answer_view_count,
+                question_comment_count,
+                answer_comment_count
+            ) AS
+            ROW(
+                forum VARCHAR,
+                question_id BIGINT,
+                answer_id BIGINT,
+                question_owner_user_id BIGINT,
+                answer_owner_user_id BIGINT,
+                question_last_editor_user_id BIGINT,
+                answer_last_editor_user_id BIGINT,
+                question_last_edit_date VARCHAR,
+                answer_last_edit_date VARCHAR,
+                question_last_activity_date VARCHAR,
+                answer_last_activity_date VARCHAR,
+                question_content_license VARCHAR,
+                answer_content_license VARCHAR,
+                question_score BIGINT,
+                answer_score BIGINT,
+                question_view_count BIGINT,
+                answer_view_count BIGINT,
+                question_comment_count BIGINT,
+                answer_comment_count BIGINT
+            )
+        ) AS metadata
+    FROM joined_questions_answers
+)
+TO 's3://ai2-llm/pretraining-data/sources/stackexchange/v0/documents/20240930/'
+WITH (
+    format='JSON',
+    compression='ZSTD'
+)
+```
