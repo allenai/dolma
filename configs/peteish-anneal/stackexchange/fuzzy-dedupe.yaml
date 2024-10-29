@@ -17,6 +17,6 @@ bloom_filter:
   read_only: false
   # set to of words
   estimated_doc_count: 10_000_000_000
-  desired_false_positive_rate: 0.001
+  desired_false_positive_rate: 0.01
 
 processes: 16
