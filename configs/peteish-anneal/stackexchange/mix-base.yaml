@@ -1,0 +1,26 @@
+streams:
+  - name: stackexchange
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/stackexchange/v0/documents/20240930/*zst
+    attributes:
+      - dedupe_para_ngrams_13_1
+    output:
+      max_size_in_bytes: 1_073_741_824
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/stackexchange/v1_dedupe/documents
+    filter:
+      include:
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3
+      exclude:
+        - >-
+          .metadata.question_score < 3
+        - >-
+          .metadata.answer_score < 5
+      syntax: jq
+
+work_dir:
+  input: ${oc.env:HOME}/ai2-llm/work_dir/stackexchange/v1_dedupe_para_ngrams_13_1/input
+  output: ${oc.env:HOME}/ai2-llm/work_dir/stackexchange/v1_dedupe_para_ngrams_13_1/output
+
+processes: 188
