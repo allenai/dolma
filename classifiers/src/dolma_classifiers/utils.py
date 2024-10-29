@@ -31,6 +31,9 @@ def get_local_gpu_rank() -> int:
 def setup() -> tuple[int, int]:
     if (rank := os.environ.get("RANK")) and (world_size := os.environ.get("WORLD_SIZE")):
         dist.init_process_group("nccl", rank=int(rank), world_size=int(world_size))
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(get_local_gpu_rank())
+
     return get_rank_and_world_size()
 
 

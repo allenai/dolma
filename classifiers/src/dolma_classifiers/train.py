@@ -1,12 +1,12 @@
 import multiprocessing
 from dataclasses import dataclass
-from typing import Callable, Generator, NamedTuple
+from functools import partial
+from typing import Callable
 from urllib.parse import urlparse
 
 import fsspec
 import jq
 import smart_open
-import torch
 from msgspec.json import Decoder
 from torch.utils.data import Dataset
 from tqdm import tqdm
@@ -18,14 +18,17 @@ class Document:
     label: str
 
 
-def read_file(path: str, label: str | None = None, selector: str | None = None) -> list[Document]:
+def _label_selector_fn(row: dict, selector: Callable | None, label: str | None) -> str:
     if selector is not None:
-        compiled_selector = jq.compile(selector)
-        label_fn = lambda row: str(compiled_selector.input(row).first())
+        return str(selector(row).first())
     elif label is not None:
-        label_fn = lambda row: str(label)
+        return str(label)
     else:
         raise ValueError("Either `label` or `selector` must be provided")
+
+
+def read_file(path: str, label: str | None = None, selector: str | None = None) -> list[Document]:
+    label_fn = partial(_label_selector_fn, label=label, selector=(jq.compile(selector) if selector else None))
 
     decoder = Decoder()
     documents = []
@@ -45,10 +48,12 @@ class DataConfig:
     label: str | None = None
     selector: str | None = None
 
-    def expand(self, fs: fsspec.AbstractFileSystem | None = None) -> list["DataConfig"]:
-        fs = fs or fsspec.get_filesystem_class(urlparse(self.path).scheme)()
-        paths = [str(p) for p in fs.glob(self.path)] if "*" in self.path else [self.path]
-        return [DataConfig(path=path, label=self.label, selector=self.selector) for path in paths]
+    @staticmethod
+    def expand(data_config: "DataConfig", fs: fsspec.AbstractFileSystem | None = None) -> list["DataConfig"]:
+        fs = fs or fsspec.get_filesystem_class(urlparse(data_config.path).scheme)()
+        assert fs is not None, f"Could not determine filesystem for {data_config.path}"
+        paths = [str(p) for p in fs.glob(data_config.path)] if "*" in data_config.path else [data_config.path]
+        return [DataConfig(path=path, label=data_config.label, selector=data_config.selector) for path in paths]
 
 
 class ClassifierDataset(Dataset):
@@ -58,19 +63,22 @@ class ClassifierDataset(Dataset):
         workers: int = 1,
     ):
         with multiprocessing.Pool(workers) as pool:
-            expanded_configs = list(
-                tqdm(
-                    pool.imap_unordered(lambda c: c.expand(), configs),
+            expanded_configs: list[DataConfig] = [
+                data_config
+                for data_configs in tqdm(
+                    pool.imap_unordered(DataConfig.expand, configs),
                     total=len(configs),
                     desc="Expanding configs",
                 )
-            )
+                for data_config in data_configs
+            ]
 
         with multiprocessing.Pool(workers) as pool:
             self.documents = list(
                 tqdm(
                     pool.imap_unordered(
-                        lambda c: read_file(path=c.path, label=c.label, selector=c.selector), expanded_configs
+                        lambda c: read_file(path=c.path, label=c.label, selector=c.selector),
+                        expanded_configs
                     ),
                     total=len(expanded_configs),
                     desc="Reading files",

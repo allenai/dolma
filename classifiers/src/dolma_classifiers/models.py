@@ -1,4 +1,3 @@
-from functools import partial
 from typing import NamedTuple, Type
 
 import torch
@@ -16,7 +15,7 @@ from transformers import (
 from transformers.modeling_outputs import SequenceClassifierOutput
 
 from .loggers import get_logger
-from .utils import get_local_gpu_rank, sanitize_model_name
+from .utils import sanitize_model_name
 
 
 class Prediction(NamedTuple):
@@ -43,12 +42,14 @@ class BaseQualityClassifier:
             compile=compile,
             trust_remote_code=trust_remote_code,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)  # pyright: ignore
 
         if len(self.model.config.id2label) > 1:
-            label_name_fn = lambda label: f"{sanitize_model_name(model_name)}_{sanitize_model_name(label)}"
+            def label_name_fn(label: str):
+                return f"{sanitize_model_name(model_name)}_{sanitize_model_name(label)}"
         else:
-            label_name_fn = lambda label: sanitize_model_name(model_name)
+            def label_name_fn(label: str):
+                return sanitize_model_name(model_name)
 
         self.labels_map = {
             id_: label_name_fn(label)
@@ -135,7 +136,6 @@ class QualityModel(nn.Module, PyTorchModelHubMixin):
         dropped = self.dropout(features)
         outputs = self.fc(dropped)
         return SequenceClassifierOutput(logits=outputs[:, 0, :])
-
 
 
 @Registry.add("nvidia/quality-classifier-deberta")

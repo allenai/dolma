@@ -1,5 +1,4 @@
 import argparse
-import multiprocessing as mp
 import time
 from collections import defaultdict
 from functools import partial
@@ -7,6 +6,7 @@ from itertools import zip_longest
 from multiprocessing import Event, Process
 from queue import Empty
 from queue import Queue as QueueType
+from threading import Event as EventType
 from typing import Any, Generator, NamedTuple
 from urllib.parse import urlparse
 
@@ -25,7 +25,7 @@ from torch.utils.data import (  # pyright: ignore
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 from .loggers import ProgressLogger, WandbLogger, get_logger
-from .models import Prediction, Registry
+from .models import Registry
 from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup
 
 
@@ -99,13 +99,11 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
             self.output_paths_queue.put(OutputPath(source=path, count=count))
 
 
-
 def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
-    max_lengths = [len(b.encoding['input_ids'][0]) for b in batch]  # pyright: ignore
     padded_encodings = {
         key: pad_sequence(
             # assuming first dimension is batch size
-            [b.encoding[key][-1,:] for b in batch],   # pyright: ignore
+            [b.encoding[key][-1, :] for b in batch],   # pyright: ignore
             batch_first=True,
             padding_value=pad_token_id,
         )
@@ -119,14 +117,13 @@ def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
     )
 
 
-
 class AttributeRow(NamedTuple):
     sources: list[str]
     attributes: list[dict[str, Any]]
 
 
 def writer_worker(
-    error_event: Event,
+    error_event: EventType,
     scores_queue: QueueType[AttributeRow | None],
     output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
@@ -218,8 +215,6 @@ def process_documents(
     suffix: str | None = None
 ):
     """Processes a batch of files using distributed processing."""
-    console_logger = get_logger("process_documents")
-
 
     classifier = Registry.get(
         model_name=model_name,
@@ -231,9 +226,6 @@ def process_documents(
     # get filesystem for first source path (we assume is the same for all source paths); we will use this
     # to check if destination path exists (file already processed)
     fs = fsspec.get_filesystem_class(urlparse(source_paths[0]).scheme)()
-
-    # this encoder will be used to write the attributes to the destination file
-    encoder = msgspec.json.Encoder()
 
     source_destination_mapping = {
         source_path: destination_path
