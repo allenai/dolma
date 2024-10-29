@@ -11,7 +11,7 @@ streams:
       include:
         - >-
           (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
-
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
       exclude:
         - >-
           .metadata.question_score < 3
