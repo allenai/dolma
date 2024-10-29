@@ -16,7 +16,8 @@ dependencies = [
     "torch",
     "transformers",
     "wandb",
-    "jq"
+    "jq",
+    "grequests"
 ]
 
 [project.urls]

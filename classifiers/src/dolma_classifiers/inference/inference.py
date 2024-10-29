@@ -443,8 +443,3 @@ def parse_args() -> argparse.Namespace:
         WandbLogger.name = opts.wandb_name or WandbLogger.name or sanitize_model_name(opts.model_name, opts.__dict__)
 
     return opts
-
-
-if __name__ == "__main__":
-    args = parse_args()
-    main(args)
