@@ -1,16 +1,17 @@
 #! /bin/bash
 
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100*/*.jsonl.zstd'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/s2/v3-fos/documents/*/*/*/*.gz'
 
-NUM_NODES=2
-MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
+
+NUM_NODES=1
+MODEL_NAME="nvidia/quality-classifier-deberta"
 CLUSTER="ai2/jupiter*"
-BATCH_SIZE=1024
-PRIORITY="high"
+BATCH_SIZE=512
+PRIORITY="urgent"
 
 # Generate a hash for the run name by combining model name and documents
 RUN_HASH=$(echo -n "${MODEL_NAME}${DOCUMENTS}" | md5sum | awk '{print $1}')
-RUN_NAME="fineweb_classifier_${RUN_HASH:0:8}"
+RUN_NAME="nvidia_deberta_${RUN_HASH:0:8}"
 
 # Set the run name as an environment variable
 export BEAKER_EXPERIMENT_NAME="${RUN_NAME}"
@@ -42,4 +43,4 @@ gantry run \
     --shared-memory 10GiB \
     --install "pip install -e classifiers/" \
     --yes \
-    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=3600' -m dolma_classifiers.inference --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --use-wandb --wandb-project 'dolma-classifiers' --wandb-entity ai2-llm --model-name ${MODEL_NAME} --num-workers 8 --prefetch-factor 8"
+    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun --nnodes "${NUM_NODES}:${NUM_NODES}" --nproc-per-node 8 --rdzv_id 12347 --rdzv_backend static --rdzv_endpoint "\${BEAKER_LEADER_REPLICA_HOSTNAME}:29400" --node_rank "\${BEAKER_REPLICA_RANK}" --rdzv_conf 'read_timeout=3600' -m dolma_classifiers.inference --source-prefix ${DOCUMENTS} --batch-size ${BATCH_SIZE} --use-wandb --wandb-project 'dolma-classifiers' --wandb-entity ai2-llm --model-name ${MODEL_NAME} --num-workers 4 --model-compile --max-length 1024"

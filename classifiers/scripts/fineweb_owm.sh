@@ -1,12 +1,12 @@
 #! /bin/bash
 
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100*/*.jsonl.zstd'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0_decontaminated/documents/*/*/*.gz'
 
-NUM_NODES=2
+NUM_NODES=1
 MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
 CLUSTER="ai2/jupiter*"
 BATCH_SIZE=1024
-PRIORITY="high"
+PRIORITY="urgent"
 
 # Generate a hash for the run name by combining model name and documents
 RUN_HASH=$(echo -n "${MODEL_NAME}${DOCUMENTS}" | md5sum | awk '{print $1}')

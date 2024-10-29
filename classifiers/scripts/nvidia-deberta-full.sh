@@ -1,6 +1,6 @@
 #! /bin/bash
 
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100*/*.jsonl.zstd'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/full/*.jsonl.zstd'
 
 
 # DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b/*_dclm_shard_0000*.jsonl.zstd'
@@ -12,12 +12,12 @@ DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100*/*.jsonl.
 # DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b-extras/*_dclm_shard_0002*.jsonl.zstd'
 
 
-NUM_NODES=4
+NUM_NODES=8
 # NUM_NODES=1
 MODEL_NAME="nvidia/quality-classifier-deberta"
 CLUSTER="ai2/jupiter*"
 BATCH_SIZE=512
-PRIORITY="high"
+PRIORITY="urgent"
 # PRIORITY="urgent"
 
 # Generate a hash for the run name by combining model name and documents
