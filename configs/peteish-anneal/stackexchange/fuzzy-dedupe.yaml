@@ -1,0 +1,22 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/stackexchange/v0/documents/20240930/*zst
+
+dedupe:
+  name: dedupe_para_ngrams_13_1
+  paragraphs:
+    attribute_name: dedupe_para_ngrams_13_1
+    by_ngram:
+      ngram_length: 13
+      stride: 1
+      overlap_threshold: 0.5
+      skip_short_paragraphs: true
+  skip_empty: true
+
+bloom_filter:
+  file: ${oc.env:HOME}/stackexchange.bin
+  read_only: false
+  # set to of words
+  estimated_doc_count: 10_000_000_000
+  desired_false_positive_rate: 0.001
+
+processes: 16

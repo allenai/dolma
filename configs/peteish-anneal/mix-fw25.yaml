@@ -1,0 +1,47 @@
+# HuggingFaceFW_fineweb_edu_classifier/score
+# ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━┓
+# ┃ value         ┃ dist     ┃ count       ┃
+# ┡━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━┩
+# │ [-1.0, 0.5)   │ 0.0556   │ 6,120,032   │
+# │ [0.5, 0.8)    │ 0.1115   │ 12,283,459  │
+# │ [0.8, 1.0)    │ 0.1117   │ 12,305,723  │
+# │ [1.0, 1.2)    │ 0.1123   │ 12,367,897  │
+# │ [1.2, 1.4)    │ 0.1110   │ 12,220,008  │
+# │ [1.4, 1.7)    │ 0.1098   │ 12,094,336  │
+# │ [1.7, 2.0)    │ 0.1106   │ 12,180,628  │
+# │ [2.0, 2.4)    │ 0.1109   │ 12,216,375  │
+# │ [2.4, 3.1)    │ 0.1113   │ 12,262,622  │
+# │ [3.1, 5.4]    │ 0.0553   │ 6,088,265   │
+# └───────────────┴──────────┴─────────────┘
+
+streams:
+  - name: dclm
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/full/*.zstd
+    attributes:
+      - random_number_v1
+      - HuggingFaceFW_fineweb_edu_classifier
+    output:
+      max_size_in_bytes: 3_814_697_265
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/dclm/v1_fwEdu25/documents/full
+      discard_fields:
+        - attributes
+
+    compression:
+      input: zst
+      output: zst
+
+    filter:
+      include:
+        # Remove repetitions
+        - >-
+          (.attributes.HuggingFaceFW_fineweb_edu_classifier[0][-1] * 0.8) +
+          (.attributes.random_number_v1__random_number_v1__random[0][-1] * 5 * 0.2) >= 2.0
+      syntax: jq
+    span_replacement: []
+
+work_dir:
+  input: ${oc.env:HOME}/ai2-llm/work_dir/dclm/v1_fwEdu25/input
+  output: ${oc.env:HOME}/ai2-llm/work_dir/dclm/v1_fwEdu25/output
+
+processes: 188
