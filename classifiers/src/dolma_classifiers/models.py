@@ -56,7 +56,7 @@ class BaseQualityClassifier:
             # not sure why this doesn't work out of the box, but in case there's an error we can load the original
             # base model from the config file
             config = json.load(open(os.path.join(model_path, "config.json")))
-            self._tokenizer = AutoTokenizer.from_pretrained(config["_name_or_path"])
+            self.tokenizer = AutoTokenizer.from_pretrained(config["_name_or_path"])
 
         self._init_labels_map(model_name)
 
