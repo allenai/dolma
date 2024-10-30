@@ -1,6 +1,11 @@
+import json
+import os
+import tempfile
 from functools import partial
 from typing import NamedTuple, Type
+from urllib.parse import urlparse
 
+import boto3
 import torch
 from huggingface_hub import PyTorchModelHubMixin
 from torch import nn
@@ -35,21 +40,31 @@ class BaseQualityClassifier:
         dtype: str,
         compile: bool = False,
         trust_remote_code: bool = False,
+        model_path: str = None,
     ):
+        model_path = model_path or model_name
         self.model = self._make_model(
-            model_name=model_name,
+            model_name=model_path,
             device=device,
             dtype=dtype,
             compile=compile,
             trust_remote_code=trust_remote_code,
         )
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(model_path)
+        except OSError:
+            # not sure why this doesn't work out of the box, but in case there's an error we can load the original
+            # base model from the config file
+            config = json.load(open(os.path.join(model_path, "config.json")))
+            self._tokenizer = AutoTokenizer.from_pretrained(config["_name_or_path"])
 
+        self._init_labels_map(model_name)
+
+    def _init_labels_map(self, model_name: str):
         if len(self.model.config.id2label) > 1:
             label_name_fn = lambda label: f"{sanitize_model_name(model_name)}_{sanitize_model_name(label)}"
         else:
             label_name_fn = lambda label: sanitize_model_name(model_name)
-
         self.labels_map = {
             id_: label_name_fn(label)
             for id_, label in self.model.config.id2label.items()
@@ -161,3 +176,49 @@ class DebertaQualityClassifier(BaseQualityClassifier):
         model.config = AutoConfig.from_pretrained(model_name)  # pyright: ignore
 
         return model  # pyright: ignore
+
+
+@Registry.add("regression-synthetic-20epochs-bs640-lf1-lre35")
+class RegSyntheticE20BS640LF1LRE35(BaseQualityClassifier):
+    pass
+
+class LocalQualityClassifier(BaseQualityClassifier):
+    model_local_or_remote_path: str
+    _logger = get_logger("LocalQualityClassifier")
+
+    def __init__(
+        self,
+        model_name: str,
+        device: str,
+        dtype: str,
+        compile: bool = False,
+        trust_remote_code: bool = False,
+    ):
+        model_path = self.model_local_or_remote_path or model_name
+        parsed = urlparse(str(self.model_local_or_remote_path))
+        if parsed.scheme == "s3":
+            s3 = boto3.client("s3")
+
+            model_path = tempfile.mkdtemp()
+            for file in ["config.json", "model.safetensors"]:
+                s3.download_file(parsed.netloc, os.path.join(parsed.path.lstrip("/"), file), os.path.join(model_path, file))
+                self._logger.info(f"Downloaded {file} to {model_path}")
+
+        super().__init__(
+            model_name=model_name,
+            device=device,
+            dtype=dtype,
+            compile=compile,
+            trust_remote_code=trust_remote_code,
+            model_path=model_path,
+        )
+
+@Registry.add("pos_eli5+oh_neg_dclm-refinedweb_steps_2000-lr3e4")
+class PosELI5OHNegDCLMRefinedWebSteps2000LR3E4(LocalQualityClassifier):
+    model_local_or_remote_path = "s3://ai2-benb/qc/pos_eli5+oh_neg_dclm-refinedweb_steps_2000-lr3e4/2024-10-27_19-40-22/checkpoint-2000/"
+    pass
+
+@Registry.add("regression-synthetic-20epochs-bs640-lf1-lre35")
+class RegSynthetic20EpochsBS640LF1LRE35(LocalQualityClassifier):
+    model_local_or_remote_path = "s3://ai2-benb/qc/regression-synthetic-20epochs-bs640-lf1-lre35/2024-10-26_22-42-01/checkpoint-4750/"
+    pass
