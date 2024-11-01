@@ -369,6 +369,7 @@ def main(args: argparse.Namespace) -> None:
 
     assert len(source_paths) > 0, f"No files found in {args.source_prefix}"
 
+    console_logger.info(f"source paths found: {len(source_paths)}")
     if all("/documents/" in p for p in source_paths):
         source_prefix = longest_common_sequence([p.split("/documents/", 1)[0] for p in source_paths])
         source_prefix = f"{source_prefix}/documents/"
@@ -378,6 +379,7 @@ def main(args: argparse.Namespace) -> None:
     destination_paths = [
         f'{args.output_prefix.rstrip("/")}/{p.replace(source_prefix, "").lstrip("/")}' for p in source_paths
     ]
+    console_logger.info(f"destiantion paths: {len(destination_paths)}")
 
     console_logger.info(f"Processing up to {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
 
