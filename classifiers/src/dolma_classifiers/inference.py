@@ -240,6 +240,8 @@ def process_documents(
         dtype='float16',
         compile=model_compile,
     )
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(get_local_gpu_rank())
+
 
     if not text_selector:
         text_selector = classifier.input_template
@@ -298,7 +300,6 @@ def process_documents(
             )
 
             counts = defaultdict(int)
-            console_logger.info(f"Device is : {classifier.device}")
             tracebacks = []
             for batch in data_loader:
                 for s in batch.sources:
@@ -314,11 +315,7 @@ def process_documents(
                     raise RuntimeError("Writer process encountered an error")
 
                 inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
-                console_logger.info(f"Going to score!")
-                console_logger.info(f"Device is :{classifier.device}")
-                console_logger.info(f"Model device is :{classifier.model.device}")
                 scores = classifier.score(**inputs)
-                console_logger.info(f"Generated scores")
                 attributes = [
                     {"id": doc_id, "attributes": {pred.label: [[0, doc_length, pred.score]] for pred in doc_preds}}
                     for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.lengths)
