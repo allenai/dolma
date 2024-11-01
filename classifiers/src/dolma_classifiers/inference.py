@@ -10,7 +10,7 @@ from typing import Any, Generator, NamedTuple
 from urllib.parse import urlparse
 import traceback
 from queue import Empty
-
+import os 
 import fsspec
 import jq
 import msgspec
