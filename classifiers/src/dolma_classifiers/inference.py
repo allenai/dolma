@@ -241,6 +241,8 @@ def process_documents(
         compile=model_compile,
     )
 
+    if len(source_paths) <= 0 :
+        return
 
     if not text_selector:
         text_selector = classifier.input_template
