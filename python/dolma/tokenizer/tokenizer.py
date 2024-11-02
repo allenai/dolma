@@ -367,6 +367,7 @@ def tokenize_file(
     tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
     dtype = deepcopy(tokenizer.dtype)
     decoder = msgspec.json.Decoder(InputSpec)
+    print(f"Loading! {path}")
     with smart_open.open(path, mode="rt") as input_stream:
         for i, line in enumerate(input_stream, start=1):
             try:

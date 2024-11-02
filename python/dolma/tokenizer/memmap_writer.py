@@ -6,7 +6,9 @@ from csv import writer
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import List, Optional, TextIO
+from urllib.parse import urlparse
 
+import boto3
 import numpy as np
 import smart_open
 
@@ -190,13 +192,21 @@ class MemmapWriter:
 
             if self.is_remote_path:
                 with ExitStack() as stack:
-                    f = stack.enter_context(smart_open.open(self._local_memmap_path, "rb"))
-                    g = stack.enter_context(smart_open.open(self.memmap_path, mode="wb"))
-                    g.write(f.read())
+                    parsed = urlparse(self.memmap_path)
+                    s3 = boto3.client("s3")
+                    s3.upload_file(str(self._local_memmap_path), parsed.netloc, parsed.path.lstrip("/"))
+                    print(f"Uploaded memmap file to {self.memmap_path}")
 
-                    f = stack.enter_context(smart_open.open(self._local_metadata_path, "rb"))
-                    g = stack.enter_context(smart_open.open(self.metadata_path, mode="wb"))
-                    g.write(f.read())
+                    parsed = urlparse(self.metadata_path)
+                    s3.upload_file(str(self._local_metadata_path), parsed.netloc, parsed.path.lstrip("/"))
+                    print(f"Uploaded metadata file to {self.metadata_path}")
+                    # f = stack.enter_context(smart_open.open(self._local_memmap_path, "rb"))
+                    # g = stack.enter_context(smart_open.open(self.memmap_path, mode="wb"))
+                    # g.write(f.read())
+                    #
+                    # f = stack.enter_context(smart_open.open(self._local_metadata_path, "rb"))
+                    # g = stack.enter_context(smart_open.open(self.metadata_path, mode="wb"))
+                    # g.write(f.read())
 
                 log.info(f"Written memmap file to {self.memmap_path}")
         finally:
