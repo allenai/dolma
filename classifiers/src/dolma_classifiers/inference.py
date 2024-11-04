@@ -435,11 +435,11 @@ def main(args: argparse.Namespace) -> None:
     actual_chunk_size = math.ceil(len(data) / n_chunks)
 
     source_chunks = [
-        partition_source_paths[i:i + actual_chunk_size],
+        partition_source_paths[i:i + actual_chunk_size]
         for i in range(0, len(partition_source_paths), actual_chunk_size)
     ]
     destination_chunks = [
-        partition_destination_paths[i:i + actual_chunk_size],
+        partition_destination_paths[i:i + actual_chunk_size]
         for i in range(0, len(partition_destination_paths), actual_chunk_size)
     ]
     
