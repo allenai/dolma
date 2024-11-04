@@ -92,7 +92,9 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                         try:
                             doc = decoder.decode(line)
                             text = format_text(doc)
+                            self.logger.info(text)
                             id_ = str(id_selector.input(doc).first())
+                            self.logger.info(f"Read line from {path}")
                             encoding = self.tokenizer(
                                 text,
                                 return_tensors="pt",
@@ -184,7 +186,6 @@ def writer_worker(
                 counts[source] += len(attributes)
                 total_count += len(attributes)
 
-            console_logger.info(f"Total count: {total_count}")
             if total_count > log_every:
                 # we at most close one file per log_every documents
                 try:
@@ -192,6 +193,8 @@ def writer_worker(
                     path = output_paths_queue.get_nowait()
                 except Empty:
                     path = None
+                    console_logger.info(f"No paths to close.")
+
 
                 if path is not None and path.count == counts[path.source]:
                     # I've finished processing this source; close the file
@@ -200,6 +203,9 @@ def writer_worker(
                     console_logger.info(f"Closed {source_destination_mapping[path.source]}")
                     progress_logger.increment(files=1)
                 elif path is not None and counts[path.source] > path.count:
+                    console_logger.info(
+                        f"More documents ({counts[path.source]}) than expected ({path.count}) " +
+                        f"for source {path.source}. This should not happen!")
                     raise RuntimeError(
                         f"More documents ({counts[path.source]}) than expected ({path.count}) " +
                         f"for source {path.source}. This should not happen!"
