@@ -240,7 +240,7 @@ def process_documents(
     max_length: int | None = None,
     text_selector: str | None = None,
     id_selector: str = ".id",
-    num_workers: int = 1,
+    num_workers: int = 10,
     prefetch_factor: int = 2,
     suffix: str | None = None
 ):
