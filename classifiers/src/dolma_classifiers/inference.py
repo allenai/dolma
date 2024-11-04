@@ -93,11 +93,8 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                     for line in source_file:
                         try:
                             doc = decoder.decode(line)
-                            #print(text)
                             text = format_text(doc)
-                            self.logger.info(text)
                             id_ = str(id_selector.input(doc).first())
-                            self.logger.info(f"Read line from {path}")
                             encoding = self.tokenizer(
                                 text,
                                 return_tensors="pt",
