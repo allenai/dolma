@@ -76,11 +76,13 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
     def __iter__(self) -> Generator[Batch, None, None]:
         decoder = msgspec.json.Decoder()
 
-        text_selectors = [jq.compile(selector) for selector in self.id_selector.strip().split('\\n')]
+        text_selectors = [jq.compile(selector) for selector in self.text_selector.strip().split('\\n')]
         id_selector = jq.compile(self.id_selector)
 
         def format_text(text):
+
             return '\n'.join([str(selector.input(text).first()) for selector in text_selectors])
+        self.logger.info(f"text_selectors: {text_selectors}")
 
         try:
             while self.input_paths_queue.qsize() > 0:
@@ -91,6 +93,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                     for line in source_file:
                         try:
                             doc = decoder.decode(line)
+                            #print(text)
                             text = format_text(doc)
                             self.logger.info(text)
                             id_ = str(id_selector.input(doc).first())
