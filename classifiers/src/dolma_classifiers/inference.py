@@ -450,7 +450,7 @@ def main(args: argparse.Namespace) -> None:
             model_dtype=args.model_dtype,
             log_every=args.log_every,
             source_paths=source_chunk,
-            destination_paths=destinatino_chunks,
+            destination_paths=destination_chunk,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             max_length=args.max_length,
