@@ -403,7 +403,7 @@ def main(args: argparse.Namespace) -> None:
             zip(*[(p, d) for p, d in zip(source_paths, destination_paths) if d not in existing_destinations]),
         )
 
-    console_logger.info(f"After filtering, tagging {len(source_paths)} files")
+    console_logger.info(f"After filtering, collectively tagging {len(source_paths)} files")
 
     # Distribute files across processes
     files_per_process = len(source_paths) / world_size
@@ -413,7 +413,7 @@ def main(args: argparse.Namespace) -> None:
     partition_destination_paths = destination_paths[start_idx:end_idx]
 
     console_logger.info(f"Partitioned into {world_size} workers of with avg {files_per_process:.2f} files.")
-    console_logger.info(f"Processing GPU {rank}/{world_size}: {len(partition_source_paths)} files")
+    console_logger.info(f"GPU {rank}/{world_size} processing {len(partition_source_paths)} files from index {start_idx} to {end_idx}")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
 
     process_documents(
