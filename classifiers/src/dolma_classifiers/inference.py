@@ -266,6 +266,7 @@ def process_documents(
     # this encoder will be used to write the attributes to the destination file
     encoder = msgspec.json.Encoder()
 
+
     source_destination_mapping = {
         source_path: destination_path
         for source_path, destination_path in zip(source_paths, destination_paths)
@@ -429,21 +430,36 @@ def main(args: argparse.Namespace) -> None:
     console_logger.info(f"GPU {rank}/{world_size} processing {len(partition_source_paths)} files from index {start_idx} to {end_idx}")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
 
-    process_documents(
-        model_name=args.model_name,
-        model_dtype=args.model_dtype,
-        log_every=args.log_every,
-        source_paths=partition_source_paths,
-        destination_paths=partition_destination_paths,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-        max_length=args.max_length,
-        text_selector=args.text_key,
-        id_selector=args.id_key,
-        suffix=args.attribute_suffix,
-        model_compile=args.model_compile,
-        prefetch_factor=args.prefetch_factor,
-    )
+    chunk_size = 80
+    n_chunks = math.ceil(len(partition_source_paths) / chunk_size)
+    actual_chunk_size = math.ceil(len(data) / n_chunks)
+
+    source_chunks = [
+        partition_source_paths[i:i + actual_chunk_size],
+        for i in range(0, len(partition_source_paths), actual_chunk_size)
+    ]
+    destination_chunks = [
+        partition_destination_paths[i:i + actual_chunk_size],
+        for i in range(0, len(partition_destination_paths), actual_chunk_size)
+    ]
+    
+    for source_chunk,destination_chunk in source_chunks,destination_chunks:
+
+        process_documents(
+            model_name=args.model_name,
+            model_dtype=args.model_dtype,
+            log_every=args.log_every,
+            source_paths=source_chunk,
+            destination_paths=destinatino_chunks,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            max_length=args.max_length,
+            text_selector=args.text_key,
+            id_selector=args.id_key,
+            suffix=args.attribute_suffix,
+            model_compile=args.model_compile,
+            prefetch_factor=args.prefetch_factor,
+        )
 
 
 def parse_args() -> argparse.Namespace:
