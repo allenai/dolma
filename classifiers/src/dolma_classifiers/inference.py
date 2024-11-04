@@ -148,7 +148,7 @@ def writer_worker(
     output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
     error_queue: mp.Queue,
-    log_every: int = 1000,
+    log_every: int = 10,
 ):
 
     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())
@@ -181,7 +181,6 @@ def writer_worker(
                 files_writers[source].write(
                     encoder.encode_lines(attributes).decode("utf-8")
                 )
-                console_logger.info(f"Writing to {destination_path}")
                 progress_logger.increment(docs=len(attributes))
                 counts[source] += len(attributes)
                 total_count += len(attributes)
