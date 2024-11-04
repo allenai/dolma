@@ -28,7 +28,7 @@ from transformers import BatchEncoding, PreTrainedTokenizer
 from .loggers import ProgressLogger, WandbLogger, get_logger
 from .models import Prediction, Registry
 from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup
-
+import math
 
 class Batch(NamedTuple):
     encoding: BatchEncoding | dict[str, torch.Tensor]
