@@ -89,17 +89,21 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                 count = 0
                 with smart_open.open(path, "rt") as source_file:
                     for line in source_file:
-                        doc = decoder.decode(line)
-                        text = format_text(doc)
-                        id_ = str(id_selector.input(doc).first())
-                        encoding = self.tokenizer(
-                            text,
-                            return_tensors="pt",
-                            truncation=True,
-                            max_length=self.max_length,
-                        )
-                        yield Batch(encoding=encoding, ids=[id_], lengths=[len(text)], sources=[path])
-                        count += 1
+                        try:
+                            doc = decoder.decode(line)
+                            text = format_text(doc)
+                            id_ = str(id_selector.input(doc).first())
+                            encoding = self.tokenizer(
+                                text,
+                                return_tensors="pt",
+                                truncation=True,
+                                max_length=self.max_length,
+                            )
+                            yield Batch(encoding=encoding, ids=[id_], lengths=[len(text)], sources=[path])
+                            count += 1
+                        except Exception as e:
+                            self.logger.info(f"ERROR READING LINE {line}\n\n{e}\n{traceback.format_exc()}")
+
                 self.logger.info(f"Read {count:,} documents from {path}")
                 self.output_paths_queue.put(OutputPath(source=path, count=count))
 
