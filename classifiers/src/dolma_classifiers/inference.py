@@ -104,6 +104,8 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                 self.output_paths_queue.put(OutputPath(source=path, count=count))
 
         except Exception as e:
+            self.logger.info(f"❌ Something went wrong processing {path}: {e}\n{traceback.format_exc()}")
+
             self.logger.error(f"❌ Something went wrong processing {path}: {e}\n{traceback.format_exc()}")
             
     
@@ -140,7 +142,7 @@ def writer_worker(
     output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
     error_queue: mp.Queue,
-    log_every: int = 10_000,
+    log_every: int = 1000,
 ):
 
     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())
