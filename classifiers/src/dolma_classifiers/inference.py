@@ -179,10 +179,12 @@ def writer_worker(
                 files_writers[source].write(
                     encoder.encode_lines(attributes).decode("utf-8")
                 )
+                console_logger.info(f"Writing to {destination_path}")
                 progress_logger.increment(docs=len(attributes))
                 counts[source] += len(attributes)
                 total_count += len(attributes)
 
+            console_logger.info(f"Total count: {total_count}")
             if total_count > log_every:
                 # we at most close one file per log_every documents
                 try:
