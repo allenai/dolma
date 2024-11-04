@@ -443,7 +443,7 @@ def main(args: argparse.Namespace) -> None:
         for i in range(0, len(partition_destination_paths), actual_chunk_size)
     ]
     
-    for source_chunk,destination_chunk in source_chunks,destination_chunks:
+    for source_chunk,destination_chunk in zip(source_chunks,destination_chunks):
 
         process_documents(
             model_name=args.model_name,
