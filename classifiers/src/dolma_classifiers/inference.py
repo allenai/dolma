@@ -432,7 +432,7 @@ def main(args: argparse.Namespace) -> None:
 
     chunk_size = 80
     n_chunks = math.ceil(len(partition_source_paths) / chunk_size)
-    actual_chunk_size = math.ceil(len(data) / n_chunks)
+    actual_chunk_size = math.ceil(len(partition_source_paths) / n_chunks)
 
     source_chunks = [
         partition_source_paths[i:i + actual_chunk_size]
