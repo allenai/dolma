@@ -82,7 +82,6 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
         def format_text(text):
 
             return '\n'.join([str(selector.input(text).first()) for selector in text_selectors])
-        self.logger.info(f"text_selectors: {text_selectors}")
 
         try:
             while self.input_paths_queue.qsize() > 0:
