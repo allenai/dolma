@@ -8,7 +8,7 @@ from tantivy import Index, SchemaBuilder
 class IndexFields(Enum):
     TEXT = "text"
     ID = "id"
-    SOURCE = "source"
+    # SOURCE = "source"
 
 
 def create_index(path: str | Path | None = None, reuse: bool = False) -> Index:
@@ -16,7 +16,7 @@ def create_index(path: str | Path | None = None, reuse: bool = False) -> Index:
     schema_builder = SchemaBuilder()
     schema_builder.add_text_field(IndexFields.TEXT.value, stored=True)
     schema_builder.add_text_field(IndexFields.ID.value, stored=True)
-    schema_builder.add_text_field(IndexFields.SOURCE.value, stored=True)
+    # schema_builder.add_text_field(IndexFields.SOURCE.value, stored=True)
     schema = schema_builder.build()
 
     if path:

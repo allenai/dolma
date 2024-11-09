@@ -1,6 +1,7 @@
 import argparse
 import json
 import sys
+import smart_open
 from enum import Enum
 from typing import Any, Generator, NamedTuple, Type
 
@@ -28,6 +29,7 @@ def make_search_parser(parser: argparse.ArgumentParser | None = None):
     parser.add_argument("-i", "--index-path", type=str, required=True, help="The path to the index.")
     parser.add_argument("-q", "--query", type=str, default=None, help="The query to search for.")
     parser.add_argument("-n", "--num-hits", type=int, default=10, help="The number of hits to return.")
+    parser.add_argument("-o", "--output-path", type=str, default=None)
     parser.add_argument(
         "-f",
         "--display-format",
@@ -138,7 +140,11 @@ def search_data(args: argparse.Namespace):
         hits = searcher.search(parsed_query, limit=args.num_hits).hits
         parsed_hits = HitsTuple.from_hits(hits, searcher)  # pyright: ignore
 
-        if args.display_format == DisplayFormat.JSON:
+        if args.output_path:
+            with smart_open.open(args.output_path, "w") as f:
+                for row in parsed_hits:
+                    f.write(json.dumps(row.to_dict(), sort_keys=True)+"\n")
+        elif args.display_format == DisplayFormat.JSON:
             for row in parsed_hits:
                 print(json.dumps(row.to_dict(), sort_keys=True))
         else:
