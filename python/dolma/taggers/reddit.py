@@ -141,6 +141,38 @@ class NonEnglishSubs(ListMembership):
     def predict(self, doc: Document) -> DocResult:
         score = doc.metadata["subreddit"].lower() in self.blocklist
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
+    
+@TaggerRegistry.add("mmlu_subreddit")
+class MMLUSubs(ListMembership):
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/mmlu_topic_subreddits.txt")
+
+    def predict(self, doc: Document) -> DocResult:
+        score = doc.metadata["subreddit"].lower() in self.blocklist
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
+    
+@TaggerRegistry.add("science_subreddit")
+class ScienceSubs(ListMembership):
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/sciencesubreddits.txt")
+
+    def predict(self, doc: Document) -> DocResult:
+        score = doc.metadata["subreddit"].lower() in self.blocklist
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
+    
+@TaggerRegistry.add("history_subreddit")
+class HistorySubs(ListMembership):
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/historysubreddits.txt")
+
+    def predict(self, doc: Document) -> DocResult:
+        score = doc.metadata["subreddit"].lower() in self.blocklist
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
+    
+@TaggerRegistry.add("politics_subreddit")
+class PoliticsSubs(ListMembership):
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/politicssubreddits.txt")
+
+    def predict(self, doc: Document) -> DocResult:
+        score = doc.metadata["subreddit"].lower() in self.blocklist
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
 
 @TaggerRegistry.add("bot_author")
 class BotAuthor(ListMembership):
