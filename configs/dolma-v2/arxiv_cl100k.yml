@@ -1,0 +1,16 @@
+destination: ${oc.env:HOME}/ai2-llm/preprocessed/proof-pile-2/v0_decontaminated/arxiv/train/allenai/dolma2-tokenizer
+documents:
+  - s3://ai2-llm/pretraining-data/sources/proof-pile-2/v0_decontaminated/documents/arxiv/train/*
+
+processes: 128
+seed: 3920
+max_size: 4_294_967_296
+dtype: uint32
+
+tokenizer:
+  name_or_path: allenai/dolma2-tokenizer
+  bos_token_id: null
+  eos_token_id: 100257
+  pad_token_id: 100277
+  segment_before_tokenization: false
+  encode_special_tokens: true

@@ -6,6 +6,8 @@ import smart_open
 from dolma.core.data_types import Document
 from dolma.taggers.quality import Dolma17QualityClassifier
 
+from .utils import skip_large_models
+
 WIKIPEDIA_TEXT = """
 The Allen Institute for AI (abbreviated AI2) is a 501(c)(3) non-profit research institute founded by late Microsoft co-founder and philanthropist Paul Allen in 2014. The institute seeks to conduct high-impact AI research and engineering in service of the common good. Oren Etzioni was appointed by Paul Allenin September 2013 to direct the research at the institute. After leading the organization for nine years, Oren Etzioni stepped down from his role as CEO on September 30, 2022. He was replaced in an interim capacity by the leading researcher of the company's Aristo project, Peter Clark. On June 20, 2023, AI2 announced Ali Farhadi as its next CEO starting July 31, 2023. The company's board formed a search committee for a new CEO. AI2 also has an active office in Tel Aviv, Israel.
 """
@@ -24,6 +26,9 @@ class TestDolma17QualityClassifier(TestCase):
         self.quality_tagger = Dolma17QualityClassifier()
 
     def test_wikipedia_text(self):
+        if skip_large_models():
+            return self.skipTest("Skipping tests that require downloading large models")
+
         doc = Document(source="wikipedia", id="1", text=WIKIPEDIA_TEXT, version="v0")
         pred = self.quality_tagger.predict(doc)
         self.assertEqual(len(pred.spans), 2)
@@ -34,6 +39,9 @@ class TestDolma17QualityClassifier(TestCase):
         self.assertAlmostEqual(sum(scores.values()), 1.0, delta=0.01)
 
     def test_creative_commons_blog_text(self):
+        if skip_large_models():
+            return self.skipTest("Skipping tests that require downloading large models")
+
         doc = Document(source="creative_commons", id="1", text=CREATIVE_COMMONS_BLOG_TEXT, version="v0")
         pred = self.quality_tagger.predict(doc)
         self.assertEqual(len(pred.spans), 2)
@@ -44,6 +52,9 @@ class TestDolma17QualityClassifier(TestCase):
         self.assertAlmostEqual(sum(scores.values()), 1.0, delta=0.01)
 
     def test_low_quality_text(self):
+        if skip_large_models():
+            return self.skipTest("Skipping tests that require downloading large models")
+
         doc = Document(source="low_quality", id="1", text=LOW_QUALITY_TEXT, version="v0")
         pred = self.quality_tagger.predict(doc)
         self.assertEqual(len(pred.spans), 2)

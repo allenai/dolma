@@ -1,0 +1,23 @@
+streams:
+  - name: c4
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/part_000*
+    attributes:
+      - dedupe_para_ngrams_13_1
+    output: &output
+      max_size_in_bytes: 38949672960
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/c4/v1_dedupe/documents/10
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter:
+      include:
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length > 0) and
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) > 0.1)
+      syntax: jq
+
+work_dir:
+  input: "/tmp/c4_mix/input"
+  output: "/tmp/c4_mix/output"
+processes: 188

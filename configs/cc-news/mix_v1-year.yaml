@@ -1,0 +1,204 @@
+streams:
+  - name: cc-news_2016
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2016-08/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2016-09/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2016-10/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2016-11/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2016-12/*zst
+
+    output: &output
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2016
+      max_size_in_bytes: 1_000_000_000
+
+    compression: &compression
+      input: zst
+      output: zst
+
+    attributes: &attributes
+      - dedupe_by_year
+      - dolma_v2_tokenizer
+
+    filter: &filter
+      exclude:
+        - >-
+          (.attributes.dolma_v2_tokenizer__dolma_v2_tokenizer__length[0][-1] <= 100)
+        - >-
+          (.attributes.dedupe_ngrams_13_1 | length > 0) and
+          ((.attributes.dedupe_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) >= 0.5)
+
+      syntax: jq
+
+  - name: cc-news_2017
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-01/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-02/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-03/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-04/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-05/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-06/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-07/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-08/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-09/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-10/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-11/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2017-12/*zst
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2017
+      <<: *output
+
+    compression: *compression
+    attributes: *attributes
+    filter: *filter
+
+  - name: cc-news_2018
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-01/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-02/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-03/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-04/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-05/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-06/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-07/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-08/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-09/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-10/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-11/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2018-12/*zst
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2018
+      <<: *output
+
+    compression: *compression
+    attributes: *attributes
+    filter: *filter
+
+  - name: cc-news_2019
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-01/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-02/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-03/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-04/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-05/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-06/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-07/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-08/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-09/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-10/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-11/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2019-12/*zst
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2019
+      <<: *output
+
+    compression: *compression
+    attributes: *attributes
+    filter: *filter
+
+  - name: cc-news_2020
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-01/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-02/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-03/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-04/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-05/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-06/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-07/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-08/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-09/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-10/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-11/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2020-12/*zst
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2020
+      <<: *output
+
+    compression: *compression
+    attributes: *attributes
+    filter: *filter
+
+  - name: cc-news_2021
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-01/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-02/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-03/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-04/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-05/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-06/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-07/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-08/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-09/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-10/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-11/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2021-12/*zst
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2021
+      <<: *output
+
+    compression: *compression
+    attributes: *attributes
+    filter: *filter
+
+  - name: cc-news_2022
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-01/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-02/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-03/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-04/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-05/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-06/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-07/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-08/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-09/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-10/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-11/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2022-12/*zst
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2022
+      <<: *output
+
+    compression: *compression
+    attributes: *attributes
+    filter: *filter
+
+  - name: cc-news_2023
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-01/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-02/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-03/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-04/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-05/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-06/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-07/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-08/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-09/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-10/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-11/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2023-12/*zst
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2023
+      <<: *output
+
+    compression: *compression
+    attributes: *attributes
+    filter: *filter
+
+  - name: cc-news_2024
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2024-01/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2024-02/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2024-03/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2024-04/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2024-05/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2024-06/*zst
+      - s3://ai2-llm/pretraining-data/sources/cc-news/v0-resiliparse/documents/2024-07/*zst
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2024
+      <<: *output
+
+    compression: *compression
+    attributes: *attributes
+    filter: *filter
+
+
+processes: 1

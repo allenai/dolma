@@ -1,0 +1,34 @@
+
+streams:
+  - name: cccc-CC-MAIN-2017-30
+    documents:
+
+    attributes:
+      - dedupe_doc
+      - dedupe_para
+    output:
+      max_size_in_bytes: 2_000_000_000
+      path: s3://ai2-llm/pretraining-data/sources/cccc/v2_nc_nd_fix/documents/CC-MAIN-2017-30
+      discard_fields:
+        - attributes
+    filter:
+      syntax: jq
+      exclude:
+        # Exact duplicates
+        - .attributes.dedupe_doc != null
+
+        # Remove NC or ND licensed pages
+        - >-
+          (.metadata.attribute_spans != null) and
+          (.metadata.attribute_spans | keys | map(select(test("_nc_|_nd_"))) | length > 0)
+
+        # Fuzzy duplicates with above 0.8 of shared ngrams
+        - >-
+          (.attributes.dedupe_para | length > 0) and
+          ((.attributes.dedupe_para | map(.[2] * (.[1] - .[0])) | add) / (.text | length) >= 0.8)
+
+work_dir:
+  input: "${oc.env:HOME}/status/cccc-CC-MAIN-2017-30/mix-v2/input"
+  output: "${oc.env:HOME}/status/cccc-CC-MAIN-2017-30/mix-v2/output"
+
+processes: 100
