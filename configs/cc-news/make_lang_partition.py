@@ -6,17 +6,14 @@ import smart_open
 SRC_BASE = "s3://ai2-llm/pretraining-data/sources/cc-news"
 SRC_PRFX = "v1-resiliparse"
 LANG_THR = 100_000
-DST_BASE = "${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news"
+DST_BASE = "s3://ai2-llm/pretraining-data/sources/cc-news"
 DST_PRFX = f"v2-resiliparse-l{LANG_THR // 1000}k"
 
 
 def base_stream_config(lang: str, year: int, months: List[int]):
     return {
         "name": f"cc-news_{year:04d}_{lang}",
-        "documents": [
-            f"{SRC_BASE}/{SRC_PRFX}/documents/{year:04d}-{month:02d}/*.zst"
-            for month in months
-        ],
+        "documents": [f"{SRC_BASE}/{SRC_PRFX}/documents/{year:04d}-{month:02d}/*.zst" for month in months],
         "compression": {"input": "zst", "output": "zst"},
         "output": {
             "path": f"{DST_BASE}/{DST_PRFX}/documents/{lang}/{year:04d}",
@@ -24,15 +21,13 @@ def base_stream_config(lang: str, year: int, months: List[int]):
         },
         "attributes": ["ft_lang_id_1e2", "dolma_v2_tokenizer"],
         "filter": {
-            "include": [
+            "include": [],
+            "exclude": [
                 # at least 100 tokens
-                ".attributes.dolma_v2_tokenizer__dolma_v2_tokenizer__length[0][-1] >= 100",
-                # make sure the language is present and the confidence is high enough and that it is the highest confidence
-                (
-                    f"(.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang} != null) and "
-                    + f"(.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang}[0][-1] >= 0.5) and "
-                    + f'((.attributes | to_entries | map(select(.key | startswith("ft_lang_id_1e2__ft_lang_id_1e2__"))) | max_by(.value) | .key ) == "ft_lang_id_1e2__ft_lang_id_1e2__{lang}")'
-                ),
+                ".attributes.dolma_v2_tokenizer__dolma_v2_tokenizer__length[0][-1] <= 100",
+                # no language detected or low confidence
+                f"(.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang} == null) or (.attributes.ft_lang_id_1e2__ft_lang_id_1e2__{lang}[0][-1] < 0.5)",
+
             ],
             "syntax": "jq",
         },
