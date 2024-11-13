@@ -331,6 +331,7 @@ def process_documents(
                     raise RuntimeError("Writer process encountered an error")
 
                 inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
+                console_logger.info(f"Scoring  on GPU {rank} classifer.device is {classifier.device} ")
                 scores = classifier.score(**inputs)
                 attributes = [
                     {"id": doc_id, "attributes": {pred.label: [[pred.score]] for pred in doc_preds}}
