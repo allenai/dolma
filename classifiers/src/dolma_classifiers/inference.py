@@ -246,11 +246,22 @@ def process_documents(
 ):
     """Processes a batch of files using distributed processing."""
     console_logger = get_logger("process_documents")
-
-
-    torch.cuda.set_device(rank)
-    device = torch.device(f'cuda:{rank}')
+    if not torch.cuda.is_initialized():
+        torch.cuda.init()
     
+    num_devices = torch.cuda.device_count()
+    if num_devices == 0:
+        raise RuntimeError("No CUDA devices available")
+        
+    device_rank = rank % num_devices
+    torch.cuda.set_device(device_rank) 
+
+
+    device = torch.device(f'cuda:{device_rank}')
+    torch.cuda.empty_cache()
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(device_rank)
+        
     console_logger.info(f"Using device: {device}")
     classifier = Registry.get(
         model_name=model_name,
@@ -260,7 +271,7 @@ def process_documents(
     )
 
     classifier.model = classifier.model.to(device)
-    
+
     if len(source_paths) <= 0 :
         return
 
