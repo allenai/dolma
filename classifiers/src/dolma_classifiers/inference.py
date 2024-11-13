@@ -247,14 +247,20 @@ def process_documents(
     """Processes a batch of files using distributed processing."""
     console_logger = get_logger("process_documents")
 
-    console_logger.info(f"Rank is : {rank}")
+
+    torch.cuda.set_device(rank)
+    device = torch.device(f'cuda:{rank}')
+    
+    console_logger.info(f"Using device: {device}")
     classifier = Registry.get(
         model_name=model_name,
-        device=f'cuda:{rank}',
+        device=str(device),#f'cuda:{rank}',
         dtype='float16',
         compile=model_compile,
     )
 
+    classifier.model = classifier.model.to(device)
+    
     if len(source_paths) <= 0 :
         return
 
@@ -330,8 +336,7 @@ def process_documents(
                         pass
                     raise RuntimeError("Writer process encountered an error")
 
-                inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
-                console_logger.info(f"Scoring  on GPU {rank} classifer.device is {classifier.device} ")
+                inputs = {k: v.to(device, non_blocking=True) for k, v in batch.encoding.items()} 
                 scores = classifier.score(**inputs)
                 attributes = [
                     {"id": doc_id, "attributes": {pred.label: [[pred.score]] for pred in doc_preds}}
