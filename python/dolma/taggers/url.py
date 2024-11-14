@@ -215,6 +215,11 @@ class BlocklistProjectNsfwTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = ["https://dolma-artifacts.org/blocklist_project/blocklist_project-20240207/porn.txt"]
 
 
+@TaggerRegistry.add("flashcards_domains_v1")
+class FlashcardsDomainsTagger(BaseDomainTagger):
+    BLOCKLIST_PATHS = ["https://dolma-artifacts.org/flashcard_domains/flashcard_domains-20241113/domains.txt"]
+
+
 @TaggerRegistry.add("blocklist_project_social_v1")
 class BlocklistProjectSocialTagger(BaseDomainTagger):
     BLOCKLIST_PATHS = [
