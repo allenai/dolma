@@ -1,7 +1,10 @@
-import pytest
 import aiohttp
+import pytest
 from aioresponses import aioresponses
-from dolma_classifiers.label.api import BaseApiRequest, Message  # Replace with your actual module name
+from dolma_classifiers.label.api import (  # Replace with your actual module name
+    BaseApiRequest,
+    Message,
+)
 
 
 @pytest.fixture
@@ -14,17 +17,14 @@ def mock_api():
 async def test_successful_api_request(mock_api):
     # Arrange
     endpoint = "https://api.example.com/v1/chat"
-    expected_response = {
-        "response": "Hello, world!",
-        "status": "success"
-    }
+    expected_response = {"response": "Hello, world!", "status": "success"}
 
     mock_api.post(endpoint, status=200, payload=expected_response)
 
     request = BaseApiRequest(
         endpoint=endpoint,
         messages=[Message(role="user", content="Hello!")],
-        headers={"Authorization": "Bearer test-token"}
+        headers={"Authorization": "Bearer test-token"},
     )
 
     # Act
@@ -38,17 +38,14 @@ async def test_successful_api_request(mock_api):
 async def test_api_request_with_error(mock_api):
     # Arrange
     endpoint = "https://api.example.com/v1/chat"
-    error_response = {
-        "error": "Invalid token",
-        "status": "error"
-    }
+    error_response = {"error": "Invalid token", "status": "error"}
 
     mock_api.post(endpoint, status=401, payload=error_response)
 
     request = BaseApiRequest(
         endpoint=endpoint,
         messages=[Message(role="user", content="Hello!")],
-        headers={"Authorization": "Bearer invalid-token"}
+        headers={"Authorization": "Bearer invalid-token"},
     )
 
     # Act & Assert
@@ -64,22 +61,15 @@ async def test_api_request_payload(mock_api):
     messages = [Message(role="user", content="Hello!")]
     parameters = {"temperature": 0.7}
 
-    expected_payload = {
-        "messages": [{"role": "user", "content": "Hello!"}],
-        "temperature": 0.7
-    }
+    expected_payload = {"messages": [{"role": "user", "content": "Hello!"}], "temperature": 0.7}
 
     def match_payload(url, **kwargs):
-        assert kwargs['json'] == expected_payload
+        assert kwargs["json"] == expected_payload
         return True
 
     mock_api.post(endpoint, status=200, callback=match_payload)
 
-    request = BaseApiRequest(
-        endpoint=endpoint,
-        messages=messages,
-        parameters=parameters
-    )
+    request = BaseApiRequest(endpoint=endpoint, messages=messages, parameters=parameters)
 
     # Act
     await request.make()  # If no assertion error is raised, the payload matched
@@ -91,10 +81,7 @@ async def test_network_error(mock_api):
     endpoint = "https://api.example.com/v1/chat"
     mock_api.post(endpoint, exception=aiohttp.ClientConnectionError())
 
-    request = BaseApiRequest(
-        endpoint=endpoint,
-        messages=[Message(role="user", content="Hello!")]
-    )
+    request = BaseApiRequest(endpoint=endpoint, messages=[Message(role="user", content="Hello!")])
 
     # Act & Assert
     with pytest.raises(aiohttp.ClientConnectionError):

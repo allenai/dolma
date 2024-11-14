@@ -17,7 +17,6 @@ from pathlib import Path
 
 import datasets as ds
 import numpy as np
-from rich.progress import track
 
 from dolma.tokenizer.tokenizer import Tokenizer
 from dolma.cli.tokenizer import TokenizerConfig
