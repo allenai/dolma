@@ -1,12 +1,13 @@
 #! /bin/bash
 
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/*zst'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/documents/global-shard_01_of_10/local-shard_2_of_10/*zstd'
+#DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/v0_rep32_ft7percentile/documents/*zst'
 
 NUM_NODES=4
 MODEL_NAME="HuggingFaceFW/fineweb-edu-classifier"
-CLUSTER="ai2/jupiter*"
+CLUSTER="ai2/augusta-google-*"
 BATCH_SIZE=1024
-PRIORITY="urgent"
+PRIORITY="high"
 
 # Generate a hash for the run name by combining model name and documents
 RUN_HASH=$(echo -n "${MODEL_NAME}${DOCUMENTS}" | md5sum | awk '{print $1}')

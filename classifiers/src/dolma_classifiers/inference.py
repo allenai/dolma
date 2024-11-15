@@ -447,37 +447,37 @@ def main(args: argparse.Namespace) -> None:
     console_logger.info(f"Partitioned into {world_size} workers of with avg {files_per_process:.2f} files.")
     console_logger.info(f"GPU {rank}/{world_size} processing {len(partition_source_paths)} files from index {start_idx} to {end_idx}")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
-    chunk_size = 8
-    n_chunks = math.ceil(len(partition_source_paths) / chunk_size)
-    actual_chunk_size = math.ceil(len(partition_source_paths) / n_chunks)
+    #chunk_size = 8
+   # n_chunks = math.ceil(len(partition_source_paths) / chunk_size)
+   # actual_chunk_size = math.ceil(len(partition_source_paths) / n_chunks)
 
-    source_chunks = [
-        partition_source_paths[i:i + actual_chunk_size]
-        for i in range(0, len(partition_source_paths), actual_chunk_size)
-    ]
-    destination_chunks = [
-        partition_destination_paths[i:i + actual_chunk_size]
-        for i in range(0, len(partition_destination_paths), actual_chunk_size)
-    ]
+    # source_chunks = [
+    #     partition_source_paths[i:i + actual_chunk_size]
+    #     for i in range(0, len(partition_source_paths), actual_chunk_size)
+    # ]
+    # destination_chunks = [
+    #     partition_destination_paths[i:i + actual_chunk_size]
+    #     for i in range(0, len(partition_destination_paths), actual_chunk_size)
+    # ]
     
-    for source_chunk,destination_chunk in zip(source_chunks,destination_chunks):
+    # for source_chunk,destination_chunk in zip(source_chunks,destination_chunks):
 
-        process_documents(
-            model_name=args.model_name,
-            model_dtype=args.model_dtype,
-            log_every=args.log_every,
-            source_paths=source_chunk,
-            destination_paths=destination_chunk,
-            batch_size=args.batch_size,
-            num_workers=args.num_workers,
-            max_length=args.max_length,
-            text_selector=args.text_key,
-            id_selector=args.id_key,
-            suffix=args.attribute_suffix,
-            model_compile=args.model_compile,
-            prefetch_factor=args.prefetch_factor,
-            rank=rank
-        )
+    process_documents(
+        model_name=args.model_name,
+        model_dtype=args.model_dtype,
+        log_every=args.log_every,
+        source_paths=partition_source_paths,
+        destination_paths=partition_destination_paths,
+        batch_size=args.batch_size,
+        num_workers=args.num_workers,
+        max_length=args.max_length,
+        text_selector=args.text_key,
+        id_selector=args.id_key,
+        suffix=args.attribute_suffix,
+        model_compile=args.model_compile,
+        prefetch_factor=args.prefetch_factor,
+        rank=rank
+    )
 
 
 def parse_args() -> argparse.Namespace:

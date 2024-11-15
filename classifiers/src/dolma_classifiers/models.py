@@ -65,20 +65,43 @@ class BaseQualityClassifier:
         compile: bool,
         trust_remote_code: bool,
     ) -> PreTrainedModel:
-        model = AutoModelForSequenceClassification.from_pretrained(
-            pretrained_model_name_or_path=model_name,
-            torch_dtype=getattr(torch, dtype),
-            trust_remote_code=trust_remote_code,
-        )
+        # Ensure CUDA is initialized and device is valid
+        if not torch.cuda.is_initialized():
+            torch.cuda.init()
         
-        model = model.to(torch.device(device))
+        device_obj = torch.device(device)
+        if device_obj.type == 'cuda':
+            device_idx = device_obj.index or 0
+            if device_idx >= torch.cuda.device_count():
+                raise ValueError(f"Invalid CUDA device index {device_idx}")
+            torch.cuda.set_device(device_idx)
+        
+        # Log device setup
+        logger = get_logger(self.__class__.__name__)
+        logger.info(f"Creating model on device {device_obj}")
+        
+        try:
+            # Create model with device placement
+            with torch.device(device_obj):
+                model = AutoModelForSequenceClassification.from_pretrained(
+                    pretrained_model_name_or_path=model_name,
+                    torch_dtype=getattr(torch, dtype),
+                    trust_remote_code=trust_remote_code,
+                    device_map={'': device_obj},  # Ensure all modules go to the right device
+                )
 
-        if compile:
-            model = torch.compile(model)  # pyright: ignore
+            model = model.to(device_obj)
 
-        model.eval()  # pyright: ignore
+            if compile:
+                model = torch.compile(model)
 
-        return model  # pyright: ignore
+            model.eval()
+            return model
+            
+        except Exception as e:
+            logger.error(f"Error creating model: {e}")
+            logger.info(f"Traceback: {traceback.format_exc()}")
+            raise
 
     @property
     def device(self) -> torch.device:
