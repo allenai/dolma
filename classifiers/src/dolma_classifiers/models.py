@@ -17,6 +17,7 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 
 from .loggers import get_logger
 from .utils import get_local_gpu_rank, sanitize_model_name
+import traceback
 
 
 class Prediction(NamedTuple):
