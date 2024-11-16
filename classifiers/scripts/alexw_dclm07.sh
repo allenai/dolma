@@ -6,8 +6,8 @@ MODEL_NAME="data-delve/gte-base-en-v1.5_topic-v3.8_url1"
 NUM_NODES=1
 BATCH_SIZE=512
 PRIORITY="high"
-CLUSTER="ai2/s2-cirrascale*" #"ai2/augusta-google-*" #"ai2/augusta-google-*" # # "ai2/s2-*" 
-
+CLUSTER="ai2/augusta-google-*" #"ai2/augusta-google-*" # # "ai2/s2-*" 
+#"ai2/s2-cirrascale*"
 # Performance tuning parameters
 #export PYTORCH_CUDA_ALLOC_CONF="max_split_size_mb:512"
 #export CUDA_LAUNCH_BLOCKING=0
