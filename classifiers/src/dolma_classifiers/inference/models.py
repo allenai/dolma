@@ -137,6 +137,25 @@ class QualityModel(nn.Module, PyTorchModelHubMixin):
         outputs = self.fc(dropped)
         return SequenceClassifierOutput(logits=outputs[:, 0, :])
 
+@Registry.add("data-delve/gte-base-en-v1.5_topic-v3.8_url1")
+class DataDelveClassifier(BaseQualityClassifier):
+    def __init__(
+        self,
+        model_name: str,
+        device: str,
+        dtype: str,
+        compile: bool = False,
+        trust_remote_code: bool = True,
+    ):
+        super().__init__(
+            model_name=model_name,
+            device=device,
+            dtype=dtype,
+            compile=compile,
+            trust_remote_code=trust_remote_code,
+        )
+        self.model = self.model.to(device)
+
 
 @Registry.add("nvidia/quality-classifier-deberta")
 class DebertaQualityClassifier(BaseQualityClassifier):
