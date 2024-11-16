@@ -94,6 +94,7 @@ class BaseQualityClassifier:
                     config=config,
                     device_map={'': device_obj},  # Ensure all modules go to the right device
                 )
+                logger.info(f"After override, max position embeddings = {model.config.max_position_embeddings}")
 
             model = model.to(device_obj)
 
