@@ -91,6 +91,7 @@ class BaseQualityClassifier:
                     pretrained_model_name_or_path=model_name,
                     torch_dtype=getattr(torch, dtype),
                     trust_remote_code=trust_remote_code,
+                    config=config,
                     device_map={'': device_obj},  # Ensure all modules go to the right device
                 )
 

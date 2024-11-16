@@ -3,8 +3,8 @@
 # Input parameters
 DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/documents/global-shard_01_of_10/*/*zstd'
 MODEL_NAME="data-delve/gte-base-en-v1.5_topic-v3.8_url1"
-NUM_NODES=4
-BATCH_SIZE=1024
+NUM_NODES=1
+BATCH_SIZE=100
 PRIORITY="high"
 CLUSTER="ai2/augusta-google-*" #"ai2/augusta-google-*" # # "ai2/s2-*" 
 
@@ -21,7 +21,7 @@ RUN_NAME="datadelve_classifier_davidg_${RUN_HASH:0:8}"
 # Resource allocation optimizations
 #CPU_CORES_PER_GPU=16
 #OMP_THREADS=$((CPU_CORES_PER_GPU / 2))
-NUM_GPUS=8
+NUM_GPUS=1
 
 gantry run \
     --name "${RUN_NAME}" \
@@ -53,7 +53,7 @@ gantry run \
     --yes \
     -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun \
         --nnodes ${NUM_NODES}:${NUM_NODES} \
-        --nproc-per-node 8 \
+        --nproc-per-node 1 \
         --rdzv_id 12347 \
         --rdzv_backend static \
         --rdzv_endpoint \${BEAKER_LEADER_REPLICA_HOSTNAME}:29400 \
@@ -66,8 +66,7 @@ gantry run \
         --wandb-project 'dolma-classifiers' \
         --wandb-entity ai2-llm \
         --model-name ${MODEL_NAME} \
-        --num-workers 8 \
-        --prefetch-factor 8 \
+        --num-workers 1 \
         --text-key '.id\n.text'"
 
 
