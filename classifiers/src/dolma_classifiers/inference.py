@@ -147,7 +147,7 @@ def writer_worker(
     output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
     error_queue: mp.Queue,
-    log_every: int = 10,
+    log_every: int = 100,
 ):
 
     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())

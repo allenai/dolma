@@ -84,6 +84,9 @@ class BaseQualityClassifier:
         try:
             # Create model with device placement
             with torch.device(device_obj):
+                config = AutoConfig.from_pretrained(model_name)
+                logger.info(f"Before override, max position embeddings = {config.max_position_embeddings}")
+                config.max_position_embeddings = 512
                 model = AutoModelForSequenceClassification.from_pretrained(
                     pretrained_model_name_or_path=model_name,
                     torch_dtype=getattr(torch, dtype),
