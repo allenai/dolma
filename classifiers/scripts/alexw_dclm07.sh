@@ -67,7 +67,7 @@ gantry run \
         --wandb-entity ai2-llm \
         --model-name ${MODEL_NAME} \
         --num-workers 8 \
-        --prefetch-factor 8
+        --prefetch-factor 8 \
         --text-key '.id\n.text'"
 
 
