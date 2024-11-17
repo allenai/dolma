@@ -407,7 +407,7 @@ def main(args: argparse.Namespace) -> None:
 
     console_logger.info(f"Partitioned into {world_size} workers of with avg {files_per_process:.2f} files.")
     console_logger.info(f"Processing GPU {rank}/{world_size}: {len(partition_source_paths)} files")
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
+    #os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
 
     process_documents(
         model_name=args.model_name,
