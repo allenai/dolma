@@ -410,7 +410,7 @@ def main(args: argparse.Namespace) -> None:
     console_logger.info(f"Processing GPU {rank}/{world_size}: {len(partition_source_paths)} files")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
 
-  stats = {
+    stats = {
         "total_memory": torch.cuda.get_device_properties(0).total_memory / (1024**3),  # Convert to GB
         "allocated_memory": torch.cuda.memory_allocated(0) / (1024**3),
         "cached_memory": torch.cuda.memory_reserved(0) / (1024**3),
