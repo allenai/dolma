@@ -166,7 +166,7 @@ class DataDelveClassifier(BaseQualityClassifier):
         model_name: str,
         device: str,
         dtype: str,
-        compile: bool = False,
+        compile: bool = True,
         trust_remote_code: bool = True,
     ):
         super().__init__(
