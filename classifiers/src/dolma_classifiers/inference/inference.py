@@ -287,6 +287,7 @@ def process_documents(
                 shuffle=False,
                 num_workers=num_workers,
                 prefetch_factor=prefetch_factor,
+                pin_memory=True,
                 collate_fn=partial(collate_batch, pad_token_id=getattr(classifier.tokenizer, "pad_token_id", 0)),
             )
 

@@ -68,7 +68,6 @@ class BaseQualityClassifier:
         config = AutoConfig.from_pretrained(model_name,        trust_remote_code=trust_remote_code)
         config.max_position_embeddings = 512
         
-        config.use_memory_efficient_attention = False
 
         model = AutoModelForSequenceClassification.from_pretrained(
             pretrained_model_name_or_path=model_name,
@@ -81,6 +80,9 @@ class BaseQualityClassifier:
         if compile:
             model = torch.compile(model)  # pyright: ignore
 
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+    
         model.eval()  # pyright: ignore
 
         return model  # pyright: ignore
