@@ -292,7 +292,7 @@ def process_documents(
                     counts[s] += 1
 
                 if writer_process_error.is_set():
-                     try:
+                    try:
                         error_traceback = error_queue.get_nowait()
                         tracebacks.append(error_traceback)
                         console_logger.info(f"Writer process error traceback:\n{error_traceback}")
