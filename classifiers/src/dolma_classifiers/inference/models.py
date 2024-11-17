@@ -64,10 +64,18 @@ class BaseQualityClassifier:
         compile: bool,
         trust_remote_code: bool,
     ) -> PreTrainedModel:
+
+        logger = get_logger(self.__class__.__name__)
+
+        config = AutoConfig.from_pretrained(model_name,        trust_remote_code=trust_remote_code)
+        logger.info(f"Before override, max position embeddings = {config.max_position_embeddings}")
+        config.max_position_embeddings = 512
+
         model = AutoModelForSequenceClassification.from_pretrained(
             pretrained_model_name_or_path=model_name,
             torch_dtype=getattr(torch, dtype),
             trust_remote_code=trust_remote_code,
+            config=config,
         )
         model = model.to(torch.device(device))
 

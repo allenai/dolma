@@ -225,7 +225,6 @@ def process_documents(
 ):
     console_logger = get_logger("process_documents")
     """Processes a batch of files using distributed processing."""
-    console_logger.info("GOT THIS FAR1")
 
     classifier = Registry.get(
         model_name=model_name,
@@ -243,7 +242,6 @@ def process_documents(
         for source_path, destination_path in zip(source_paths, destination_paths)
         if not fs.exists(destination_path)
     }
-    console_logger.info("GOT THIS FAR2")
 
     with torch.no_grad(), mp.Manager() as manager:
         input_paths_queue: QueueType[str] = manager.Queue()
@@ -267,7 +265,6 @@ def process_documents(
             ),
         )
         writer_process.start()
-        console_logger.info("GOT THIS FAR3")
 
         try:
             source_dataset = DocumentsIterableDataset(
