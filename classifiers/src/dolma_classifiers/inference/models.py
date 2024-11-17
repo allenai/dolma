@@ -68,6 +68,9 @@ class BaseQualityClassifier:
         config = AutoConfig.from_pretrained(model_name,        trust_remote_code=trust_remote_code)
         config.max_position_embeddings = 512
         
+        config.attn_implementation = "flash_attention_2"  # Enable FA2
+        config._flash_attn_2_enabled = True
+        config.use_cache = False
 
         model = AutoModelForSequenceClassification.from_pretrained(
             pretrained_model_name_or_path=model_name,
@@ -75,6 +78,16 @@ class BaseQualityClassifier:
             trust_remote_code=trust_remote_code,
             config=config
         )
+
+
+        def enable_flash_attention(module):
+            if hasattr(module, "enable_flash_attention"):
+                module.enable_flash_attention()
+            if hasattr(module, "_flash_attn_2_enabled"):
+                module._flash_attn_2_enabled = True
+            
+        model.apply(enable_flash_attention)
+        
         model = model.to(torch.device(device))
 
         if compile:
