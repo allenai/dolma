@@ -223,6 +223,7 @@ def process_documents(
     prefetch_factor: int = 2,
     suffix: str | None = None
 ):
+    console_logger = get_logger("process_documents")
     """Processes a batch of files using distributed processing."""
     console_logger.info("GOT THIS FAR1")
 
