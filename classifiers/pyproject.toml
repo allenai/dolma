@@ -16,8 +16,7 @@ dependencies = [
     "torch",
     "transformers",
     "wandb",
-    "jq",
-    "xformers==0.0.28.post1"
+    "jq"
 ]
 
 [project.urls]
