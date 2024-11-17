@@ -75,7 +75,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
 
     def __iter__(self) -> Generator[Batch, None, None]:
         decoder = msgspec.json.Decoder()
-        text_selectors = [jq.compile(selector) for selector in self.text_selector.strip().split('\\n')]
+        text_selector = jq.compile(self.text_selector) #[jq.compile(selector) for selector in self.text_selector.strip().split('\\n')]
         id_selector = jq.compile(self.id_selector)
 
         def format_text(text):
@@ -89,7 +89,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
                 with smart_open.open(path, "rt") as source_file:
                     for line in source_file:
                         doc = decoder.decode(line)
-                        text = format_text(doc)
+                        text = str(text_selector.input(doc).first()) #format_text(doc)
                         id_ = str(id_selector.input(doc).first())
                         encoding = self.tokenizer(
                             text,
