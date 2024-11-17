@@ -9,8 +9,6 @@ from queue import Queue as QueueType
 from threading import Event as EventType
 from typing import Any, Generator, NamedTuple
 from urllib.parse import urlparse
-import traceback
-import os
 import fsspec
 import jq
 import msgspec
@@ -81,31 +79,26 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
         def format_text(text):
             return '\n'.join([str(selector.input(text).first()) for selector in text_selectors])
 
-        try:
-            while self.input_paths_queue.qsize() > 0:
-                path = self.input_paths_queue.get()
-                self.logger.info(f"Reading {path}")
-                count = 0
-                with smart_open.open(path, "rt") as source_file:
-                    for line in source_file:
-                        doc = decoder.decode(line)
-                        text = str(text_selector.input(doc).first()) #format_text(doc)
-                        id_ = str(id_selector.input(doc).first())
-                        encoding = self.tokenizer(
-                            text,
-                            return_tensors="pt",
-                            truncation=True,
-                            max_length=self.max_length,
-                        )
-                        yield Batch(encoding=encoding, ids=[id_], lengths=[len(text)], sources=[path])
-                        count += 1
+        while self.input_paths_queue.qsize() > 0:
+            path = self.input_paths_queue.get()
+            self.logger.info(f"Reading {path}")
+            count = 0
+            with smart_open.open(path, "rt") as source_file:
+                for line in source_file:
+                    doc = decoder.decode(line)
+                    text = str(text_selector.input(doc).first()) #format_text(doc)
+                    id_ = str(id_selector.input(doc).first())
+                    encoding = self.tokenizer(
+                        text,
+                        return_tensors="pt",
+                        truncation=True,
+                        max_length=self.max_length,
+                    )
+                    yield Batch(encoding=encoding, ids=[id_], lengths=[len(text)], sources=[path])
+                    count += 1
 
-                self.logger.info(f"Read {count:,} documents from {path}")
-                self.output_paths_queue.put(OutputPath(source=path, count=count))
-        except Exception as e:
-            self.logger.info(f"❌ Something went wrong processing {path}: {e}\n{traceback.format_exc()}")
-
-            self.logger.error(f"❌ Something went wrong processing {path}: {e}\n{traceback.format_exc()}")
+            self.logger.info(f"Read {count:,} documents from {path}")
+            self.output_paths_queue.put(OutputPath(source=path, count=count))
 
 
 def collate_batch(batch: list[Batch], pad_token_id: int) -> Batch:
@@ -136,7 +129,6 @@ def writer_worker(
     scores_queue: QueueType[AttributeRow | None],
     output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
-    error_queue: mp.Queue,
     log_every: int = 10_000,
 ):
 
@@ -203,10 +195,7 @@ def writer_worker(
                 total_count = 0
     except Exception as e:
         console_logger.error(f"Writer process encountered an error: {e}")
-        console_logger.info(f"Writer process encountered an error: {e} {traceback.format_exc}")
         error_event.set()
-        error_traceback = traceback.format_exc()
-        error_queue.put(error_traceback)
     finally:
         for f in files_writers.values():
             f.close()
@@ -227,7 +216,6 @@ def process_documents(
     prefetch_factor: int = 2,
     suffix: str | None = None
 ):
-    console_logger = get_logger("process_documents")
     """Processes a batch of files using distributed processing."""
 
     classifier = Registry.get(
@@ -251,7 +239,6 @@ def process_documents(
         input_paths_queue: QueueType[str] = manager.Queue()
         output_paths_queue: QueueType[OutputPath] = manager.Queue()
         scores_queue: QueueType[AttributeRow | None] = manager.Queue()
-        error_queue: mp.Queue = manager.Queue()
 
         for source_path in source_destination_mapping:
             input_paths_queue.put(source_path)
@@ -265,7 +252,6 @@ def process_documents(
                 source_destination_mapping=source_destination_mapping,
                 log_every=log_every,
                 error_event=writer_process_error,
-                error_queue=error_queue,
             ),
         )
         writer_process.start()
@@ -291,21 +277,12 @@ def process_documents(
             )
 
             counts = defaultdict(int)
-            tracebacks = []
             for batch in data_loader:
                 for s in batch.sources:
                     counts[s] += 1
 
                 if writer_process_error.is_set():
-                    try:
-                        error_traceback = error_queue.get_nowait()
-                        tracebacks.append(error_traceback)
-                        console_logger.info(f"Writer process error traceback:\n{error_traceback}")
-                    except Empty:
-                        pass
                     raise RuntimeError("Writer process encountered an error")
-
-#                    raise RuntimeError("Writer process encountered an error")
 
                 inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
                 scores = classifier.score(**inputs)
@@ -317,10 +294,7 @@ def process_documents(
                 scores_queue.put_nowait(AttributeRow(sources=batch.sources, attributes=attributes))
 
             scores_queue.put(None)
-        except Exception as e:
-            console_logger.info(f"Something went wrong in writer loop: {e} {tracebacks}")
         finally:
-            console_logger.info("Finished writer process")
             writer_process.join()
             if writer_process_error.is_set():
                 raise RuntimeError("Writer process encountered an error")
