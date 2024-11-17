@@ -17,8 +17,7 @@ dependencies = [
     "transformers",
     "wandb",
     "jq",
-    "xformers==0.0.28.post1",
-    "accelerate"
+    "xformers==0.0.28.post1"
 ]
 
 [project.urls]
