@@ -116,8 +116,12 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
         if url is None or not url.strip():
             return
 
-        parsed = urllib3.util.parse_url(url)
-        yield f"{parsed.host}{(f':{parsed.port}') if parsed.port else ''}{parsed.path or ''}".rstrip("/").lower()
+        try:
+            p_url = urllib3.util.parse_url(url)
+            yield f"{p_url.host}{(f':{p_url.port}') if p_url.port else ''}{p_url.path or ''}".rstrip("/").lower()
+        except Exception:
+            LOGGER.info(f"Failed to parse URL: {url}")
+
 
     def check_url(self, url: str) -> bool:
         return url in self.blocklist
