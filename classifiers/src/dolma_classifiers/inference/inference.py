@@ -312,6 +312,8 @@ def process_documents(
                 scores_queue.put_nowait(AttributeRow(sources=batch.sources, attributes=attributes))
 
             scores_queue.put(None)
+        except Exception as e:
+            console_logger.info(f"Something went wrong in writer loop: {e} {tracebacks}")
         finally:
             writer_process.join()
             if writer_process_error.is_set():
