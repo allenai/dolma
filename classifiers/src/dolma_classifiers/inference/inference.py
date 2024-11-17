@@ -310,11 +310,14 @@ def process_documents(
 
                 inputs = {k: v.to(classifier.device) for k, v in batch.encoding.items()}
                 scores = classifier.score(**inputs)
-
+                torch.cuda.empty_cache()
+   
                 attributes = [
                     {"id": doc_id, "attributes": {pred.label: [[0, doc_length, pred.score]] for pred in doc_preds}}
                     for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.lengths)
                 ]
+                
+
                 scores_queue.put_nowait(AttributeRow(sources=batch.sources, attributes=attributes))
 
             scores_queue.put(None)
@@ -409,6 +412,7 @@ def main(args: argparse.Namespace) -> None:
     console_logger.info(f"Partitioned into {world_size} workers of with avg {files_per_process:.2f} files.")
     console_logger.info(f"Processing GPU {rank}/{world_size}: {len(partition_source_paths)} files")
     os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
 
     stats = {
         "total_memory": torch.cuda.get_device_properties(0).total_memory / (1024**3),  # Convert to GB
