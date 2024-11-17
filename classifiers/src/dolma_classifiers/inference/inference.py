@@ -14,7 +14,7 @@ import jq
 import msgspec
 import smart_open
 import torch
-from torch.nn import functional as F
+
 import torch.multiprocessing as mp
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import (  # pyright: ignore
@@ -334,8 +334,6 @@ def main(args: argparse.Namespace) -> None:
     if not torch.cuda.is_available():
         raise RuntimeError("No GPUs available, but the script is designed to use multiple GPUs.")
 
-    if hasattr(F, "scaled_dot_product_attention"):
-        torch.backends.cuda.enable_flash_sdp(True)
     # if necessary, unglob source prefix
     fs = fsspec.get_filesystem_class((scheme := urlparse(args.source_prefix).scheme))()
     source_paths = [(f"{scheme}://{p}" if scheme else p) for p in fs.glob(args.source_prefix)]
