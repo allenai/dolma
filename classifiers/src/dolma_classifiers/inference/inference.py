@@ -10,7 +10,7 @@ from threading import Event as EventType
 from typing import Any, Generator, NamedTuple
 from urllib.parse import urlparse
 import traceback
-
+import os
 import fsspec
 import jq
 import msgspec
@@ -224,6 +224,7 @@ def process_documents(
     suffix: str | None = None
 ):
     """Processes a batch of files using distributed processing."""
+    console_logger.info("GOT THIS FAR1")
 
     classifier = Registry.get(
         model_name=model_name,
@@ -241,6 +242,7 @@ def process_documents(
         for source_path, destination_path in zip(source_paths, destination_paths)
         if not fs.exists(destination_path)
     }
+    console_logger.info("GOT THIS FAR2")
 
     with torch.no_grad(), mp.Manager() as manager:
         input_paths_queue: QueueType[str] = manager.Queue()
@@ -264,6 +266,7 @@ def process_documents(
             ),
         )
         writer_process.start()
+        console_logger.info("GOT THIS FAR3")
 
         try:
             source_dataset = DocumentsIterableDataset(
@@ -315,6 +318,7 @@ def process_documents(
         except Exception as e:
             console_logger.info(f"Something went wrong in writer loop: {e} {tracebacks}")
         finally:
+            console_logger.info("Finished writer process")
             writer_process.join()
             if writer_process_error.is_set():
                 raise RuntimeError("Writer process encountered an error")
@@ -401,6 +405,7 @@ def main(args: argparse.Namespace) -> None:
 
     console_logger.info(f"Partitioned into {world_size} workers of with avg {files_per_process:.2f} files.")
     console_logger.info(f"Processing GPU {rank}/{world_size}: {len(partition_source_paths)} files")
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
 
     process_documents(
         model_name=args.model_name,
