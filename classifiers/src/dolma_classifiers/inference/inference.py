@@ -313,7 +313,7 @@ def process_documents(
                 torch.cuda.empty_cache()
    
                 attributes = [
-                    {"id": doc_id, "attributes": {pred.label: [[0, doc_length, pred.score]] for pred in doc_preds}}
+                    {"id": doc_id, "attributes": {pred.label: [[pred.score]] for pred in doc_preds}}
                     for doc_preds, doc_id, doc_length in zip(scores, batch.ids, batch.lengths)
                 ]
                 
