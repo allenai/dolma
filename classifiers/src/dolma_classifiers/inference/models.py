@@ -66,7 +66,7 @@ class BaseQualityClassifier:
     ) -> PreTrainedModel:
 
         config = AutoConfig.from_pretrained(model_name,        trust_remote_code=trust_remote_code)
-        config.max_position_embeddings = 512
+        config.max_position_embeddings = 1024
         
         config.attn_implementation = "flash_attention_2"  # Enable FA2
         config._flash_attn_2_enabled = True
@@ -177,6 +177,26 @@ class DataDelveClassifier(BaseQualityClassifier):
             trust_remote_code=trust_remote_code,
         )
         self.model = self.model.to(device)
+
+@Registry.add("data-delve/gte-base-en-v1.5_type-v3.8_url1")
+class DataDelveTypeClassifier(BaseQualityClassifier):
+    def __init__(
+        self,
+        model_name: str,
+        device: str,
+        dtype: str,
+        compile: bool = True,
+        trust_remote_code: bool = True,
+    ):
+        super().__init__(
+            model_name=model_name,
+            device=device,
+            dtype=dtype,
+            compile=compile,
+            trust_remote_code=trust_remote_code,
+        )
+        self.model = self.model.to(device)
+
 
 
 @Registry.add("nvidia/quality-classifier-deberta")
