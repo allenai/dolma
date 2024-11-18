@@ -78,6 +78,7 @@ class BaseQualityClassifier:
             trust_remote_code=trust_remote_code,
             config=config
         )
+        model.config=config
 
 
         def enable_flash_attention(module):
@@ -177,6 +178,33 @@ class DataDelveClassifier(BaseQualityClassifier):
             trust_remote_code=trust_remote_code,
         )
         self.model = self.model.to(device)
+   def _make_model(
+        self,
+        model_name: str,
+        device: str,
+        dtype: str,
+        compile: bool,
+        trust_remote_code: bool,
+    ) -> PreTrainedModel:
+        model = QualityModel.from_pretrained(model_name)
+        model = model.to(getattr(torch, dtype))
+        model = model.to(torch.device(device))
+
+        if compile:
+            model = torch.compile(model)  # pyright: ignore
+
+        model.eval()  # pyright: ignore
+
+        config = AutoConfig.from_pretrained(model_name,        trust_remote_code=trust_remote_code)
+        config.max_position_embeddings = 1024
+        
+        config.attn_implementation = "flash_attention_2"  # Enable FA2
+        config._flash_attn_2_enabled = True
+        config.use_cache = False
+
+        model.config = config
+        return model  # pyright: ignore
+
 
 @Registry.add("data-delve/gte-base-en-v1.5_type-v3.8_url1")
 class DataDelveTypeClassifier(BaseQualityClassifier):
