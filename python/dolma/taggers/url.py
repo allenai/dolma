@@ -122,7 +122,6 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
         except Exception:
             LOGGER.info(f"Failed to parse URL: {url}")
 
-
     def check_url(self, url: str) -> bool:
         return url in self.blocklist
 
