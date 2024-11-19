@@ -65,7 +65,7 @@ class BaseQualityClassifier:
         trust_remote_code: bool,
     ) -> PreTrainedModel:
 
-        config = AutoConfig.from_pretrained(model_name,        trust_remote_code=trust_remote_code)
+        config = AutoConfig.from_pretrained(model_name, trust_remote_code=trust_remote_code)
 #        config.max_position_embeddings = 1024
         
         config.attn_implementation = "flash_attention_2"  # Enable FA2
@@ -105,6 +105,8 @@ class BaseQualityClassifier:
     def device(self) -> torch.device:
         return self.model.device
 
+
+    @torch.no_grad()
     def score(self, **batch: torch.Tensor) -> list[list[Prediction]]:
         outputs = self.model(**batch)
         scores = (
