@@ -203,7 +203,7 @@ class DataDelveTypeClassifier(BaseQualityClassifier):
 @Registry.add("nvidia/quality-classifier-deberta")
 class DebertaQualityClassifier(BaseQualityClassifier):
     def _make_model(
-        self
+        self,
         model_name: str,
         device: str,
         dtype: str,
