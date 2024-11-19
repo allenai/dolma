@@ -66,7 +66,7 @@ class BaseQualityClassifier:
     ) -> PreTrainedModel:
 
         config = AutoConfig.from_pretrained(model_name, trust_remote_code=trust_remote_code)
-#        config.max_position_embeddings = 1024
+        config.max_position_embeddings = 512
         
         config.attn_implementation = "flash_attention_2"  # Enable FA2
         config._flash_attn_2_enabled = True
