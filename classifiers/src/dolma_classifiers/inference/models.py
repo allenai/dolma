@@ -178,7 +178,7 @@ class DataDelveClassifier(BaseQualityClassifier):
             trust_remote_code=trust_remote_code,
         )
         self.model = self.model.to(device)
-   def _make_model(
+    def _make_model(
         self,
         model_name: str,
         device: str,
