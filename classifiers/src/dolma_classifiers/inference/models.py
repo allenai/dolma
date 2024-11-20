@@ -93,9 +93,6 @@ class BaseQualityClassifier:
 
         if compile:
             model = torch.compile(model)  # pyright: ignore
-
-        torch.backends.cuda.matmul.allow_tf32 = True
-        torch.backends.cudnn.allow_tf32 = True
     
         model.eval()  # pyright: ignore
 
