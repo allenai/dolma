@@ -222,3 +222,8 @@ class PosELI5OHNegDCLMRefinedWebSteps2000LR3E4(LocalQualityClassifier):
 class RegSynthetic20EpochsBS640LF1LRE35(LocalQualityClassifier):
     model_local_or_remote_path = "s3://ai2-benb/qc/regression-synthetic-20epochs-bs640-lf1-lre35/2024-10-26_22-42-01/checkpoint-4750/"
     pass
+
+@Registry.add("regression-mmlu-20epochs")
+class RegMMLU20Epochs(LocalQualityClassifier):
+    model_local_or_remote_path = "s3://ai2-benb/qc/regression-mmlu-20epochs/2024-11-19_17-25-26/checkpoint-14000/"
+    pass
