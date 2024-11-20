@@ -414,6 +414,11 @@ def main(args: argparse.Namespace) -> None:
 
     console_logger.info(f"Partitioned into {world_size} workers of with avg {files_per_process:.2f} files.")
     console_logger.info(f"Processing GPU {rank}/{world_size}: {len(partition_source_paths)} files")
+
+    if len(partition_source_paths) == 0:
+        console_logger.info(f"No paths available to process for this worker.")
+        return
+
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,garbage_collection_threshold:0.8' #"expandable_segments:True" #'max_split_size_mb:512'
 
     stats = {
