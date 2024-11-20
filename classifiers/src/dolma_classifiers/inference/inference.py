@@ -404,7 +404,11 @@ def main(args: argparse.Namespace) -> None:
     # Distribute files across processes
     files_per_process = len(source_paths) / world_size
     start_idx = int(rank * files_per_process)
-    end_idx = int((rank + 1) * files_per_process) if rank < world_size - 1 else len(source_paths)
+    end_idx = min(len(source_paths), int((rank + 1) * files_per_process) if rank < world_size - 1 else len(source_paths))
+    if start_idx >= len(source_paths):
+        console_logger.info(f"No paths available to process for this worker.")
+        return
+
     partition_source_paths = source_paths[start_idx:end_idx]
     partition_destination_paths = destination_paths[start_idx:end_idx]
 
