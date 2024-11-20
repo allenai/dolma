@@ -364,7 +364,7 @@ def main(args: argparse.Namespace) -> None:
 
     # if necessary, unglob source prefix
     fs = fsspec.get_filesystem_class((scheme := urlparse(args.source_prefix).scheme))()
-    source_paths = [(f"{scheme}://{p}" if scheme else p) for p in fs.glob(args.source_prefix)]
+    source_paths = sorted([(f"{scheme}://{p}" if scheme else p) for p in fs.glob(args.source_prefix)])
 
     assert len(source_paths) > 0, f"No files found in {args.source_prefix}"
 
