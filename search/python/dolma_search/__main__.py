@@ -1,5 +1,6 @@
 import argparse
 import sys
+import os
 
 from . import index, query
 
@@ -23,7 +24,7 @@ def main():
     if args.command == "index":
         index.index_data(args)
     elif args.command == "query":
-        query.search_data(args)
+        query.search_data_flex(args)
     else:
         parser.print_help()
         sys.exit(1)

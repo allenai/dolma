@@ -17,6 +17,8 @@ from .common import IndexFields, create_index
 import multiprocessing as mp
 import os
 
+from pathlib import Path
+
 QUERY_DESCRIPTION = "Interactive search tool on a tantivy index"
 
 
@@ -32,6 +34,8 @@ def make_search_parser(parser: argparse.ArgumentParser | None = None):
     parser.add_argument("-q", "--query", type=str, default=None, help="The query to search for.")
     parser.add_argument("-n", "--num-hits", type=int, default=10, help="The number of hits to return.")
     parser.add_argument("-d", "--filedir", type=str, default=None, help="Files to iterate over.")
+    parser.add_argument("-o", "--outdir", type=str, default=None, help="Output directory.")
+    parser.add_argument("-p", "--processes", type=int, default=1, help="Number of processes.")
     parser.add_argument(
         "-f",
         "--display-format",
@@ -155,47 +159,60 @@ def search_data(args: argparse.Namespace):
                 show_snippets=(args.display_format == DisplayFormat.SNIPPET),
                 console=console,
             )
-def query_file_iterator(filepath: str):
-    with open(filepath) as f:
-        for line in f:
-            yield(line.strip())
+
+def query_file_iterator(fileobject):
+    for line in fileobject:
+        yield(line.strip())
 
 
-def search_data_file(filepath, args: argparse.Namespace):
+def search_data_files(args: argparse.Namespace):
+
+    Path(args.outdir).mkdir(parents=True, exist_ok=True)
+    
+    with mp.Pool(processes=args.processes) as pool:
+        for filename in os.listdir(args.filedir):
+            result = pool.apply_async(search_data_single_file, (os.path.join(args.filedir,filename),args))
+            # search_data_single_file(os.path.join(args.filedir,filename),args)
+        pool.close()
+        pool.join()
+
+def search_data_single_file(filepath,args):
     index = create_index(args.index_path, reuse=True)
     searcher = index.searcher()
 
     console = Console()
-    
-    for query in apply_selector(query_file_iterator(filepath), args.selector):
-        try:
-            parsed_query = index.parse_query(query)
-        except ValueError as e:
-            raise ValueError(f"Error parsing query `{query}`: {e}")
 
-        hits = searcher.search(parsed_query, limit=args.num_hits).hits
-        parsed_hits = HitsTuple.from_hits(hits, searcher)  # pyright: ignore
+    basename = filepath.split("/")[-1].split(".")[0]
+    print(basename)
 
-        if args.display_format == DisplayFormat.JSON:
-            for row in parsed_hits:
-                print(json.dumps(row.to_dict(), sort_keys=True))
-        else:
-            print_hits_table(
-                hits=parsed_hits,
-                searcher=searcher,
-                schema=index.schema,
-                query=parsed_query,
-                show_snippets=(args.display_format == DisplayFormat.SNIPPET),
-                console=console,
-            )
+    with open(filepath) as f, open(f"{args.outdir}/{basename}.jsonl","w") as out:    
+        for query in apply_selector(query_file_iterator(f), args.selector):
+            try:
+                parsed_query = index.parse_query(query)
+            except ValueError as e:
+                raise ValueError(f"Error parsing query `{query}`: {e}")
 
+            hits = searcher.search(parsed_query, limit=args.num_hits).hits
+            parsed_hits = HitsTuple.from_hits(hits, searcher)  # pyright: ignore
+
+            if args.display_format == DisplayFormat.JSON:
+                for row in parsed_hits:
+                    out.write(json.dumps(row.to_dict(), sort_keys=True) + "\n")
+            else:
+                print_hits_table(
+                    hits=parsed_hits,
+                    searcher=searcher,
+                    schema=index.schema,
+                    query=parsed_query,
+                    show_snippets=(args.display_format == DisplayFormat.SNIPPET),
+                    console=console,
+                )
+
+def search_data_flex(args):
+    if args.filedir is not None:
+        search_data_files(args)
+    else:
+        search_data(args)
 
 if __name__ == "__main__":
-    args = make_search_parser().parse_args()
-    print(args)
-    # if args.filedir is not None:
-    for filename in os.path.listdir(args.filedir):
-        print(filename)
-        search_data_file(os.path.join(args.filedir,filename),make_search_parser().parse_args())
-    # else:   
-    #     search_data(make_search_parser().parse_args())
+    search_data(make_search_parser().parse_args())
