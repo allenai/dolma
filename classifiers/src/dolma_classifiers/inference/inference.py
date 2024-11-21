@@ -28,6 +28,7 @@ from transformers import BatchEncoding, PreTrainedTokenizer
 from .loggers import ProgressLogger, WandbLogger, get_logger
 from .models import Registry
 from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup
+from pynvml import *
 
 
 class Batch(NamedTuple):
@@ -421,6 +422,13 @@ def main(args: argparse.Namespace) -> None:
 
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,garbage_collection_threshold:0.8' #"expandable_segments:True" #'max_split_size_mb:512'
 
+
+    nvmlInit()
+    h = nvmlDeviceGetHandleByIndex(0)
+    info = nvmlDeviceGetMemoryInfo(h)
+    console_logger.info(f'NVIDIA total    : {info.total}')
+    console_logger.info(f'NVIDIA free     : {info.free}')
+    console_logger.info(f'NVIDIA used     : {info.used}')
     stats = {
         "total_memory": torch.cuda.get_device_properties(0).total_memory / (1024**3),  # Convert to GB
         "allocated_memory": torch.cuda.memory_allocated(0) / (1024**3),

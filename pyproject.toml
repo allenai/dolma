@@ -34,6 +34,7 @@ dependencies = [
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
     "zstandard>=0.23.0",
+    "pynvml"
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
