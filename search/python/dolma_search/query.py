@@ -14,6 +14,9 @@ from tantivy import Document, Query, Schema, Searcher, SnippetGenerator
 
 from .common import IndexFields, create_index
 
+import multiprocessing as mp
+import os
+
 QUERY_DESCRIPTION = "Interactive search tool on a tantivy index"
 
 
@@ -28,6 +31,7 @@ def make_search_parser(parser: argparse.ArgumentParser | None = None):
     parser.add_argument("-i", "--index-path", type=str, required=True, help="The path to the index.")
     parser.add_argument("-q", "--query", type=str, default=None, help="The query to search for.")
     parser.add_argument("-n", "--num-hits", type=int, default=10, help="The number of hits to return.")
+    parser.add_argument("-d", "--filedir", type=str, default=None, help="Files to iterate over.")
     parser.add_argument(
         "-f",
         "--display-format",
@@ -129,7 +133,41 @@ def search_data(args: argparse.Namespace):
 
     console = Console()
 
+    
     for query in apply_selector(query_iterator(args.query), args.selector):
+        try:
+            parsed_query = index.parse_query(query)
+        except ValueError as e:
+            raise ValueError(f"Error parsing query `{query}`: {e}")
+
+        hits = searcher.search(parsed_query, limit=args.num_hits).hits
+        parsed_hits = HitsTuple.from_hits(hits, searcher)  # pyright: ignore
+
+        if args.display_format == DisplayFormat.JSON:
+            for row in parsed_hits:
+                print(json.dumps(row.to_dict(), sort_keys=True))
+        else:
+            print_hits_table(
+                hits=parsed_hits,
+                searcher=searcher,
+                schema=index.schema,
+                query=parsed_query,
+                show_snippets=(args.display_format == DisplayFormat.SNIPPET),
+                console=console,
+            )
+def query_file_iterator(filepath: str):
+    with open(filepath) as f:
+        for line in f:
+            yield(line.strip())
+
+
+def search_data_file(filepath, args: argparse.Namespace):
+    index = create_index(args.index_path, reuse=True)
+    searcher = index.searcher()
+
+    console = Console()
+    
+    for query in apply_selector(query_file_iterator(filepath), args.selector):
         try:
             parsed_query = index.parse_query(query)
         except ValueError as e:
@@ -153,4 +191,9 @@ def search_data(args: argparse.Namespace):
 
 
 if __name__ == "__main__":
-    search_data(make_search_parser().parse_args())
+    args = make_search_parser().parse_args()
+    if args.filedir is not None:
+        for filename in os.path.listdir(args.filedir):
+            search_data_file(os.path.join(args.filedir,filename),make_search_parser().parse_args())
+    else:   
+        search_data(make_search_parser().parse_args())
