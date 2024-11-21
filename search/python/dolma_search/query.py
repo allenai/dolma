@@ -16,6 +16,7 @@ from .common import IndexFields, create_index
 
 import multiprocessing as mp
 import os
+from collections import defaultdict
 
 from pathlib import Path
 
@@ -160,53 +161,105 @@ def search_data(args: argparse.Namespace):
                 console=console,
             )
 
-def query_file_iterator(fileobject):
-    for line in fileobject:
-        yield(line.strip())
+def query_file_iterator(filepath):
+    with open(filepath) as f:
+        for line in f:
+            yield(line.strip())
 
 
 def search_data_files(args: argparse.Namespace):
 
+    # index = create_index(args.index_path, reuse=True)
+    # searcher = index.searcher()
+
+    # console = Console()
+
     Path(args.outdir).mkdir(parents=True, exist_ok=True)
     
     with mp.Pool(processes=args.processes) as pool:
+        results = defaultdict(list)
         for filename in os.listdir(args.filedir):
-            result = pool.apply_async(search_data_single_file, (os.path.join(args.filedir,filename),args))
+            print(filename)
+            filepath = os.path.join(args.filedir,filename)    
+            for query in apply_selector(query_file_iterator(filepath), args.selector):
+                result = pool.apply_async(search_one_query, (query,args))
+                results[filename].append(result)
+            print(f"FINISHED {filename}")
             # search_data_single_file(os.path.join(args.filedir,filename),args)
+        
         pool.close()
         pool.join()
 
-def search_data_single_file(filepath,args):
+        for filename in results:
+            basename = filename.split(".")[0]
+            with open(f"{args.outdir}/{basename}.jsonl","w") as out:
+                for result in results[filename]:
+                    resultlist = result.get()
+                    for jsonstring in resultlist:
+                        out.write(jsonstring + "\n")
+
+
+
+def search_one_query(query,args):
     index = create_index(args.index_path, reuse=True)
     searcher = index.searcher()
-
     console = Console()
 
-    basename = filepath.split("/")[-1].split(".")[0]
-    print(basename)
+    output = []
+    try:
+        parsed_query = index.parse_query(query)
+    except ValueError as e:
+        raise ValueError(f"Error parsing query `{query}`: {e}")
 
-    with open(filepath) as f, open(f"{args.outdir}/{basename}.jsonl","w") as out:    
-        for query in apply_selector(query_file_iterator(f), args.selector):
-            try:
-                parsed_query = index.parse_query(query)
-            except ValueError as e:
-                raise ValueError(f"Error parsing query `{query}`: {e}")
+    hits = searcher.search(parsed_query, limit=args.num_hits).hits
+    parsed_hits = HitsTuple.from_hits(hits, searcher)  # pyright: ignore
 
-            hits = searcher.search(parsed_query, limit=args.num_hits).hits
-            parsed_hits = HitsTuple.from_hits(hits, searcher)  # pyright: ignore
+    if args.display_format == DisplayFormat.JSON:
+        for row in parsed_hits:
+            output.append(json.dumps(row.to_dict(), sort_keys=True))
+            # output = "test_str"
+    else:
+        print_hits_table(
+            hits=parsed_hits,
+            searcher=searcher,
+            schema=index.schema,
+            query=parsed_query,
+            show_snippets=(args.display_format == DisplayFormat.SNIPPET),
+            console=console,
+        )
+    return output
 
-            if args.display_format == DisplayFormat.JSON:
-                for row in parsed_hits:
-                    out.write(json.dumps(row.to_dict(), sort_keys=True) + "\n")
-            else:
-                print_hits_table(
-                    hits=parsed_hits,
-                    searcher=searcher,
-                    schema=index.schema,
-                    query=parsed_query,
-                    show_snippets=(args.display_format == DisplayFormat.SNIPPET),
-                    console=console,
-                )
+# def search_data_single_file(filepath,args):
+#     index = create_index(args.index_path, reuse=True)
+#     searcher = index.searcher()
+
+#     console = Console()
+
+#     basename = filepath.split("/")[-1].split(".")[0]
+#     print(basename)
+
+#     with open(filepath) as f, open(f"{args.outdir}/{basename}.jsonl","w") as out:    
+#         for query in apply_selector(query_file_iterator(f), args.selector):
+#             try:
+#                 parsed_query = index.parse_query(query)
+#             except ValueError as e:
+#                 raise ValueError(f"Error parsing query `{query}`: {e}")
+
+#             hits = searcher.search(parsed_query, limit=args.num_hits).hits
+#             parsed_hits = HitsTuple.from_hits(hits, searcher)  # pyright: ignore
+
+#             if args.display_format == DisplayFormat.JSON:
+#                 for row in parsed_hits:
+#                     out.write(json.dumps(row.to_dict(), sort_keys=True) + "\n")
+#             else:
+#                 print_hits_table(
+#                     hits=parsed_hits,
+#                     searcher=searcher,
+#                     schema=index.schema,
+#                     query=parsed_query,
+#                     show_snippets=(args.display_format == DisplayFormat.SNIPPET),
+#                     console=console,
+#                 )
 
 def search_data_flex(args):
     if args.filedir is not None:
