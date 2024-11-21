@@ -192,8 +192,10 @@ def search_data_file(filepath, args: argparse.Namespace):
 
 if __name__ == "__main__":
     args = make_search_parser().parse_args()
-    if args.filedir is not None:
-        for filename in os.path.listdir(args.filedir):
-            search_data_file(os.path.join(args.filedir,filename),make_search_parser().parse_args())
-    else:   
-        search_data(make_search_parser().parse_args())
+    print(args)
+    # if args.filedir is not None:
+    for filename in os.path.listdir(args.filedir):
+        print(filename)
+        search_data_file(os.path.join(args.filedir,filename),make_search_parser().parse_args())
+    # else:   
+    #     search_data(make_search_parser().parse_args())
