@@ -319,6 +319,8 @@ def process_documents(
                 
 
                 scores_queue.put_nowait(AttributeRow(sources=batch.sources, attributes=attributes))
+                if scores_queue.qsize() > 100:
+                    time.sleep(0.1)
 
             scores_queue.put(None)
         except Exception as e:
@@ -420,7 +422,7 @@ def main(args: argparse.Namespace) -> None:
         console_logger.info(f"No paths available to process for this worker.")
         return
 
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512,garbage_collection_threshold:0.8' #"expandable_segments:True" #'max_split_size_mb:512'
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:1024,garbage_collection_threshold:0.8' #"expandable_segments:True" #'max_split_size_mb:512'
 
 
     nvmlInit()
