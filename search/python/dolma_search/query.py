@@ -77,6 +77,19 @@ def apply_selector(queries: Generator[str, None, None], selector: str | None):
     for query in queries:
         yield from fn(query)
 
+def query_file_iterator(filepath):
+    i = 0
+    with open(filepath) as f:
+        for line in f:
+            i += 1
+            yield(line.strip(),i)
+
+def apply_selector_files(queries: Generator[str, None, None], selector: str | None):
+    selector = jq.compile(selector) if selector else None
+    fn = lambda query , i : ((str(e),i) for e in selector.input(json.loads(query)).all()) if selector else [(str(query),i)]
+    for query,i in queries:
+        yield from fn(query,i)
+
 
 class HitsTuple(NamedTuple):
     score: float
@@ -161,11 +174,6 @@ def search_data(args: argparse.Namespace):
                 console=console,
             )
 
-def query_file_iterator(filepath):
-    with open(filepath) as f:
-        for line in f:
-            yield(line.strip())
-
 
 def search_data_files(args: argparse.Namespace):
 
@@ -178,13 +186,14 @@ def search_data_files(args: argparse.Namespace):
     
     with mp.Pool(processes=args.processes) as pool:
         results = defaultdict(list)
+        tracker = {}
         for filename in os.listdir(args.filedir):
-            print(filename)
             filepath = os.path.join(args.filedir,filename)    
-            for query in apply_selector(query_file_iterator(filepath), args.selector):
-                result = pool.apply_async(search_one_query, (query,args))
+            tracker[filename] = 0
+            for query,i in apply_selector_files(query_file_iterator(filepath), args.selector):
+                result = pool.apply_async(search_one_query, (query,i,filename,args))
                 results[filename].append(result)
-            print(f"FINISHED {filename}")
+            # print(f"FINISHED {filename}")
             # search_data_single_file(os.path.join(args.filedir,filename),args)
         
         pool.close()
@@ -200,10 +209,13 @@ def search_data_files(args: argparse.Namespace):
 
 
 
-def search_one_query(query,args):
+def search_one_query(query,i,filename,args):
     index = create_index(args.index_path, reuse=True)
     searcher = index.searcher()
     console = Console()
+
+    # tracker[filename] += 1
+    print(f"{filename}: query {i}")
 
     output = []
     try:
