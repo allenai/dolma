@@ -24,6 +24,7 @@ from torch.utils.data import (  # pyright: ignore
     get_worker_info,
 )
 from transformers import BatchEncoding, PreTrainedTokenizer
+import torch.distributed as dist
 
 from .loggers import ProgressLogger, WandbLogger, get_logger
 from .models import Registry
@@ -230,7 +231,7 @@ def process_documents(
     console_logger = get_logger("process_documents")
     """Processes a batch of files using distributed processing."""
 
-
+    console_logger.info("INITIALIZED? {dist.is_initialized()}")
     classifier = Registry.get(
         model_name=model_name,
         device=f'cuda:{get_local_gpu_rank()}',
@@ -431,7 +432,7 @@ def main(args: argparse.Namespace) -> None:
         "max_memory": torch.cuda.max_memory_allocated(0) / (1024**3)
     }
     console_logger.info(stats)
-    
+
     num_gpus = torch.cuda.device_count()
     for i in range(num_gpus):
         gpu_name = torch.cuda.get_device_name(i)
