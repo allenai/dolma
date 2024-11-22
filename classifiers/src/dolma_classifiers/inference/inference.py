@@ -225,7 +225,7 @@ def process_documents(
     id_selector: str = ".id",
     num_workers: int = 1,
     prefetch_factor: int = 2,
-    rank: int
+    rank: int,
     suffix: str | None = None
 ):
     console_logger = get_logger("process_documents")
