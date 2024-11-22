@@ -362,8 +362,8 @@ def main(args: argparse.Namespace) -> None:
     WandbLogger()
 
     # check for available GPUs
-    console_logger(f"NUM GPUs: {torch.cuda.device_count()}")
-    
+    console_logger.info(f"NUM GPUs: {torch.cuda.device_count()}")
+
     if not torch.cuda.is_available():
         raise RuntimeError("No GPUs available, but the script is designed to use multiple GPUs.")
 
