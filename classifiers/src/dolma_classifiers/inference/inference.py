@@ -231,11 +231,6 @@ def process_documents(
     console_logger = get_logger("process_documents")
     """Processes a batch of files using distributed processing."""
 
-    console_logger.info(f"INITIALIZED? {dist.is_initialized()}")
-    console_logger.info(f"DIST RANK: {dist.get_rank()}")
-    console_logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
-    console_logger.info(f"DEVICE COUNT: {torch.cuda.device_count()}")
-    console_logger.info(f"LOCAL RANK IS : {get_local_gpu_rank()}")
     classifier = Registry.get(
         model_name=model_name,
         device=f'cuda:{get_local_gpu_rank()}',
@@ -324,8 +319,7 @@ def process_documents(
                 
 
                 scores_queue.put_nowait(AttributeRow(sources=batch.sources, attributes=attributes))
-                while scores_queue.qsize() > 8:
-                    time.sleep(0.1)
+
 
             scores_queue.put(None)
         except Exception as e:
