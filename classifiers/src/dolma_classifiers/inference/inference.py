@@ -232,6 +232,8 @@ def process_documents(
     """Processes a batch of files using distributed processing."""
 
     console_logger.info(f"INITIALIZED? {dist.is_initialized()}")
+    console_logger.info(f"DIST RANK: {dist.get_rank()}")
+    console_logger.info(f"DEVICE COUNT: {torch.cuda.device_count()}")
     console_logger.info(f"LOCAL RANK IS : {get_local_gpu_rank()}")
     classifier = Registry.get(
         model_name=model_name,
