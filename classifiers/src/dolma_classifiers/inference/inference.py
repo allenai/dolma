@@ -225,15 +225,16 @@ def process_documents(
     id_selector: str = ".id",
     num_workers: int = 1,
     prefetch_factor: int = 2,
+    rank: int
     suffix: str | None = None
 ):
     console_logger = get_logger("process_documents")
     """Processes a batch of files using distributed processing."""
-    console_logger.info(f"RANK IS : {get_local_gpu_rank()}")
-    torch.cuda.set_device(get_local_gpu_rank())
+    console_logger.info(f"RANK IS : rank}")
+    torch.cuda.set_device(rank)
     classifier = Registry.get(
         model_name=model_name,
-        device=f'cuda:{get_local_gpu_rank()}',
+        device=f'cuda:{rank}',
         dtype='float16',
         compile=model_compile,
     )
@@ -445,6 +446,7 @@ def main(args: argparse.Namespace) -> None:
         suffix=args.attribute_suffix,
         model_compile=args.model_compile,
         prefetch_factor=args.prefetch_factor,
+        rank=rank,
     )
 
 
