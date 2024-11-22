@@ -229,7 +229,8 @@ def process_documents(
 ):
     console_logger = get_logger("process_documents")
     """Processes a batch of files using distributed processing."""
-
+    console_logger.info(f"RANK IS : {get_local_gpu_rank()}")
+    torch.cuda.set_device(get_local_gpu_rank())
     classifier = Registry.get(
         model_name=model_name,
         device=f'cuda:{get_local_gpu_rank()}',
