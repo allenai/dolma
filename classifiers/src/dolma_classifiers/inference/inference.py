@@ -233,6 +233,7 @@ def process_documents(
 
     console_logger.info(f"INITIALIZED? {dist.is_initialized()}")
     console_logger.info(f"DIST RANK: {dist.get_rank()}")
+    console_logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', 'not set')}")
     console_logger.info(f"DEVICE COUNT: {torch.cuda.device_count()}")
     console_logger.info(f"LOCAL RANK IS : {get_local_gpu_rank()}")
     classifier = Registry.get(
