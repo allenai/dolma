@@ -225,15 +225,15 @@ def process_documents(
     id_selector: str = ".id",
     num_workers: int = 1,
     prefetch_factor: int = 2,
-    rank: int = 0,
     suffix: str | None = None
 ):
     console_logger = get_logger("process_documents")
     """Processes a batch of files using distributed processing."""
-    torch.cuda.set_device(rank)
+
+
     classifier = Registry.get(
         model_name=model_name,
-        device=f'cuda:{rank}',
+        device=f'cuda:{get_local_gpu_rank()}',
         dtype='float16',
         compile=model_compile,
     )
@@ -362,8 +362,6 @@ def main(args: argparse.Namespace) -> None:
     WandbLogger()
 
     # check for available GPUs
-    console_logger.info(f"NUM GPUs: {torch.cuda.device_count()}")
-
     if not torch.cuda.is_available():
         raise RuntimeError("No GPUs available, but the script is designed to use multiple GPUs.")
 
@@ -433,6 +431,14 @@ def main(args: argparse.Namespace) -> None:
         "max_memory": torch.cuda.max_memory_allocated(0) / (1024**3)
     }
     console_logger.info(stats)
+    
+    num_gpus = torch.cuda.device_count()
+    for i in range(num_gpus):
+        gpu_name = torch.cuda.get_device_name(i)
+        props = torch.cuda.get_device_properties(i)
+        total_memory = props.total_memory / (1024**3)  # Convert to GB
+        console_logger.info(f"  GPU {i}: {gpu_name} ({total_memory:.1f}GB)")
+
     process_documents(
         model_name=args.model_name,
         model_dtype=args.model_dtype,
@@ -447,7 +453,6 @@ def main(args: argparse.Namespace) -> None:
         suffix=args.attribute_suffix,
         model_compile=args.model_compile,
         prefetch_factor=args.prefetch_factor,
-        rank=rank,
     )
 
 
