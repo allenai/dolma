@@ -167,6 +167,7 @@ def writer_worker(
                     console_logger.info(f"Opened {destination_path} for writing")
 
             for source, attributes in group_by_source.items():
+                console_logger.info(f"Writing {len(attributes)} documents to {source_destination_mapping[source]}, total {counts[source]}, stop at {stop_at}")
                 files_writers[source].write(
                     encoder.encode_lines(attributes).decode("utf-8")
                 )
