@@ -174,6 +174,9 @@ def writer_worker(
                 counts[source] += len(attributes)
                 total_count += len(attributes)
 
+                if total_count % 500 == 0:
+                    console_logger.info(f"Processed {total_count} documents. Stop at = {stop_at}")
+
                 if stop_at is not None and total_count >= stop_at:
                     console_logger.info(f"Reached stop_at limit of {stop_at} documents")
                     stop_event.set()
