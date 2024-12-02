@@ -6,6 +6,7 @@ import hashlib
 import json
 import multiprocessing
 import os
+import random
 from collections import defaultdict
 from contextlib import ExitStack
 from copy import deepcopy
@@ -15,9 +16,12 @@ from queue import Queue
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, Generator, List, Tuple, Type, TypeVar, Union
 
+from multiprocessing.pool import ThreadPool
+
 import blingfire
 import msgspec
 import numpy as np
+import pandas as pd
 import smart_open
 import tldextract
 import tqdm
@@ -1603,6 +1607,131 @@ class papers(BaseStatsProcessor):
 
         with smart_open.open("s3://ai2-llm/stats/olmo-mix/v1/papers/summary.json", "wt") as destination_file:
             destination_file.write(json.dumps(counts, indent=2))
+
+
+@Registry.add
+class refinedweb(BaseStatsProcessor):
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        attrs_path = source_path.replace("/documents/", "/attributes/og_eli5_oh/")
+
+        documents_decoder = msgspec.json.Decoder(C4InputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+        counts = Counts()
+        interval = 10_000
+
+        values = []
+
+        with smart_open.open(source_path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, attributes_line in zip(doc_file, attrs_file):
+                document = documents_decoder.decode(source_line)
+                attributes = attributes_decoder.decode(attributes_line)
+
+                text = document.text
+                pos_value = attributes.attributes.get("og_eli5_oh__og_eli5_oh__hq")[0][2]
+
+                values.append(pos_value)
+
+                if len(values) % interval == 0:
+                    print(f"Processed {len(values)} documents")
+                    print(pd.Series(values).describe(percentiles=[0.05 * i for i in range(20)]))
+
+                # if counts.documents % interval == 0:
+                #     cls.increment_progressbar(queue, documents=interval)
+
+        # cls.increment_progressbar(queue, files=1, documents=counts.documents % interval)
+
+        # print percentile with pandas - every 5th percentile
+        print(pd.Series(values).describe(percentiles=[0.05 * i for i in range(20)]))
+
+
+        # with smart_open.open(destination_path, "wt") as destination_file:
+        #     destination_file.write(json.dumps(counts.to_dict(), indent=2))
+
+    @classmethod
+    def _get_values(self, path):
+        values = []
+
+        attrs_path = path.replace("/documents/", "/attributes/HuggingFaceFW_fineweb_edu_classifier/")
+
+        documents_decoder = msgspec.json.Decoder(C4InputSpec)
+        attributes_decoder = msgspec.json.Decoder(OutputSpec)
+
+        with smart_open.open(path, "rb") as doc_file, smart_open.open(attrs_path, "rb") as attrs_file:
+            for source_line, attributes_line in zip(doc_file, attrs_file):
+                document = documents_decoder.decode(source_line)
+                attributes = attributes_decoder.decode(attributes_line)
+
+                text = document.text
+                pos_value = attributes.attributes.get("HuggingFaceFW_fineweb_edu_classifier")[0][2]
+                # pos_value = attributes.attributes.get("regression_synthetic_20epochs_bs640_lf1_lre35")[0][2]
+
+                values.append({"text": text, "value": pos_value})
+
+                if len(values) == 25000:
+                    break
+
+        print(f"Processed {len(values)} documents for {path}")
+
+        return values
+
+    @classmethod
+    def _get_count(self, path):
+        cnt = 0
+
+        with smart_open.open(path, "rb") as doc_file:
+            for _ in doc_file:
+                cnt += 1
+
+        print(f"Processed {cnt} documents for {path}")
+
+        return cnt
+
+
+    @classmethod
+    def cli(cls, num_workers: int = 1, debug: bool = False, **process_single_kwargs: Any) -> None:
+        with TemporaryDirectory() as tempdir:
+            documents = [
+                # "s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_7-dd_ngram_dp_030-qc_cc_en_bin_001/documents/*/cc_en_*.json.gz",
+                # "s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/100b/0000_dclm_shard_*.jsonl.zstd"
+                # "s3://ai2-llm/pretraining-data/sources/dclm/v1_pos_eli5_oh_neg_dclm_refinedweb_steps_2000_lr3e4_top20p/documents/100b/*.json.zst"
+                "s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v2-frac_005_100-qc_cc_multi_bin-paloma-rep-pii/documents/falcon-0000.json.gz"
+                # "s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/full/dclm_shard_00000000.jsonl.zstd"
+            ]
+            paths = list(chain(*[glob_path(doc) for doc in documents]))
+            paths = random.sample(paths, min(20, len(paths)))
+
+            # with multiprocessing.Pool(20) as pool:
+            #     all_values = list(tqdm.tqdm(pool.imap_unordered(cls._get_values, paths), total=len(paths)))
+            all_values = [cls._get_values(path) for path in paths]
+            values = list(chain(*all_values))
+
+            # ThreadPool
+            # with ThreadPool(num_workers) as pool:
+            #     counts = list(tqdm.tqdm(pool.imap_unordered(cls._get_count, paths), total=len(paths)))
+            # count = [cls._get_count(path) for path in paths]
+
+            # print(counts)
+            # print(f"The total number of documents is {sum(counts)}")
+
+            # return
+
+            print(f"Processed {len(values)} documents")
+            print(pd.Series([row["value"] for row in values]).describe(percentiles=[0.05 * i for i in range(20)]))
+
+            df = pd.DataFrame(values)
+
+            # sample 10 examples from these percentiles: 0-20, 20-50, 50-90, 90-95, 95-99, 99-100
+            df['percentile'] = pd.qcut(df['value'], [0, 0.5, 0.75, 0.8, 0.9, 0.95, 0.99, 0.997, 1], labels=['0-0.5', '0.5-0.75', '0.75-0.8', '0.8-0.9', '0.9-0.95', '0.95-0.99', '0.99-0.997', '0.997-1'])
+            samples = df.groupby('percentile').apply(lambda x: x.sample(n=50, replace=False))
+
+            # save to csv
+            samples.to_csv("percentile_samples.csv", index=False)
+
+            # with smart_open.open("s3://ai2-llm/stats/olmo-mix/v1/papers/summary.json", "wt") as destination_file:
+            #     destination_file.write(json.dumps(counts, indent=2))
 
 
 if __name__ == "__main__":
