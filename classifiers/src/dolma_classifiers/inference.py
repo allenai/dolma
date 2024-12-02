@@ -143,6 +143,8 @@ def writer_worker(
     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())
     console_logger = get_logger("writer_worker")
 
+    console_logger.info(f"Writing to {len(source_destination_mapping)} files. Stop at = {stop_at}")
+
     files_writers = {}
     try:
         encoder = msgspec.json.Encoder()
@@ -167,6 +169,7 @@ def writer_worker(
                     console_logger.info(f"Opened {destination_path} for writing")
 
             for source, attributes in group_by_source.items():
+                console_logger.info(f"Writing {len(attributes)} documents to {source_destination_mapping[source]}")
                 files_writers[source].write(
                     encoder.encode_lines(attributes).decode("utf-8")
                 )
@@ -174,8 +177,7 @@ def writer_worker(
                 counts[source] += len(attributes)
                 total_count += len(attributes)
 
-                if total_count % 500 == 0:
-                    console_logger.info(f"Processed {total_count} documents. Stop at = {stop_at}")
+                console_logger.info(f"Processed {total_count} documents. Stop at = {stop_at}")
 
                 if stop_at is not None and total_count >= stop_at:
                     console_logger.info(f"Reached stop_at limit of {stop_at} documents")
