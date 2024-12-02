@@ -179,7 +179,10 @@ def writer_worker(
                 if stop_at is not None and total_count >= stop_at:
                     console_logger.info(f"Reached stop_at limit of {stop_at} documents")
                     stop_event.set()
-                    raise StopIteration
+
+                    for f in files_writers.values():
+                        f.close()
+                    return
 
             if total_count > log_every:
                 # we at most close one file per log_every documents
