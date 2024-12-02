@@ -251,7 +251,7 @@ class LinguaTagger(BaseLanguageTagger):
 
     def __init__(self) -> None:
         super().__init__()
-        if not LANGDETECT_AVAILABLE:
+        if not LINGUA_AVAILABLE:
             raise ImportError("langdetect is not installed, please run `pip install dolma[lang]`.")
         self.detector = LanguageDetectorBuilder.from_languages(*Language.all()).build()
 
