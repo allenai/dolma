@@ -174,9 +174,11 @@ def writer_worker(
                 counts[source] += len(attributes)
                 total_count += len(attributes)
 
-                console_logger.info(f"Writing {len(attributes)} documents to {source_destination_mapping[source]}, total {counts[source]}, stop at {stop_at}. total_count {total_count}. stop at is not None: {stop_at is not None}, total count >= stop_at: {total_count >= stop_at}")
+                count_all_sources = sum(counts.values())
 
-                if stop_at is not None and total_count >= stop_at:
+                console_logger.info(f"Writing {len(attributes)} documents to {source_destination_mapping[source]}, total {counts[source]}, stop at {stop_at}. total_count {total_count}. count_all_sources {count_all_sources}. stop at is not None: {stop_at is not None}, count_all_sources >= stop_at: {count_all_sources >= stop_at}")
+
+                if stop_at is not None and count_all_sources >= stop_at:
                     console_logger.info(f"Reached stop_at limit of {stop_at} documents")
                     stop_event.set()
 

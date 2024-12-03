@@ -1,0 +1,42 @@
+keywords_prompt:
+  system: |
+    Generate 50 diverse and relevant phrases (2-3 words) that are likely to be found in paragraphs. Note we're not looking for keywords, but instead for actual phrases likely to appear: real paragraphs are not likely to have generic titles like "Math history", "Problem-solving skills". Instead, they will contain very specific phrases. Try thinking first on how real paragraphs look like. For example, mathematics problems might contain the phrase "next we multiply" or "What is the value" as a part of a solution example. Avoid using terms that are too general and can be applied in other topics.
+
+    I will provide a small sample of questions related to the topic, but you should cover a wide variety of related topics. Don't overfit to the topic examples.
+
+    # Output Format
+    - Provide a numbered list of 50 phrases.
+    - Example:
+      1. [Phrase]
+      2. [Phrase]
+      3. [Phrase]
+      ...
+      50. [Phrase]
+
+    # Note
+    1. Use the letter casing you expect to be found in documents.
+  instance: |
+    Topic: {{topic}}
+    Sample questions:
+    {% for question in questions -%}
+      - {{question}}
+    {% endfor -%}
+relevance_annotation_prompt: |
+  Below is an extract from a web page. Evaluate whether the page has a high educational value and could be useful in an educational setting for teaching the topic {{topic}} using the additive 5-point scoring system described below. Points are accumulated based on the satisfaction of each criterion, ensuring that the extract is likely to help students answer questions in the general format and complexity similar to the these questions:
+  {% for question in questions -%}
+    {{ loop.index }}. {{ question }}
+  {% endfor %}
+
+  Note that it is not necessary for the extract to address these exact questions.
+  - Add 1 point if the extract provides some basic information relevant to {{topic}}, even if it includes some irrelevant or non-academic content like advertisements and promotional material.
+  - Add another point if the extract addresses certain elements pertinent to {{topic}} but does not align closely with educational standards. It might mix educational content with non-educational material, offering a superficial overview of potentially useful topics, or presenting information in a disorganized manner and incoherent writing style.
+  - Award a third point if the extract is appropriate for educational use and introduces key concepts related to {{topic}}. It is coherent though it may not be comprehensive or could include some extraneous information. It may resemble an introductory section of a textbook or a basic tutorial that is suitable for learning {{topic}} but has notable limitations like treating concepts that are too complex for the intended students.
+  - Grant a fourth point if the extract is highly relevant and beneficial for educational purposes for learning {{topic}}, exhibiting a clear and consistent writing style. It could be similar to a chapter from a textbook or a tutorial, offering substantial educational content, including exercises and solutions similar to {{sample_questions}}, with minimal irrelevant information, and the concepts aren't too advanced for the intended students. The content is coherent, focused, and valuable for structured learning.
+  - Bestow a fifth point if the extract is outstanding in its educational value, perfectly suited for teaching {{topic}}. It follows detailed reasoning, the writing style is easy to follow and offers profound and thorough insights into {{topic}}, devoid of any non-educational or complex content.
+
+  The extract:
+  {{document}}
+
+  After examining the extract: 
+  - Briefly justify your total score, up to 100 words.
+  - Conclude with the score using the format: "Educational score: <total points>"
