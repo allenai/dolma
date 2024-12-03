@@ -184,7 +184,7 @@ def writer_worker(
 
                     for f in files_writers.values():
                         f.close()
-                    return
+                    raise StopIteration
 
             if total_count > log_every:
                 # we at most close one file per log_every documents
