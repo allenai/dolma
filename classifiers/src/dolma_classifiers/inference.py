@@ -291,6 +291,8 @@ def process_documents(
                 max_length=max_length,
                 text_selector=text_selector,
                 id_selector=id_selector,
+                n_rows=max_rows,
+                n_files=len(source_paths),
             )
 
             data_loader = DataLoader(
