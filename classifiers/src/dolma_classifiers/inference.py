@@ -89,7 +89,7 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
             if self.n_rows and self.n_files:
                 rows_per_file = self.n_rows // self.n_files
                 rows_per_file_surplus = self.n_rows % self.n_files
-                if path_index == 0:
+                if path_index == 0 and self.worker_info[0] == 0:
                     rows_to_read = rows_per_file + rows_per_file_surplus
                 else:
                     rows_to_read = rows_per_file
@@ -156,10 +156,10 @@ def writer_worker(
     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())
     console_logger = get_logger("writer_worker")
 
+    counts = defaultdict(int)
     files_writers = {}
     try:
         encoder = msgspec.json.Encoder()
-        counts = defaultdict(int)
         total_count = 0
 
         while True:
@@ -218,6 +218,7 @@ def writer_worker(
         console_logger.error(f"Writer process encountered an error: {e}")
         error_event.set()
     finally:
+        console_logger.info(f"Writer process finished, wrote {sum(counts.values()):,} documents")
         for f in files_writers.values():
             f.close()
 
