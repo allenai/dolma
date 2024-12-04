@@ -80,14 +80,15 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
         id_selector = jq.compile(self.id_selector)
 
         while self.input_paths_queue.qsize() > 0:
-            if self.stop_event.is_set():
-                self.logger.info("Stop event set, stopping reading process")
-                break
             path = self.input_paths_queue.get()
             self.logger.info(f"Reading {path}")
             count = 0
             with smart_open.open(path, "rt") as source_file:
                 for line in source_file:
+                    if self.stop_event.is_set():
+                        self.logger.info("Stop event set, stopping reading process")
+                        break
+
                     doc = decoder.decode(line)
                     text = str(text_selector.input(doc).first())
                     id_ = str(id_selector.input(doc).first())
@@ -184,7 +185,7 @@ def writer_worker(
 
                     for f in files_writers.values():
                         f.close()
-                    raise StopIteration
+                    return
 
             if total_count > log_every:
                 # we at most close one file per log_every documents
