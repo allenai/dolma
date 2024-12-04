@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import multiprocessing as mp
 import time
 from collections import defaultdict
@@ -49,21 +50,24 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
         self,
         input_paths_queue: QueueType[str],
         output_paths_queue: QueueType[OutputPath],
-        stop_event: Event,
         tokenizer: PreTrainedTokenizer,
         max_length: int | None,
         text_selector: str = '.text',
         id_selector: str = ".id",
+        n_rows: int | None = None,
+        n_files: int | None = None,
     ):
         self.input_paths_queue = input_paths_queue
         self.output_paths_queue = output_paths_queue
-        self.stop_event = stop_event
 
         self.text_selector = text_selector
         self.id_selector = id_selector
         self.tokenizer = tokenizer
         self.logger = get_logger(self.__class__.__name__)
         self.max_length = max_length or int(tokenizer.model_max_length)
+
+        self.n_rows = n_rows
+        self.n_files = n_files
 
     @property
     def worker_info(self):
@@ -79,16 +83,24 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
         text_selector = jq.compile(self.text_selector)
         id_selector = jq.compile(self.id_selector)
 
+        path_index = 0
+
         while self.input_paths_queue.qsize() > 0:
+            if self.n_rows and self.n_files:
+                rows_per_file = self.n_rows // self.n_files
+                rows_per_file_surplus = self.n_rows % self.n_files
+                if path_index == 0:
+                    rows_to_read = rows_per_file + rows_per_file_surplus
+                else:
+                    rows_to_read = rows_per_file
+            else:
+                rows_to_read = None
+
             path = self.input_paths_queue.get()
-            self.logger.info(f"Reading {path}")
+            self.logger.info(f"Reading {path}, rows_to_read={rows_to_read}")
             count = 0
             with smart_open.open(path, "rt") as source_file:
-                for line in source_file:
-                    if self.stop_event.is_set():
-                        self.logger.info("Stop event set, stopping reading process")
-                        break
-
+                for line in itertools.islice(source_file, rows_to_read):
                     doc = decoder.decode(line)
                     text = str(text_selector.input(doc).first())
                     id_ = str(id_selector.input(doc).first())
@@ -103,6 +115,8 @@ class DocumentsIterableDataset(IterableDataset[Batch]):
 
             self.logger.info(f"Read {count:,} documents from {path}")
             self.output_paths_queue.put(OutputPath(source=path, count=count))
+
+            path_index += 1
 
 
 
@@ -133,12 +147,10 @@ class AttributeRow(NamedTuple):
 
 def writer_worker(
     error_event: Event,
-    stop_event: Event,
     scores_queue: QueueType[AttributeRow | None],
     output_paths_queue: QueueType[OutputPath],
     source_destination_mapping: dict[str, str],
     log_every: int = 10_000,
-    stop_at: int | None = None,
 ):
 
     progress_logger = ProgressLogger(log_every=log_every, wandb_logger=WandbLogger())
@@ -174,19 +186,6 @@ def writer_worker(
                 progress_logger.increment(docs=len(attributes))
                 counts[source] += len(attributes)
                 total_count += len(attributes)
-
-                count_all_sources = sum(counts.values())
-
-                if stop_at is not None:
-                    console_logger.info(f"Writing {len(attributes)} documents to {source_destination_mapping[source]}, total {counts[source]}, stop at {stop_at}. total_count {total_count}. count_all_sources {count_all_sources}. stop at is not None: {stop_at is not None}, count_all_sources >= stop_at: {count_all_sources >= stop_at}")
-
-                if stop_at is not None and count_all_sources >= stop_at:
-                    console_logger.info(f"Reached stop_at limit of {stop_at} documents")
-                    stop_event.set()
-
-                    for f in files_writers.values():
-                        f.close()
-                    return
 
             if total_count > log_every:
                 # we at most close one file per log_every documents
@@ -267,7 +266,6 @@ def process_documents(
         input_paths_queue: QueueType[str] = manager.Queue()
         output_paths_queue: QueueType[OutputPath] = manager.Queue()
         scores_queue: QueueType[AttributeRow | None] = manager.Queue()
-        stop_event = Event()
         for source_path in source_destination_mapping:
             input_paths_queue.put(source_path)
 
@@ -280,8 +278,6 @@ def process_documents(
                 source_destination_mapping=source_destination_mapping,
                 log_every=log_every,
                 error_event=writer_process_error,
-                stop_event=stop_event,
-                stop_at=max_rows,
             ),
         )
         writer_process.start()
@@ -291,7 +287,6 @@ def process_documents(
                 # path=source_path,
                 input_paths_queue=input_paths_queue,
                 output_paths_queue=output_paths_queue,
-                stop_event=stop_event,
                 tokenizer=classifier.tokenizer,
                 max_length=max_length,
                 text_selector=text_selector,
@@ -383,6 +378,10 @@ def main(args: argparse.Namespace) -> None:
 
     console_logger.info(f"Processing up to {len(source_paths)} files from {args.source_prefix} to {args.output_prefix}")
 
+    if args.max_rows:
+        assert args.override, "max_rows is only supported with --override"
+
+
     # Filter out existing files unless --override is set
     if not args.override:
 
@@ -462,7 +461,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-dtype", type=str, default="float16", help="Data type for model")
     parser.add_argument("--attribute-suffix", type=str, default=None, help="Optional suffix for attribute keys")
     parser.add_argument("--prefetch-factor", type=int, default=2, help="Prefetch factor for DataLoader")
-    parser.add_argument("--max-rows", type=int, default=None, help="Stop processing after this many rows")
+    parser.add_argument("--max-rows", type=int, default=None, help="Stop processing after this many global rows")
     opts = parser.parse_args()
 
     if opts.output_prefix is None:
