@@ -1,0 +1,16 @@
+destination: ${oc.env:HOME}/ai2-llm/preprocessed/stackexchange/v1_dedupe/documents/allenai/dolma2-tokenizer
+documents:
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/stackexchange/v1_dedupe/documents/*
+
+processes: 16
+seed: 3920
+max_size: 4_294_967_296
+dtype: uint32
+
+tokenizer:
+  name_or_path: allenai/dolma2-tokenizer
+  bos_token_id: null
+  eos_token_id: 100257
+  pad_token_id: 100277
+  segment_before_tokenization: false
+  encode_special_tokens: true

@@ -1,0 +1,83 @@
+# nvidia_quality_classifier_deberta_Low/score
+# ┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━┓
+# ┃ value            ┃ dist    ┃ count      ┃
+# ┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━┩
+# │ [0.000, 0.001)   │ 0.0935  │ 10,302,917 │
+# │ [0.001, 0.002)   │ 0.2006  │ 22,092,046 │
+# │ [0.002, 0.003)   │ 0.1299  │ 14,307,537 │
+# │ [0.003, 0.004)   │ 0.0756  │ 8,326,514  │
+# │ [0.004, 0.006)   │ 0.0847  │ 9,329,927  │
+# │ [0.006, 0.011)   │ 0.0887  │ 9,771,702  │
+# │ [0.011, 0.031)   │ 0.0860  │ 9,471,766  │
+# │ [0.031, 0.215)   │ 0.0955  │ 10,520,370 │
+# │ [0.215, 0.938)   │ 0.0956  │ 10,530,852 │
+# │ [0.938, 0.993]   │ 0.0498  │ 5,485,714  │
+# └──────────────────┴─────────┴────────────┘
+# nvidia_quality_classifier_deberta_Medium/score
+# ┏━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━┳━━━━━━━━━━━━━┓
+# ┃ value             ┃ dist     ┃ count       ┃
+# ┡━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━╇━━━━━━━━━━━━━┩
+# │ [0.004, 0.069)    │ 0.0558   │ 6,141,162   │
+# │ [0.069, 0.244)    │ 0.1110   │ 12,222,713  │
+# │ [0.244, 0.462)    │ 0.1113   │ 12,254,640  │
+# │ [0.462, 0.700)    │ 0.1110   │ 12,229,105  │
+# │ [0.700, 0.857)    │ 0.1112   │ 12,247,913  │
+# │ [0.857, 0.932)    │ 0.1120   │ 12,331,155  │
+# │ [0.932, 0.966)    │ 0.1127   │ 12,411,860  │
+# │ [0.966, 0.982)    │ 0.1104   │ 12,155,159  │
+# │ [0.982, 0.991)    │ 0.1194   │ 13,147,942  │
+# │ [0.991, 0.994]    │ 0.0454   │ 4,997,696   │
+# └───────────────────┴──────────┴─────────────┘
+# nvidia_quality_classifier_deberta_High/score
+# ┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━┓
+# ┃ value            ┃ dist    ┃ count       ┃
+# ┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━┩
+# │ [0.000, 0.001)   │ 0.1535  │ 16,910,071  │
+# │ [0.001, 0.002)   │ 0.0819  │ 9,021,261   │
+# │ [0.002, 0.004)   │ 0.0869  │ 9,570,058   │
+# │ [0.004, 0.010)   │ 0.0959  │ 10,562,952  │
+# │ [0.010, 0.031)   │ 0.1079  │ 11,883,866  │
+# │ [0.031, 0.095)   │ 0.1038  │ 11,429,509  │
+# │ [0.095, 0.274)   │ 0.1057  │ 11,646,421  │
+# │ [0.274, 0.572)   │ 0.1060  │ 11,670,182  │
+# │ [0.572, 0.813)   │ 0.1058  │ 11,652,356  │
+# │ [0.813, 0.975]   │ 0.0526  │ 5,792,669   │
+# └──────────────────┴─────────┴─────────────┘
+
+streams:
+  - name: dclm
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/full/*.zstd
+    attributes:
+      - random_number_v1
+      - nvidia_quality_classifier_deberta
+    output:
+      max_size_in_bytes: 3_814_697_265
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/dclm/v1_nvidia25/documents/full
+      discard_fields:
+        - attributes
+
+    compression:
+      input: zst
+      output: zst
+
+    filter:
+      include:
+        # Remove repetitions
+        - >-
+          (.attributes.nvidia_quality_classifier_deberta_High[0][-1] * 0.9) +
+          (.attributes.random_number_v1__random_number_v1__random[0][-1] * 0.1) >= 0.274
+        - >-
+          (.attributes.nvidia_quality_classifier_deberta_Medium[0][-1] * 0.5) +
+          (.attributes.random_number_v1__random_number_v1__random[0][-1] * 0.5) >= 0.932
+        - >-
+          (.attributes.nvidia_quality_classifier_deberta_Low[0][-1] * 0.2) +
+          (.attributes.random_number_v1__random_number_v1__random[0][-1] * 0.8) >= 0.938
+      syntax: jq
+    span_replacement: []
+
+work_dir:
+  input: ${oc.env:HOME}/ai2-llm/work_dir/dclm/v1_nvidia25/input
+  output: ${oc.env:HOME}/ai2-llm/work_dir/dclm/v1_nvidia25/output
+
+processes: 188

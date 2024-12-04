@@ -1,0 +1,22 @@
+documents:
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/dclm/v0_mmlu_web/documents/full/*.zst
+
+dedupe:
+  name: dedupe_para_ngrams_13_1
+  paragraphs:
+    attribute_name: dedupe_para_ngrams_13_1
+    by_ngram:
+      ngram_length: 13
+      stride: 1
+      overlap_threshold: 0.5
+      skip_short_paragraphs: true
+  skip_empty: true
+
+bloom_filter:
+  file: ${oc.env:HOME}/bloom/mmmlu_web_dedupe_para_ngrams_13_1.bloom
+  read_only: false
+  # set to of words
+  estimated_doc_count: 64_000_000_000
+  desired_false_positive_rate: 0.1
+
+processes: 188
