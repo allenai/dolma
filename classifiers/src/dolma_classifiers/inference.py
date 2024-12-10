@@ -8,6 +8,7 @@ from itertools import zip_longest
 from multiprocessing import Event, Process
 from queue import Empty
 from queue import Queue as QueueType
+from random import Random
 from typing import Any, Generator, NamedTuple
 from urllib.parse import urlparse
 
@@ -367,6 +368,9 @@ def main(args: argparse.Namespace) -> None:
     fs = fsspec.get_filesystem_class((scheme := urlparse(args.source_prefix).scheme))()
     source_paths = [(f"{scheme}://{p}" if scheme else p) for p in fs.glob(args.source_prefix)]
 
+    if args.max_files:
+        source_paths = Random(0).sample(source_paths, min(args.max_files, len(source_paths)))
+
     assert len(source_paths) > 0, f"No files found in {args.source_prefix}"
 
     if all("/documents/" in p for p in source_paths):
@@ -465,6 +469,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attribute-suffix", type=str, default=None, help="Optional suffix for attribute keys")
     parser.add_argument("--prefetch-factor", type=int, default=2, help="Prefetch factor for DataLoader")
     parser.add_argument("--max-rows", type=int, default=None, help="Stop processing after this many global rows")
+    parser.add_argument("--max-files", type=int, default=None)
     opts = parser.parse_args()
 
     if opts.output_prefix is None:
