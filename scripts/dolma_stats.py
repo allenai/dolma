@@ -438,6 +438,57 @@ class just_cc_dedup(BaseStatsProcessor):
         with smart_open.open(destination_path, "wt") as destination_file:
             destination_file.write(json.dumps(stats, indent=2))
 
+@Registry.add
+class just_pdf_dedup(BaseStatsProcessor):
+    documents = "/home/ubuntu/s2pdf_workspaces/s2pdf_chunk_00/documents/results/*.jsonl"
+    stats = "/home/ubuntu/s2pdf_workspaces/dedupestats/*.jsonl"
+
+    @classmethod
+    def process_single(
+        cls, source_path: str, destination_path: str, queue: "Queue[Union[Tuple[int, ...], None]]", **kwargs: Any
+    ):
+        dedup = source_path.replace("/documents/", "/attributes/")
+
+        doc_decoder = msgspec.json.Decoder(InputSpec)
+        attr_decoder = msgspec.json.Decoder(OutputSpec)
+        stats = {
+            "num_docs": 0,
+            "num_chars": 0,
+
+            "dedupe_paragraphs_count": 0,
+            "dedupe_paragraphs_length": 0,
+            "dedupe_paragraphs_docs_with_dupe": 0,
+  
+        }
+        documents = 0
+        interval = 10_000
+
+        with ExitStack() as stack:
+            doc_file = stack.enter_context(smart_open.open(source_path, "rb"))
+            atts_file = stack.enter_context(smart_open.open(dedup, "rb"))
+
+            for doc_line, attr_line in zip(doc_file, atts_file):
+                doc = doc_decoder.decode(doc_line)
+                stats["num_chars"] += len(doc.text)
+                stats["num_docs"] += 1
+
+                attrs = attr_decoder.decode(attr_line).attributes
+
+                # Duplicates stats
+                dups = [p for p in attrs.get("dedupe_para_ngrams_13_1", []) if p[1] - p[0] > 0]
+                stats["dedupe_paragraphs_count"] += len(dups)
+                stats["dedupe_paragraphs_length"] += sum(s[1] - s[0] for s in dups)
+                stats["dedupe_paragraphs_docs_with_dupe"] += 1 if dups else 0
+
+                documents += 1
+
+                if documents % interval == 0:
+                    cls.increment_progressbar(queue, documents=interval)
+
+        cls.increment_progressbar(queue, files=1, documents=documents % interval)
+
+        with smart_open.open(destination_path, "wt") as destination_file:
+            destination_file.write(json.dumps(stats, indent=2))
 
 @Registry.add
 class dolma_v15r2_counts(BaseStatsProcessor):
