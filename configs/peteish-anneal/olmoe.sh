@@ -42,6 +42,6 @@ for path in "${collections[@]}"; do
         --seed 3920 \
         --max_size 1073741824 \
         --sample_ring_prop \
-        --dtype uint32
+        --dtype uint16
     set +ex
 done
