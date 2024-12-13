@@ -1,0 +1,44 @@
+target_size: 200G
+
+sources:
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/dclm/*.npy
+    mix_percent: 0.5
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/pes2o/*.npy
+    mix_percent: 0.0585
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/flan/*.npy
+    mix_percent: 0.1660
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/codesearchnet-owmfilter/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/dolmino_math_synth/basic_math/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/dolmino_math_synth/gsm_mind/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/dolmino_math_synth/gsm8k-synth/resample_v1_6x/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/gsm8k/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/mathcoder2-synthmath/*/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/metamath-owmfilter/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/tinyGSM-MIND/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/math/tulu_math/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/stackexchange/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/dolma2-tokenizer-sigdig/wiki/*.npy
+    sample_percent: 1.0

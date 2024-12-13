@@ -1,0 +1,28 @@
+streams:
+  - name: dclm
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/full/*.zstd
+    attributes:
+      - flashcards_domains_v1
+    output:
+      max_size_in_bytes: 3_814_697_265
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/dclm/v0_mmlu_web/documents/full
+      discard_fields:
+        - attributes
+
+    compression:
+      input: zst
+      output: zst
+
+    filter:
+      include:
+        # Only include documents whose domains have flashcards content
+        - .attributes.flashcards_domains_v1__flashcards_domains_v1__url != null
+      syntax: jq
+    span_replacement: []
+
+work_dir:
+  input: ${oc.env:HOME}/ai2-llm/work_dir/dclm/mmlu_web/input
+  output: ${oc.env:HOME}/ai2-llm/work_dir/dclm/mmlu_web/output
+
+processes: 188

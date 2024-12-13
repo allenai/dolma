@@ -1,0 +1,44 @@
+target_size: 200G
+
+sources:
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/dclm/*.npy
+    mix_percent: 0.5
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/pes2o/*.npy
+    mix_percent: 0.0585
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/flan/*.npy
+    mix_percent: 0.1660
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/codesearchnet-owmfilter/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/dolmino_math_synth/basic_math/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/dolmino_math_synth/gsm_mind/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/dolmino_math_synth/gsm8k-synth/resample_v1_6x/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/gsm8k/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/mathcoder2-synthmath/*/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/metamath-owmfilter/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/tinyGSM-MIND/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/math/tulu_math/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/stackexchange/*.npy
+    sample_percent: 1.0
+
+  - source: s3://ai2-llm/preprocessed/dolmino-mix-1124/allenai/gpt-neox-olmo-dolma-v1_5/wiki/*.npy
+    sample_percent: 1.0

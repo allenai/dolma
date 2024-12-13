@@ -1,0 +1,13 @@
+streams:
+  - name: dclm
+    documents: &documents
+      - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/dclm/v0_mmlu_web_minhash_dedup/documents/*.json.zst
+    attributes: &attributes
+      - dedupe_ngrams_8_1_all_train
+    output:
+      max_size_in_bytes: 200_000_000
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/dclm/v0_mmlu_web_minhash_dedup_decontam/documents
+    filter:
+      exclude:
+        - ([.attributes.dedupe_ngrams_8_1_all_train[] | select(.[2] >= 0.1)] | length != 0)
+      syntax: jq
