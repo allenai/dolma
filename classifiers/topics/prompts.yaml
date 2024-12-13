@@ -22,21 +22,28 @@ keywords_prompt:
       - {{question}}
     {% endfor -%}
 relevance_annotation_prompt: |
-  Below is an extract from a web page. Evaluate whether the page has a high educational value and could be useful in an educational setting for teaching the topic {{topic}} using the additive 5-point scoring system described below. Points are accumulated based on the satisfaction of each criterion, ensuring that the extract is likely to help students answer questions in the general format and complexity similar to the these questions:
-  {% for question in questions -%}
-    {{ loop.index }}. {{ question }}
-  {% endfor %}
+  Below is an extract from a web page. Your task is to evaluate the extract's relevance and applicability in providing knowledge and explanations about College Mathematics. The following list includes sample questions to illustrate covered sub-topics and style of questions. Use the refined scoring system described below:
+  
+  1. Identify the most relevant topic from the list:
+     {% for topic, questions in questions_by_topic.items() -%}
+       Topic: {{ topic }} 
+       {% for question in questions -%}
+       Q{{ loop.index }}. {{ question }}
+       {% endfor %}
+     {% endfor %}
+  
+  2. Assess the extract's relevance and applicability in providing knowledge that could answer questions of similar style as the sample questions:
 
-  Note that it is not necessary for the extract to address these exact questions.
-  - Add 1 point if the extract provides some basic information relevant to {{topic}}, even if it includes some irrelevant or non-academic content like advertisements and promotional material.
-  - Add another point if the extract addresses certain elements pertinent to {{topic}} but does not align closely with educational standards. It might mix educational content with non-educational material, offering a superficial overview of potentially useful topics, or presenting information in a disorganized manner and incoherent writing style.
-  - Award a third point if the extract is appropriate for educational use and introduces key concepts related to {{topic}}. It is coherent though it may not be comprehensive or could include some extraneous information. It may resemble an introductory section of a textbook or a basic tutorial that is suitable for learning {{topic}} but has notable limitations like treating concepts that are too complex for the intended students.
-  - Grant a fourth point if the extract is highly relevant and beneficial for educational purposes for learning {{topic}}, exhibiting a clear and consistent writing style. It could be similar to a chapter from a textbook or a tutorial, offering substantial educational content, including exercises and solutions similar to {{sample_questions}}, with minimal irrelevant information, and the concepts aren't too advanced for the intended students. The content is coherent, focused, and valuable for structured learning.
-  - Bestow a fifth point if the extract is outstanding in its educational value, perfectly suited for teaching {{topic}}. It follows detailed reasoning, the writing style is easy to follow and offers profound and thorough insights into {{topic}}, devoid of any non-educational or complex content.
-
+  - Add 1 point if the extract contains some basic information relevant to the topic, even if it includes irrelevant content or lacks depth.
+  - Add another point if the extract includes several pieces of information that are likely helpful for answering questions in the style of the examples, though it may not align closely with the questions or may be disorganized.
+  - Award a third point if the extract provides numerous useful pieces of information that are likely applicable to the questions and are presented in a coherent manner, though it may not be comprehensive or may include some extraneous information.
+  - Grant a fourth point if the extract is highly relevant and beneficial, offering substantial information that aligns well with the style and expertise level of the example questions, with minimal irrelevant content.
+  - Bestow a fifth point if the extract is outstanding in its usefulness, providing comprehensive and well-organized information that is perfectly suited to answer questions in the style of the examples, with clear and focused content.
+  
+  3. After examining the extract:
+     - Point out the most relevant topic, if any, after carefully examining the topics.
+     - Briefly explain how well the extract could provide knowledge applicable to similar questions, up to 100 words.
+     - Conclude with the score using the format: "Relevance score: <total points>"
+  
   The extract:
   {{document}}
-
-  After examining the extract: 
-  - Briefly justify your total score, up to 100 words.
-  - Conclude with the score using the format: "Educational score: <total points>"

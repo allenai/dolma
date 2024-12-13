@@ -1,17 +1,11 @@
 import hashlib
-import os
-import pickle
-from dataclasses import dataclass
 
-from dotenv import load_dotenv
-from litellm import completion, completion_cost
 from diskcache import Cache
 
-load_dotenv()
-diskcache = Cache('.cache_dir', size_limit= 2**33)
+diskcache = Cache('.cache_dir')
 
 
-def cache(avoid_fields=None, skip_load=False):
+def cache(avoid_fields=None, skip_load=False, fn_name=None):
     """Cache the output of a function call"""
 
     def _hash(*args, **kwargs):
@@ -51,43 +45,12 @@ def cache(avoid_fields=None, skip_load=False):
             # Call the function
             output = func(*args, **kwargs)
 
+            func_name = fn_name or func.__name__
             # Save the output to the cache
-            _save_cache(func_name=func.__name__, **all_kwargs, output=output)
+            _save_cache(func_name=func_name, **all_kwargs, output=output)
 
             return output
 
         return _wrapper
 
     return _decorator
-
-@dataclass
-class LLMResponse:
-    text: str
-    prompt_tokens: int
-    completion_tokens: int
-    cost: float
-
-
-@cache()
-def generate_response(model_engine, prompt, stop_tokens=None, max_output_tokens=600, temperature=0.2, top_p=0.5, seed=0) -> LLMResponse:
-    """
-    seed is implicitly used to allow calling the function more than once without the cache being used
-    """
-    response = completion(
-        model=model_engine,
-        messages=prompt,
-        max_tokens=max_output_tokens,
-        stop=stop_tokens,
-        temperature=temperature,
-        top_p=top_p,
-    )
-
-    text = response.choices[0].message.content.strip()
-    cost = completion_cost(completion_response=response, model=model_engine, messages=prompt)
-
-    return LLMResponse(
-        text=text,
-        prompt_tokens=response.usage.prompt_tokens,
-        completion_tokens=response.usage.completion_tokens,
-        cost=cost,
-    )
