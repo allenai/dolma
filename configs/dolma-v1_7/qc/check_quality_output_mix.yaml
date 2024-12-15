@@ -1,0 +1,218 @@
+streams:
+  # - name: cc_en_head
+  #   documents:
+  #     - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_head/cc_en_head-000*
+  #   attributes:
+  #     - suchin_whose_quality
+  #     - rw_hrms_bin
+  #     - rw_hrms_bin_v2
+  #     - cc_multi_bin
+  #   output:
+  #     max_size_in_bytes: 3894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp/documents
+  #     # discard_fields:
+  #     #   - attributes
+  #     #   - metadata
+  #   filter:
+  #     include:
+  #       - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1]) <= 0.1
+  #     syntax: jq
+
+
+  # - name: cc_en_middle
+  #   documents:
+  #       - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_middle/cc_en_middle-000*
+  #   attributes:
+  #     - suchin_whose_quality
+  #     - rw_hrms_bin
+  #     - rw_hrms_bin_v2
+  #     - cc_multi_bin
+  #   output:
+  #     max_size_in_bytes: 3894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp/documents
+  #     # discard_fields:
+  #     #   - attributes
+  #     #   - metadata
+  #   filter:
+  #     include:
+  #       - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1]) <= 0.1
+  #     syntax: jq
+
+
+  # - name: cc_en_tail
+  #   documents:
+  #       - s3://ai2-llm/pretraining-data/sources/olmo-mix/v1_5r2/documents/cc_en_tail/cc_en_tail-000*
+  #   attributes:
+  #     - suchin_whose_quality
+  #     - rw_hrms_bin
+  #     - rw_hrms_bin_v2
+  #     - cc_multi_bin
+  #   output:
+  #     max_size_in_bytes: 3894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp/documents
+  #     # discard_fields:
+  #     #   - attributes
+  #     #   - metadata
+  #   filter:
+  #     include:
+  #       - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1]) <= 0.1
+  #     syntax: jq
+
+  # - name: falcon
+  #   documents:
+  #     - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/13.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/343.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/370.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/394.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/falcon-refinedweb/v0-0.05-heldout-complement/documents/440.jsonl.gz
+  #   attributes:
+  #     - cc_multi_bin
+  #     - paloma_paragraphs
+  #     - paloma_documents
+  #   output:
+  #     max_size_in_bytes: 2894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp/documents
+  #   filter:
+  #     include:
+  #       - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1]) <= 0.01
+  #     exclude:
+  #       # Contaminated Data from Paloma
+  #       - ".attributes.paloma_documents_bff_duplicates != null"
+  #       - "(.attributes.paloma_paragraphs_bff_duplicates | length) > 0"
+  #     syntax: jq
+
+  # - name: c4
+  #   documents:
+  #     - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/part_0012.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/part_0047.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/part_0112.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/part_0131.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/part_0163.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/part_0444.jsonl.gz
+  #     - s3://ai2-llm/pretraining-data/sources/c4/v0/documents/train/part_0545.jsonl.gz
+  #   attributes:
+  #     - cc_multi_bin
+  #     - dedupe_para_ngrams_13_1
+  #     - tokenizer_repetitions_v2r2
+  #     - pii_regex_with_counts_v2
+  #   output:
+  #     max_size_in_bytes: 2894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp/documents
+  #   filter:
+  #     include:
+  #       - >-
+  #         ((.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01) and
+  #         ((.attributes.dedupe_para_ngrams_13_1 | length == 0) or
+  #         ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)))
+  #     exclude:
+  #       # Remove repetitions
+  #       - >-
+  #         (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+  #         (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition > 10)
+  #     syntax: jq
+
+
+  # - name: falcon
+  #   documents:
+  #     - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp/documents/falcon*
+  #   attributes:
+  #     - cc_multi_bin_v2
+  #   output:
+  #     max_size_in_bytes: 2894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp_2/documents
+  #   filter:
+  #     include:
+  #       - .attributes != null
+  #     syntax: jq
+
+  # - name: c4
+  #   documents:
+  #     - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp/documents/c4*
+  #   attributes:
+  #     - cc_multi_bin_v2
+  #   output:
+  #     max_size_in_bytes: 2894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/qc_exp_2/documents
+  #   filter:
+  #     include:
+  #       - .attributes != null
+  #     syntax: jq
+
+
+  # - name: tulu_flan
+  #   documents:
+  #     - s3://ai2-llm/pretraining-data/sources/tulu_flan/v1-decontaminated-60M-shots_all-upweight_1-dialog_false-sep_newline/documents/train/60M-shots_all-upweight_1-dialog_false-sep_newline-train-03*
+  #   attributes:
+  #     - cc_multi_bin
+  #     - jigsaw_hatespeech_sentence_v2
+  #     - jigsaw_nsfw_sencence_v2
+  #     - pii_regex_with_counts_fast_v2
+  #     - tokenizer_repetitions_v2r2
+  #     - whitespace_tokenizer_v1
+  #   output:
+  #     max_size_in_bytes: 2894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/smol/documents
+  #   filter:
+  #     include:
+  #       # - >-
+  #       #   ((.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01)
+  #       # # Remove repetitions
+  #       - >-
+  #         (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+  #         (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+  #     syntax: jq
+
+  # - name: megawika
+  #   documents:
+  #     - s3://ai2-llm/pretraining-data/sources/megawika/v0/documents/en/en-03*
+  #   attributes:
+  #     - cc_multi_bin
+  #     - jigsaw_hatespeech_sentence_v2
+  #     - jigsaw_nsfw_sencence_v2
+  #     - pii_regex_with_counts_fast_v2
+  #     - tokenizer_repetitions_v2r2
+  #     - whitespace_tokenizer_v1
+  #   output:
+  #     max_size_in_bytes: 2894967296
+  #     path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/smol/documents
+  #   filter:
+  #     include:
+  #       # - >-
+  #       #   ((.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01)
+  #       # # Remove repetitions
+  #       - >-
+  #         (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+  #         (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+  #       # - >-
+  #       #   (.attributes.jigsaw_hatespeech_sentence_v2__jigsaw_hatespeech_sentence_v2____label__toxic| map(.[2]) | max)) > 0.5
+  #       # - >-
+  #       #   (.attributes.jigsaw_nsfw_sencence_v2__jigsaw_nsfw_sencence_v2____label__nsfw| map(.[2]) | max)) > 0.5
+  #       - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01)
+  #     syntax: jq
+
+  - name: reddit
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/reddit-v2-dedupe-pii-nsfw-0013.json.gz
+      - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/reddit-v2-dedupe-pii-nsfw-0028.json.gz
+      - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/reddit-v2-dedupe-pii-nsfw-0184.json.gz
+      - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/reddit-v2-dedupe-pii-nsfw-0211.json.gz
+      - s3://ai2-llm/pretraining-data/sources/reddit/v5-dedupe-pii-nsfw-toxic/documents/reddit-v2-dedupe-pii-nsfw-0248.json.gz
+    attributes:
+      - cc_multi_bin
+      - dedupe_para_ngrams_13_1
+      - tokenizer_repetitions_v2r2
+    output:
+      max_size_in_bytes: 2894967296
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/smol/documents
+    filter:
+      include:
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length != 0) and
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) > 0.3)
+        - (.attributes.cc_multi_bin__cc_multi_bin__hq[0][-1] <= 0.01)
+      syntax: jq
+
+processes: 190

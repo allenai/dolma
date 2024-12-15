@@ -1,0 +1,38 @@
+
+documents:
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0000.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0001.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0002.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0003.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0004.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0005.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0006.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0007.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0008.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0009.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0010.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0011.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0012.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0013.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0014.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0015.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2021-17/cccc-CC-MAIN-2021-17-0016.json.gz
+
+dedupe:
+  name: dedupe_doc
+  documents:
+    attribute_name: dedupe_doc
+    key: $.text
+  skip_empty: true
+
+
+bloom_filter:
+  file: /tmp/dedupe-doc/cccc-CC-MAIN-2021-17/filter.bloom
+  read_only: false
+  estimated_doc_count: 100_000_000
+  desired_false_positive_rate: 1e-05
+
+processes: 188
+work_dir:
+  input: "${oc.env:HOME}/status/dedupe-doc-v1/cccc-CC-MAIN-2021-17/input"
+  output: "${oc.env:HOME}/status/dedupe-doc-v1/cccc-CC-MAIN-2021-17/output"

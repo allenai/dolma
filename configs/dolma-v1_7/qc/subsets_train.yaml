@@ -1,0 +1,47 @@
+streams:
+  - name: cc
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/common-crawl/v0-small/documents/*.gz
+    attributes:
+      - random_number_v1
+    output:
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/train/cc
+      max_size_in_bytes: 2_000_000_000
+      discard_fields:
+        - metadata
+        - attributes
+    filter:
+      include:
+          - "$.attributes[?(@.random_number_v1__random_number_v1__random[0][2] < 0.002)]"
+
+  - name: cc
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/common-crawl/v0-small/documents/*.gz
+    attributes:
+      - random_number_v1
+    output:
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/test/cc
+      max_size_in_bytes: 30_000_000_000
+      discard_fields:
+        - metadata
+        - attributes
+    filter:
+      include:
+          - "$.attributes[?(@.random_number_v1__random_number_v1__random[0][2] > 0.002 && @.random_number_v1__random_number_v1__random[0][2] < 0.0021)]"
+
+  - name: cc
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/common-crawl/v0-small/documents/*.gz
+    attributes:
+      - random_number_v1
+    output:
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/whose_quality_corpus/documents/valid/cc
+      max_size_in_bytes: 30_000_000_000
+      discard_fields:
+        - metadata
+        - attributes
+    filter:
+      include:
+          - "$.attributes[?(@.random_number_v1__random_number_v1__random[0][2] > 0.003 && @.random_number_v1__random_number_v1__random[0][2] < 0.0031)]"
+
+processes: 188
