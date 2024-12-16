@@ -1,5 +1,5 @@
 keywords_prompt:
-  system: |
+  system_mmlu: |
     Generate 50 diverse and relevant phrases (2-3 words) that are likely to be found in paragraphs. Note we're not looking for keywords, but instead for actual phrases likely to appear: real paragraphs are not likely to have generic titles like "Math history", "Problem-solving skills". Instead, they will contain very specific phrases. Try thinking first on how real paragraphs look like. For example, mathematics problems might contain the phrase "next we multiply" or "What is the value" as a part of a solution example. Avoid using terms that are too general and can be applied in other topics.
 
     I will provide a small sample of questions related to the topic, but you should cover a wide variety of related topics. Don't overfit to the topic examples.
@@ -15,35 +15,78 @@ keywords_prompt:
 
     # Note
     1. Use the letter casing you expect to be found in documents.
+  system_commonsense: |
+    Generate 50 diverse and relevant phrases (2-3 words) that are likely to be found in paragraphs. Note we're not looking for keywords, but instead for actual phrases likely to appear: real paragraphs are not likely to have generic titles like "Math history", "Problem-solving skills". Instead, they will contain specific phrases. 
+
+    I will provide a small sample of questions related to the topic, but you should cover a wide variety of related topics. Don't overfit to the topic examples.
+    
+    # Output Format
+    - Provide a numbered list of 50 phrases.
+    - Example:
+      1. [Phrase]
+      2. [Phrase]
+      3. [Phrase]
+      ...
+      50. [Phrase]
+    
+    # Note
+    1. Use the letter casing you expect to be found in documents.
+
   instance: |
+    {% if topic is not none -%}
     Topic: {{topic}}
+    {% endif -%}
     Sample questions:
     {% for question in questions -%}
       - {{question}}
     {% endfor -%}
-relevance_annotation_prompt: |
-  Below is an extract from a web page. Your task is to evaluate the extract's relevance and applicability in providing knowledge and explanations about College Mathematics. The following list includes sample questions to illustrate covered sub-topics and style of questions. Use the refined scoring system described below:
-  
-  1. Identify the most relevant topic from the list:
-     {% for topic, questions in questions_by_topic.items() -%}
-       Topic: {{ topic }} 
-       {% for question in questions -%}
-       Q{{ loop.index }}. {{ question }}
+relevance_annotation_prompt:
+  mmlu: |
+    Below is an extract from a web page. Your task is to evaluate the extract's relevance and applicability in providing knowledge and explanations about College Mathematics. The following list includes sample questions to illustrate covered sub-topics and style of questions. Use the refined scoring system described below:
+    
+    1. Identify the most relevant topic from the list:
+       {% for topic, questions in questions_by_topic.items() -%}
+         Topic: {{ topic }} 
+         {% for question in questions -%}
+         Q{{ loop.index }}. {{ question }}
+         {% endfor %}
        {% endfor %}
-     {% endfor %}
+    
+    2. Assess the extract's relevance and applicability in providing knowledge that could answer questions of similar style as the sample questions:
   
-  2. Assess the extract's relevance and applicability in providing knowledge that could answer questions of similar style as the sample questions:
+    - Add 1 point if the extract contains some basic information relevant to the topic, even if it includes irrelevant content or lacks depth.
+    - Add another point if the extract includes several pieces of information that are likely helpful for answering questions in the style of the examples, though it may not align closely with the questions or may be disorganized.
+    - Award a third point if the extract provides numerous useful pieces of information that are likely applicable to the questions and are presented in a coherent manner, though it may not be comprehensive or may include some extraneous information.
+    - Grant a fourth point if the extract is highly relevant and beneficial, offering substantial information that aligns well with the style and expertise level of the example questions, with minimal irrelevant content.
+    - Bestow a fifth point if the extract is outstanding in its usefulness, providing comprehensive and well-organized information that is perfectly suited to answer questions in the style of the examples, with clear and focused content.
+    
+    3. After examining the extract:
+       - Point out the most relevant topic, if any, after carefully examining the topics.
+       - Briefly explain how well the extract could provide knowledge applicable to similar questions, up to 100 words.
+       - Conclude with the score using the format: "Relevance score: <total points>"
+    
+    The extract:
+    {{document}}
+  commonsense: |
+    Below is an extract from a web page. Your task is to evaluate the extract's relevance and applicability in providing knowledge and explanations for topics and questions similar presented in the list below, which illustrates covered sub-topics and style of questions. Use the refined scoring system described below:
+    
+    {% for topic, questions in questions_by_topic.items() -%}
+      {% for question in questions -%}
+      Q{{ loop.index }}. {{ question }}
+      {% endfor %}
+    {% endfor %}
+    
+    1. Assess the extract's relevance and applicability in providing knowledge that could answer questions of similar style as the sample questions:
 
-  - Add 1 point if the extract contains some basic information relevant to the topic, even if it includes irrelevant content or lacks depth.
-  - Add another point if the extract includes several pieces of information that are likely helpful for answering questions in the style of the examples, though it may not align closely with the questions or may be disorganized.
-  - Award a third point if the extract provides numerous useful pieces of information that are likely applicable to the questions and are presented in a coherent manner, though it may not be comprehensive or may include some extraneous information.
-  - Grant a fourth point if the extract is highly relevant and beneficial, offering substantial information that aligns well with the style and expertise level of the example questions, with minimal irrelevant content.
-  - Bestow a fifth point if the extract is outstanding in its usefulness, providing comprehensive and well-organized information that is perfectly suited to answer questions in the style of the examples, with clear and focused content.
-  
-  3. After examining the extract:
-     - Point out the most relevant topic, if any, after carefully examining the topics.
-     - Briefly explain how well the extract could provide knowledge applicable to similar questions, up to 100 words.
-     - Conclude with the score using the format: "Relevance score: <total points>"
-  
-  The extract:
-  {{document}}
+      - Add 1 point if the extract contains some basic information, even if it includes irrelevant content or lacks depth.
+      - Add another point if the extract includes several pieces of information that are likely helpful for answering questions in the style of the examples, though it may not align closely with the questions or may be disorganized.
+      - Award a third point if the extract provides numerous useful pieces of information that are likely applicable to the questions and are presented in a coherent manner, though it may not be comprehensive or may include some extraneous information.
+      - Grant a fourth point if the extract is highly relevant and beneficial, offering substantial information that aligns well with the style and expertise level of the example questions, with minimal irrelevant content.
+      - Bestow a fifth point if the extract is outstanding in its usefulness, providing comprehensive and well-organized information that is perfectly suited to answer questions in the style of the examples, with clear and focused content.
+    
+    2. After examining the extract:
+       - Briefly explain how well the extract could provide knowledge applicable to similar questions, up to 100 words.
+       - Conclude with the score using the format: "Relevance score: <total points>"
+    
+    The extract:
+    {{document}}
