@@ -464,6 +464,9 @@ def collect_annotations():
             with open(os.path.join(OUTPUT_DIR, "batches", BATCHES_NAME, filename), "w") as f:
                 for topic in tqdm(topics):
                     for annotation in annotations_per_topic[topic]:
+                        if annotation["annotation"] is None:
+                            continue
+
                         saved_annotation = {
                             "text": annotation["document"]["text"],
                             "score": annotation["annotation"],

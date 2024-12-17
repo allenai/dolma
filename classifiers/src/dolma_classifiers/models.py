@@ -227,3 +227,8 @@ class RegSynthetic20EpochsBS640LF1LRE35(LocalQualityClassifier):
 class RegMMLU20Epochs(LocalQualityClassifier):
     model_local_or_remote_path = "s3://ai2-benb/qc/regression-mmlu-20epochs/2024-11-19_17-25-26/checkpoint-14000/"
     pass
+
+@Registry.add("v3_hellaswag")
+class RegMMLU20Epochs(LocalQualityClassifier):
+    model_local_or_remote_path = "s3://ai2-benb/qc/v3-hellaswag_annotated_all/2024-12-16_14-01-11/checkpoint-9750/"
+    pass
