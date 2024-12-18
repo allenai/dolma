@@ -54,11 +54,12 @@ relevance_annotation_prompt:
     
     2. Assess the extract's relevance and applicability in providing knowledge that could answer questions of similar style as the sample questions:
   
-    - Add 1 point if the extract contains some basic information relevant to the topic, even if it includes irrelevant content or lacks depth.
-    - Add another point if the extract includes several pieces of information that are likely helpful for answering questions in the style of the examples, though it may not align closely with the questions or may be disorganized.
+    - Add 1 point if the extract contains some basic information relevant to the questions, even if it includes irrelevant content or lacks depth.
+    - Add another point if the extract includes several pieces of information that are likely helpful for answering questions in the topics of the examples, though it may not align closely with the questions or may be disorganized.
     - Award a third point if the extract provides numerous useful pieces of information that are likely applicable to the questions and are presented in a coherent manner, though it may not be comprehensive or may include some extraneous information.
     - Grant a fourth point if the extract is highly relevant and beneficial, offering substantial information that aligns well with the style and expertise level of the example questions, with minimal irrelevant content.
     - Bestow a fifth point if the extract is outstanding in its usefulness, providing comprehensive and well-organized information that is perfectly suited to answer questions in the style of the examples, with clear and focused content.
+    - Do not give any points if the extract does not contain substantial helpful information relevant to the questions.
     
     3. After examining the extract:
        - Point out the most relevant topic, if any, after carefully examining the topics.

@@ -30,7 +30,7 @@ client = OpenAI()
 PROMPT_CONFIG = yaml.safe_load(open("prompts.yaml", "r"))
 
 MODEL_ENGINE = "gpt-4o-2024-08-06"
-CLASSIFIER_NAME = "v3"
+CLASSIFIER_NAME = "v4"
 
 OUTPUT_DIR = "output"
 BATCHES_NAME = f"batches_{CLASSIFIER_NAME}"
@@ -57,91 +57,91 @@ DATASETS = {
         },
         "max_questions_for_keywords": 200,
         "max_questions_for_relevance": {
-            "hellaswag": 200,
+            "hellaswag": 140,
         },
     },
-    "mmlu": {
-        "hf": "cais/mmlu",
-        "hf_contains_topics": True,
-        "splits": ["dev", "validation"],
-        "instance_to_question": lambda instance: f"{instance['question']} ({instance['choices'][instance['answer']]})",
-        "prompt_for_keyword_gen": "system_mmlu",
-        "prompt_for_relevance": "mmlu",
-        "topics_by_category": {
-            'stem': [
-                'astronomy',
-                'college_physics',
-                'conceptual_physics',
-                'high_school_physics',
-                'college_chemistry',
-                'high_school_chemistry',
-                'college_biology',
-                'high_school_biology',
-                'college_computer_science',
-                'computer_security',
-                'high_school_computer_science',
-                'machine_learning',
-                'abstract_algebra',
-                'college_mathematics',
-                'elementary_mathematics',
-                'high_school_mathematics',
-                'high_school_statistics',
-                'electrical_engineering'
-            ],
-            'humanities': [
-                'high_school_european_history',
-                'high_school_us_history',
-                'high_school_world_history',
-                'prehistory',
-                'formal_logic',
-                'logical_fallacies',
-                'moral_disputes',
-                'moral_scenarios',
-                'philosophy',
-                'world_religions',
-                'international_law',
-                'jurisprudence',
-                'professional_law'
-            ],
-            'social_sciences': [
-                'high_school_government_and_politics',
-                'public_relations',
-                'security_studies',
-                'us_foreign_policy',
-                'human_sexuality',
-                'sociology',
-                'econometrics',
-                'high_school_macroeconomics',
-                'high_school_microeconomics',
-                'high_school_geography',
-                'high_school_psychology',
-                'professional_psychology'
-            ],
-            'other': [
-                'global_facts',
-                'professional_accounting',
-                'business_ethics',
-                'management',
-                'marketing',
-                'anatomy',
-                'clinical_knowledge',
-                'college_medicine',
-                'human_aging',
-                'medical_genetics',
-                'nutrition',
-                'professional_medicine',
-                'virology'
-            ]
-                # 'miscellaneous',
-        },
-        "max_questions_for_relevance": {
-            "high_school_us_history": 7,
-            "professional_law": 10,
-            "high_school_european_history": 10,
-            "high_school_world_history": 5,
-            "moral_scenarios": 10
-        },
-    }
+    # "mmlu": {
+    #     "hf": "cais/mmlu",
+    #     "hf_contains_topics": True,
+    #     "splits": ["dev", "validation"],
+    #     "instance_to_question": lambda instance: f"{instance['question']} ({instance['choices'][instance['answer']]})",
+    #     "prompt_for_keyword_gen": "system_mmlu",
+    #     "prompt_for_relevance": "mmlu",
+    #     "topics_by_category": {
+    #         'stem': [
+    #             'astronomy',
+    #             'college_physics',
+    #             'conceptual_physics',
+    #             'high_school_physics',
+    #             'college_chemistry',
+    #             'high_school_chemistry',
+    #             'college_biology',
+    #             'high_school_biology',
+    #             'college_computer_science',
+    #             'computer_security',
+    #             'high_school_computer_science',
+    #             'machine_learning',
+    #             'abstract_algebra',
+    #             'college_mathematics',
+    #             'elementary_mathematics',
+    #             'high_school_mathematics',
+    #             'high_school_statistics',
+    #             'electrical_engineering'
+    #         ],
+    #         'humanities': [
+    #             'high_school_european_history',
+    #             'high_school_us_history',
+    #             'high_school_world_history',
+    #             'prehistory',
+    #             'formal_logic',
+    #             'logical_fallacies',
+    #             'moral_disputes',
+    #             'moral_scenarios',
+    #             'philosophy',
+    #             'world_religions',
+    #             'international_law',
+    #             'jurisprudence',
+    #             'professional_law'
+    #         ],
+    #         'social_sciences': [
+    #             'high_school_government_and_politics',
+    #             'public_relations',
+    #             'security_studies',
+    #             'us_foreign_policy',
+    #             'human_sexuality',
+    #             'sociology',
+    #             'econometrics',
+    #             'high_school_macroeconomics',
+    #             'high_school_microeconomics',
+    #             'high_school_geography',
+    #             'high_school_psychology',
+    #             'professional_psychology'
+    #         ],
+    #         'other': [
+    #             'global_facts',
+    #             'professional_accounting',
+    #             'business_ethics',
+    #             'management',
+    #             'marketing',
+    #             'anatomy',
+    #             'clinical_knowledge',
+    #             'college_medicine',
+    #             'human_aging',
+    #             'medical_genetics',
+    #             'nutrition',
+    #             'professional_medicine',
+    #             'virology'
+    #         ]
+    #             # 'miscellaneous',
+    #     },
+    #     "max_questions_for_relevance": {
+    #         "high_school_us_history": 7,
+    #         "professional_law": 10,
+    #         "high_school_european_history": 10,
+    #         "high_school_world_history": 5,
+    #         "moral_scenarios": 10
+    #     },
+    # }
 }
 
 @cache()
@@ -352,7 +352,7 @@ def save_annotations_batches(dataset_name, relevant_documents_per_topic):
                             "method": "POST",
                             "url": "/v1/chat/completions",
                             "body": {
-                                "model": "gpt-4o-mini",
+                                "model": "gpt-4o",
                                 "messages": prompt,
                                 "max_tokens": 400,
                                 "temperature": 0.2,
@@ -430,7 +430,7 @@ def download_completed_batches():
 
 
 def collect_annotations():
-    # download_completed_batches()
+    download_completed_batches()
 
     os.makedirs(os.path.join(OUTPUT_DIR, "batches", BATCHES_NAME, "annotations"), exist_ok=True)
 
@@ -521,7 +521,7 @@ def cancel_batches():
             print(f"Cancelled batch {batch_id}")
 
 
-def run_on_sample(dataset_name, n_sample=25):
+def run_on_sample(dataset_name, n_sample=250):
     def process_line(line):
         request_data = json.loads(line)
         response = generate_response(

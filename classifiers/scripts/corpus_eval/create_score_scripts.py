@@ -8,7 +8,7 @@ from classifiers.scripts.corpus_eval.named_data_mixes import DATA_SOURCES, EXTRA
 
 
 BUCKET_NAME = "ai2-llm"
-MODEL_NAME = "regression-mmlu-20epochs"
+MODEL_NAME = "v4_hellaswag"
 
 mapping = {
     "stackexchange": "pretraining-data/sources/redpajama/v1_decon_fix/documents/train/stackexchange",
@@ -18,7 +18,7 @@ mapping = {
     "cc_eli5_oh_top20p": "pretraining-data/sources/olmo-mix/eli5_oh_oh_top20p",
     "falcon_eli5_oh_top20p": "pretraining-data/sources/falcon-refinedweb/eli5_oh_oh_top20p/documents/",
     "pos_eli5_oh_neg_dclm_refinedweb_steps_2000_lr3e4_top20p": "pretraining-data/sources/dclm/v1_pos_eli5_oh_neg_dclm_refinedweb_steps_2000_lr3e4_top20p/documents/1t/",
-    "DCLM-baseline": "'pretraining-data/sources/dclm/raw/hero-run-fasttext_for_HF/filtered/OH_eli5_vs_rw_v2_bigram_200k_train/fasttext_openhermes_reddit_eli5_vs_rw_v2_bigram_200k_train/processed_data/global-shard_*_of_10/local-shard_*_of_10/shard_*_processed.jsonl.zstd'"
+    "DCLM-baseline": "pretraining-data/sources/dclm/raw/hero-run-fasttext_for_HF/filtered/OH_eli5_vs_rw_v2_bigram_200k_train/fasttext_openhermes_reddit_eli5_vs_rw_v2_bigram_200k_train/processed_data/global-shard_*_of_10/local-shard_*_of_10/shard_*_processed.jsonl.zstd"
 }
 
 
@@ -26,6 +26,7 @@ def path_exists(path: str) -> bool:
     response = boto3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=path)
     return "Contents" in response
 
+documents_paths = {}
 output_paths = {}
 
 if __name__ == "__main__":
@@ -39,8 +40,8 @@ if __name__ == "__main__":
     for source, source_paths in sources.items():
         if source in ["dclm_mmlu_top10"]:
             continue
-        if source != "dclm_fw_top3":
-            continue
+        # if source != "dclm_fw_top3":
+        #     continue
         print("**")
         paths = [path.replace("preprocessed/", "pretraining-data/sources/") for path in source_paths]
 
@@ -89,6 +90,7 @@ if __name__ == "__main__":
 
         print(f"Path {prefix} exists in s3 for source {source}. Using {files_wildcard} as wildcard.")
 
+        documents_paths[source] = f"s3://{BUCKET_NAME}/{files_wildcard}"
         output_paths[source] = f"s3://ai2-benb/corpus_scores/{MODEL_NAME}/{prefix.replace('pretraining-data/sources/', '')}"
 
         with open(f"beaker/{source}.sh", "w") as f:
@@ -106,3 +108,5 @@ if __name__ == "__main__":
         print(f"bash classifiers/scripts/corpus_eval/beaker/{source}.sh")
 
     pprint(output_paths, indent=4)
+    print("**")
+    pprint(documents_paths, indent=4)

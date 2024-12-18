@@ -22,6 +22,7 @@ metrics = [
     "eval/downstream/mmlu_other_var_len_norm",
     "eval/downstream/mmlu_stem_var_len_norm",
     "eval/downstream/mmlu_social_sciences_var_len_norm",
+    "eval/downstream/hellaswag_len_norm"
 ]
 
 
@@ -79,7 +80,7 @@ def get_scores():
 
     values = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=32) as executor:
-        futures = {executor.submit(process_path_no_cache if name == "pos_eli5_oh_neg_dclm_refinedweb_steps_2000_lr3e4_top20p" else process_path, name, path): name for name, path in paths.items()}
+        futures = {executor.submit(process_path_no_cache if name == "1" else process_path, name, path): name for name, path in paths.items()}
         # futures = {executor.submit(process_path, name, path): name for name, path in paths.items()}
         for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
             name, result = future.result()
@@ -113,7 +114,7 @@ def compute_weighted_average_scores(scores, mixture_proportions):
     return weighted_average_scores
 
 
-@cache()
+# @cache()
 def get_run_performance(name):
     mapping = {
         "dolma17": "baseline"
@@ -170,13 +171,16 @@ def draw_scatter_plot(average_scores, performance_df):
     scatter_df = scatter_df[scatter_df["name"] != "redpajama"]
 
     # Print the table with name, performance, and score, sorted by score
-    print(scatter_df[["name", "average", "average_score",
+    print(scatter_df[["name", "average", "average_score", "eval/downstream/hellaswag_len_norm"
                       ]].sort_values("average_score"))
+    # and save to a file
+    scatter_df[["name", "average", "average_score", "eval/downstream/hellaswag_len_norm"
+                ]].sort_values("average_score").to_csv("scatter_data.csv", index=False)
 
     # Create a scatter plot
     plt.figure(figsize=(10, 6))
-    sns.scatterplot(x="average_score", y="average", data=scatter_df, label="Average MMLU")
-    sns.regplot(x="average_score", y="average", data=scatter_df, scatter=False, color='blue')
+    sns.scatterplot(x="average_score", y="eval/downstream/hellaswag_len_norm", data=scatter_df, label="Average MMLU")
+    sns.regplot(x="average_score", y="eval/downstream/hellaswag_len_norm", data=scatter_df, scatter=False, color='blue')
     # sns.scatterplot(x="average_score", y="eval/downstream/mmlu_other_var_len_norm", data=scatter_df, label="Other")
     plt.xlabel("Average Classifier Score")
     plt.ylabel("MMLU Accuracy")

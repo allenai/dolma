@@ -19,7 +19,6 @@ gantry run \
     --gpus 1 \
     --preemptible \
     --cluster ai2/jupiter-cirrascale-2 \
-    --cluster ai2/pluto-cirrascale \
     --cluster ai2/saturn-cirrascale \
     --budget ai2/oe-data \
     --env LOG_FILTER_TYPE=local_rank0_only \

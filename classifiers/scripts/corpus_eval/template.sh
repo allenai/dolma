@@ -33,11 +33,10 @@ gantry run \
     --venv 'base' \
     --priority "${PRIORITY}" \
     --leader-selection \
-    --gpus 2 \
+    --gpus 1 \
     --replicas ${NUM_NODES} \
     --preemptible \
     --cluster "ai2/jupiter*" \
-    --cluster "ai2/pluto-cirrascale" \
     --cluster "ai2/saturn-cirrascale" \
     --budget ai2/oe-data \
     --env LOG_FILTER_TYPE=local_rank0_only \
