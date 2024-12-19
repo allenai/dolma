@@ -20,7 +20,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 from msgspec.json import Decoder
 from torch.utils.data import Dataset, Subset
 from tqdm import tqdm
-from transformers import AutoModelForSequenceClassification, TrainingArguments, Trainer, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, TrainingArguments, Trainer, AutoTokenizer, TrainerCallback
 
 from smart_open.compression import (
     _handle_zstd,
@@ -212,6 +212,30 @@ def collate_fn(batch, tokenizer):
     return tokenized
 
 
+class UploadToS3Callback(TrainerCallback):
+    def __init__(self, save_path, s3_bucket, s3_path, run_name, run_date):
+        self.save_path = save_path
+        self.s3_bucket = s3_bucket
+        self.s3_path = s3_path
+        self.run_name = run_name
+        self.run_date = run_date
+        self.previous_upload_path = None
+
+    def delete_previous_checkpoint(self):
+        if self.previous_upload_path:
+            s3 = boto3.client("s3")
+            for root, dirs, files in os.walk(self.save_path):
+                for file in files:
+                    s3_path = os.path.join(self.previous_upload_path, os.path.relpath(os.path.join(root, file), self.save_path))
+                    s3.delete_object(Bucket=self.s3_bucket, Key=s3_path)
+
+    def on_epoch_end(self, args, state, control, **kwargs):
+        self.delete_previous_checkpoint()
+        upload_path = os.path.join(self.s3_path, self.run_name, self.run_date)
+        print(f"Uploading model to S3. source={self.save_path}, bucket={self.s3_bucket}, path={upload_path}")
+        upload_directory_to_s3(self.save_path, self.s3_bucket, upload_path)
+        self.previous_upload_path = upload_path
+
 class Classifier:
     def __init__(
             self,
@@ -284,6 +308,14 @@ class Classifier:
 
         compute_metrics = compute_regression_metrics if num_labels == 1 else compute_accuracy_metrics
 
+        upload_callback = UploadToS3Callback(
+            save_path=self._save_path,
+            s3_bucket=args.s3_bucket,
+            s3_path=args.s3_path,
+            run_name=args.run_name,
+            run_date=datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        )
+
         trainer = Trainer(
             model=self._model,
             args=training_args,
@@ -291,6 +323,7 @@ class Classifier:
             eval_dataset=val_dataset,
             compute_metrics=compute_metrics,
             data_collator=lambda batch: collate_fn(batch, self._tokenizer),
+            callbacks=[upload_callback]
         )
 
         trainer.train()
