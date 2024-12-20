@@ -150,6 +150,14 @@ class MMLUSubs(ListMembership):
         score = doc.metadata["subreddit"].lower() in self.blocklist
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
     
+@TaggerRegistry.add("dense_mmlu_subreddit")
+class MMLUSubs(ListMembership):
+    LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/dense_mmlu_topic_subreddits.txt")
+
+    def predict(self, doc: Document) -> DocResult:
+        score = doc.metadata["subreddit"].lower() in self.blocklist
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
+    
 @TaggerRegistry.add("science_subreddit")
 class ScienceSubs(ListMembership):
     LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/sciencesubreddits.txt")
