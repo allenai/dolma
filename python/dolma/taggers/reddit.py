@@ -151,7 +151,7 @@ class MMLUSubs(ListMembership):
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="doc", score=score)])
     
 @TaggerRegistry.add("dense_mmlu_subreddit")
-class MMLUSubs(ListMembership):
+class DenseMMLUSubs(ListMembership):
     LOOKUP_LIST = (Path(__file__).parent / "../data/reddit_blocklists/dense_mmlu_topic_subreddits.txt")
 
     def predict(self, doc: Document) -> DocResult:
