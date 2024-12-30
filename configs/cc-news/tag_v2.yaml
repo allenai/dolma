@@ -1,0 +1,8 @@
+taggers:
+  - glotlid_doc_v3_1e2
+  - whitespace_tokenizer_v1
+
+processes: 188
+
+documents:
+  - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v2-resiliparse-year_dedup/documents/*.json.gz

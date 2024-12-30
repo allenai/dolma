@@ -3,7 +3,7 @@ streams:
       documents:
           - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2016/*.json.zst
       attributes: &attributes
-          - dedupe_ngrams_20_1
+          - dedupe_by_year
       output: &output
           max_size_in_bytes: 3_814_697_265
           path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v2-resiliparse-year_dedup/documents
