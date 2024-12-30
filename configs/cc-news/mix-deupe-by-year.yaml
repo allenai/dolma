@@ -1,0 +1,78 @@
+streams:
+    - name: cc-news_2016
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2016/*.json.zst
+      attributes: &attributes
+          - dedupe_ngrams_20_1
+      output: &output
+          max_size_in_bytes: 2_500_000_000
+          path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year-dedupe/documents
+      filter: &filter
+        include:
+            - >-
+              (.attributes.dedupe_ngrams_20_1 | length == 0) or
+              ((.attributes.dedupe_ngrams_20_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
+        syntax: jq
+
+    - name: cc-news_2017
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2017/*.json.zst
+      attributes: *attributes
+      output: *output
+      filter: *filter
+
+    - name: cc-news_2018
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2018/*.json.zst
+      attributes: *attributes
+      output: *output
+      filter: *filter
+
+    - name: cc-news_2019
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2019/*.json.zst
+      attributes: *attributes
+      output: *output
+      filter: *filter
+
+    - name: cc-news_2020
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2020/*.json.zst
+      attributes: *attributes
+      output: *output
+      filter: *filter
+
+    - name: cc-news_2021
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2021/*.json.zst
+      attributes: *attributes
+      output: *output
+      filter: *filter
+
+    - name: cc-news_2022
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2022/*.json.zst
+      attributes: *attributes
+      output: *output
+      filter: *filter
+
+    - name: cc-news_2023
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2023/*.json.zst
+      attributes: *attributes
+      output: *output
+      filter: *filter
+
+    - name: cc-news_2024
+      documents:
+          - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year/documents/2024/*.json.zst
+      attributes: *attributes
+      output: *output
+      filter: *filter
+
+
+work_dir:
+  input: ${oc.env:HOME}/ai2-llm/work_dir/cc-news/v1-resiliparse-year/input
+  output: ${oc.env:HOME}/ai2-llm/work_dir/cc-news/v1-resiliparse-year/output
+
+processes: 188
