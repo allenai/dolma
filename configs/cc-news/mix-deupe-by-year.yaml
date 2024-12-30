@@ -5,8 +5,8 @@ streams:
       attributes: &attributes
           - dedupe_ngrams_20_1
       output: &output
-          max_size_in_bytes: 2_500_000_000
-          path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v1-resiliparse-year-dedupe/documents
+          max_size_in_bytes: 3_814_697_265
+          path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/cc-news/v2-resiliparse-year_dedup/documents
       filter: &filter
         include:
             - >-
