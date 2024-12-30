@@ -146,7 +146,7 @@ class Cld2EnglishLanguageParagraphTagger(Cld2EnglishLanguageTagger):
 
 @TaggerRegistry.add("ft_lang_id_doc_v1")
 class FastTextAllLanguagesDocumentTagger(BaseLanguageTagger, BaseFastTextTagger):
-    MODEL_PATH = "https://dolma-artifacts/lang_id_models/fbai/lid.176.bin"
+    MODEL_PATH = "https://dolma-artifacts.org/lang_id_models/fbai/lid.176.bin"
     INCLUDE_NEGATIVE = False
     PREDICT_ON_PARAGRAPHS = False
 
