@@ -4,14 +4,14 @@ Language Detection
 @kylel, @soldni
 """
 
-from typing import TYPE_CHECKING, List, Tuple, Iterable
+from typing import TYPE_CHECKING, Iterable, List, Tuple
 
 import necessary
 import regex
 from anyascii import anyascii
 
 from ..core.data_types import DocResult, Document, Span
-from ..core.ft_tagger import BaseFastTextTagger, TextSlice, Prediction
+from ..core.ft_tagger import BaseFastTextTagger, Prediction, TextSlice
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
@@ -32,14 +32,17 @@ with necessary.necessary("langdetect", soft=True) as LANGDETECT_AVAILABLE:
 
 with necessary.necessary("lingua", soft=True) as LINGUA_AVAILABLE:
     if LINGUA_AVAILABLE or TYPE_CHECKING:
-        from lingua import Language, LanguageDetectorBuilder    # pylint: disable=import-error # pyright: ignore
+        from lingua import (  # pylint: disable=import-error # pyright: ignore
+            Language,
+            LanguageDetectorBuilder,
+        )
 
 
 class BaseLanguageTagger(BaseTagger):
     INCLUDE_NEGATIVE = True
     PREDICT_ON_PARAGRAPHS = False
 
-    def predict_text(self, text: str) -> List[Tuple[str, float]]:   # pylint: disable=unused-argument
+    def predict_text(self, text: str) -> List[Tuple[str, float]]:  # pylint: disable=unused-argument
         return []
 
     def make_negative(self, spans: List[Span]) -> List[Span]:
