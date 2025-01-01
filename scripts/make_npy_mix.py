@@ -35,8 +35,6 @@ class SourceConfig:
     def __post_init__(self):
         if self.mix_percent is not None and (self.mix_percent < 0 or self.mix_percent > 1):
             raise ValueError("mix_percent must be between 0 and 1")
-        elif self.sample_percent is not None and (self.sample_percent < 0 or self.sample_percent > 1):
-            raise ValueError("sample_percent must be between 0 and 1")
 
     @property
     def bucket(self) -> str:
@@ -73,15 +71,19 @@ class SourceConfig:
         # Randomly sample files
         running_size = 0
         selected = []
-        while len(all_paths) > 0:
-            idx = random.randint(0, len(all_paths) - 1)
-            path = all_paths.pop(idx)
-            size = all_sizes.pop(idx)
-            selected.append(path)
 
-            running_size += size
-            if running_size >= target_size:
-                break
+        # double while loop to allow for sampling over 100% if needed
+        while running_size < target_size:
+            all_paths_copy, all_sizes_copy = all_paths[:], all_sizes[:]
+            while len(all_paths_copy) > 0:
+                idx = random.randint(0, len(all_paths_copy) - 1)
+                path = all_paths_copy.pop(idx)
+                size = all_sizes_copy.pop(idx)
+                selected.append(path)
+
+                running_size += size
+                if running_size >= target_size:
+                    break
 
         return selected, running_size
 
