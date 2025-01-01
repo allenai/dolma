@@ -363,7 +363,7 @@ class TaggerProcessor(BaseParallelProcessor):
                             # double the update interval if the queue is full
                             update_interval *= 2
 
-            except Exception as exp:    # pylint: disable=broad-except
+            except Exception as exp:  # pylint: disable=broad-except
                 # handle any exception that might have occurred
                 msg = f"Failed to process {source_path} due to {exp.__class__.__name__}: {' '.join(exp.args)}"
                 if exp.__class__.__name__ == "IncompleteReadError":
