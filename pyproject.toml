@@ -112,6 +112,8 @@ dev = [
     "isort>=5.10.1",
     "mypy>=0.971",
     "pytest>=5.2",
+    "types-PyYAML",
+    "types-dateparser"
 ]
 # extension to process code
 code = ["detect-secrets==1.4.0", "beautifulsoup4>=4", "pygments", "regex"]
