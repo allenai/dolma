@@ -12,6 +12,9 @@ for lang in "${langs[@]}"; do
       size=$(expr $size + $(stat -c %s "$file"))
     done < <(find "${base_dir}/${lang}" -type f \( -name "*.zst" -o -name "*.gz" -o -name "*.gzip" -o -name "*.json" -o -name "*.jsonl" \) -print0)
 
+    # sort documents by name
+    documents=($(echo "${documents[@]}" | tr ' ' '\n' | sort))
+
     # run deduplication
     echo "Running fuzzy dedupe for ${lang} with ${size} bytes Bloom filter (files: ${#documents[@]})"
 
@@ -60,7 +63,8 @@ EOF
 
     set -ex
     # Run dolma with the temporary config file
-    dolma -c "$temp_config_file" dedupe --processes $(expr $(nproc) - 4)
+    dolma -c "$temp_config_file" dedupe --processes "${processes}"
+    # cat "$temp_config_file"
     set +ex
 
 
