@@ -24,7 +24,7 @@ from .utils import UrlNormalizer, raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
     if FASTWARC_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
-        from fastwarc.warc import ArchiveIterator, WarcRecordType
+        from fastwarc.warc import ArchiveIterator, WarcHeaderMap, WarcRecordType
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
@@ -164,11 +164,13 @@ class WarcProcessor(BaseParallelProcessor):
                 if not decoded_content:
                     continue
 
-                # metadata
-                ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
-                date = cls._parse_warc_timestamp(record.http_headers.get("Date"))
-                target_uri = record.headers.get("WARC-Target-URI")
-                payload_id = record.headers.get("WARC-Payload-Digest").split(":")[1].lower()
+                # collect metadata
+                # in newer versions of fastwarc, the http_headers could be None if not found
+                http_headers = record.http_headers or WarcHeaderMap()
+                ctype, *_ = (http_headers.get("Content-Type") or "").split(";")
+                date = cls._parse_warc_timestamp(http_headers.get("Date") or "")
+                target_uri = record.headers.get("WARC-Target-URI") or ""
+                payload_id = (record.headers.get("WARC-Payload-Digest") or "").split(":")[1].lower()
                 metadata = dict(
                     warc_url=target_uri,
                     url=url_normalizer(target_uri),
