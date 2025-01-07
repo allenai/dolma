@@ -33,7 +33,9 @@ from .data_types import InputSpec, TokenizerOutput
 
 with necessary("transformers", soft=True) as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:  # type: ignore[unreachable,unused-ignore]
-        from transformers import AutoTokenizer  # pyright: ignore # pylint: disable=import-error
+        from transformers import (  # pyright: ignore # pylint: disable=import-error
+            AutoTokenizer,
+        )
 
 PathOrStr = Union[str, PathLike]
 
