@@ -23,11 +23,11 @@ from .linearizers import LinearizerRegistry
 from .utils import UrlNormalizer, raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
-    if FASTWARC_AVAILABLE or TYPE_CHECKING:
+    if FASTWARC_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         from fastwarc.warc import ArchiveIterator, WarcRecordType
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
-    if DATEPARSER_AVAILABLE or TYPE_CHECKING:
+    if DATEPARSER_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         import dateparser
 
 

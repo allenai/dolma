@@ -302,8 +302,8 @@ class TaggerProcessor(BaseParallelProcessor):
             # we group taggers by their path (this is for cases when two taggers are going  to same file)
             # and then remove all taggers if any of the paths exists and ignore_existing is True
             _taggers_by_path: Dict[str, list[str]] = {}
-            for tagger_name, tagger_path in taggers_paths.items():
-                _taggers_by_path.setdefault(tagger_path.path, []).append(tagger_name)
+            for tagger_name, tagger_location in taggers_paths.items():
+                _taggers_by_path.setdefault(tagger_location.path, []).append(tagger_name)
 
             # actually take care of removal here
             for tagger_path, tagger_names in _taggers_by_path.items():

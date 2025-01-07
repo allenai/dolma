@@ -184,5 +184,6 @@ with necessary(("smart_open", "7.0.4"), soft=True) as SMART_OPEN_HAS_ZSTD:
 
         register_compressor(".zstd", _handle_zstd)
     else:
-        # add zstd compression
-        add_compression()
+        # add zstd compression; in case smart_open has zstd support already, this will error out
+        # with mypy, so we need the type: ignore[unreachable] comment
+        add_compression()  # type: ignore[unreachable]

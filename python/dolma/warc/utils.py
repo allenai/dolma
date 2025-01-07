@@ -6,11 +6,11 @@ from necessary import necessary
 from ..core.errors import DolmaFatalError
 
 with necessary("w3lib", soft=True) as W3LIB_AVAILABLE:
-    if W3LIB_AVAILABLE or TYPE_CHECKING:
+    if W3LIB_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         from w3lib.url import canonicalize_url  # noqa: F401
 
 with necessary("url_normalize", soft=True) as URL_NORMALIZE_AVAILABLE:
-    if URL_NORMALIZE_AVAILABLE or TYPE_CHECKING:
+    if URL_NORMALIZE_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         from url_normalize import url_normalize  # noqa: F401
 
 
