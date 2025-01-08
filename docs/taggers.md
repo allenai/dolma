@@ -26,7 +26,7 @@ The following parameters are supported either via CLI (e.g. `dolma tag --paramet
 |`taggers`|Yes| One or more taggers to run. |
 |`tagger_modules`|No| List of one or more Python modules to load taggers from. See section [*"Using Custom Taggers"*](#using-custom-taggers) for more details. |
 |`processes`|No| Number of processes to use for tagging. One process is used by default. |
-|`ignore_existing`|No| If true, ignore existing outputs and re-run the taggers. |
+|`skip_existing`|No| If true, ignore existing outputs and re-run the taggers. |
 |`dryrun`|No| If true, only print the configuration and exit without running the taggers. |
 |`debug`|No| If true, run in debug mode (i.e., disable parallelism). Useful when developing new taggers. |
 |`profile.enable`|No| If true, enable profiling. Useful when benchmarking taggers during development. |

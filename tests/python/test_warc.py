@@ -27,7 +27,7 @@ class TestWarcExtractor(unittest.TestCase):
             documents=[f"{DATA_PATH}/*.warc.gz"],
             destination=[self.tempdir],
             num_processes=1,
-            ignore_existing=False,
+            skip_existing=False,
             debug=True,
             source_name="test",
             skip_no_pre_taggers=pretag,

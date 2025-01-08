@@ -17,21 +17,21 @@ from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
 
 with necessary.necessary("cld3", soft=True) as CLD3_AVAILABLE:
-    if CLD3_AVAILABLE or TYPE_CHECKING:
+    if CLD3_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         import cld3  # pyright:ignore pylint:disable=import-error
 
 with necessary.necessary("pycld2", soft=True) as CLD2_AVAILABLE:
-    if CLD2_AVAILABLE or TYPE_CHECKING:
+    if CLD2_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         import pycld2 as cld2  # pyright:ignore pylint:disable=import-error
 
 
 with necessary.necessary("langdetect", soft=True) as LANGDETECT_AVAILABLE:
-    if LANGDETECT_AVAILABLE or TYPE_CHECKING:
+    if LANGDETECT_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         from langdetect import PROFILES_DIRECTORY, DetectorFactory, LangDetectException
 
 
 with necessary.necessary("lingua", soft=True) as LINGUA_AVAILABLE:
-    if LINGUA_AVAILABLE or TYPE_CHECKING:
+    if LINGUA_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         from lingua import Language, LanguageDetectorBuilder
 
 

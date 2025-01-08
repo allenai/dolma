@@ -144,7 +144,7 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
 
     untyped_config: DictConfig = om.merge(
         om.create(config or {}), om.create(nested_config_dict)
-    )  # pyright: ignore (pylance is confused because om.create might return a DictConfig or a ListConfig)
+    )  # type: ignore # (pylance is confused because om.create might return a DictConfig or a ListConfig)
 
     base_structured_config: DictConfig = om.structured(structured)
     merged_config = om.merge(base_structured_config, untyped_config)
@@ -159,7 +159,7 @@ def namespace_to_nested_omegaconf(args: Namespace, structured: Type[T], config: 
     except OmegaConfBaseException as ex:
         raise DolmaConfigError(f"Invalid error while parsing key `{ex.full_key}`: {type(ex).__name__}") from ex
 
-    return merged_config  # pyright: ignore
+    return merged_config  # type: ignore # (pylance because same error as above)
 
 
 def print_config(config: Any, console: Optional[Console] = None) -> None:

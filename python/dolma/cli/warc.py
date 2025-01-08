@@ -39,7 +39,7 @@ class WarcExtractorConfig:
         default=1,
         help="Number of parallel processes to use.",
     )
-    ignore_existing: bool = field(
+    skip_existing: bool = field(
         default=False,
         help="Whether to ignore existing outputs and re-run the taggers.",
     )
@@ -107,7 +107,7 @@ class WarcExtractorCli(BaseCli):
                 destination=(destination[0] if len(destination) == 1 else destination),
                 metadata=work_dirs.output,
                 num_processes=parsed_config.processes,
-                ignore_existing=parsed_config.ignore_existing,
+                skip_existing=parsed_config.skip_existing,
                 debug=parsed_config.debug,
                 source_name=source_name,
                 pre_taggers=parsed_config.pre.taggers,

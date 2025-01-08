@@ -8,12 +8,12 @@ from ..core.registry import BaseRegistry
 from .utils import raise_warc_dependency_error
 
 with necessary("trafilatura", soft=True) as TRAFILATURA_AVAILABLE:
-    if TRAFILATURA_AVAILABLE or TYPE_CHECKING:
+    if TRAFILATURA_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         import trafilatura  # noqa: F401
         import trafilatura.meta  # noqa: F401
 
 with necessary("resiliparse", soft=True) as RESILIPARSE_AVAILABLE:
-    if RESILIPARSE_AVAILABLE or TYPE_CHECKING:
+    if RESILIPARSE_AVAILABLE or TYPE_CHECKING:  # type: ignore[unreachable]
         from resiliparse.extract.html2text import extract_plain_text  # noqa: F401
         from resiliparse.parse.encoding import detect_encoding  # noqa: F401
         from resiliparse.parse.html import HTMLTree  # noqa: F401

@@ -5,7 +5,7 @@ from dolma.core.paths import glob_path
 import necessary
 
 with necessary.necessary("click") as CLICK_AVAILABLE:
-    if CLICK_AVAILABLE or TYPE_CHECKING:
+    if CLICK_AVAILABLE or TYPE_CHECKING:        # type: ignore[unreachable]
         import click
 
 

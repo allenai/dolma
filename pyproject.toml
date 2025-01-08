@@ -112,6 +112,8 @@ dev = [
     "isort>=5.10.1",
     "mypy>=0.971",
     "pytest>=5.2",
+    "types-PyYAML",
+    "types-dateparser"
 ]
 # extension to process code
 code = ["detect-secrets==1.4.0", "beautifulsoup4>=4", "pygments", "regex"]
@@ -227,7 +229,6 @@ aggressive = 3
 [tool.mypy]
 python_version = "3.9"
 ignore_missing_imports = true
-no_site_packages = true
 allow_redefinition = false
 warn_unused_configs = true
 warn_unused_ignores = true
@@ -237,6 +238,7 @@ warn_unreachable = true
 show_error_codes = true
 pretty = true
 plugins = ["numpy.typing.mypy_plugin"]
+
 
 [tool.mypy-tests]
 strict_optional = false

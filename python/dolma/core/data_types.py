@@ -75,7 +75,7 @@ class DocumentWithMetadata(Document):
         self.metadata = metadata or {}
 
     @classmethod
-    def from_spec(cls, spec: InputSpecWithMetadata) -> "DocumentWithMetadata":
+    def from_spec(cls, spec: InputSpecWithMetadata) -> "DocumentWithMetadata":  # type: ignore[override]
         return DocumentWithMetadata(
             source=spec.source,
             version=spec.version,
@@ -125,7 +125,9 @@ class DocumentWithMetadataAndAttributes(DocumentWithMetadata):
         self.attributes = attributes or {}
 
     @classmethod
-    def from_spec(cls, spec: InputSpecWithMetadataAndAttributes) -> "DocumentWithMetadataAndAttributes":
+    def from_spec(  # type: ignore[override]
+        cls, spec: InputSpecWithMetadataAndAttributes
+    ) -> "DocumentWithMetadataAndAttributes":
         return DocumentWithMetadataAndAttributes(
             source=spec.source,
             version=spec.version,
