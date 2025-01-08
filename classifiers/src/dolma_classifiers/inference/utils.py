@@ -3,6 +3,7 @@ import re
 from hashlib import md5
 from typing import Any
 
+import jq
 import msgspec
 import torch
 import torch.distributed as dist
@@ -11,6 +12,33 @@ from smart_open.compression import (
     get_supported_compression_types,
     register_compressor,
 )
+
+
+def is_valid_dtype(dtype_str: str) -> bool:
+    try:
+        # Try to get the dtype from the string
+        dtype = getattr(torch, dtype_str)
+        return isinstance(dtype, torch.dtype)
+    except (AttributeError, TypeError):
+        return False
+
+
+def is_valid_device(device_str: str) -> bool:
+    try:
+        # Try to get the device from the string
+        device = torch.device(device_str)
+        return isinstance(device, torch.device)
+    except RuntimeError:
+        return False
+
+
+def is_valid_jq_expr(jq_expr: str) -> bool:
+    try:
+        # Try to compile the jq expression
+        jq.compile(jq_expr)
+        return True
+    except Exception:
+        return False
 
 
 def get_rank_and_world_size():

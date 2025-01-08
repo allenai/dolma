@@ -188,6 +188,7 @@ exclude = '''
     | \bdist\b
     | \bdoc\b
     | \.cargo
+    | classifiers/scripts
     | configs
     | docs
     | scripts
@@ -206,7 +207,7 @@ target-version = ["py39", "py310", "py311", "py312"]
 profile = "black"
 py_version = 39
 known_first_party = ["dolma"]
-known_local_folder = ["tests", "python"]
+known_local_folder = ["tests", "python", "classifiers/src"]
 extend_skip_glob = [
     "configs/*",
     "docs/*",

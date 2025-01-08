@@ -219,7 +219,7 @@ def process_documents(
     classifier = Registry.get(
         model_name=model_name,
         device=f'cuda:{get_local_gpu_rank()}',
-        dtype='float16',
+        dtype=model_dtype,
         compile=model_compile,
     )
 
@@ -317,7 +317,27 @@ def longest_common_sequence(paths: list[str]) -> str:
     return "/".join(common_sequence)
 
 
-def main(args: argparse.Namespace) -> None:
+def run_inference(
+    documents: list[str] | str,
+    model_name_or_path: str,
+    destination: list[str] | str | None = None,
+    model_batch_size: int = 32,
+    model_max_length: int | None = None,
+    model_compile: bool = False,
+    model_dtype: str = "float16",
+    model_device: str = "cuda",
+    data_text_key: str = ".text",
+    data_id_key: str = ".id",
+    data_attribute_suffix: str | None = None,
+    data_prefetch_factor: int = 2,
+    wandb_project: str | None = None,
+    wandb_entity: str | None = None,
+    wandb_name: str | None = None,
+    ignore_existing: bool = False,
+    debug: bool = False,
+    processes: int = 1,
+):
+
     # disable multiprocessing for tokenizer
     console_logger = get_logger("main")
 
@@ -397,49 +417,70 @@ def main(args: argparse.Namespace) -> None:
     )
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Classify text from JSONL files on S3 using a Hugging Face model."
-    )
-    parser.add_argument(
-        "-s",
-        "--source-prefix",
-        type=str,
-        required=True,
-        help="S3 glob pattern for input files (e.g., s3://path/to/docs/*/*.jsonl.gz)",
-    )
-    parser.add_argument("--output-prefix", type=str, default=None, help="S3 prefix to save the results")
-    parser.add_argument("-b", "--batch-size", type=int, default=32, help="Batch size for processing (default: 32)")
-    parser.add_argument("-m", "--model-name", type=str, required=True, help="Hugging Face model name")
-    parser.add_argument(
-        "--max-length", type=int, default=None, help="Maximum sequence length for tokenization (default: None)"
-    )
-    parser.add_argument("--model-compile", action="store_true", help="Compile the model using torch.compile")
-    parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
-    parser.add_argument("--wandb-project", type=str, default=None, help="Weights & Biases project name")
-    parser.add_argument("--wandb-entity", type=str, default=None, help="Weights & Biases entity name")
-    parser.add_argument("--wandb-name", type=str, default=None, help="Gantry task name")
-    parser.add_argument("--override", action="store_true", help="Override existing files")
-    parser.add_argument("--text-key", type=str, default=".text", help="JQ key to extract text from documents")
-    parser.add_argument("--id-key", type=str, default=".id", help="JQ key to extract id from documents")
-    parser.add_argument("--num-workers", type=int, default=1, help="Number of workers for processing")
-    parser.add_argument("--log-every", type=int, default=10000, help="Log every n documents")
-    parser.add_argument("--model-dtype", type=str, default="float16", help="Data type for model")
-    parser.add_argument("--attribute-suffix", type=str, default=None, help="Optional suffix for attribute keys")
-    parser.add_argument("--prefetch-factor", type=int, default=2, help="Prefetch factor for DataLoader")
-    opts = parser.parse_args()
 
-    if opts.output_prefix is None:
-        if "/documents/" not in opts.source_prefix:
-            raise ValueError("Output prefix is required unless source prefix contains 'documents'")
-        base, _ = opts.source_prefix.split("/documents/", 1)
-        opts.output_prefix = f"{base}/attributes/{sanitize_model_name(opts.model_name)}"
+# def parse_args() -> argparse.Namespace:
+#     parser = argparse.ArgumentParser(
+#         description="Classify text from JSONL files on S3 using a Hugging Face model."
+#     )
+#     parser.add_argument(
+#         "-s",
+#         "--source-prefix",
+#         type=str,
+#         required=True,
+#         help="S3 glob pattern for input files (e.g., s3://path/to/docs/*/*.jsonl.gz)",
+#     )
+#     parser.add_argument("--output-prefix", type=str, default=None, help="S3 prefix to save the results")
+#     parser.add_argument("-b", "--batch-size", type=int, default=32, help="Batch size for processing (default: 32)")
+#     parser.add_argument("-m", "--model-name", type=str, required=True, help="Hugging Face model name")
+#     parser.add_argument(
+#         "--max-length", type=int, default=None, help="Maximum sequence length for tokenization (default: None)"
+#     )
+#     parser.add_argument("--model-compile", action="store_true", help="Compile the model using torch.compile")
+#     parser.add_argument("--use-wandb", action="store_true", help="Use Weights & Biases for logging")
+#     parser.add_argument("--wandb-project", type=str, default=None, help="Weights & Biases project name")
+#     parser.add_argument("--wandb-entity", type=str, default=None, help="Weights & Biases entity name")
+#     parser.add_argument("--wandb-name", type=str, default=None, help="Gantry task name")
+#     parser.add_argument("--override", action="store_true", help="Override existing files")
+#     parser.add_argument("--text-key", type=str, default=".text", help="JQ key to extract text from documents")
+#     parser.add_argument("--id-key", type=str, default=".id", help="JQ key to extract id from documents")
+#     parser.add_argument("--num-workers", type=int, default=1, help="Number of workers for processing")
+#     parser.add_argument("--log-every", type=int, default=10000, help="Log every n documents")
+#     parser.add_argument("--model-dtype", type=str, default="float16", help="Data type for model")
+#     parser.add_argument("--attribute-suffix", type=str, default=None, help="Optional suffix for attribute keys")
+#     parser.add_argument("--prefetch-factor", type=int, default=2, help="Prefetch factor for DataLoader")
+#     opts = parser.parse_args()
 
-    if opts.use_wandb:
-        WandbLogger.use_wandb = True
-        WandbLogger.project = opts.wandb_project or WandbLogger.project
-        WandbLogger.entity = opts.wandb_entity or WandbLogger.entity
-        # use name provided by user, or name of run in wandb, or sanitize model name
-        WandbLogger.name = opts.wandb_name or WandbLogger.name or sanitize_model_name(opts.model_name, opts.__dict__)
+#     if opts.output_prefix is None:
+#         if "/documents/" not in opts.source_prefix:
+#             raise ValueError("Output prefix is required unless source prefix contains 'documents'")
+#         base, _ = opts.source_prefix.split("/documents/", 1)
+#         opts.output_prefix = f"{base}/attributes/{sanitize_model_name(opts.model_name)}"
 
-    return opts
+#     if opts.use_wandb:
+#         WandbLogger.use_wandb = True
+#         WandbLogger.project = opts.wandb_project or WandbLogger.project
+#         WandbLogger.entity = opts.wandb_entity or WandbLogger.entity
+#         # use name provided by user, or name of run in wandb, or sanitize model name
+#         WandbLogger.name = opts.wandb_name or WandbLogger.name or sanitize_model_name(opts.model_name, opts.__dict__)
+
+#     return opts
+
+
+
+
+# def process_documents(
+#     source_paths: list[str],
+#     destination_paths: list[str],
+#     batch_size: int,
+#     model_name: str,
+#     model_dtype: str,
+#     model_compile: bool,
+#     log_every: int,
+#     max_length: int | None = None,
+#     text_selector: str = ".text",
+#     id_selector: str = ".id",
+#     num_workers: int = 1,
+#     prefetch_factor: int = 2,
+#     suffix: str | None = None
+# ):
+#     """Processes a batch of files

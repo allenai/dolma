@@ -28,6 +28,8 @@ check:
 	black --check .
 	mypy tests/python/
 	mypy python/
+	mypy classifiers/src/
 	flake8 tests/python/
 	flake8 python/
+	flake8 classifiers/src/
 	rustfmt --edition 2021 src/*.rs --check
