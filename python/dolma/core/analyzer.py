@@ -324,7 +324,7 @@ def create_and_run_analyzer(
             metadata_prefix=metadata_path,
             debug=debug,
             seed=seed,
-            ignore_existing=True,
+            skip_existing=True,
             retries_on_error=0,
             num_processes=num_processes,
         )

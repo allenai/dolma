@@ -298,9 +298,9 @@ class TaggerProcessor(BaseParallelProcessor):
         # total number of documents processed
         total_docs_cnt = 0
 
-        if not kwargs.get("ignore_existing", False):
+        if kwargs.get("skip_existing", False):
             # we group taggers by their path (this is for cases when two taggers are going  to same file)
-            # and then remove all taggers if any of the paths exists and ignore_existing is True
+            # and then remove all taggers if any of the paths exists and skip_existing is True
             _taggers_by_path: Dict[str, list[str]] = {}
             for tagger_name, tagger_location in taggers_paths.items():
                 _taggers_by_path.setdefault(tagger_location.path, []).append(tagger_name)
@@ -419,7 +419,7 @@ def create_and_run_tagger(
     metadata: Union[None, str, List[str]] = None,
     debug: bool = False,
     seed: int = 0,
-    ignore_existing: bool = False,
+    skip_existing: bool = False,
     skip_on_failure: bool = False,
     retries_on_error: int = 0,
     num_processes: int = 1,
@@ -447,7 +447,7 @@ def create_and_run_tagger(
             which documents have been processed. If `None`, the metadata will be saved in a temporary directory.
         debug (bool, optional): Whether to run in debug mode. Defaults to False.
         seed (int, optional): The seed to use for the random number generator. Defaults to 0.
-        ignore_existing (bool, optional): Whether to ignore existing outputs and re-run the taggers.
+        skip_existing (bool, optional): Whether to ignore existing outputs and re-run the taggers.
             Defaults to False.
         skip_on_failure (bool, optional): Whether to skip a document if it fails to process. Defaults to False.
         retries_on_error (int, optional): Number of times to retry processing a document if it fails.
@@ -502,7 +502,7 @@ def create_and_run_tagger(
             metadata_prefix=metadata,
             debug=debug or profile_enable,  # if profile is true, debug must be true
             seed=seed,
-            ignore_existing=ignore_existing,
+            skip_existing=skip_existing,
             retries_on_error=retries_on_error,
             num_processes=num_processes,
         )

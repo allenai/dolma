@@ -239,7 +239,7 @@ def create_and_run_warc_pipeline(
     metadata: Union[None, str, List[str]] = None,
     debug: bool = False,
     seed: int = 0,
-    ignore_existing: bool = False,
+    skip_existing: bool = False,
     skip_on_failure: bool = False,
     retries_on_error: int = 0,
     num_processes: int = 1,
@@ -291,7 +291,7 @@ def create_and_run_warc_pipeline(
             metadata_prefix=all_meta_paths,
             debug=debug,
             seed=seed,
-            ignore_existing=ignore_existing,
+            skip_existing=skip_existing,
             retries_on_error=retries_on_error,
             num_processes=num_processes,
         )

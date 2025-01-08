@@ -41,7 +41,7 @@ class TestParallel(TestCase):
                 source_prefix=str(LOCAL_DATA / "expected"),
                 destination_prefix=f"{d}/destination",
                 metadata_prefix=f"{d}/metadata",
-                ignore_existing=False,
+                skip_existing=False,
             )
             proc()
             src = [p for p in os.listdir(LOCAL_DATA / "expected") if not p.startswith(".")]
@@ -55,7 +55,7 @@ class TestParallel(TestCase):
                 source_prefix=str(LOCAL_DATA / "expected" / "*-paragraphs.*"),
                 destination_prefix=f"{d}/destination",
                 metadata_prefix=f"{d}/metadata",
-                ignore_existing=False,
+                skip_existing=False,
             )
             proc()
             src = [p for p in os.listdir(LOCAL_DATA / "expected") if "paragraphs" in p]

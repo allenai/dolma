@@ -74,7 +74,7 @@ class TaggerConfig:
         default=1,
         help="Number of parallel processes to use.",
     )
-    ignore_existing: bool = field(
+    skip_existing: bool = field(
         default=False,
         help="Whether to ignore existing outputs and re-run the taggers.",
     )
@@ -132,7 +132,7 @@ class TaggerCli(BaseCli):
                 metadata=work_dirs.output,
                 taggers=taggers,
                 taggers_modules=parsed_config.tagger_modules,
-                ignore_existing=parsed_config.ignore_existing,
+                skip_existing=parsed_config.skip_existing,
                 num_processes=parsed_config.processes,
                 experiment=parsed_config.experiment,
                 debug=parsed_config.debug,

@@ -69,7 +69,7 @@ class BaseParallelProcessor:
         debug: bool = False,
         seed: int = 0,
         pbar_timeout: float = 1e-3,
-        ignore_existing: bool = False,
+        skip_existing: bool = False,
         include_paths: Optional[List[str]] = None,
         exclude_paths: Optional[List[str]] = None,
         files_regex_pattern: Optional[str] = None,
@@ -87,7 +87,7 @@ class BaseParallelProcessor:
                 file names will also be the same.
             metadata_prefix (str): The prefix of the metadata files to save. This can be a local path or an
                 S3 path. Metadata output will be created for each file after it is processed. Filenames are
-                checked to verify if a file has been processed and can be skipped unless `ignore_existing` is
+                checked to verify if a file has been processed and can be skipped unless `skip_existing` is
                 set to true.
             num_processes (int, optional): The number of processes to use. Defaults to 1.
             debug (bool, optional): Whether to run in debug mode; if true, no multiprocessing will be used.
@@ -95,7 +95,7 @@ class BaseParallelProcessor:
             seed (int, optional): The random seed to use when shuffling input files. Defaults to 0.
             pbar_timeout (float, optional): How often to update progress bars in seconds.
                 Defaults to 0.01 seconds.
-            ignore_existing (bool, optional): Whether to ignore files that have been already processed and
+            skip_existing (bool, optional): Whether to ignore files that have been already processed and
                 re-run the processor on all files from scratch. Defaults to False.
             include_paths (Optional[List[str]], optional): A list of paths to include. If provided, only files
                 that match one of the paths will be processed. Defaults to None.
@@ -118,7 +118,7 @@ class BaseParallelProcessor:
         self.debug = debug
         self.seed = seed
         self.pbar_timeout = pbar_timeout
-        self.ignore_existing = ignore_existing
+        self.skip_existing = skip_existing
 
         self.include_paths = set(include_paths) if include_paths is not None else None
         self.exclude_paths = set(exclude_paths) if exclude_paths is not None else None
@@ -354,7 +354,7 @@ class BaseParallelProcessor:
             debug=self.debug or other.debug,
             seed=self.seed,
             pbar_timeout=max(self.pbar_timeout, other.pbar_timeout),
-            ignore_existing=self.ignore_existing or other.ignore_existing,
+            skip_existing=self.skip_existing or other.skip_existing,
             include_paths=include_paths,
             exclude_paths=exclude_paths,
             files_regex_pattern=regex_pattern,
@@ -484,7 +484,7 @@ class BaseParallelProcessor:
             )
 
             for path in rel_paths:
-                if not self.ignore_existing and path in existing_metadata_names:
+                if not self.skip_existing and path in existing_metadata_names:
                     continue
 
                 if not self._valid_path(path):
