@@ -160,7 +160,7 @@ class DeduperCli(BaseCli):
     @classmethod
     def run(cls, parsed_config: DeduperConfig):
         logger = get_logger("tagger")
-
+        
         dict_config: Dict[str, Any] = {}
         with ExitStack() as stack:
             work_dirs = stack.enter_context(make_workdirs(parsed_config.work_dir))

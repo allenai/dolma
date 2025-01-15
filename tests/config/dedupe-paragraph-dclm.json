@@ -3,17 +3,18 @@
     "tests/data/provided/deduper/doc*/dclm_bff_checker.jsonl.gz"
   ],
   "work_dir": {
-    "input": "tests/work/temp/dedupe-para/input",
-    "output": "tests/work/temp/dedupe-para/output"
+    "input": "tests/work/temp/dedupe-dclm/input",
+    "output": "tests/work/temp/dedupe-dclm/output"
   },
   "dedupe": {
-    "name": "dedupe_paragraph_ngrams",
-    "paragraphs": {
-      "attribute_name": "bff_duplicate_paragraph_spans",
+    "name": "dedupe_dclm_ngrams",
+    "dedupe_method": "dclm",
+    "dclm": {
+      "attribute_name": "bff_duplicate_dclm_spans",
       "by_ngram": {
         "ngram_length": 6,
         "stride": 1,
-        "overlap_threshold": 0.5
+        "overlap_threshold": 0.8
       }
     }
   },
@@ -21,7 +22,7 @@
     "file": "tests/work/para_bloom_filter.bin",
     "size_in_bytes": 0,
     "read_only": false,
-    "estimated_doc_count": 1000,
+    "estimated_doc_count": 10000,
     "desired_false_positive_rate": 0.00001
   },
   "processes": 1

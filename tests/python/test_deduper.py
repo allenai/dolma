@@ -26,6 +26,7 @@ TEST_DIR = Path(__file__).parent.parent
 DEDUPE_BY_URL = TEST_DIR / "config/dedupe-by-url.json"
 DEDUPE_PARAGRAPHS = TEST_DIR / "config/dedupe-paragraphs.json"
 DEDUPE_PARAGRAPH_NGRAMS = TEST_DIR / "config/dedupe-paragraph-ngrams.json"
+DEDUPE_DCLM = TEST_DIR / "config/dedupe-paragraph-dclm.json"
 
 
 D = TypeVar("D", bound="DedupeAttributesDict")
@@ -42,7 +43,7 @@ class TestDeduper(TestCase):
         self.local_temp_dir = self.stack.enter_context(TemporaryDirectory()).rstrip("/")
 
         if skip_aws_tests():
-            self.remote_test_prefix = None
+            self.remote_test_prefix = None            
         else:
             self.remote_test_prefix = get_test_prefix()
 
@@ -201,29 +202,48 @@ class TestDeduper(TestCase):
             for (start_para, end_para), (start_span, end_span, _) in zip(valid_paragraphs, spans):
                 self.assertEqual(doc["text"][start_para:end_para], doc["text"][start_span:end_span])
 
+
     def test_dedupe_paragraph_ngrams(self):
         with open(DEDUPE_PARAGRAPH_NGRAMS, "r") as f:
             config = json.load(f)
 
         config["documents"][0] = f'{self.local_temp_dir}/{config["documents"][0]}'
         config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
-        print("CONFIG", config)
         with NamedTemporaryFile("w") as f:
             json.dump(config, f)
             f.flush()
 
             main(argv=["-c", f.name, "dedupe"])
 
-        expected = load_jsonl("tests/data/expected/dedupe-paragraph-ngrams.json.gz")
+        expected = load_jsonl("tests/data/expected/dedupe-paragraphs-ngrams.jsonl.gz")
         print(
-            f"Loading data from {self.local_temp_dir}/tests/data/provided/attributes/dedupe_paragraph_ngrams/000.json.gz"
+            f"Loading data from {self.local_temp_dir}/tests/data/provided/attributes/dedupe_paragraph_ngrams/dclm_bff_checker.jsonl.gz"
         )
         computed = load_jsonl(
-            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraph_ngrams/000.json.gz"
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_paragraph_ngrams/dclm_bff_checker.jsonl.gz"
         )
-
-
         return self._compare_dedupe_output(expected, computed)  # pyright: ignore
+
+
+
+    def test_dedupe_dclm_bff(self):
+        with open(DEDUPE_DCLM, 'r') as f:
+            config = json.load(f)
+
+        config["documents"][0] = f'{self.local_temp_dir}/{config["documents"][0]}'
+        config["bloom_filter"]["file"] = f'{self.local_temp_dir}/{config["bloom_filter"]["file"]}'
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "dedupe"])
+        computed = load_jsonl(
+            f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_dclm_ngrams/dclm_bff_checker.jsonl.gz"
+        )            
+
+        expected = load_jsonl('tests/data/expected/dclm_bff_checker_exp.jsonl.gz')
+        return self._compare_dedupe_output(expected, computed)
+
 
     def _compare_dedupe_output(self, expected: List[D], computed: List[D]):
         self.assertEqual(len(expected), len(computed))
@@ -257,6 +277,8 @@ class TestDeduper(TestCase):
             f"{self.local_temp_dir}/tests/data/provided/deduper/attributes/dedupe_by_url/000.json.gz"
         )
         return self._compare_dedupe_output(expected, computed)  # pyright: ignore
+
+
 
 
 class TestDeduperPipeline(TestCasePipeline):
@@ -366,7 +388,6 @@ class TestDeduperUnicode(TestCase):
             main(argv=["-c", f"{d}/config.json", "dedupe"])
 
             attributes = load_jsonl(f"{attributes_dir}/dedupe_paragraphs/test.jsonl.gz")
-
             first_dup, second_dup = attributes[0]["attributes"]["bff_duplicate_paragraph_spans"]
 
             self.assertEqual(text[first_dup[0] : first_dup[1]], paragraphs[2] + "\n")

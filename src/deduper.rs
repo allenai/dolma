@@ -36,7 +36,6 @@ fn build_pbar(num_items: usize) -> LogProgressBar {
 pub fn run(config: DeduperConfig) -> Result<u32, u32> {
     // Set global thread count for rayon parallelism
     let start_main = Instant::now();
-
     if config.processes > 0 {
         GLOBAL_POOL.get_or_init(|| {
             ThreadPoolBuilder::new()
@@ -426,168 +425,128 @@ pub fn dedupe_paragraphs(
     let min_word_count = dedupe_config.min_words.unwrap_or(0);
     let text = data["text"].as_str().unwrap();
     let text_length = text.len();
-    let seen_bytes = text_length;
+    let mut seen_bytes = text_length;
     let mut removed_bytes = 0;
     let mut offset = 0;
 
-    if text_length > 0 {
-        let paragraphs = text.split(cfg.paragraph_separator.as_deref().unwrap_or("\n"));
-        let mut duplicate_paragraph_spans = Vec::new();
+    if text_length == 0 {
+        return (attributes, seen_bytes, removed_bytes)
+    }
 
-        // skip empty documents if text_length is 0
-        for p in paragraphs {
-            let par_start = offset;
-            let par_char_length = p.chars().count();
-            offset += par_char_length;
-            if offset < text_length - 1 {
-                offset += 1; // For the newline
-            }
-            let par_end = offset;
 
-            if par_char_length < min_content_length {
-                // skip length 0 paragraphs
+    let paragraphs = text.split(cfg.paragraph_separator.as_deref().unwrap_or("\n"));
+    let mut duplicate_paragraph_spans = Vec::new();
+
+    for p in paragraphs {
+        // Get start,end in half-open intervals like [start:end)
+        let par_start = offset;
+        let par_char_length = p.chars().count();
+        offset += par_char_length;
+        if offset < text_length - 1 {
+            offset += 1;
+        }
+        let par_end = offset;
+
+        // Skip degenerate cases
+        if par_char_length < min_content_length { continue; } 
+        if tokenize(&p).count() < min_word_count { continue; }
+        if dedupe_config.skip_empty.unwrap_or(true) && p.trim().is_empty() { continue; }
+
+        // If not doing ngrams, then the whole paragraph is "one ngram" (simulated) [for code simplicity]
+        let (ngram_len, stride, threshold, skip_short) = if cfg.by_ngram.is_none() || cfg.by_ngram.as_ref().unwrap().ngram_length == 0 {
+            (usize::MAX, 1, 1.0, false)
+        } else {
+            let by_ngram = cfg.by_ngram.clone().unwrap();
+            (by_ngram.ngram_length, by_ngram.stride, by_ngram.overlap_threshold, by_ngram.skip_short_paragraphs.unwrap_or(false))
+        };
+        
+
+        // And now iterate through the words/tokens
+
+        let mut current_ngram = if ngram_len < usize::MAX {
+            VecDeque::with_capacity(ngram_len)}
+            else {
+            VecDeque::new()
+        };
+        let mut hashes_to_add = Vec::new();
+        let mut stride_status = 0;
+        for token in tokenize(&p) {
+            // Warmup phase 
+            if hashes_to_add.len() == 0 && current_ngram.len() < ngram_len - 1 {
+                current_ngram.push_back(token);
                 continue;
             }
-            if min_word_count > 0 {
-                // Split the text into words and check the number of words.
-                let words = tokenize(&p);
 
-                if words.count() < min_word_count {
-                    // skip documents with fewer than min_words words
-                    continue;
-                }
-            } else if dedupe_config.skip_empty.unwrap_or(false) && p.trim().is_empty() {
-                // skip empty paragraphs if dedupe_config.skip_empty is true
-                // and the paragraph is empty after trimming (i.e., removing whitespace)
-                continue;
-            } else {
-                if cfg.by_ngram.is_none() || cfg.by_ngram.as_ref().unwrap().ngram_length == 0 {
-                    let dedupe_key = VecDeque::from([p]);
-                    let hashes = build_hashes(
-                        &bloom_filter,
-                        &dedupe_key,
-                        dedupe_config.num_partitions.unwrap_or(1),
-                        dedupe_config.partition_index.unwrap_or(0),
-                    );
-                    //num_observed += 1;
-                    if !hashes.is_empty() {
-                        //num_processed += 1;
-                        // Dedupe the entire paragraph
-                        if bloom_filter.contains(&hashes) {
-                            let span = vec![
-                                Value::Number(par_start.into()),
-                                Value::Number(par_end.into()),
-                                Value::from(1),
-                            ];
-                            // add span to duplicate_paragraph_spans
-                            removed_bytes += par_end - par_start;
-                            duplicate_paragraph_spans.push(Value::Array(span));
-                        } else if !bloom_filter.read_only {
-                            bloom_filter.insert(&hashes);
-                        }
-                    }
-                } else {
-                    // Dedupe by ngram overlap
-                    let by_ngram = cfg.clone().by_ngram.unwrap();
-                    let ngram_length = by_ngram.ngram_length;
-                    let stride = by_ngram.stride;
-                    let mut ngram: VecDeque<&str> = VecDeque::with_capacity(ngram_length);
-                    let mut word_index = 0;
-                    let mut last_ngram_start = 0;
-                    let mut ngram_count = 0;
-                    let mut duplicate_ngram_count = 0;
-                    for token in tokenize(p) {
-                        ngram.push_back(token);
-                        if ngram.len() == ngram_length {
-                            let ngram_start = word_index - (ngram_length - 1);
-                            if last_ngram_start == 0 || ngram_start - last_ngram_start >= stride {
-                                last_ngram_start = ngram_start;
-                                ngram_count += 1;
-                                let dedupe_key = VecDeque::from(ngram.clone());
-                                let hashes = build_hashes(
-                                    &bloom_filter,
-                                    &dedupe_key,
-                                    dedupe_config.num_partitions.unwrap_or(1),
-                                    dedupe_config.partition_index.unwrap_or(0),
-                                );
-                                //num_observed += 1;
-                                if !hashes.is_empty() {
-                                    //num_processed += 1;
-                                    if bloom_filter.contains(&hashes) {
-                                        duplicate_ngram_count += 1;
-                                    } else if !bloom_filter.read_only {
-                                        bloom_filter.insert(&hashes);
-                                    }
-                                }
-                            }
-                            ngram.pop_front();
-                        }
-                        word_index += 1;
-                    }
-                    if ngram_count < 2 && !by_ngram.skip_short_paragraphs.unwrap_or(false) {
-                        // Too few ngrams to dedupe by overlap. Just compare the whole thing
-                        let dedupe_key = VecDeque::from([p]);
-                        let hashes = bloom_filter.hashes(&dedupe_key);
+            // Once warm, if at stride check, make hash and store it
+            current_ngram.push_back(token);
+            if stride_status == 0 {
+                let hashes = build_hashes(
+                    &bloom_filter, 
+                    &current_ngram.clone(),
+                    dedupe_config.num_partitions.unwrap_or(1),
+                    dedupe_config.partition_index.unwrap_or(1));
+                hashes_to_add.push(hashes);
+            }
 
-                        let span_score = match bloom_filter.contains(&hashes) {
-                            // we found a match! score is 1.0
-                            true => 1.0,
-                            false => {
-                                // this is a new paragraph, push to bloom filter
-                                if !bloom_filter.read_only {
-                                    bloom_filter.insert(&hashes);
-                                }
-                                // score is 0.0 because it's not a duplicate
-                                0.0
-                            }
-                        };
+            stride_status = (stride_status + 1) % stride;
+            current_ngram.pop_front();
+        }
 
-                        // we check if the score is above the threshold; note that
-                        // users can set the threshold to 0.0 to always include the span,
-                        // or 1.0 to only include spans that are exact duplicates.
-                        if span_score >= by_ngram.overlap_threshold {
-                            let span = vec![
-                                Value::Number(par_start.into()),
-                                Value::Number(par_end.into()),
-                                Value::from(span_score),
-                            ];
-                            // add span to duplicate_paragraph_spans
-                            removed_bytes += par_end - par_start;
-                            duplicate_paragraph_spans.push(Value::Array(span));
-                        }
-                    } else {
-                        let overlap_fraction = duplicate_ngram_count as f32 / ngram_count as f32;
+        // If paragraph was too short...
+        if hashes_to_add.len() == 0 && !skip_short{
+            let hashes = build_hashes(
+                &bloom_filter, 
+                &current_ngram,
+            dedupe_config.num_partitions.unwrap_or(1),
+                dedupe_config.partition_index.unwrap_or(1));
+            hashes_to_add.push(hashes);
+        }
 
-                        if overlap_fraction >= by_ngram.overlap_threshold {
-                            let span = vec![
-                                Value::Number(par_start.into()),
-                                Value::Number(par_end.into()),
-                                Value::from(overlap_fraction),
-                            ];
-                            // add span to duplicate_paragraph_spans
-                            removed_bytes += par_end - par_start;
-                            duplicate_paragraph_spans.push(Value::Array(span));
-                        }
-                    }
-                }
+
+        // Get containment numbers:
+        let total_hashes = hashes_to_add.len();
+        let mut contain_count = 0;
+        for hash in &hashes_to_add {
+            if bloom_filter.contains(&hash) {
+                contain_count += 1;
             }
         }
 
-        let attr_name_with_index;
-        let attr_name = if dedupe_config.num_partitions.unwrap_or(1) > 1 {
-            attr_name_with_index = format!(
-                "{}_{}",
-                cfg.attribute_name,
-                dedupe_config.partition_index.unwrap_or(0)
-            );
-            &attr_name_with_index
-        } else {
-            &cfg.attribute_name
-        };
-        attributes[attr_name] = Value::Array(duplicate_paragraph_spans);
+        // If containment matches threshold, set span and add hashes
+        seen_bytes += par_end - par_start;
+        if (contain_count as f64 / total_hashes as f64) >= threshold.into() {
+            let span = vec![
+                Value::Number(par_start.into()),
+                Value::Number(par_end.into()),
+                Value::from(contain_count as f64 / total_hashes as f64),
+            ];
+            // add span to duplicate_paragraph_spans
+            removed_bytes += par_end - par_start;
+            duplicate_paragraph_spans.push(Value::Array(span));
+        } else if !bloom_filter.read_only {
+            for hash in hashes_to_add {
+                bloom_filter.insert(&hash);            
+            }
+        }
+
     }
+    let attr_name_with_index;
+    let attr_name = if dedupe_config.num_partitions.unwrap_or(1) > 1 {
+        attr_name_with_index = format!(
+            "{}_{}",
+            cfg.attribute_name,
+            dedupe_config.partition_index.unwrap_or(0)
+        );
+        &attr_name_with_index
+    } else {
+        &cfg.attribute_name
+    };
+    attributes[attr_name] = Value::Array(duplicate_paragraph_spans);
     (attributes, seen_bytes, removed_bytes)
 }
+
+
+
 
 pub fn dedupe_dclm(
     data: Value,
@@ -600,6 +559,9 @@ pub fn dedupe_dclm(
     // For whole document: amongst long paragraphs only, if >threshold of ngrams have been seen before, mark whole document as duplicate
     // If whole document is duplicate: add nothing to the bloom filter
     // If only some paragraphs are duplicates, add just those hashes to the bloom filter
+
+
+    // Set things up:
     let mut attributes = json!({});
     let cfg = dedupe_config.dclm.unwrap();
     let ngram_params = cfg.by_ngram;
@@ -615,7 +577,6 @@ pub fn dedupe_dclm(
     };
     let text = data["text"].as_str().unwrap();
     let text_length = text.len();
-
     let splitter = cfg.paragraph_separator.as_deref().unwrap_or("\n");
     let paragraphs = text.split(splitter);
     let mut duplicate_paragraph_spans = Vec::new();
@@ -625,12 +586,13 @@ pub fn dedupe_dclm(
     let mut removed_bytes = 0;
     let mut hashes_to_insert: Vec<Vec<u64>> = Vec::new();
     let mut offset = 0;
-    let effective_stride = ngram_params.stride + 1; // 0 means consecutive ngrams
-    if text_length == 0 {
-        return (attributes, seen_bytes, removed_bytes);
-    }
+    let stride = ngram_params.stride;
+
+    if text_length == 0 { return (attributes, seen_bytes, removed_bytes); } // degenerate empty case
+
+    
     for p in paragraphs {
-        // Loop over paragraphs
+        // Get par start/end
         let par_start = offset;
         let par_char_length = p.chars().count();
         offset += par_char_length;
@@ -638,34 +600,48 @@ pub fn dedupe_dclm(
             offset += splitter.len();
         }
         let par_end = offset;
-        if par_char_length < min_content_length {
-            continue;
-        } // Skip paragraph: too short (in chars)
 
-        // Now tokenize and make ngrams
-        let mut stride_counter = 0;
+        // Skip degenerate cases
+        if par_char_length < min_content_length { continue; } // Skip paragraph: too short (in chars)
+
+        // Set more things up
         let mut hashes: Vec<Vec<u64>> = Vec::new();
         let mut ngram: VecDeque<&str> = VecDeque::with_capacity(ngram_params.ngram_length);
+        let mut stride_status = 0;
+
+        // Then loop over tokens/words
+
         for token in tokenize(p) {
+            if hashes.len() == 0 && ngram.len() < ngram_params.ngram_length - 1 {
+                ngram.push_back(token);
+                continue;
+            }            
             ngram.push_back(token);
-            if ngram.len() >= ngram_params.ngram_length {
-                if stride_counter % effective_stride == 0 {
-                    hashes.push(bloom_filter.hashes(&ngram));
-                }
-                stride_counter = (stride_counter + 1) % effective_stride;
-                ngram.pop_front();
+            if stride_status == 0 {
+                let this_hash = build_hashes(
+                    &bloom_filter, 
+                    &ngram.clone(),
+                    dedupe_config.num_partitions.unwrap_or(1),
+                    dedupe_config.partition_index.unwrap_or(1));
+                hashes.push(this_hash);            
             }
+            stride_status = (stride_status + 1) % stride;
+            ngram.pop_front();
+
         }
         if hashes.len() == 0 {
             continue;
         } // Skip paragraph: too short (in tokens )
+
+
           // Check containment and keep track of whether we should keep/delete this para
         let contained_ngrams = hashes.iter().filter(|h| bloom_filter.contains(h)).count();
-
         total_ngrams += hashes.len();
         total_contained_ngrams += contained_ngrams;
-        let paragraph_duplicate_score = (contained_ngrams / hashes.len()) as f32;
+
+        let paragraph_duplicate_score = contained_ngrams as f32 / hashes.len() as f32;
         let should_remove = paragraph_duplicate_score >= ngram_params.overlap_threshold;
+
         if should_remove {
             duplicate_paragraph_spans.push(Value::Array(vec![
                 Value::from(par_start),
@@ -677,6 +653,8 @@ pub fn dedupe_dclm(
             hashes_to_insert.extend(hashes);
         }
     }
+
+    // If all paragraphs in aggregate are duplicates, then make adjustments
     if total_ngrams > 0 {
         let document_score = (total_contained_ngrams / total_ngrams) as f32;
         if (total_contained_ngrams / total_ngrams) as f32 >= ngram_params.overlap_threshold {
@@ -771,7 +749,7 @@ pub mod deduper_config {
         pub partition_index: Option<u64>,
     }
 
-    #[derive(Serialize, Deserialize, Clone)]
+    #[derive(Serialize, Deserialize, Clone, Debug)]
     pub struct DeduperConfig {
         pub documents: Vec<String>,
         pub work_dir: WorkDirConfig,

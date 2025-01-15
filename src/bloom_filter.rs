@@ -346,7 +346,7 @@ impl BloomFilter {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BloomFilterConfig {
     pub file: String,
     pub size_in_bytes: usize,

@@ -489,8 +489,8 @@ pub mod shard_config {
         pub compression: Option<CompressionConfig>,
     }
 
-    #[derive(Serialize, Deserialize, Clone)]
-    pub struct CompressionConfig {
+    #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CompressionConfig {
         pub input: Option<String>,
         pub output: Option<String>,
     }
@@ -512,7 +512,7 @@ pub mod shard_config {
         pub min_text_length: Option<usize>,
     }
 
-    #[derive(Serialize, Deserialize, Clone)]
+    #[derive(Serialize, Deserialize, Clone, Debug)]
     pub struct WorkDirConfig {
         pub input: String,
         pub output: String,
