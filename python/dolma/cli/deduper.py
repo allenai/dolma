@@ -192,7 +192,6 @@ class DeduperCli(BaseCli):
             # perform some path validation to make sure we don't call the mixer with invalid config
             total_matching_documents = 0
             for document in parsed_config.documents:
-
                 if not any(
                     fnmatch.fnmatch(dict_config["dedupe"]["document_dir"], part) for part in document.split(os.sep)
                 ):

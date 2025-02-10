@@ -1,0 +1,7 @@
+smart-open>=7.0.4
+py7zr
+lxml
+pyarrow
+tqdm
+markdownify
+resiliparse

@@ -1,0 +1,23 @@
+streams:
+  - name: dclm
+    documents:
+       - ${oc.env:HOME}/ai2-llm/pretraining-data/sources/dclm/v0_mmlu_web/documents/full/*.zst
+    attributes:
+      - dedupe_para_ngrams_13_1
+
+    output:
+      max_size_in_bytes: 1_073_741_824
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/dclm/v0_mmlu_web_deduped/documents/
+    filter:
+      include:
+        - >-
+          (.attributes.dedupe_para_ngrams_13_1 | length == 0) or
+          ((.attributes.dedupe_para_ngrams_13_1 | map(.[2] * (.[1] - .[0])) | add) / (.text | length) <= 0.3)
+
+      syntax: jq
+
+work_dir:
+  input: ${oc.env:HOME}/ai2-llm/work_dir/dclm/v0_mmlu_web_deduped/input
+  output: ${oc.env:HOME}/ai2-llm/work_dir/dclm/v0_mmlu_web_deduped/output
+
+processes: 188
