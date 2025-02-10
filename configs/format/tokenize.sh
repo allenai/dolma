@@ -26,8 +26,6 @@ CATEGORIES=(
 )
 
 for category in "${CATEGORIES[@]}"; do
-    processes=$(($(nproc) - 4))
-
     set -ex
     dolma tokens \
         --documents "s3://ai2-llm/pretraining-data/sources/dclm/baseline_type_classified/${category}/documents/*/*gz" \
