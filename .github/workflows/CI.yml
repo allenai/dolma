@@ -204,6 +204,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4.4
         with:
+          overwrite: true
           name: wheels
           path: dist
 
@@ -229,6 +230,7 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4.4
         with:
+          overwrite: true
           name: wheels
           path: dist
 
@@ -251,8 +253,9 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
       - name: Upload wheels
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.4
         with:
+          overwrite: true
           name: wheels
           path: dist
 
@@ -268,8 +271,9 @@ jobs:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.4
         with:
+          overwrite: true
           name: wheels
           path: dist
 
