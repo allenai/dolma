@@ -130,15 +130,14 @@ class MixerCli(BaseCli):
                     )
 
                     # TODO: note that we are not using the syntax here yet; adding it later
-                    stream_config_dict.setdefault("span_replacement", []).append(
-                        {
-                            "span": str(span_replacement.span),
-                            "replacement": str(span_replacement.replacement),
-                            "syntax": span_replacement.syntax,
-                            **min_score_config,
-                            **max_score_config,
-                        }
-                    )
+                    span_replacement_dict: Dict[str, Any] = {
+                        "span": str(span_replacement.span),
+                        "replacement": str(span_replacement.replacement),
+                        "syntax": span_replacement.syntax,
+                        **min_score_config,
+                        **max_score_config,
+                    }
+                    stream_config_dict.setdefault("span_replacement", []).append(span_replacement_dict)
 
                 if "span_replacement" not in stream_config_dict and "filter" not in stream_config_dict:
                     raise DolmaConfigError("Either `filter` or `span_replacement` must be specified")
