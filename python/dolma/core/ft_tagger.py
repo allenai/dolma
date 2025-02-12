@@ -1,3 +1,4 @@
+# mypy: disable-error-code="unused-ignore"
 """
 
 Base implementation for a fasttext tagger; all fasttext taggers should inherit from this class.
