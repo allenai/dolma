@@ -37,7 +37,7 @@ class BaseFastTextTagger(BaseTagger):
         self.mode = model_mode
 
     @classmethod
-    def train(
+    def train(  # type: ignore[override]
         cls,
         train_file: str,
         save_path: str,
@@ -120,7 +120,7 @@ class BaseFastTextTagger(BaseTagger):
         return classifier
 
     @classmethod
-    def test(
+    def test(  # type: ignore[override]
         cls,
         test_file: str,
         model_path: Optional[str] = None,
