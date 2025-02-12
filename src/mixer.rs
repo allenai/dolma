@@ -9,10 +9,14 @@ use crate::shard::Shard;
 use mixer_config::*;
 
 pub fn run(config: MixerConfig) -> Result<u32, u32> {
-    let shards = Shard::split_streams(&config.streams).unwrap();
-
+    let shards = if config.shuffle {
+        Shard::split_streams(&config.streams).unwrap()
+    } else {
+        Shard::split_streams_unshuffled(&config.streams).unwrap()
+    };
     let threadpool = ThreadPool::new(config.processes);
     let failed_shard_count_ref = Arc::new(AtomicU32::new(0));
+
     for shard in shards {
         let output_path = Path::new(&config.work_dir.output.clone()).join(&shard.output);
         if output_path.exists() {
@@ -50,11 +54,18 @@ pub mod mixer_config {
 
     use crate::shard::shard_config::{StreamConfig, WorkDirConfig};
 
+    fn shuffle_default() -> bool {
+        true
+    }
+
     #[derive(Serialize, Deserialize, Clone)]
     pub struct MixerConfig {
         pub streams: Vec<StreamConfig>,
         pub processes: usize,
         pub work_dir: WorkDirConfig,
+        // Includes default for backwards compatibility
+        #[serde(default = "shuffle_default")]
+        pub shuffle: bool,
     }
 
     impl MixerConfig {
