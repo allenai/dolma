@@ -136,7 +136,6 @@ def filter_html(html: str) -> float:
 
     # get text
     text = soup.get_text()
-    print(f"The html text is: {text}")
     ratio = len(text) / len(html)
 
     return (ratio) * (len(text) > 100)
