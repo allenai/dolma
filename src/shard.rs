@@ -63,9 +63,11 @@ impl Shard {
                 })
                 .collect::<Vec<(DocumentPaths, usize)>>();
             let mut shard_size = inputs_with_sizes[0].1;
+            // Start with the first input and add it to the vector
             let mut shard_inputs: Vec<DocumentPaths> = vec![inputs_with_sizes[0].0.clone()];
             let output_ext = Shard::get_output_extension(stream_config.clone());
 
+            // We slice from the second position since we already added the first input above
             for (input, size) in inputs_with_sizes[1..].iter() {
                 if *size == 0 {
                     log::warn!(
@@ -135,23 +137,20 @@ impl Shard {
         for stream_config in streams {
             let stream_inputs = find_objects_matching_patterns(&stream_config.documents)?;
             let input_count = stream_inputs.len();
-            let inputs = stream_inputs
-                .into_iter()
-                .map(|input| {
-                    let mut attr_paths = Vec::new();
-                    for prefix in stream_config.attributes.iter() {
-                        let attr_prefix = format!("/attributes/{}/", prefix);
-                        let attr_path = input.replace("/documents/", &attr_prefix);
-                        attr_paths.push(attr_path);
-                    }
-                    DocumentPaths {
-                        doc_path: input,
-                        attribute_paths: attr_paths,
-                    }
-                })
-                .collect::<Vec<DocumentPaths>>();
+            let inputs = stream_inputs.into_iter().map(|input| {
+                let mut attr_paths = Vec::new();
+                for prefix in stream_config.attributes.iter() {
+                    let attr_prefix = format!("/attributes/{}/", prefix);
+                    let attr_path = input.replace("/documents/", &attr_prefix);
+                    attr_paths.push(attr_path);
+                }
+                DocumentPaths {
+                    doc_path: input,
+                    attribute_paths: attr_paths,
+                }
+            });
 
-            for input in inputs[1..].iter() {
+            for input in inputs {
                 let doc_path_clone = input.doc_path.clone();
                 let output_suffix = doc_path_clone.split("/documents/").last().unwrap_or("");
                 let output = format!(
