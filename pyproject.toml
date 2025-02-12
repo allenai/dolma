@@ -110,7 +110,7 @@ dev = [
     "ipdb>=0.13.0",
     "ipython>=8.4.0",
     "isort>=5.10.1",
-    "mypy>=0.971,<1",
+    "mypy==0.971",
     "pytest>=5.2",
     "types-PyYAML",
     "types-dateparser",

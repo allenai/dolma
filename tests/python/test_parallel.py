@@ -1,5 +1,3 @@
-# mypy: disable-error-code="unused-ignore"
-
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
