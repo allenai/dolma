@@ -26,8 +26,8 @@ style:
 check:
 	isort --check .
 	black --check .
-	mypy --disable-error-code="override" tests/python/
-	mypy --disable-error-code="override" python/
+	mypy tests/python/
+	mypy python/
 	flake8 tests/python/
 	flake8 python/
 	rustfmt --edition 2021 src/*.rs --check
