@@ -287,7 +287,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: release-*-${{ github.run_id }}
+          pattern: release-*-${{ github.run_id }}/*.*
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
         env:
