@@ -1,0 +1,24 @@
+streams:
+  - name: filtered_object_test
+    documents:
+      - s3://ai2-oe-data/pretraining-data/sources/refine/v0/documents/0001/0000_dclm_shard_00000*.jsonl.zstd
+    attributes:
+      - random_number_v1
+      - fineweb-edu-classifier
+      - fineweb-edu-classifier-original
+    compression:
+      input: zst
+      output: zst
+    output:
+      path: s3://ai2-oe-data/tylerm/test/mixer/filtered
+    filter:
+      include:
+        - '((.attributes."HuggingFaceFW_fineweb-edu-classifier_score" != null and .attributes."HuggingFaceFW_fineweb-edu-classifier_score_original" != null) and ((${oc.env:ALPHA} * (.attributes.random_number_v1__random_number_v1__random[0][-1] * 2 - 1)) + (.attributes."HuggingFaceFW_fineweb-edu-classifier_score"[0][-1]) - .attributes."HuggingFaceFW_fineweb-edu-classifier_score_original"[0][-1]) > 0.30)'
+      syntax: jq
+
+work_dir:
+  input: "/tmp/dolma/input"
+  output: "/tmp/dolma/output"
+
+shuffle: false
+processes: 10

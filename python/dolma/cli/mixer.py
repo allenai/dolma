@@ -73,6 +73,7 @@ class MixerConfig:
     streams: List[StreamConfig] = field(default=[], help="List configurations of streams to be mixed")
     work_dir: WorkDirConfig = field(default=WorkDirConfig(), help="Configuration for temporary work directories.")
     processes: int = field(default=1, help="Number of processes to use for mixing. By default 1 process is used.")
+    shuffle: bool = field(default=True, help="Whether to shard and shuffle the documents during mixing.")
     dryrun: bool = field(
         default=False,
         help="If true, only print the configuration and exit without running the mixer.",
@@ -92,6 +93,7 @@ class MixerCli(BaseCli):
                 "work_dir": {"input": str(work_dirs.input), "output": str(work_dirs.output)},
                 "processes": int(parsed_config.processes),
                 "streams": [],
+                "shuffle": bool(parsed_config.shuffle),
             }
 
             for stream_config in parsed_config.streams:
