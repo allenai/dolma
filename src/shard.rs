@@ -152,7 +152,7 @@ impl Shard {
 
             for input in inputs {
                 let doc_path_clone = input.doc_path.clone();
-                let output_suffix = doc_path_clone.split("/documents/").last().unwrap_or("");
+                let output_suffix = doc_path_clone.split("/documents/").last().unwrap();
                 let output = format!(
                     "{}/documents/{}",
                     stream_config.output.path.clone(),
