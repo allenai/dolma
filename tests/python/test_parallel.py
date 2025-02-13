@@ -1,5 +1,3 @@
-# mypy: disable-error-code="unused-ignore"
-
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -15,7 +13,7 @@ LOCAL_DATA = Path(__file__).parent.parent / "data"
 
 class MockProcessor(BaseParallelProcessor):
     @classmethod
-    def increment_progressbar(cls, queue, /, cnt: int = 0):  # type: ignore[override]
+    def increment_progressbar(cls, queue, /, cnt: int = 0):
         return super().increment_progressbar(queue, cnt=cnt)
 
     @classmethod

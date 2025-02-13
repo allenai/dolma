@@ -1,6 +1,6 @@
 [project]
 name = "dolma"
-version = "1.1.0"
+version = "1.1.1"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
@@ -103,15 +103,17 @@ dolma = "dolma.cli.__main__:main"
 
 [project.optional-dependencies]
 dev = [
-    "black>=22.6.0",
-    "flake8>=5.0",
-    "flake8-pyi>=22.8.1",
     "Flake8-pyproject>=1.1.0",
+    "black>=22.6.0",
+    "flake8-pyi>=22.8.1",
+    "flake8>=5.0",
     "ipdb>=0.13.0",
     "ipython>=8.4.0",
     "isort>=5.10.1",
-    "mypy>=0.971",
+    "mypy==0.971",
     "pytest>=5.2",
+    "types-PyYAML",
+    "types-dateparser",
 ]
 # extension to process code
 code = ["detect-secrets==1.4.0", "beautifulsoup4>=4", "pygments", "regex"]
