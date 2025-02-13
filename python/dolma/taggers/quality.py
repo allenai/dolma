@@ -13,7 +13,7 @@ from tokenizers import normalizers, pre_tokenizers
 from ..core.data_types import TextSlice
 from ..core.ft_tagger import BaseFastTextTagger, Prediction
 from ..core.registry import TaggerRegistry
-
+import math
 
 @TaggerRegistry.add("dclm-oh-eli5")
 class DclmQualityClassifier(BaseFastTextTagger):
@@ -65,4 +65,64 @@ class Dolma17QualityClassifier(BaseFastTextTagger):
             Prediction(label=label.replace("__label__", ""), score=score)
             for label, score in sorted(zip(*preds), key=lambda x: x[1], reverse=True)
         ]
+        return out
+
+
+@TaggerRegistry.add("code-prose-composition")
+class CodeProseCompositionClassifier(BaseFastTextTagger):
+    MODEL_PATH = "hf://allenai/code-prose-composition/code-comment-prose-model.bin"  # noqa: E501
+
+    def __init__(self):
+        super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+
+    def calculate_entropy(self, distribution):
+        entropy = 0
+        for p in distribution:
+            if p > 0:
+                entropy -= p * math.log2(p)
+        return entropy
+
+    def mean_entropy(self, list_of_distributions):
+        if not list_of_distributions:
+            return 0
+
+        total_entropy = 0
+        for dist in list_of_distributions:
+            total_entropy += self.calculate_entropy(dist)
+        return total_entropy / len(list_of_distributions)
+
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+        class_counts = {}
+        composition = {}
+        prediction_distributions = {}
+
+        lines = text_slice.text.splitlines()
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+
+            labels, probabilities = self.classifier.predict(line, k=-1)
+
+            label = labels[0].lstrip("__label__")
+            class_counts[label] = class_counts.get(label, 0) + 1
+
+            if label not in prediction_distributions:
+                prediction_distributions[label] = []
+            prediction_distributions[label].append(probabilities)
+
+        total_count = sum(class_counts.values())
+        for key, count in class_counts.items():
+            composition[key] = round((count / total_count), 2)
+
+        out = [
+            Prediction(label=label.replace("__label__", ""), score=score) for label, score in composition.items()
+        ]
+
+        for key in composition.keys():
+            out.append(Prediction(label=f"{key}_count", score=class_counts.get(key, 0)))
+            out.append(
+                Prediction(label=f"{key}_mean_entropy", score=self.mean_entropy(prediction_distributions.get(key, [])))
+            )
+
         return out

@@ -19,7 +19,7 @@ from ..core.utils import make_variable_name
 
 # from .documents import WarcDocument, WarcDocumentMetadata
 # from .filters import FilterInputType, partition_extractors
-from .linearizers import LinearizerRegistry
+#from .linearizers import LinearizerRegistry
 from .utils import UrlNormalizer, raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
@@ -192,12 +192,12 @@ class WarcProcessor(BaseParallelProcessor):
                     continue
 
                 # extract text
-                doc.text = linearizer.linearize(content=decoded_content)
+                doc.text = decoded_content# linearizer.linearize(content=decoded_content)
 
                 # these are the properties extracted from the HTML content
-                post_attributes = {name: tagger.tag(doc) for name, tagger in post_taggers.items()}
-                if skip_no_post_taggers and not sum(map(len, post_attributes.values())):
-                    continue
+               # post_attributes = {name: tagger.tag(doc) for name, tagger in post_taggers.items()}
+               # if skip_no_post_taggers and not sum(map(len, post_attributes.values())):
+                #    continue
 
                 doc.attributes = {
                     f"{t_name}__{t_name}__{make_variable_name(a_name)}": attr_values
