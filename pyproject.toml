@@ -1,6 +1,6 @@
 [project]
 name = "dolma"
-version = "1.2.0-dev0"
+version = "1.2.0-dev1"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
