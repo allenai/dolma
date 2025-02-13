@@ -283,7 +283,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [build-linux, build-windows, build-macos, sdist]
+    needs: [build-linux, build-windows, build-macos, sdist, tests]
     steps:
       - uses: actions/download-artifact@v4
         with:
