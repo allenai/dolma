@@ -116,7 +116,7 @@ def get_line_stats(text: str) -> LineStats:
     """Finds some summary stats about the lines in the passed text"""
 
     lines = text.split("\n")
-    line_lengths = [len(l) for l in lines]
+    line_lengths = [len(line) for line in lines]
 
     return LineStats(
         total_count=len(lines), mean_length=sum(line_lengths) / len(lines), max_length=max(line_lengths)
