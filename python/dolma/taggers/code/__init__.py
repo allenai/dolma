@@ -4,6 +4,7 @@ from .code_taggers import (
     CodeSecretsTagger,
     CodeStarCoderTaggers,
     CodeStarCoderTaggers2,
+    Learn2CodeTaggers,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "CodeRedPajamaTaggers",
     "CodeStarCoderTaggers",
     "CodeStarCoderTaggers2",
+    "Learn2CodeTaggers",
 ]
