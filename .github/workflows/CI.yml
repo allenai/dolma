@@ -5,12 +5,14 @@ on:
     branches:
       - main
       - master
+      - learn2code
     tags:
       - "*"
   pull_request:
     branches:
       - main
       - master
+      - learn2code
   workflow_dispatch:
 
 permissions:
