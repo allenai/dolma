@@ -15,9 +15,9 @@ class NotAlphanumParagraphV1(BaseTagger):
             r"[[:punct:]]|"
             r"\s|"
             r"["
-            "\U0001F300-\U0001F64F"
-            "\U0001F680-\U0001F6FF"
-            "\u2600-\u26FF\u2700-\u27BF"
+            "\U0001f300-\U0001f64f"
+            "\U0001f680-\U0001f6ff"
+            "\u2600-\u26ff\u2700-\u27bf"
             r"]+"
             r")+$",
             regex.UNICODE,

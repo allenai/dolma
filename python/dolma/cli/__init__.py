@@ -93,7 +93,7 @@ def make_parser(parser: A, config: Type[DataClass], prefix: Optional[str] = None
         # here's where we check if T is a dataclass
         if is_dataclass(typ_):
             # recursively add subparsers
-            make_parser(parser, typ_, prefix=field_name)  # type: ignore
+            make_parser(parser, typ_, prefix=field_name)
             continue
 
         if typ_ is bool:
