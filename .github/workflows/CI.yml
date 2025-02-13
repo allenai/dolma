@@ -293,4 +293,4 @@ jobs:
         with:
           command: upload
           maturin-version: 1.7.1
-          args: --skip-existing *
+          args: --skip-existing release-*-${{ github.run_id }}/*.*
