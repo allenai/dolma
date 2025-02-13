@@ -21,7 +21,6 @@ from dolma.taggers.code import (
     CodeSecretsTagger,
     CodeStarCoderTaggers2,
     Learn2CodeTaggers,
-    utils,
 )
 
 DOC_WITH_SECRETS_AND_COPYRIGHT = """
