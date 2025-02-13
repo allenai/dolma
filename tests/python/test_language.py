@@ -129,14 +129,14 @@ class BaseEnglishTaggerTest:
 
 
 class BaseMultilingualTaggerTest(BaseEnglishTaggerTest):
-    def test_document(self):
+    def test_document(self) -> None:
         for doc in self.single_paragraph_docs:
             result = self.doc_tagger.predict(doc)
             best_lang = max(result.spans, key=lambda s: s.score)
             self.assertEqual(best_lang.type, doc.id)
             self.assertGreater(best_lang.score, 0.7)
 
-    def test_paragraph(self):
+    def test_paragraph(self) -> None:
         for doc in self.multi_paragraph_docs:
             result = self.par_tagger.predict(doc)
             languages = doc.id.split("_")
@@ -152,7 +152,7 @@ class BaseMultilingualTaggerTest(BaseEnglishTaggerTest):
                 self.assertGreater(best_lang.score, 0.7)
                 self.assertEqual(best_lang.type, lang)
 
-    def test_paragraph_with_doc_score(self):
+    def test_paragraph_with_doc_score(self) -> None:
         return
 
 
