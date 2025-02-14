@@ -205,7 +205,7 @@ jobs:
         uses: actions/upload-artifact@v4.4
         with:
           overwrite: true
-          name: linux-${{ matrix.target }}-wheels-${{ github.run_id }}
+          name: release-wheel-linux-${{ matrix.target }}-${{ github.run_id }}
           path: dist
 
   build-windows:
@@ -231,7 +231,7 @@ jobs:
         uses: actions/upload-artifact@v4.4
         with:
           overwrite: true
-          name: windows-${{ matrix.target }}-wheels-${{ github.run_id }}
+          name: release-wheel-windows-${{ matrix.target }}-${{ github.run_id }}
           path: dist
 
   build-macos:
@@ -256,7 +256,7 @@ jobs:
         uses: actions/upload-artifact@v4.4
         with:
           overwrite: true
-          name: macos-${{ matrix.target }}-wheels-${{ github.run_id }}
+          name: release-wheel-macos-${{ matrix.target }}-${{ github.run_id }}
           path: dist
 
   sdist:
@@ -274,7 +274,7 @@ jobs:
         uses: actions/upload-artifact@v4.4
         with:
           overwrite: true
-          name: wheels-${{ github.run_id }}
+          name: release-sdist-${{ github.run_id }}
           path: dist
 
   release:
@@ -285,7 +285,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: wheels-${{ github.run_id }}
+          pattern: release-*-${{ github.run_id }}
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
         env:
@@ -293,4 +293,4 @@ jobs:
         with:
           command: upload
           maturin-version: 1.7.1
-          args: --skip-existing *
+          args: --skip-existing release-*-${{ github.run_id }}/*.*
