@@ -168,7 +168,9 @@ class TestCasePipeline(TestCase):
 
         return [str(p) for p in file_paths]
 
-    def writeDocs(self, docs: List[str], partitions: int = 1, ext_dir: Optional[Path] = None,unit_type: str = "documents") -> List[str]:
+    def writeDocs(
+        self, docs: List[str], partitions: int = 1, ext_dir: Optional[Path] = None, unit_type: str = "documents"
+    ) -> List[str]:
         encoded_docs = [{"id": str(i), "text": d, "source": __file__} for i, d in enumerate(docs)]
         return self.writeUnits(units=encoded_docs, unit_type=unit_type, partitions=partitions, ext_dir=ext_dir)
 

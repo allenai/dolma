@@ -107,7 +107,6 @@ class WarcProcessor(BaseParallelProcessor):
         pre_taggers_names: List[str] = kwargs.get("pre_taggers") or []
         pre_taggers = {make_variable_name(name): TaggerRegistry.get(name)() for name in pre_taggers_names}
 
-
         # create the html extractor
         linearizer_name: str = kwargs.get("linearizer_name") or "resiliparse"
         linearizer = LinearizerRegistry.get(linearizer_name)()
@@ -128,7 +127,6 @@ class WarcProcessor(BaseParallelProcessor):
         # whether to skip this document if post-taggers find nothing
         skip_no_post_taggers: bool = kwargs.get("skip_no_post_taggers") or False
 
-        skip_linearization: bool = kwargs.get("skip_linearization") or False
         # derive the destination path if it is not provided by splitting out all the
         # extensions, removing gz and warc, and adding jsonl.gz
         if not destination_path.endswith(".jsonl.gz"):
@@ -194,14 +192,11 @@ class WarcProcessor(BaseParallelProcessor):
                     continue
 
                 # extract text
-                if skip_linearization:
-                    doc.text = decoded_content
-                else:
-                    doc.text = linearizer.linearize(content=decoded_content)
+                doc.text = linearizer.linearize(content=decoded_content)
 
                 # these are the properties extracted from the HTML content
-               # post_attributes = {name: tagger.tag(doc) for name, tagger in post_taggers.items()}
-               # if skip_no_post_taggers and not sum(map(len, post_attributes.values())):
+                # post_attributes = {name: tagger.tag(doc) for name, tagger in post_taggers.items()}
+                # if skip_no_post_taggers and not sum(map(len, post_attributes.values())):
                 #    continue
 
                 doc.attributes = {
@@ -307,6 +302,5 @@ def create_and_run_warc_pipeline(
             post_taggers=post_taggers,
             skip_no_pre_taggers=skip_no_pre_taggers,
             skip_no_post_taggers=skip_no_post_taggers,
-            source_name=source_name,
-            skip_linearization=skip_linearization
+            source_name=source_name
         )

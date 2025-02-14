@@ -123,11 +123,11 @@ class TestWarcExtractor(unittest.TestCase):
             # HTML content should be in the text field
             self.assertIn("<", sample["text"])
             self.assertIn(">", sample["text"])
-            
+
             # Common HTML tags that should be present in raw HTML
             html_indicators = ["<html", "<body", "<div", "<p"]
             self.assertTrue(any(indicator in sample["text"].lower() for indicator in html_indicators))
-            
+
             # Basic metadata should still be present
             self.assertEqual(sample["version"], "v0")
             self.assertEqual(sample["source"], "test")

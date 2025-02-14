@@ -181,7 +181,6 @@ class TestMixer(TestCase):
         provided = self.checkAndRemoveProvenance(provided)
         self.assertEqual(expected, provided)
 
-
     def test_remote_input_local_output(self):
         if self.remote_test_prefix is None:
             return self.skipTest("Skipping AWS tests")
