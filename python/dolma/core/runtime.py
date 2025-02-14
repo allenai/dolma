@@ -392,7 +392,7 @@ def create_and_run_tagger(
     profile_steps: Optional[int] = None,
     profile_sort_key: str = "tottime",
     profile_lines: int = 100,
-    document_dir: Optional[str] = "documents",
+    document_dir: str = "documents",
 ):
     """This function creates a tagger and runs it on a list of documents.
 

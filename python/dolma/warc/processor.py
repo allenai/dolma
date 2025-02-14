@@ -195,9 +195,9 @@ class WarcProcessor(BaseParallelProcessor):
                 doc.text = linearizer.linearize(content=decoded_content)
 
                 # these are the properties extracted from the HTML content
-                # post_attributes = {name: tagger.tag(doc) for name, tagger in post_taggers.items()}
-                # if skip_no_post_taggers and not sum(map(len, post_attributes.values())):
-                #    continue
+                post_attributes = {name: tagger.tag(doc) for name, tagger in post_taggers.items()}
+                if skip_no_post_taggers and not sum(map(len, post_attributes.values())):
+                    continue
 
                 doc.attributes = {
                     f"{t_name}__{t_name}__{make_variable_name(a_name)}": attr_values
@@ -302,5 +302,5 @@ def create_and_run_warc_pipeline(
             post_taggers=post_taggers,
             skip_no_pre_taggers=skip_no_pre_taggers,
             skip_no_post_taggers=skip_no_post_taggers,
-            source_name=source_name
+            source_name=source_name,
         )

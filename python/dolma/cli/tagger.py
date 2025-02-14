@@ -91,7 +91,7 @@ class TaggerConfig:
         default=False,
         help="If true, only print the configuration and exit without running the taggers.",
     )
-    document_dir: Optional[str] = field(
+    document_dir: str = field(
         default="documents",
         help="The folder in source paths to replace with 'attributes' to store results, if not 'documents'",
     )

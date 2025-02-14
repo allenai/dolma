@@ -145,9 +145,7 @@ class TrafilaturaHtmlExtractor(BaseLinearizer):
         return output or ""
 
 
-
-
 @LinearizerRegistry.add("no-op")
 class NoOpLinearizer(BaseLinearizer):
     def linearize(self, content: Union[str, bytes]) -> str:
-        return content
+        return str(content)

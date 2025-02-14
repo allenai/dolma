@@ -154,3 +154,9 @@ class TestWarcExtractor(unittest.TestCase):
             pre_taggers=["cc_re"],
             post_taggers=["lingua_1e2"],
         )
+        outputs: Dict[str, List[dict]] = {}
+        for fn in os.listdir(self.tempdir):
+            with smart_open.open(os.path.join(self.tempdir, fn), mode="rt", encoding="utf-8") as f:
+                for ln in f:
+                    outputs.setdefault(fn, []).append(json.loads(ln))
+        return outputs

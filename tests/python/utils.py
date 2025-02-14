@@ -70,33 +70,33 @@ def skip_aws_tests() -> bool:
     return (dolma_tests_skip or "false").lower() == "true"
 
 
-# def upload_test_documents(local_input: str, test_prefix: str, document_dir: str = "documents") -> Tuple[str, str]:
-#     remote_input = f"{test_prefix}/input/{document_dir}"
-#     remote_output = f"{test_prefix}/output/{document_dir}"
+def upload_test_documents(local_input: str, test_prefix: str, document_dir: str = "documents") -> Tuple[str, str]:
+    remote_input = f"{test_prefix}/input/{document_dir}"
+    remote_output = f"{test_prefix}/output/{document_dir}"
 
-#     for i, local_fp in enumerate(glob_path(local_input)):
-#         remote_fp = f"{remote_input}/{i:05d}.json.gz"
+    for i, local_fp in enumerate(glob_path(local_input)):
+        remote_fp = f"{remote_input}/{i:05d}.json.gz"
 
-#         with open(local_fp, "rb") as f, open(remote_fp, "wb") as g:
-#             g.write(f.read())
+        with open(local_fp, "rb") as f, open(remote_fp, "wb") as g:
+            g.write(f.read())
 
-#     return remote_input, remote_output
+    return remote_input, remote_output
 
 
-# def upload_test_attributes(local_attributes: str, test_prefix: str):
-#     remote_attributes = f"{test_prefix}/input/attributes"
+def upload_test_attributes(local_attributes: str, test_prefix: str):
+    remote_attributes = f"{test_prefix}/input/attributes"
 
-#     for i, local_fp in enumerate(glob_path(local_attributes)):
-#         matched = re.match(r"^(attributes|duplicate)-(\w+)", local_fp)
-#         if not matched:
-#             raise RuntimeError(f"Unexpected filename: {local_fp}")
+    for i, local_fp in enumerate(glob_path(local_attributes)):
+        matched = re.match(r"^(attributes|duplicate)-(\w+)", local_fp)
+        if not matched:
+            raise RuntimeError(f"Unexpected filename: {local_fp}")
 
-#         _, name = matched.groups()
+        _, name = matched.groups()
 
-#         remote_fp = f"{remote_attributes}/{name}/{i:05d}.json.gz"
+        remote_fp = f"{remote_attributes}/{name}/{i:05d}.json.gz"
 
-#         with open(local_fp, "rb") as f, open(remote_fp, "wb") as g:
-#             g.write(f.read())
+        with open(local_fp, "rb") as f, open(remote_fp, "wb") as g:
+            g.write(f.read())
 
 
 def clean_test_data(test_prefix: str):
@@ -202,10 +202,10 @@ class TestCasePipeline(TestCase):
     def combineIntoDoc(self, *lines: str, join: str = "\n") -> str:
         return join.join(lines)
 
-    # def makeDocsCopy(self, path: Union[str, Path]) -> str:
-    #     path = Path(path)
-    #     dest = Path(self.makeUniquePath()) / "documents"
-    #     dest.mkdir(parents=True)
-    #     for fp in path.iterdir():
-    #         shutil.copy(fp, dest / fp.name)
-    #     return str(dest)
+    def makeDocsCopy(self, path: Union[str, Path]) -> str:
+        path = Path(path)
+        dest = Path(self.makeUniquePath()) / "documents"
+        dest.mkdir(parents=True)
+        for fp in path.iterdir():
+            shutil.copy(fp, dest / fp.name)
+        return str(dest)
