@@ -149,8 +149,7 @@ class TestWarcExtractor(unittest.TestCase):
             skip_no_pre_taggers=False,
             skip_no_post_taggers=False,
             store_html_in_metadata=False,
-            linearizer_name="resiliparse",
-            skip_linearization=True,
+            linearizer_name="no-op",
             pre_taggers=["cc_re"],
             post_taggers=["lingua_1e2"],
         )
