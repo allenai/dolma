@@ -15,8 +15,8 @@ from cached_path import cached_path
 from fasttext import train_supervised
 from fasttext.FastText import _FastText
 
-from .data_types import DocResult, Document, Span, TextSlice
-from .taggers import BaseTagger
+from .data_types import DocResult, Document, DocumentWithMetadata, Span, TextSlice
+from .taggers import BaseTaggerWithMetadata
 from .utils import split_paragraphs, split_sentences
 
 
@@ -25,7 +25,7 @@ class Prediction(NamedTuple):
     score: float
 
 
-class BaseFastTextTagger(BaseTagger):
+class BaseFastTextTagger(BaseTaggerWithMetadata):
     SENTENCE_LEVEL_TAGGER = "sentence"
     PARAGRAPH_LEVEL_TAGGER = "paragraph"
     DOCUMENT_LEVEL_TAGGER = "document"
@@ -135,13 +135,13 @@ class BaseFastTextTagger(BaseTagger):
         model_performance = classifier.test(local_test_file)
         print(model_performance)
 
-    def predict(self, doc: Document) -> DocResult:
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:
         if self.mode == self.SENTENCE_LEVEL_TAGGER:
             units = split_sentences(doc.text)
         elif self.mode == self.PARAGRAPH_LEVEL_TAGGER:
             units = split_paragraphs(doc.text)
         elif self.mode == self.DOCUMENT_LEVEL_TAGGER:
-            units = [TextSlice(doc=doc.text, start=0, end=len(doc.text))]
+            units = [TextSlice(doc=doc.metadata["original_text"], start=0, end=len(doc.metadata["original_text"]))]
         else:
             raise ValueError(f"Unknown mode {self.mode}")
 
