@@ -40,6 +40,10 @@ impl Shard {
     pub fn split_streams(streams: &Vec<StreamConfig>) -> Result<Vec<Shard>, IoError> {
         let mut shards: Vec<Shard> = Vec::new();
         for stream_config in streams {
+            let document_dir = format!(
+                "/{}/",
+                stream_config.document_dir.as_deref().unwrap_or("documents")
+            );
             let mut stream_shard_count = 0;
             log::info!("Computing shards for stream {}...", stream_config.name);
             let stream_inputs = find_objects_matching_patterns(&stream_config.documents)?;
@@ -50,7 +54,7 @@ impl Shard {
                     let mut attr_paths = Vec::new();
                     for prefix in stream_config.attributes.iter() {
                         let attr_prefix = format!("/attributes/{}/", prefix);
-                        let attr_path = input.replace("/documents/", &attr_prefix);
+                        let attr_path = input.replace(&document_dir, &attr_prefix);
                         attr_paths.push(attr_path);
                     }
                     (
@@ -135,13 +139,17 @@ impl Shard {
         // dataset is a strict subset of the original and is intended to be unshuffled and unsharded.
         let mut shards: Vec<Shard> = Vec::new();
         for stream_config in streams {
+            let document_dir = format!(
+                "/{}/",
+                stream_config.document_dir.as_deref().unwrap_or("documents")
+            );
             let stream_inputs = find_objects_matching_patterns(&stream_config.documents)?;
             let input_count = stream_inputs.len();
             let inputs = stream_inputs.into_iter().map(|input| {
                 let mut attr_paths = Vec::new();
                 for prefix in stream_config.attributes.iter() {
                     let attr_prefix = format!("/attributes/{}/", prefix);
-                    let attr_path = input.replace("/documents/", &attr_prefix);
+                    let attr_path = input.replace(&document_dir, &attr_prefix);
                     attr_paths.push(attr_path);
                 }
                 DocumentPaths {
@@ -152,10 +160,11 @@ impl Shard {
 
             for input in inputs {
                 let doc_path_clone = input.doc_path.clone();
-                let output_suffix = doc_path_clone.split("/documents/").last().unwrap();
+                let output_suffix = doc_path_clone.split(&document_dir).last().unwrap();
                 let output = format!(
-                    "{}/documents/{}",
+                    "{}{}{}",
                     stream_config.output.path.clone(),
+                    document_dir,
                     output_suffix
                 );
                 log::info!("Creating shard for {}", output);
@@ -543,6 +552,7 @@ pub mod shard_config {
         pub span_replacement: Option<Vec<SpanReplacementConfig>>,
         pub output: StreamOutputConfig,
         pub compression: Option<CompressionConfig>,
+        pub document_dir: Option<String>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]

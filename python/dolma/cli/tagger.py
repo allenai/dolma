@@ -91,6 +91,10 @@ class TaggerConfig:
         default=False,
         help="If true, only print the configuration and exit without running the taggers.",
     )
+    document_dir: Optional[str] = field(
+        default="documents",
+        help="The folder in source paths to replace with 'attributes' to store results, if not 'documents'",
+    )
 
 
 class TaggerCli(BaseCli):
@@ -140,6 +144,7 @@ class TaggerCli(BaseCli):
                 profile_output=parsed_config.profile.output,
                 profile_steps=parsed_config.profile.steps,
                 profile_sort_key=parsed_config.profile.sort_key,
+                document_dir=parsed_config.document_dir,
             )
 
 
