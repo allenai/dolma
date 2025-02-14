@@ -26,7 +26,7 @@ from transformers import BatchEncoding, PreTrainedTokenizer
 
 from .loggers import ProgressLogger, WandbLogger, get_logger
 from .models import Registry
-from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup
+from .utils import cleanup, get_local_gpu_rank, sanitize_model_name, setup, is_valid_device, is_valid_dtype
 
 
 class Batch(NamedTuple):
@@ -320,7 +320,7 @@ def longest_common_sequence(paths: list[str]) -> str:
 def run_inference(
     documents: list[str] | str,
     model_name_or_path: str,
-    destination: list[str] | str | None = None,
+    destinations: list[str] | str | None = None,
     model_batch_size: int = 32,
     model_max_length: int | None = None,
     model_compile: bool = False,
@@ -344,14 +344,54 @@ def run_inference(
     # initialize distributed processing
     rank, world_size = setup()
 
-    # initialize wandb logging (if enabled)
-    WandbLogger()
+    # use this name for wandb logging if wandb_name is not provided;
+    # we pass parameters as hash that uniquely identifies the run
+    sanitized_run_name = sanitize_model_name(
+        model_name_or_path,
+        documents=documents,
+        destinations=destinations,
+        model_max_length=model_max_length,
+        model_compile=model_compile,
+        model_dtype=model_dtype,
+        data_text_key=data_text_key,
+        data_id_key=data_id_key,
+    )
 
-    # check for available GPUs
-    if not torch.cuda.is_available():
-        raise RuntimeError("No GPUs available, but the script is designed to use multiple GPUs.")
+    # initialize wandb logging (if enabled)
+    WandbLogger.setup(
+        wandb_project=wandb_project,
+        wandb_entity=wandb_entity,
+        wandb_name=wandb_name or sanitized_run_name
+    )
+
+    if isinstance(documents, str):
+        if (isinstance(destinations, str) or destinations is None):
+            raise ValueError("If documents is a string, destination must be a string or None")
+    elif isinstance(documents, str):
+        documents = [documents]
+        destinations = [destinations] if isinstance(destinations, str) else destinations
+    else:
+        if not isinstance(destinations, list):
+            raise ValueError("If documents is a list, destination must be a list")
+        if len(documents) == 0:
+            raise ValueError("At least one document path must be provided")
+        elif len(documents) != len(destinations):
+            raise ValueError(
+                f"Documents and destinations must have the same length ({len(documents)} != {len(destinations)})"
+            )
+
+    if not is_valid_dtype(model_dtype):
+        raise ValueError(f"Invalid model dtype: {model_dtype}")
+
+    if not is_valid_device(model_device):
+        raise ValueError(f"Invalid model device: {model_device}")
 
     # if necessary, unglob source prefix
+    _fs_cache: dict[str, fsspec.AbstractFileSystem] = {}
+
+    for document, destination in zip_longest(documents, destinations or []):
+
+
     fs = fsspec.get_filesystem_class((scheme := urlparse(args.source_prefix).scheme))()
     source_paths = [(f"{scheme}://{p}" if scheme else p) for p in fs.glob(args.source_prefix)]
 

@@ -13,6 +13,7 @@ try:
 except Exception:
     BLINGFIRE_AVAILABLE = False
 
+import jq
 import nltk
 import uniseg.wordbreak
 import zstandard
@@ -152,6 +153,21 @@ def dataclass_to_dict(dataclass_instance) -> dict:
 
     # force typecasting because a dataclass instance will always be a dict
     return cast(dict, om.to_object(om.structured(dataclass_instance)))
+
+
+def is_valid_jq_expr(jq_expr: str) -> bool:
+    """
+    Check if a given jq expression is valid.
+
+    This function attempts to compile the provided jq expression using the jq library.
+    If the compilation is successful, the expression is considered valid.
+    """
+    try:
+        # Try to compile the jq expression
+        jq.compile(jq_expr)
+        return True
+    except Exception:
+        return False
 
 
 def add_compression():

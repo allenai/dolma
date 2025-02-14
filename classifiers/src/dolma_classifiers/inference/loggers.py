@@ -65,6 +65,23 @@ class WandbLogger:
             else:
                 wandb.log(kwargs)
 
+    @classmethod
+    def setup(
+        cls,
+        wandb_project: str | None = None,
+        wandb_entity: str | None = None,
+        wandb_name: str | None = None
+    ):
+        WandbLogger.project = wandb_project or WandbLogger.project
+        WandbLogger.entity = wandb_entity or WandbLogger.entity
+        WandbLogger.name = wandb_name or WandbLogger.name
+
+        if WandbLogger.project and WandbLogger.entity and WandbLogger.name:
+            # if all three are set, then we can use wandb
+            WandbLogger.use_wandb = True
+
+
+
 
 class ProgressLogger:
     def __init__(self, log_every: int = 10_000, wandb_logger: WandbLogger | None = None):

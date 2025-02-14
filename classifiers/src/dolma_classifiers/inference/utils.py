@@ -3,7 +3,6 @@ import re
 from hashlib import md5
 from typing import Any
 
-import jq
 import msgspec
 import torch
 import torch.distributed as dist
@@ -29,15 +28,6 @@ def is_valid_device(device_str: str) -> bool:
         device = torch.device(device_str)
         return isinstance(device, torch.device)
     except RuntimeError:
-        return False
-
-
-def is_valid_jq_expr(jq_expr: str) -> bool:
-    try:
-        # Try to compile the jq expression
-        jq.compile(jq_expr)
-        return True
-    except Exception:
         return False
 
 
@@ -70,12 +60,12 @@ def cleanup():
         dist.destroy_process_group()
 
 
-def sanitize_model_name(model_name: str, suffix_data: Any = None) -> str:
+def sanitize_model_name(model_name: str, **suffix_data: Any) -> str:
     replaced_with_underscores = re.sub("[^a-zA-Z0-9_]", "_", model_name)
     removed_duplicates = re.sub("_{2,}", "_", replaced_with_underscores)
     stripped_trailing_underscores = removed_duplicates.strip("_")
 
-    if suffix_data:
+    if len(suffix_data) > 0:
         # encode suffix_data and use first 6 characters of md5 hash as suffix
         encoder = msgspec.json.Encoder()
         stripped_trailing_underscores += f"_{md5(encoder.encode(suffix_data)).hexdigest()[:6]}"
