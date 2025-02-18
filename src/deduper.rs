@@ -122,7 +122,7 @@ fn write_attributes(
     label_temp: bool,
 ) -> Result<(), io::Error> {
     let cache = FileCache {
-        s3_client: Box::new(s3_util::new_client(None)?),
+        s3_client: Box::new(s3_util::new_client(None, None)?),
         work: work_dirs.clone(),
     };
 
