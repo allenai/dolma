@@ -16,7 +16,7 @@ In that case, we use the following strategy:
 2. Then, we perform whatever text substitution we want to inject special tokens.
 3. Finally, we tokenize, but, this time, we set `split_special_tokens=False`, since sanitization script already took care of encoding.
 
-**⚠️ IMPORTANT ⚠️***
+**⚠️ IMPORTANT ⚠️**
 
 You must use a **tokenizer that has been modified** to support sanitization. In the rest of this Readme, we use [`allenai/dolma2-tokenizer-U10F0F0`](https://huggingface.co/allenai/dolma2-tokenizer-U10F0F0).
 
