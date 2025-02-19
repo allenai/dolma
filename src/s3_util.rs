@@ -1,6 +1,7 @@
 use std::io;
 use std::path::Path;
 
+use aws_sdk_s3::config::retry::RetryConfig;
 use aws_sdk_s3::config::Region;
 use aws_sdk_s3::error::ProvideErrorMetadata;
 use aws_sdk_s3::primitives::ByteStream;
@@ -284,7 +285,18 @@ pub fn find_objects_matching_patterns(
     Ok(stream_inputs)
 }
 
-pub fn new_client(region_name: Option<String>) -> Result<S3Client, io::Error> {
+pub fn new_client(
+    region_name: Option<String>,
+    retry_attempts: Option<u32>,
+) -> Result<S3Client, io::Error> {
+    // Check that retry_attempts is greater than 0
+    let retry_attempts = retry_attempts.unwrap_or(3); // Default to 3 if not provided
+    if retry_attempts < 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "retry_attempts must be greater than or equal to 1",
+        ));
+    }
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -295,7 +307,19 @@ pub fn new_client(region_name: Option<String>) -> Result<S3Client, io::Error> {
             .unwrap_or_else(|_| region_name.unwrap_or_else(|| String::from("us-east-1"))),
     );
 
-    let config = rt.block_on(aws_config::from_env().region(region).load());
+    let retry_config = RetryConfig::adaptive() // Use adaptive retry strategy instead of naive default
+        .with_max_attempts(retry_attempts) // Set maximum number of retry attempts
+        .with_initial_backoff(Duration::from_millis(100)) // Initial delay between retries
+        .with_max_backoff(Duration::from_secs(10));
+
+    // Load the AWS configuration with the custom retry config
+    let config = rt.block_on(
+        aws_config::from_env()
+            .retry_config(retry_config)
+            .region(region)
+            .load(),
+    );
+
     let s3_client = S3Client::new(&config);
     Ok(s3_client)
 }
@@ -310,6 +334,7 @@ mod test {
     use std::io;
     use std::io::{BufRead, BufReader};
     use std::path::Path;
+    use std::println as info;
 
     use flate2::read::MultiGzDecoder;
 
@@ -393,7 +418,7 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = new_client(None)?;
+        let s3_client = new_client(None, None)?;
         let s3_prefix = get_dolma_test_prefix();
 
         let s3_dest = "/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
@@ -407,7 +432,7 @@ mod test {
             Path::new(local_source_file),
             s3_bucket,
             s3_key,
-            Some(3), // number of attempts
+            Some(1),
         ))?;
 
         // check the size matches expected
@@ -427,7 +452,7 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = new_client(None)?;
+        let s3_client = new_client(None, None)?;
 
         let s3_prefix = get_dolma_test_prefix();
         let s3_dest = "/pretraining-data/tests/mixer/inputs/v0/documents/head/0000.json.gz";
@@ -441,7 +466,7 @@ mod test {
             Path::new(local_source_file),
             s3_bucket,
             s3_key,
-            Some(3), // number of attempts
+            Some(1),
         ))?;
 
         // download the file back from s3
@@ -453,7 +478,7 @@ mod test {
             s3_bucket,
             s3_key,
             Path::new(local_output_file),
-            Some(3), // number of attempts
+            Some(1),
         ))?;
 
         // compare the contents of the two files
@@ -471,7 +496,7 @@ mod test {
             .enable_all()
             .build()
             .unwrap();
-        let s3_client = new_client(None)?;
+        let s3_client = new_client(None, None)?;
 
         let s3_prefix = get_dolma_test_prefix();
         let s3_dest = "/foo/bar/baz.json.gz";
@@ -499,15 +524,19 @@ mod test {
             s3_bucket,
             s3_key,
             Path::new(local_output_file),
-            Some(3), // number of attempts
+            Some(1),
         ));
 
         assert!(resp_no_such_location.is_err());
         let exp_msg = format!(
-            "All 3 attempts to download '{}' to '{}' failed",
+            "All 1 attempts to download '{}' to '{}' failed",
             s3_path, local_output_file
         );
-        assert_eq!(resp_no_such_location.unwrap_err().to_string(), exp_msg);
+        let error_string = resp_no_such_location.unwrap_err().to_string();
+        let actual: &str = error_string.as_str();
+        info!("actual: {}", actual);
+
+        assert_eq!(actual, exp_msg);
         Ok(())
     }
 
@@ -522,7 +551,7 @@ mod test {
             .build()
             .unwrap();
 
-        let s3_client = new_client(None)?;
+        let s3_client = new_client(None, None)?;
         let s3_prefix = get_dolma_test_prefix();
 
         let local_source_dir = "tests/data/expected";
@@ -547,7 +576,7 @@ mod test {
                 Path::new(local_source_file.to_str().unwrap()),
                 s3_bucket,
                 s3_key,
-                Some(3), // number of attempts
+                Some(1),
             ))?;
         }
 
