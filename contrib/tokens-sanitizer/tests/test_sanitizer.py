@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 import shlex
 import subprocess
-from transformers import AutoTokenizer
+from pathlib import Path
 
+from transformers import AutoTokenizer
 
 MOD_DOLMA_TOKENIZER = "allenai/dolma2-tokenizer-U10F0F0"
 OG_DOLMA_TOKENIZER = "allenai/dolma2-tokenizer"
