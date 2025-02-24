@@ -1,5 +1,7 @@
 use pyo3::exceptions;
 use pyo3::prelude::*;
+use rand::prelude::*;
+use rand::seq::index::sample;
 
 use adblock::lists::ParseOptions;
 use adblock::request::Request;
@@ -42,6 +44,99 @@ fn mixer_entrypoint(config_str: &str) -> PyResult<()> {
         )));
     }
     Ok(())
+}
+
+#[pyclass]
+struct FillInMiddle {
+    fim_rate: f32,
+    psm_spm_split: f32,
+    file_separator_token: String,
+    fim_prefix_token: String,
+    fim_middle_token: String,
+    fim_suffix_token: String,
+    rng: StdRng,
+}
+
+#[pymethods]
+impl FillInMiddle {
+    #[new]
+    fn new(
+        fim_rate: f32,
+        psm_spm_split: f32,
+        file_separator_token: String,
+        fim_prefix_token: String,
+        fim_middle_token: String,
+        fim_suffix_token: String,
+    ) -> Self {
+        FillInMiddle {
+            fim_rate,
+            psm_spm_split,
+            file_separator_token,
+            fim_prefix_token,
+            fim_middle_token,
+            fim_suffix_token,
+            rng: StdRng::from_entropy(),
+        }
+    }
+
+    fn perform_on_document_text(&mut self, document_text: &str) -> PyResult<String> {
+        let result: String = document_text
+            .split(&self.file_separator_token)
+            .map(|file_text| {
+                // Decide whether we're applying FIM to this file text
+                if &mut self.rng.gen::<f32>() < &mut self.fim_rate {
+                    // Extract into unicode chars because of multi-byte characters
+                    let file_chars: Vec<char> = file_text.chars().collect();
+
+                    // Exclude front and rear character indices we don't want to split at
+                    let front_offset = 1;
+                    let rear_offset = 1;
+                    let acceptable_range = file_chars.len() - front_offset - rear_offset - 1;
+
+                    let mut break_points: Vec<usize> = sample(&mut self.rng, acceptable_range, 2)
+                        .into_iter()
+                        .map(|index| index + front_offset)
+                        .collect();
+                    break_points.sort();
+
+                    // Slice out the chars and back to utf-8 strings
+                    let prefix = file_chars[..break_points[0]].iter().collect::<String>();
+                    let middle = file_chars[break_points[0]..break_points[1]]
+                        .iter()
+                        .collect::<String>();
+                    let suffix = file_chars[break_points[1]..].iter().collect::<String>();
+
+                    let file_parts = if &mut self.rng.gen::<f32>() < &mut self.psm_spm_split {
+                        // Reorder into Prefix-Suffix-Middle
+                        vec![
+                            self.fim_prefix_token.clone(),
+                            prefix,
+                            self.fim_suffix_token.clone(),
+                            suffix,
+                            self.fim_middle_token.clone(),
+                            middle,
+                        ]
+                    } else {
+                        // Reorder into Suffix-Prefix-Middle
+                        vec![
+                            self.fim_suffix_token.clone(),
+                            suffix,
+                            self.fim_prefix_token.clone(),
+                            prefix,
+                            self.fim_middle_token.clone(),
+                            middle,
+                        ]
+                    };
+                    file_parts.concat()
+                } else {
+                    file_text.to_string()
+                }
+            })
+            .collect::<Vec<String>>()
+            .join(&self.file_separator_token);
+
+        Ok(result)
+    }
 }
 
 /// Adblocker class
@@ -116,6 +211,7 @@ fn dolma(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(deduper_entrypoint, m)?)?;
     m.add_function(wrap_pyfunction!(mixer_entrypoint, m)?)?;
     m.add_class::<UrlBlocker>()?;
+    m.add_class::<FillInMiddle>()?;
 
     if env::var("RUST_LOG").is_err() {
         env::set_var("RUST_LOG", "dolma=info,deduper=info");
