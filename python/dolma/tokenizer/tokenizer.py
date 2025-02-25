@@ -372,12 +372,13 @@ def tokenize_file(
     with smart_open.open(path, mode="rt") as input_stream:
         for i, line in enumerate(input_stream, start=1):
             try:
-                row = decoder.decode(line)
-                if not (text := row.text.strip()):
-                    # skip empty docs
-                    continue
-
                 try:
+                    row = decoder.decode(line)
+                    if not (text := row.text.strip()):
+                        # skip empty docs
+                        continue
+
+                    # the actual tokenization happens here
                     tokens = tokenizer.encode(text, add_special_tokens=True)
                 except Exception:
                     # in case of failure, we log the error and continue
