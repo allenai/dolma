@@ -25,12 +25,12 @@ CODE_FILE_1 = """
 def add_two_integers(a: int, b: int) -> int:
     sum = a + b
     return sum
-    
-    
+
+
 def multiply_two_integers(a: int, b: int) -> int:
     product = a + b
     return product
-    
+
 
 def sum_and_multiple(a: int, b: int, c: int) -> int:
     sum = add_two_integers(a, b)
@@ -51,7 +51,7 @@ def call_api(url: str, token: str, json: Dict[str, Any]) -> Dict[str, Any]:
         headers={"x-api-token": token},
         json=json
     )
-    
+
     return result.json()
 """
 
