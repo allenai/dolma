@@ -4,7 +4,7 @@ from typing import List, Optional, Union
 import smart_open
 import urllib3.util
 
-from .. import dolma as _dolma  # type: ignore   # noqa: E402
+from .. import dolma as _dolma
 
 
 class UrlBlocker:
