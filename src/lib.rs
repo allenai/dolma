@@ -91,43 +91,50 @@ impl FillInMiddle {
                     // Exclude front and rear character indices we don't want to split at
                     let front_offset = 1;
                     let rear_offset = 1;
-                    let acceptable_range = file_chars.len() - front_offset - rear_offset - 1;
+                    let range_clip = front_offset + rear_offset + 1;
 
-                    let mut break_points: Vec<usize> = sample(&mut self.rng, acceptable_range, 2)
-                        .into_iter()
-                        .map(|index| index + front_offset)
-                        .collect();
-                    break_points.sort();
-
-                    // Slice out the chars and back to utf-8 strings
-                    let prefix = file_chars[..break_points[0]].iter().collect::<String>();
-                    let middle = file_chars[break_points[0]..break_points[1]]
-                        .iter()
-                        .collect::<String>();
-                    let suffix = file_chars[break_points[1]..].iter().collect::<String>();
-
-                    let file_parts = if &mut self.rng.gen::<f32>() < &mut self.psm_spm_split {
-                        // Reorder into Prefix-Suffix-Middle
-                        vec![
-                            self.fim_prefix_token.clone(),
-                            prefix,
-                            self.fim_suffix_token.clone(),
-                            suffix,
-                            self.fim_middle_token.clone(),
-                            middle,
-                        ]
+                    // Boundary condition: text is too short to rearrange
+                    if range_clip > file_chars.len() || (file_chars.len() - range_clip) < 2 {
+                        file_text.to_string()
                     } else {
-                        // Reorder into Suffix-Prefix-Middle
-                        vec![
-                            self.fim_suffix_token.clone(),
-                            suffix,
-                            self.fim_prefix_token.clone(),
-                            prefix,
-                            self.fim_middle_token.clone(),
-                            middle,
-                        ]
-                    };
-                    file_parts.concat()
+                        let mut break_points: Vec<usize> =
+                            sample(&mut self.rng, file_chars.len() - range_clip, 2)
+                                .into_iter()
+                                .map(|index| index + front_offset)
+                                .collect();
+                        break_points.sort();
+
+                        // Slice out the chars and back to utf-8 strings
+                        let prefix = file_chars[..break_points[0]].iter().collect::<String>();
+                        let middle = file_chars[break_points[0]..break_points[1]]
+                            .iter()
+                            .collect::<String>();
+                        let suffix = file_chars[break_points[1]..].iter().collect::<String>();
+
+                        if &mut self.rng.gen::<f32>() < &mut self.psm_spm_split {
+                            // Reorder into Prefix-Suffix-Middle
+                            format!(
+                                "{}{}{}{}{}{}",
+                                self.fim_prefix_token,
+                                prefix,
+                                self.fim_suffix_token,
+                                suffix,
+                                self.fim_middle_token,
+                                middle
+                            )
+                        } else {
+                            // Reorder into Suffix-Prefix-Middle
+                            format!(
+                                "{}{}{}{}{}{}",
+                                self.fim_suffix_token,
+                                suffix,
+                                self.fim_prefix_token,
+                                prefix,
+                                self.fim_middle_token,
+                                middle
+                            )
+                        }
+                    }
                 } else {
                     file_text.to_string()
                 }

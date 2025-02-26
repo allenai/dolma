@@ -106,10 +106,10 @@ class TestFillInMiddle(unittest.TestCase):
             fim_suffix_token=FIM_SUFFIX_TOKEN,
         )
         fim = FillInMiddle(config)
-        reordered = fim.perform_on_document(mk_document(mk_text(100_000)))
+        reordered = fim.perform_on_document(mk_document(mk_text(300_000)))
         files = reordered.text.split(FILE_SEPARATOR)
 
-        self.assertEqual(len(files), 100_000)
+        self.assertEqual(len(files), 300_000)
 
         psm_reordered = 0
         spm_reordered = 0
@@ -123,5 +123,26 @@ class TestFillInMiddle(unittest.TestCase):
             for _ in re.finditer(spm_match, file, re.DOTALL):
                 spm_reordered += 1
 
-        self.assertAlmostEqual((psm_reordered + spm_reordered) / 100_000, 0.5, 2)
+        self.assertAlmostEqual((psm_reordered + spm_reordered) / 300_000, 0.5, 2)
         self.assertAlmostEqual(psm_reordered / (psm_reordered + spm_reordered), 0.5, 2)
+
+    def test__fim_needs_at_least_five_characters_to_rearrange(self) -> None:
+        config = FIMConfig(
+            fim_rate=1,
+            psm_spm_split=1,
+            file_separator_token=FILE_SEPARATOR,
+            fim_prefix_token=FIM_PREFIX_TOKEN,
+            fim_middle_token=FIM_MIDDLE_TOKEN,
+            fim_suffix_token=FIM_SUFFIX_TOKEN,
+        )
+        fim = FillInMiddle(config)
+
+        for i in range(5):
+            starting_string = "a" * i or ""
+            document = mk_document(text=starting_string)
+            reordered = fim.perform_on_document(document)
+
+            if i < 5:
+                self.assertEqual(reordered.text, starting_string)
+            else:
+                self.assertTrue(FIM_PREFIX_TOKEN in reordered.text)
