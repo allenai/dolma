@@ -1,0 +1,697 @@
+streams:
+  - name: ada
+    documents:
+        - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/ada/train-00000*
+    attributes: &attributes
+      - paloma_documents
+      - top_20_tokens
+      - tokenizer_repetitions_v2r2
+      - whitespace_tokenizer_v1
+    output: &output
+      max_size_in_bytes: 100_000_000
+      # path: s3://ai2-llm/pretraining-data/sources/starcoder/v1-decontaminated/documents/
+      path: ${oc.env:HOME}/ai2-llm/pretraining-data/sources/starcoder/v1-decon-100_to_20k-2star-top_token_030/documents/
+      # discard_fields:
+      #   - attributes
+      #   - metadata
+    filter: &filter
+      include:
+        # At least two stars
+        - "(.metadata.max_stars_count |tonumber) > 1"
+      exclude:
+        # At least 100 characters
+        - ".attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__length[0][-1] < 100"
+
+        # Less than 20k characters
+        - ".attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__length[0][-1] > 20000"
+
+        # Exclude documents whose top token occurs in more than half of the document
+        - .attributes.top_20_tokens__top_20_tokens__p1[0][-1] >= 0.3
+
+        # Exclude contaminated paloma
+        - ".attributes.paloma_documents_bff_duplicates != null"
+
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+
+      syntax: jq
+
+  - name: agda
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/agda/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: alloy
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/alloy/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: antlr
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/antlr/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: applescript
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/applescript/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: assembly
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/assembly/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: augeas
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/augeas/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: awk
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/awk/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: batchfile
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/batchfile/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: bluespec
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/bluespec/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: c
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/c/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: c-sharp
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/c-sharp/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: clojure
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/clojure/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: cmake
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/cmake/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: coffeescript
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/coffeescript/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: common-lisp
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/common-lisp/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: cpp
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/cpp/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: css
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/css/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: cuda
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/cuda/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: dart
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/dart/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: dockerfile
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/dockerfile/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: elixir
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/elixir/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: elm
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/elm/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: emacs-lisp
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/emacs-lisp/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: erlang
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/erlang/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: f-sharp
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/f-sharp/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: fortran
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/fortran/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: glsl
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/glsl/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: go
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/go/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: groovy
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/groovy/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: haskell
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/haskell/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: html
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/html/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: idris
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/idris/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: isabelle
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/isabelle/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: java
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/java/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: java-server-pages
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/java-server-pages/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: javascript
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/javascript/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: json
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/json/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: julia
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/julia/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: kotlin
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/kotlin/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: lean
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/lean/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: literate-agda
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/literate-agda/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: literate-coffeescript
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/literate-coffeescript/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: literate-haskell
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/literate-haskell/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: lua
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/lua/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: makefile
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/makefile/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: maple
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/maple/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: markdown
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/markdown/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: mathematica
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/mathematica/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: matlab
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/matlab/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: ocaml
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/ocaml/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: pascal
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/pascal/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: perl
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/perl/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: php
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/php/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: powershell
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/powershell/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: prolog
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/prolog/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: protocol-buffer
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/protocol-buffer/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: python
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/python/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: r
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/r/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: racket
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/racket/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: restructuredtext
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/restructuredtext/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: rmarkdown
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/rmarkdown/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: ruby
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/ruby/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: rust
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/rust/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: sas
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/sas/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: scala
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/scala/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: scheme
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/scheme/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: shell
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/shell/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: smalltalk
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/smalltalk/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: solidity
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/solidity/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: sparql
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/sparql/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: sql
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/sql/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: stan
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/stan/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: standard-ml
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/standard-ml/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: stata
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/stata/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: systemverilog
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/systemverilog/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: tcl
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/tcl/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: tcsh
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/tcsh/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: tex
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/tex/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: thrift
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/thrift/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: typescript
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/typescript/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: verilog
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/verilog/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: vhdl
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/vhdl/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: visual-basic
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/visual-basic/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: xslt
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/xslt/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: yacc
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/yacc/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: yaml
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/yaml/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: zig
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/zig/*
+    attributes: *attributes
+    output: *output
+    filter: *filter
+
+  - name: git-commits-cleaned
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/git-commits-cleaned/*
+    attributes: *attributes
+    output: *output
+    filter: &simplified_filter
+      exclude:
+        # At least 100 characters
+        - .attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__length[0][-1] < 100
+
+        # Less than 20k characters
+        - .attributes.whitespace_tokenizer_v1__whitespace_tokenizer_v1__length[0][-1] > 20000
+
+        # Exclude documents whose top token occurs in more than half of the document
+        - .attributes.top_20_tokens__top_20_tokens__p1[0][-1] >= 0.3
+
+        # Exclude contaminated paloma
+        - ".attributes.paloma_documents_bff_duplicates != null"
+
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 10)
+      syntax: jq
+
+  - name: github-issues-filtered-structured
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/github-issues-filtered-structured/*
+    attributes: *attributes
+    output: *output
+    filter: *simplified_filter
+
+  - name: jupyter-scripts-dedup-filtered
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/jupyter-scripts-dedup-filtered/*
+    attributes: *attributes
+    output: *output
+    filter: *simplified_filter
+
+  - name: jupyter-structured-clean-dedup
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/starcoder/v0/documents/jupyter-structured-clean-dedup/*
+    attributes: *attributes
+    output: *output
+    filter: *simplified_filter
+
+
+processes: 188
