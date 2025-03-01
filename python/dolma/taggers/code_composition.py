@@ -22,7 +22,7 @@ from ..core.ft_tagger import BaseFastTextTagger, Prediction
 from ..core.registry import TaggerRegistry
 
 
-@TaggerRegistry.add("code-prose-composition")
+@TaggerRegistry.add("code_composition")
 class CodeProseCompositionClassifier(BaseFastTextTagger):
     MODEL_PATH = "hf://techarb/code-prose-composition/code-comment-prose-model.bin"  # noqa: E501
 
@@ -64,14 +64,14 @@ class CodeProseCompositionClassifier(BaseFastTextTagger):
         for label, count in class_counts.items():
             composition[label] = round((count / sum(class_counts.values())), 2)
 
-        out = [Prediction(label="code_prose_boundaries", score=code_prose_boundaries)]
+        out = [Prediction(label="boundaries", score=code_prose_boundaries)]
 
         for label in composition.keys():
-            out.append(Prediction(label=f"{label}_composition", score=composition[label]))
-            out.append(Prediction(label=f"{label}_count", score=class_counts.get(label, 0)))
+            out.append(Prediction(label=f"{label}_pct", score=composition[label]))
+            out.append(Prediction(label=f"{label}", score=class_counts.get(label, 0)))
             out.append(
                 Prediction(
-                    label=f"{label}_mean_entropy", score=self.mean_entropy(prediction_distributions.get(label, []))
+                    label=f"{label}_entropy", score=self.mean_entropy(prediction_distributions.get(label, []))
                 )
             )
 

@@ -48,14 +48,14 @@ class TestDolmaCodeProseCompositionClassifier(TestCase):
         self.assertEqual(len(pred.spans), 4)
         self.assertEqual(
             {s.type for s in pred.spans},
-            {"prose_mean_entropy", "code_prose_boundaries", "prose_composition", "prose_count"},
+            {"prose_entropy", "boundaries", "prose_pct", "prose"},
         )
 
         scores = {s.type: s.score for s in pred.spans}
-        self.assertEqual(scores["code_prose_boundaries"], 0)
-        self.assertEqual(scores["prose_composition"], 1)
-        self.assertEqual(scores["prose_count"], 1)
-        self.assertLess(scores["prose_mean_entropy"], 0.5)
+        self.assertEqual(scores["boundaries"], 0)
+        self.assertEqual(scores["prose_pct"], 1)
+        self.assertEqual(scores["prose"], 1)
+        self.assertLess(scores["prose_entropy"], 0.5)
 
     def test_code_text(self):
         doc = Document(source="fixtures", id="1", text=CODE_TEXT, version="v0")
@@ -64,14 +64,14 @@ class TestDolmaCodeProseCompositionClassifier(TestCase):
         self.assertEqual(len(pred.spans), 4)
         self.assertEqual(
             {s.type for s in pred.spans},
-            {"code_mean_entropy", "code_composition", "code_count", "code_prose_boundaries"},
+            {"code_entropy", "code_pct", "code", "boundaries"},
         )
 
         scores = {s.type: s.score for s in pred.spans}
-        self.assertEqual(scores["code_prose_boundaries"], 0)
-        self.assertEqual(scores["code_composition"], 1)
-        self.assertEqual(scores["code_count"], 3)
-        self.assertLess(scores["code_mean_entropy"], 0.5)
+        self.assertEqual(scores["boundaries"], 0)
+        self.assertEqual(scores["code_pct"], 1)
+        self.assertEqual(scores["code"], 3)
+        self.assertLess(scores["code_entropy"], 0.5)
 
     def test_code_prose_text(self):
         doc = Document(source="fixtures", id="1", text=CODE_PROSE_TEXT, version="v0")
@@ -81,18 +81,18 @@ class TestDolmaCodeProseCompositionClassifier(TestCase):
         self.assertEqual(
             {s.type for s in pred.spans},
             {
-                "code_count",
-                "prose_count",
-                "prose_mean_entropy",
-                "code_composition",
-                "prose_composition",
-                "code_prose_boundaries",
-                "code_mean_entropy",
+                "code",
+                "prose",
+                "prose_entropy",
+                "code_pct",
+                "prose_pct",
+                "boundaries",
+                "code_entropy",
             },
         )
 
         scores = {s.type: s.score for s in pred.spans}
-        self.assertEqual(scores["code_prose_boundaries"], 5)
-        self.assertGreater(scores["code_composition"], 0.5)
-        self.assertEqual(scores["code_count"], 9)
-        self.assertLess(scores["code_mean_entropy"], 0.3)
+        self.assertEqual(scores["boundaries"], 5)
+        self.assertGreater(scores["code_pct"], 0.5)
+        self.assertEqual(scores["code"], 9)
+        self.assertLess(scores["code_entropy"], 0.3)
