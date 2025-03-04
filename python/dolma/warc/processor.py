@@ -1,4 +1,5 @@
 import datetime
+from logging import warning
 import multiprocessing
 import tempfile
 from contextlib import ExitStack
@@ -74,6 +75,30 @@ class WarcProcessor(BaseParallelProcessor):
         return super().increment_progressbar(queue, files=files, records=records, extracted=extracted)
 
     @classmethod
+    def resolve_record_info(cls, record):
+        payload_id = record.headers.get("WARC-Payload-Digest").split(":")[1].lower()
+        target_uri = record.headers.get("WARC-Target-URI")
+
+        if record.record_type == WarcRecordType.response:
+            ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
+
+            return dict(
+                payload_id=payload_id,
+                target_uri=target_uri,
+                ctype=ctype,
+                date=cls._parse_warc_timestamp(record.http_headers.get("Date")),
+            )
+        elif record.record_type == WarcRecordType.resource:
+            return dict(
+                payload_id=payload_id,
+                target_uri=target_uri,
+                ctype=record.headers.get("Content-Type"),
+                date=cls._parse_warc_timestamp(record.headers.get("WARC-Date")),
+            )
+        else:
+            warning("Unsupported WARC record type: {record.record_type}")
+
+    @classmethod
     def process_single(
         cls,
         source_path: str,
@@ -138,7 +163,7 @@ class WarcProcessor(BaseParallelProcessor):
             smart_open.open(source_path, "rb") as warc_file,
             smart_open.open(destination_path, "wb") as output_file,
         ):
-            it = ArchiveIterator(warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo)
+            it = ArchiveIterator(warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo | WarcRecordType.resource)
             for record in it:
                 if record.record_type == WarcRecordType.warcinfo:
                     warc_date = record.record_date or None
@@ -164,24 +189,23 @@ class WarcProcessor(BaseParallelProcessor):
                 if not decoded_content:
                     continue
 
-                # metadata
-                ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
-                date = cls._parse_warc_timestamp(record.http_headers.get("Date"))
-                target_uri = record.headers.get("WARC-Target-URI")
-                payload_id = record.headers.get("WARC-Payload-Digest").split(":")[1].lower()
+                warc_record_info = cls.resolve_record_info(record)
+                if not warc_record_info:
+                    continue
+
                 metadata = dict(
-                    warc_url=target_uri,
-                    url=url_normalizer(target_uri),
+                    warc_url=warc_record_info["target_uri"],
+                    url=url_normalizer(warc_record_info["target_uri"]),
                     html=decoded_content,
                     warc_date=cls._format_to_dolma_timestamp(warc_date),
                     warc_filename=warc_filename or "",
-                    content_type=ctype,
+                    content_type=warc_record_info["ctype"],
                     uncompressed_offset=record.stream_pos,
                 )
                 doc = InputSpecWithMetadataAndAttributes(
                     source=source_name,
                     version=source_version,
-                    id=payload_id,
+                    id=warc_record_info["payload_id"],
                     text="",  # this will come later
                     metadata=metadata,
                 )
@@ -205,7 +229,7 @@ class WarcProcessor(BaseParallelProcessor):
                     for a_name, attr_values in attributes.items()
                 }
 
-                doc.created = cls._format_to_dolma_timestamp(date)
+                doc.created = cls._format_to_dolma_timestamp(warc_record_info["date"])
                 doc.added = cls._format_to_dolma_timestamp(date_now)
 
                 if not store_html_in_metadata:
