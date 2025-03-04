@@ -1,6 +1,7 @@
 from . import (
     c4,
     code,
+    code_composition,
     gopher,
     jigsaw,
     language,
