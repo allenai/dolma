@@ -57,6 +57,7 @@ class CodeProseCompositionClassifier(BaseFastTextTagger):
     def predictions(
         self,
         code_prose_boundaries: int,
+        longest_contiguous_code_block: int,
         class_counts: Dict[str, int],
         prediction_distributions: Dict[str, List[List[float]]],
     ) -> Iterable[Prediction]:
@@ -64,7 +65,10 @@ class CodeProseCompositionClassifier(BaseFastTextTagger):
         for label, count in class_counts.items():
             composition[label] = round((count / sum(class_counts.values())), 2)
 
-        out = [Prediction(label="boundaries", score=code_prose_boundaries)]
+        out = [
+            Prediction(label="boundaries", score=code_prose_boundaries),
+            Prediction(label="maxlen_code_block", score=longest_contiguous_code_block),
+        ]
 
         for label in composition.keys():
             out.append(Prediction(label=f"{label}_pct", score=composition[label]))
@@ -81,6 +85,7 @@ class CodeProseCompositionClassifier(BaseFastTextTagger):
         class_counts: Dict[str, int] = {}
         prediction_distributions: Dict[str, List[List[float]]] = {}
         active_class, code_prose_boundaries = None, 0
+        longest_contiguous_code_block, active_contiguous_code_block = 0, 0
 
         for line in [line.strip() for line in text_slice.text.splitlines()]:
             if not line:
@@ -93,6 +98,15 @@ class CodeProseCompositionClassifier(BaseFastTextTagger):
 
             if active_class in ["code", "prose"] and label in ["code", "prose"] and label != active_class:
                 code_prose_boundaries += 1
+
+            if label == "code":
+                active_contiguous_code_block += 1
+                longest_contiguous_code_block = max(longest_contiguous_code_block, active_contiguous_code_block)
+            else:
+                active_contiguous_code_block = 0
+
             active_class = label
 
-        return self.predictions(code_prose_boundaries, class_counts, prediction_distributions)
+        return self.predictions(
+            code_prose_boundaries, longest_contiguous_code_block, class_counts, prediction_distributions
+        )
