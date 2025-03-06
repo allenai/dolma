@@ -91,7 +91,7 @@ def perform_rewrites(
     row_text: str,
     fim_rate: float,
     psm_spm_split: float,
-) -> List[Tuple[Dict[str, Any], Dict[str, Any]]]:
+) -> List[Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]:
     with tempfile.TemporaryDirectory() as tmpdir:
         input_dir = os.path.join(tmpdir, "input")
         output_dir = os.path.join(tmpdir, "output")
