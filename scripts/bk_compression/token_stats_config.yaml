@@ -1,0 +1,24 @@
+processor:
+  name: token_stats
+  tokenizer_name: EleutherAI/pythia-410m
+  compresslevel: 6  # Gzip compression level (1-9)
+
+input:
+  type: jsonl
+  path: s3://ai2-baileyk/dclm/baseline/subsample_1pct/
+  compression: zstd
+  s3:
+    no_sign_request: false  # Set to true if using public data
+    region: us-east-1  
+
+output:
+  type: jsonl
+  path: s3://ai2-baileyk/tokenized_stats/
+  compression: zstd
+  
+runtime:
+  distributed: true
+  log_level: info
+  batch_size: 100
+  num_proc: 8  # Adjust based on your EC2 instance vCPU count
+  # max_items: 1000000  # Uncomment to limit number of documents processed
