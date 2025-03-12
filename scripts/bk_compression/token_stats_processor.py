@@ -9,11 +9,14 @@ import gzip
 from io import BytesIO
 from typing import Dict, Any, List, Iterator, Optional, Union, Set
 
-from dolma.core.parallel import BaseProcessor, Item, register_processor
+# Updated imports for current Dolma version
+from dolma.core.processors import Processor  # Changed from BaseProcessor
+from dolma.core.data import Item  # Item is likely in data module now
+from dolma.core.registry import register_processor  # Registration moved to registry
 
 
 @register_processor("token_stats")
-class TokenStatsProcessor(BaseProcessor):
+class TokenStatsProcessor(Processor):  # Changed from BaseProcessor to Processor
     """
     A processor that calculates token statistics for documents.
     Computes:
