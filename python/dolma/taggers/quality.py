@@ -9,11 +9,11 @@ Filters.
 from typing import Iterable, List, Tuple
 
 from tokenizers import normalizers, pre_tokenizers
+import math
 
 from ..core.data_types import TextSlice
 from ..core.ft_tagger import BaseFastTextTagger, Prediction
 from ..core.registry import TaggerRegistry
-
 
 @TaggerRegistry.add("dclm-oh-eli5")
 class DclmQualityClassifier(BaseFastTextTagger):
@@ -41,6 +41,15 @@ class DclmQualityClassifier(BaseFastTextTagger):
         label = pred_label.replace("__label__", "").replace("cc", "score").replace("hq", "score")
 
         return [Prediction(label=label, score=probability_score)]
+
+
+
+@TaggerRegistry.add("dclm-oh-eli5-log")
+class DclmQualityClassifierLog(DclmQualityClassifier):
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+        preds = super().predict_slice(text_slice)
+        return [Prediction(label=pred.label, score=math.log(max(pred.score, 1e-38))) for pred in preds]
+
 
 
 @TaggerRegistry.add("dolma17-quality")
