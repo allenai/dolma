@@ -136,6 +136,7 @@ impl MultiStream {
         match extension.as_str() {
             "gz" => MultiStream::Gz(GzFileStream::new(path, buffer_size, gz_compression)),
             "zst" => MultiStream::Zst(ZstdFileStream::new(path, buffer_size, zst_level)),
+            "zstd" => MultiStream::Zst(ZstdFileStream::new(path, buffer_size, zst_level)),
             _ => MultiStream::Plain(FileStream::new(path, buffer_size)),
         }
     }
@@ -165,7 +166,7 @@ impl MultiStream {
     pub fn get_compression(&self) -> String {
         match self {
             MultiStream::Gz(_) => String::from("gz"),
-            MultiStream::Zst(_) => String::from("zst"),
+            MultiStream::Zst(_) => String::from("zstd"),
             MultiStream::Plain(_) => String::from(""),
         }
     }
