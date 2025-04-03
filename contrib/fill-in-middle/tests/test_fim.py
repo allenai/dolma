@@ -1,14 +1,13 @@
 import json
 import os
-from pathlib import Path
 import re
 import shlex
 import subprocess
 import tempfile
-from typing import Any, Dict, List, Tuple
 import unittest
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
 from uuid import uuid4
-
 
 FILE_SEPARATOR = "<|file_sep|>"
 FIM_MIDDLE_TOKEN = "<|fim_mid|>"

@@ -1,13 +1,12 @@
 import json
 import os
-from pathlib import Path
 import shlex
 import subprocess
 import tempfile
-from typing import Any, Dict, List
 import unittest
+from pathlib import Path
+from typing import Any, Dict, List
 from uuid import uuid4
-
 
 FILE_SEPARATOR = "<|file_sep|>"
 REPO_FIELD_NAME = "repo_name"
@@ -23,7 +22,6 @@ PYTHON_FILE_CONTENTS = [
     "add = lambda a, b: a + b",
     "subtract = lambda a, b: a - b",
 ]
-
 
 
 def mk_command(
@@ -54,10 +52,7 @@ def mk_partition_files(dir: str, num_partitions: int, num_repos_per_partition: i
                     version="1234",
                     id=str(uuid4()),
                     text=javascript,
-                    metadata={
-                        PL_FIELD_NAME: "Javascript",
-                        REPO_FIELD_NAME: f"repo-{i}"
-                    }
+                    metadata={PL_FIELD_NAME: "Javascript", REPO_FIELD_NAME: f"repo-{i}"},
                 )
             )
             row_jsons.append(row_json)
@@ -70,10 +65,7 @@ def mk_partition_files(dir: str, num_partitions: int, num_repos_per_partition: i
                     version="1234",
                     id=str(uuid4()),
                     text=python,
-                    metadata={
-                        PL_FIELD_NAME: "Python",
-                        REPO_FIELD_NAME: f"repo-{i}"
-                    }
+                    metadata={PL_FIELD_NAME: "Python", REPO_FIELD_NAME: f"repo-{i}"},
                 )
             )
             row_jsons.append(row_json)
@@ -87,9 +79,7 @@ def mk_partition_files(dir: str, num_partitions: int, num_repos_per_partition: i
 
 
 def perform_concatenation(
-    num_partitions: int,
-    num_repos_per_partition: int,
-    randomize_order: float
+    num_partitions: int, num_repos_per_partition: int, randomize_order: float
 ) -> List[List[Dict[str, Any]]]:
     with tempfile.TemporaryDirectory() as tmpdir:
         input_dir = os.path.join(tmpdir, "input")
@@ -111,6 +101,7 @@ def perform_concatenation(
 
         return results
 
+
 def _find_rust_root() -> Path:
     rust_root = Path(__file__)
     while True:
@@ -124,10 +115,10 @@ def _find_rust_root() -> Path:
 class TestCodeFileConcat(unittest.TestCase):
     def assert_partition_looks_good(self, repo_docs, expected_num_repos) -> None:
         print(repo_docs)
-        self.assertEqual(len(repo_docs), expected_num_repos*2)
+        self.assertEqual(len(repo_docs), expected_num_repos * 2)
 
         for i in range(0, expected_num_repos, 2):
-            javascript_row, python_row = repo_docs[i], repo_docs[i+1]
+            javascript_row, python_row = repo_docs[i], repo_docs[i + 1]
 
             self.assertEqual(FILE_SEPARATOR.join(JAVASCRIPT_FILE_CONTENTS), javascript_row["text"])
             self.assertEqual(FILE_SEPARATOR.join(PYTHON_FILE_CONTENTS), python_row["text"])
@@ -149,11 +140,7 @@ class TestCodeFileConcat(unittest.TestCase):
         self.assert_partition_looks_good(output_rows[0], expected_num_repos=1)
 
     def test__concatenation_works_over_many_repos_and_partitions(self) -> None:
-        output_rows = perform_concatenation(
-            num_partitions=10,
-            num_repos_per_partition=4,
-            randomize_order=False
-        )
+        output_rows = perform_concatenation(num_partitions=10, num_repos_per_partition=4, randomize_order=False)
 
         self.assertEqual(len(output_rows), 10)
 
@@ -172,15 +159,14 @@ class TestCodeFileConcat(unittest.TestCase):
         repo_docs_that_start_with_the_add_fn = [
             repo_doc
             for repo_doc in output_rows[0]
-            if (repo_doc["text"].startswith(JAVASCRIPT_FILE_CONTENTS[0])
-                and repo_doc["metadata"][PL_FIELD_NAME] == "Javascript")
-               or (repo_doc["text"].startswith(PYTHON_FILE_CONTENTS[0])
-                   and repo_doc["metadata"][PL_FIELD_NAME] == "Python")
+            if (
+                repo_doc["text"].startswith(JAVASCRIPT_FILE_CONTENTS[0])
+                and repo_doc["metadata"][PL_FIELD_NAME] == "Javascript"
+            )
+            or (
+                repo_doc["text"].startswith(PYTHON_FILE_CONTENTS[0])
+                and repo_doc["metadata"][PL_FIELD_NAME] == "Python"
+            )
         ]
 
         self.assertAlmostEqual(len(repo_docs_that_start_with_the_add_fn) / 20_000, 0.5, 2)
-
-
-
-
-
