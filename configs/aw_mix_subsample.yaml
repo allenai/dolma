@@ -1,0 +1,19 @@
+processes: 120
+streams:
+  - name: subsample
+    attributes: [dclm]
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards/documents/global-shard_03_of_10/*/*.jsonl.zstd
+    filter:
+      include:
+        - $.attributes[?(@.dclm__random_number_v1__random[0][2] < 0.2)]
+    compression:
+      input: zst
+      output: zst
+    output:
+      max_size_in_bytes: 4294967296
+      path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards/subsample
+
+work_dir:
+  input: "/mnt/raid0/tmp/subsample/input"
+  output: "/mnt/raid0//tmp/subsample/output"
