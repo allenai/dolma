@@ -1,0 +1,9 @@
+experiment: dclm
+taggers:
+  - dclm-oh-eli5-log
+  - dclm-oh-eli5
+  - random_number_v1
+processes: 190
+documents: 
+  # - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards/documents/global-shard_03_of_10/*/*.jsonl.zstd
