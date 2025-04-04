@@ -476,7 +476,7 @@ impl Shard {
                         }
                     }
                 }
-                cache.finalize_input(local_docs_file.to_str().unwrap())?;
+                cache.finalize_input(&input_path.doc_path)?;
                 for (index, attribute_path) in
                     find_objects_matching_patterns(&input_path.attribute_paths)
                         .unwrap()
