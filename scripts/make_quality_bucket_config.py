@@ -3,7 +3,9 @@ import argparse
 import json
 import multiprocessing
 import os
+import random
 import yaml
+
 from typing import Dict, List, Tuple, Optional, Any
 
 import msgspec
@@ -61,6 +63,7 @@ def process_file(source_path: str):
 def collect_attribute_samples(
     attributes: List[str],
     num_processes: int = 1,
+    max_files: Optional[int] = None,
 ):
     """Collect attribute samples from files."""
     
@@ -71,6 +74,11 @@ def collect_attribute_samples(
         input_files.extend(
             glob_path(attr_pattern, autoglob_dirs=True, recursive_dirs=True, yield_dirs=False)
         )
+    
+    random.seed(42)
+    random.shuffle(input_files)
+    if max_files:
+        input_files = input_files[:max_files]
     
     if not input_files:
         print("No attribute files found!")
@@ -267,9 +275,13 @@ def main():
                         help="Paths to attribute files")
     
     # Processing options
+    parser.add_argument('--bucket-params', type=float, nargs=3,
+                        help="Parameter to compute bucket boundaries")
     parser.add_argument("-p", "--percentiles", type=float, nargs="+", 
                         default=[50, 60, 70, 80, 90, 95, 99],
                         help="Percentiles to compute and use as bucket boundaries")
+    parser.add_argument("--max-files", type=int, default=None,
+                        help="Maximum number of files to process")
     parser.add_argument("-w", "--num-processes", type=int, default=multiprocessing.cpu_count(), 
                         help="Number of processes to use")
     parser.add_argument("-o", "--output-stats", type=str,
@@ -293,6 +305,7 @@ def main():
     all_samples, total_docs = collect_attribute_samples(
         attributes=args.attributes,
         num_processes=args.num_processes,
+        max_files=args.max_files,
     )
     
     if not all_samples:
@@ -302,12 +315,31 @@ def main():
     # Compute percentiles for all attributes
     stats = {}
     
+    if args.bucket_params:
+        lowest_percentile = args.bucket_params[0]
+        num_buckets = args.bucket_params[1]
+        bucket_ratio = args.bucket_params[2]  
+        
+        bucket_sum = (1 - bucket_ratio**num_buckets) / (1 - bucket_ratio)
+        # The first width in the series
+        first_width = (100 - lowest_percentile) / bucket_sum
+        
+        percentiles = [lowest_percentile]
+        
+        for i in range(1, num_buckets):
+            width = first_width * (bucket_ratio**i)
+            percentiles.append(percentiles[-1] + width)
+        
+        print("Computed percentiles:", percentiles)
+    else:
+        percentiles = args.percentiles
+    
     for attr_name, samples in sorted(all_samples.items()):
         # Compute percentiles 
         attr_stats = compute_attribute_percentiles(
             attr_name=attr_name,
             samples=samples,
-            percentiles=args.percentiles,
+            percentiles=percentiles,
         )
         stats[attr_name] = attr_stats
     
@@ -345,8 +377,8 @@ def main():
         # Generate the mixer configuration
         config = generate_mixer_config(
             attribute=attribute_name,
-            bucket_percentages=args.percentiles,
-            bucket_percentiles=[stats[attribute_name]["weighted"][f"P{p}"] for p in args.percentiles],
+            bucket_percentages=percentiles,
+            bucket_percentiles=[stats[attribute_name]["weighted"][f"P{p}"] for p in percentiles],
             documents_path=args.documents,
             output_path=args.output,
         )
