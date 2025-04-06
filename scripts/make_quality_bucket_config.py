@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+
+# Example command:
+# python scripts/make_quality_bucket_config.py --attributes 's3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/attributes/dclm/global-shard_03_of_10/*/*.jsonl.zstd' --max-files 1000  -w100 -o stats/80-4-0.5.jsonl --config configs/aw_mix_dclm_baseline_buckets_80-4-0.5.yaml  --bucket-params 80 4 0.5 --documents s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd --attribute-name dclm__dclm_oh_eli5_log__score --output s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_80-4-0.5
+
 import argparse
 import json
 import multiprocessing
@@ -167,13 +171,13 @@ def compute_attribute_percentiles(
     
     print("  Unweighted percentiles:")
     for p, val in zip(percentiles, unweighted_pct):
-        print(f"    P{p}: {val:.6f}")
-        stats["unweighted"][f"P{p}"] = val.item()
+        print(f"    P{p:.3f}: {val:.6f}")
+        stats["unweighted"][f"P{p:.3f}"] = val.item()
     
     print("  Weighted percentiles (by document length):")
     for p, val in zip(percentiles, weighted_pct):
-        print(f"    P{p}: {val:.6f}")
-        stats["weighted"][f"P{p}"] = val.item()
+        print(f"    P{p:.3f}: {val:.6f}")
+        stats["weighted"][f"P{p:.3f}"] = val.item()
     
     return stats
 
@@ -213,7 +217,7 @@ def generate_mixer_config(
     for i, (min_val, max_val) in enumerate(buckets):
         # 0-indexed bucket name in the format "bucket_i_of_n" or "pXX_to_pYY"
         # Using percentile-based naming to be more informative
-        bucket_name = f"p{bucket_percentages[i]:.1f}_to_p{bucket_percentages[i+1]:.1f}"
+        bucket_name = f"p{bucket_percentages[i]:.3f}_to_p{bucket_percentages[i+1]:.3f}"
         
         # Create filters based on min and max values
         filters = {"include": [], "exclude": []}
@@ -301,6 +305,27 @@ def main():
     
     args = parser.parse_args()
     
+    if args.bucket_params:
+        lowest_percentile = args.bucket_params[0]
+        num_buckets = int(args.bucket_params[1])
+        bucket_ratio = args.bucket_params[2]  
+        
+        bucket_sum = 1 / (1 - bucket_ratio)
+        # The first width in the series
+        first_width = (100 - lowest_percentile) / bucket_sum
+        
+        percentiles = [lowest_percentile]
+        
+        for i in range(0, num_buckets - 1):
+            width = first_width * (bucket_ratio**i)
+            percentiles.append(percentiles[-1] + width)
+        
+        print("Computed percentiles:", percentiles)
+    else:
+        percentiles = args.percentiles
+        print("Percentiles:", percentiles)
+    
+    
     # Collect attribute samples
     all_samples, total_docs = collect_attribute_samples(
         attributes=args.attributes,
@@ -314,26 +339,6 @@ def main():
     
     # Compute percentiles for all attributes
     stats = {}
-    
-    if args.bucket_params:
-        lowest_percentile = args.bucket_params[0]
-        num_buckets = args.bucket_params[1]
-        bucket_ratio = args.bucket_params[2]  
-        
-        bucket_sum = (1 - bucket_ratio**num_buckets) / (1 - bucket_ratio)
-        # The first width in the series
-        first_width = (100 - lowest_percentile) / bucket_sum
-        
-        percentiles = [lowest_percentile]
-        
-        for i in range(1, num_buckets):
-            width = first_width * (bucket_ratio**i)
-            percentiles.append(percentiles[-1] + width)
-        
-        print("Computed percentiles:", percentiles)
-    else:
-        percentiles = args.percentiles
-    
     for attr_name, samples in sorted(all_samples.items()):
         # Compute percentiles 
         attr_stats = compute_attribute_percentiles(
@@ -378,7 +383,7 @@ def main():
         config = generate_mixer_config(
             attribute=attribute_name,
             bucket_percentages=percentiles,
-            bucket_percentiles=[stats[attribute_name]["weighted"][f"P{p}"] for p in percentiles],
+            bucket_percentiles=[stats[attribute_name]["weighted"][f"P{p:.3f}"] for p in percentiles],
             documents_path=args.documents,
             output_path=args.output,
         )
