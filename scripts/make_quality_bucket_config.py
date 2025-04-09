@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 
 # Example command:
-# python scripts/make_quality_bucket_config.py --attributes 's3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/attributes/dclm/global-shard_03_of_10/*/*.jsonl.zstd' --max-files 1000  -w100 -o stats/80-4-0.5.jsonl --config configs/aw_mix_dclm_baseline_buckets_80-4-0.5.yaml  --bucket-params 80 4 0.5 --documents s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd --attribute-name dclm__dclm_oh_eli5_log__score --output s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_80-4-0.5
+# python scripts/make_quality_bin_config.py \
+# --attributes 's3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/attributes/dclm/global-shard_03_of_10/*/*.jsonl.zstd' \
+# --max-files-for-percentiles 1000 -w100 -o stats/t60-b1-r0.0.jsonl \
+# --config configs/aw_mix_dclm_baseline_bins_t60-b1-r0.0.yaml -t 60 -b 1 -r 0.0 \
+# --documents s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd \
+# --attribute-name dclm__dclm_oh_eli5_log__score \
+# --output s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/dclm_baseline_bins_t60-b1-r1.0
 
 import argparse
 import json
@@ -139,7 +145,7 @@ def compute_attribute_percentiles(
         percentiles: List of percentiles to compute
     
     Returns:
-        Dictionary with percentile statistics and bucket boundaries
+        Dictionary with percentile statistics and bin boundaries
     """
     if not samples:
         print(f"{attr_name} (0 samples): No data available")
@@ -184,18 +190,19 @@ def compute_attribute_percentiles(
 
 def generate_mixer_config(
     attribute: str,
-    bucket_percentages: List[float],
-    bucket_percentiles: List[float],
+    bin_percentages: List[float],
+    bin_percentiles: List[float],
     documents_path: str,
+    sampling_fraction: Optional[float] = None,
     output_path: str,
 ) -> Dict[str, Any]:
     """
-    Generate a mixer configuration based on computed bucket boundaries.
+    Generate a mixer configuration based on computed bin boundaries.
     
     Args:
         attribute: Name of the attribute to filter on
-        bucket_percentages: List of percentages corresponding to the bucket boundaries
-        bucket_boundaries: List of percentile values corresponding to the bucket boundaries
+        bin_percentages: List of percentages corresponding to the bin boundaries
+        bin_boundaries: List of percentile values corresponding to the bin boundaries
         documents_path: Path pattern for input documents
         output_path: Base path for output
         
@@ -203,21 +210,29 @@ def generate_mixer_config(
         Dictionary containing the mixer configuration
     """
 
-    bucket_percentages = bucket_percentages + [100]
-    bucket_percentiles = bucket_percentiles + [float("inf")]
+    bin_percentages = bin_percentages + [100]
+    bin_percentiles = bin_percentiles + [float("inf")]
     
     # Skip everything below the lowest percentile by starting with the first percentile
-    # This creates buckets like [P50-P60, P60-P70, P70-P80, P80-P90, P90-inf]
-    buckets = list(zip(bucket_percentiles[:-1], bucket_percentiles[1:]))
+    # This creates bins like [P50-P60, P60-P70, P70-P80, P80-P90, P90-inf]
+    bins = list(zip(bin_percentiles[:-1], bin_percentiles[1:]))
+    
+    if sampling_fraction is not None:
+        bin_widths = [(bins[i][1] - bins[i][0]) / 100 for i in range(len(bins))]
+        total_amplify = args.sampling_fraction / sum(bin_widths)
+        inverse_bin_widths = [1 / bin_widths[i] for i in range(len(bin_widths))]
+        total_inverse_bin_widths = sum(inverse_bin_widths)
+        bin_upsamples = [total_amplify * inverse_bin_widths[i] / total_inverse_bin_widths for i in range(len(bins))]
+    else:
+        bin_upsamples = [1.0] * len(bins)
     
     # Prepare the mixer configuration
     streams = []
-    num_buckets = len(buckets)
     
-    for i, (min_val, max_val) in enumerate(buckets):
-        # 0-indexed bucket name in the format "bucket_i_of_n" or "pXX_to_pYY"
+    for i, (min_val, max_val) in enumerate(bins):
+        # 0-indexed bin name in the format "bin_i_of_n" or "pXX_to_pYY"
         # Using percentile-based naming to be more informative
-        bucket_name = f"p{bucket_percentages[i]:.3f}_to_p{bucket_percentages[i+1]:.3f}"
+        bin_name = f"p{bin_percentages[i]:.3f}_to_p{bin_percentages[i+1]:.3f}"
         
         # Create filters based on min and max values
         filters = {"include": [], "exclude": []}
@@ -250,14 +265,19 @@ def generate_mixer_config(
         
         # Create the stream configuration
         stream = {
-            "name": bucket_name,
+            "name": bin_name,
             "documents": [documents_path],
             "attributes": attrs,
             "filter": filters,
             "output": {
-                "path": f"{output_path}/{bucket_name}",
+                "path": f"{output_path}/{bin_name}",
                 "max_size_in_bytes": 1073741824  # 1GB default
-            }
+            },
+            "compression": {
+                "input": "zst",
+                "output": "zst"
+            },
+            "upsample": sampling_fraction[i]
         }
         
         streams.append(stream)
@@ -265,7 +285,7 @@ def generate_mixer_config(
     # Create the full mixer configuration
     config = {
         "streams": streams,
-        "processes": 8
+        "processes": 190
     }
     
     return config
@@ -279,15 +299,19 @@ def main():
                         help="Paths to attribute files")
     
     # Processing options
-    parser.add_argument('--bucket-params', type=float, nargs=3,
-                        help="Parameter to compute bucket boundaries")
+    parser.add_argument('-t', '--threshold', type=float, help="Min percentile threshold for bins", default=None)
+    parser.add_argument('-b', '--bins', type=int, help="Number of bins", default=None)
+    parser.add_argument('-r', '--ratio', type=float, help="bin size ratio", default=None)
     parser.add_argument("-p", "--percentiles", type=float, nargs="+", 
                         default=[50, 60, 70, 80, 90, 95, 99],
-                        help="Percentiles to compute and use as bucket boundaries")
-    parser.add_argument("--max-files", type=int, default=None,
-                        help="Maximum number of files to process")
+                        help="Percentiles to compute and use as bin boundaries (if -t, -b, -r not set)")
+
+    parser.add_argument('-f', '--sampling-fraction', type=float, help="Overall sampling fraction", default=None)
+
+    parser.add_argument("--max-files-for-percentiles", type=int, default=1000,
+                        help="Maximum number of files for computing percentiles")
     parser.add_argument("-w", "--num-processes", type=int, default=multiprocessing.cpu_count(), 
-                        help="Number of processes to use")
+                        help="Number of processes to use for computing percentiles")
     parser.add_argument("-o", "--output-stats", type=str,
                         help="Path to output JSON file with statistics")
     
@@ -295,29 +319,28 @@ def main():
     parser.add_argument("--config", type=str,
                         help="Path to output mixer configuration YAML file")
     parser.add_argument("--documents", 
-                        default="s3://example-bucket/dolma/documents/*.jsonl.gz",
+                        default="s3://example-bin/dolma/documents/*.jsonl.gz",
                         help="Path pattern for input documents")
     parser.add_argument("--output", 
-                        default="s3://example-bucket/dolma/mixed",
+                        default="s3://example-bin/dolma/mixed",
                         help="Base path for output files")
     parser.add_argument("--attribute-name", 
                         help="Name of the attribute to use for filtering (defaults to first found)")
     
     args = parser.parse_args()
     
-    if args.bucket_params:
-        lowest_percentile = args.bucket_params[0]
-        num_buckets = int(args.bucket_params[1])
-        bucket_ratio = args.bucket_params[2]  
+    if args.threshold is not None:
+        assert args.bins is not None
+        assert args.ratio is not None
         
-        bucket_sum = 1 / (1 - bucket_ratio)
+        bin_sum = 1 / (1 - args.ratio)
         # The first width in the series
-        first_width = (100 - lowest_percentile) / bucket_sum
+        first_width = (100 - args.threshold) / bin_sum
         
-        percentiles = [lowest_percentile]
+        percentiles = [args.threshold]
         
-        for i in range(0, num_buckets - 1):
-            width = first_width * (bucket_ratio**i)
+        for i in range(0, args.bins - 1):
+            width = first_width * (args.ratio**i)
             percentiles.append(percentiles[-1] + width)
         
         print("Computed percentiles:", percentiles)
@@ -382,9 +405,10 @@ def main():
         # Generate the mixer configuration
         config = generate_mixer_config(
             attribute=attribute_name,
-            bucket_percentages=percentiles,
-            bucket_percentiles=[stats[attribute_name]["weighted"][f"P{p:.3f}"] for p in percentiles],
+            bin_percentages=percentiles,
+            bin_percentiles=[stats[attribute_name]["weighted"][f"P{p:.3f}"] for p in percentiles],
             documents_path=args.documents,
+            sampling_fraction=args.sampling_fraction,
             output_path=args.output,
         )
         
