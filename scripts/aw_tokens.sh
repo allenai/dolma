@@ -16,3 +16,4 @@ args=(
 )
 
 dolma tokens ${args[@]} |& tee logs/tokens-${pool}-${mix}.out
+rm -r /tmp/olmo*  # clean up local cache
