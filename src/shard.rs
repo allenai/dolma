@@ -1,11 +1,15 @@
 use std::fs::OpenOptions;
 use std::io::{BufRead, Error as IoError, ErrorKind as IoErrorKind};
 use std::path::{Path, PathBuf};
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
 
 use aws_sdk_s3::Client as S3Client;
 use glob::glob;
 use rayon::prelude::*;
 use serde_json::Value;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 
 use crate::filters::DocFilter;
 use crate::io::MultiStream;
@@ -23,6 +27,8 @@ pub struct Shard {
     pub discard_fields: Option<Vec<String>>,
     pub min_text_length: Option<usize>,
     pub compression: Option<CompressionConfig>,
+    pub upsample: f64,
+    pub seed: u64,
 }
 
 // A collection of paths to a document file and corresponding attribute files.
@@ -93,6 +99,8 @@ impl Shard {
                         discard_fields: stream_config.output.discard_fields.clone(),
                         min_text_length: stream_config.output.min_text_length.clone(),
                         compression: stream_config.compression.clone(),
+                        upsample: stream_config.upsample.unwrap_or(1.0),
+                        seed: stream_config.seed.unwrap_or(0),
                     };
                     shards.push(shard);
                     stream_shard_count += 1;
@@ -114,6 +122,8 @@ impl Shard {
                     discard_fields: stream_config.output.discard_fields.clone(),
                     min_text_length: stream_config.output.min_text_length.clone(),
                     compression: stream_config.compression.clone(),
+                    upsample: stream_config.upsample.unwrap_or(1.0),
+                    seed: stream_config.seed.unwrap_or(0),
                 };
                 shards.push(shard);
                 stream_shard_count += 1;
@@ -167,6 +177,8 @@ impl Shard {
                     discard_fields: stream_config.output.discard_fields.clone(),
                     min_text_length: stream_config.output.min_text_length.clone(),
                     compression: stream_config.compression.clone(),
+                    upsample: stream_config.upsample.unwrap_or(1.0),
+                    seed: stream_config.seed.unwrap_or(0),
                 };
                 shards.push(shard);
             }
@@ -218,6 +230,17 @@ impl Shard {
             for input_path in self.inputs.iter() {
                 log::info!("Merging {} into {}", input_path.doc_path, self.output);
                 let local_docs_file = cache.prepare_input(&input_path.doc_path)?;
+                
+                // Compute a seed based on the input filename hash plus optional seed offset from config
+                let filename = Path::new(&input_path.doc_path)
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_str()
+                    .unwrap_or("");
+                let file_seed = compute_hash(filename);
+                let seed = file_seed.wrapping_add(self.seed);
+                let mut rng = StdRng::seed_from_u64(seed);
+                
                 let mut local_attr_readers = Vec::new();
                 let mut attr_reader_failure_counts = Vec::new();
                 let paths = find_objects_matching_patterns(&input_path.attribute_paths);
@@ -255,6 +278,7 @@ impl Shard {
 
                 let mut line_number = 0;
                 let mut lines_written = 0;
+                let mut lines_duplicated = 0;
 
                 // using the doc filters later to determine if we should keep the document
                 let doc_filters = DocFilter::new(self.filter.as_ref())?;
@@ -368,7 +392,20 @@ impl Shard {
                         .should_keep(&data)
                         .map_err(|s| IoError::new(IoErrorKind::Other, s))?;
 
-                    if should_write {
+                    let duplicates = if should_write {
+                        let min_duplicates = self.upsample.floor() as u64;
+                        let remainder = self.upsample - (min_duplicates as f64);
+                        if remainder > 0.0 {
+                            let random_number: f64 = rng.gen();
+                            ((random_number < remainder) as u64) + min_duplicates
+                        } else {
+                            min_duplicates
+                        }
+                    } else {
+                        0
+                    };
+
+                    if duplicates > 0 {
                         let mut replacements = span_replacers
                             .iter()
                             .map(|replacer| replacer.find_spans_to_replace(&data))
@@ -471,8 +508,11 @@ impl Shard {
                             data["metadata"]["provenance"] = provenance_string;
 
                             lines_written += 1;
-                            serde_json::to_writer(&mut writer, &data)?;
-                            writer.write_all(b"\n")?;
+                            lines_duplicated += duplicates - 1;
+                            for _ in 0..duplicates {
+                                serde_json::to_writer(&mut writer, &data)?;
+                                writer.write_all(b"\n")?;
+                            }
                         }
                     }
                 }
@@ -495,10 +535,11 @@ impl Shard {
                     cache.finalize_input(attribute_path)?;
                 }
                 log::info!(
-                    "Dropped {} of {} documents from {}",
+                    "Dropped {} of {} documents from {}, duplicated {} documents",
                     line_number - lines_written,
                     line_number,
-                    &input_path.doc_path
+                    &input_path.doc_path,
+                    lines_duplicated
                 );
             }
         }
@@ -543,6 +584,8 @@ pub mod shard_config {
         pub span_replacement: Option<Vec<SpanReplacementConfig>>,
         pub output: StreamOutputConfig,
         pub compression: Option<CompressionConfig>,
+        pub upsample: Option<f64>,
+        pub seed: Option<u64>,
     }
 
     #[derive(Serialize, Deserialize, Clone)]
@@ -876,4 +919,11 @@ pub fn get_object_sizes(locations: &Vec<String>) -> Result<Vec<usize>, IoError> 
             "Cannot mix S3 and local paths",
         ))
     }
+}
+
+// Compute a hash value from a string
+fn compute_hash(s: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    s.hash(&mut hasher);
+    hasher.finish()
 }
