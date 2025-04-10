@@ -3,8 +3,8 @@
 # Example command:
 # python scripts/make_quality_bin_config.py \
 # --attributes 's3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/attributes/dclm/global-shard_03_of_10/*/*.jsonl.zstd' \
-# --max-files-for-percentiles 1000 -w100 -o stats/t60-b1-r0.0.jsonl \
-# --config configs/aw_mix_dclm_baseline_bins_t60-b1-r0.0.yaml -t 60 -b 1 -r 0.0 \
+# --max-files-for-percentiles 1000 -w100 -o stats/t60-b1-r1.0.jsonl \
+# --config configs/aw_mix_dclm_baseline_bins_t60-b1-r1.0.yaml -t 60 -b 1 -r 1.0 \
 # --documents s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd \
 # --attribute-name dclm__dclm_oh_eli5_log__score \
 # --output s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/dclm_baseline_bins_t60-b1-r1.0
@@ -333,7 +333,11 @@ def main():
         assert args.bins is not None
         assert args.ratio is not None
         
-        bin_sum = 1 / (1 - args.ratio)
+        if args.ratio != 1.0:
+            bin_sum = 1 / (1 - args.ratio)
+        else:
+            bin_sum = args.bins
+
         # The first width in the series
         first_width = (100 - args.threshold) / bin_sum
         
