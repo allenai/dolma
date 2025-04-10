@@ -40,5 +40,5 @@ token_args=(
     --tokenizer.encode_special_tokens 
 )
 
-dolma tokens ${args[@]} |& tee logs/tokens-${pool}-${mix}.out
+dolma tokens ${token_args[@]} |& tee logs/tokens-${pool}-${mix}.out
 rm -r /tmp/olmo*  # clean up local cache
