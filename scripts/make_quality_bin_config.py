@@ -4,10 +4,10 @@
 # python scripts/make_quality_bin_config.py \
 # --attributes 's3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/attributes/dclm/global-shard_03_of_10/*/*.jsonl.zstd' \
 # --max-files-for-percentiles 1000 -w100 -o stats/t60-b1-r1.0.jsonl \
-# --config configs/aw_mix_dclm_baseline_bins_t60-b1-r1.0.yaml -t 60 -b 1 -r 1.0 \
+# --config configs/aw_mix_dclm_baseline_t60-b1-r1.0.yaml -t 60 -b 1 -r 1.0 \
 # --documents s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd \
 # --attribute-name dclm__dclm_oh_eli5_log__score \
-# --output s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/dclm_baseline_bins_t60-b1-r1.0
+# --output s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/dclm_baseline_t60-b1-r1.0
 
 import argparse
 import json
@@ -164,6 +164,7 @@ def compute_attribute_percentiles(
     unweighted_pct = np.percentile(values_array, percentiles)
     
     # Compute weighted percentiles using np.percentile with weights parameter
+    # NOTE: unfortunately requires numpy >= 2 right now, needs separate install
     weighted_pct = np.percentile(values_array, percentiles, weights=weights_array, method="inverted_cdf")
     
     print(f"{attr_name} ({len(samples):,} samples):")
@@ -194,7 +195,8 @@ def generate_mixer_config(
     bin_percentiles: List[float],
     documents_path: str,
     sampling_fraction: Optional[float] = None,
-    output_path: str,
+    output_path: str = None,
+    processes: int = 190,
 ) -> Dict[str, Any]:
     """
     Generate a mixer configuration based on computed bin boundaries.
@@ -210,37 +212,33 @@ def generate_mixer_config(
         Dictionary containing the mixer configuration
     """
 
-    bin_percentages = bin_percentages + [100]
-    bin_percentiles = bin_percentiles + [float("inf")]
-    
-    # Skip everything below the lowest percentile by starting with the first percentile
-    # This creates bins like [P50-P60, P60-P70, P70-P80, P80-P90, P90-inf]
-    bins = list(zip(bin_percentiles[:-1], bin_percentiles[1:]))
+    percentage_bins = list(zip(bin_percentages, bin_percentages[1:] + [100]))
+    percentile_bins = list(zip(bin_percentiles, bin_percentiles[1:] + [float("inf")]))
     
     if sampling_fraction is not None:
-        bin_widths = [(bins[i][1] - bins[i][0]) / 100 for i in range(len(bins))]
-        total_amplify = args.sampling_fraction / sum(bin_widths)
+        bin_widths = [(percentage_bins[i][1] - percentage_bins[i][0]) / 100 for i in range(len(percentage_bins))]
+        total_amplify = sampling_fraction / sum(bin_widths)
         inverse_bin_widths = [1 / bin_widths[i] for i in range(len(bin_widths))]
         total_inverse_bin_widths = sum(inverse_bin_widths)
-        bin_upsamples = [total_amplify * inverse_bin_widths[i] / total_inverse_bin_widths for i in range(len(bins))]
+        bin_upsamples = [total_amplify * inverse_bin_widths[i] / total_inverse_bin_widths for i in range(len(percentage_bins))]
     else:
-        bin_upsamples = [1.0] * len(bins)
+        bin_upsamples = [1.0] * len(percentage_bins)
     
     # Prepare the mixer configuration
     streams = []
     
-    for i, (min_val, max_val) in enumerate(bins):
+    for i in range(len(percentage_bins)):
         # 0-indexed bin name in the format "bin_i_of_n" or "pXX_to_pYY"
         # Using percentile-based naming to be more informative
-        bin_name = f"p{bin_percentages[i]:.3f}_to_p{bin_percentages[i+1]:.3f}"
+        bin_name = f"p{percentage_bins[i][0]:.3f}_to_p{percentage_bins[i][1]:.3f}"
         
         # Create filters based on min and max values
         filters = {"include": [], "exclude": []}
         
         # Format the values for the filter
         # Special handling for infinity values
-        min_str = f"{min_val:.9f}" 
-        max_str = f"{max_val:.9f}" if max_val != float("inf") else "Infinity"
+        min_str = f"{percentile_bins[i][0]:.9f}" 
+        max_str = f"{percentile_bins[i][1]:.9f}" if percentile_bins[i][1] != float("inf") else "Infinity"
         
         # Determine filter attribute name and attribute list name
         filter_attr_name = attribute
@@ -251,7 +249,7 @@ def generate_mixer_config(
             attrs_name = attribute.split('__')[0]
         
         # Create JSONPath filter for this range
-        if max_val == float("inf"):
+        if percentile_bins[i][1] == float("inf"):
             # Only lower bound
             filter_expr = f"$.attributes[?(@.{filter_attr_name}[0][2] >= {min_str})]"
         else:
@@ -277,7 +275,7 @@ def generate_mixer_config(
                 "input": "zst",
                 "output": "zst"
             },
-            "upsample": sampling_fraction[i]
+            "upsample": bin_upsamples[i]
         }
         
         streams.append(stream)
@@ -285,7 +283,7 @@ def generate_mixer_config(
     # Create the full mixer configuration
     config = {
         "streams": streams,
-        "processes": 190
+        "processes": processes
     }
     
     return config
@@ -300,7 +298,7 @@ def main():
     
     # Processing options
     parser.add_argument('-t', '--threshold', type=float, help="Min percentile threshold for bins", default=None)
-    parser.add_argument('-b', '--bins', type=int, help="Number of bins", default=None)
+    parser.add_argument('-b', '--num-bins', type=int, help="Number of bins", default=None)
     parser.add_argument('-r', '--ratio', type=float, help="bin size ratio", default=None)
     parser.add_argument("-p", "--percentiles", type=float, nargs="+", 
                         default=[50, 60, 70, 80, 90, 95, 99],
@@ -310,7 +308,7 @@ def main():
 
     parser.add_argument("--max-files-for-percentiles", type=int, default=1000,
                         help="Maximum number of files for computing percentiles")
-    parser.add_argument("-w", "--num-processes", type=int, default=multiprocessing.cpu_count(), 
+    parser.add_argument("--num-processes-for-percentiles", type=int, default=multiprocessing.cpu_count(), 
                         help="Number of processes to use for computing percentiles")
     parser.add_argument("-o", "--output-stats", type=str,
                         help="Path to output JSON file with statistics")
@@ -318,6 +316,8 @@ def main():
     # Config generation options
     parser.add_argument("--config", type=str,
                         help="Path to output mixer configuration YAML file")
+    parser.add_argument("--num-processes-for-mixer", type=int, default=190,
+                        help="Number of processes to use for mixer")
     parser.add_argument("--documents", 
                         default="s3://example-bin/dolma/documents/*.jsonl.gz",
                         help="Path pattern for input documents")
@@ -330,20 +330,20 @@ def main():
     args = parser.parse_args()
     
     if args.threshold is not None:
-        assert args.bins is not None
+        assert args.num_bins is not None
         assert args.ratio is not None
         
         if args.ratio != 1.0:
             bin_sum = 1 / (1 - args.ratio)
         else:
-            bin_sum = args.bins
+            bin_sum = args.num_bins
 
         # The first width in the series
         first_width = (100 - args.threshold) / bin_sum
         
         percentiles = [args.threshold]
         
-        for i in range(0, args.bins - 1):
+        for i in range(0, args.num_bins - 1):
             width = first_width * (args.ratio**i)
             percentiles.append(percentiles[-1] + width)
         
@@ -356,8 +356,8 @@ def main():
     # Collect attribute samples
     all_samples, total_docs = collect_attribute_samples(
         attributes=args.attributes,
-        num_processes=args.num_processes,
-        max_files=args.max_files,
+        num_processes=args.num_processes_for_percentiles,
+        max_files=args.max_files_for_percentiles,
     )
     
     if not all_samples:
@@ -414,6 +414,7 @@ def main():
             documents_path=args.documents,
             sampling_fraction=args.sampling_fraction,
             output_path=args.output,
+            processes=args.num_processes_for_mixer,
         )
         
         # Customize YAML dumper to handle lists properly
