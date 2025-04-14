@@ -6,8 +6,8 @@ output_name=${OUTPUT_NAME:-"dclm_baseline"}
 
 f=${F:-0.4}
 t=${T:-80}
-b=${B:-1}
-r=${R:-1.0}
+b=${B:-4}
+r=${R:-0.4}
 
 mix=${output_name}_f${f}-t${t}-b${b}-r${r}
 
