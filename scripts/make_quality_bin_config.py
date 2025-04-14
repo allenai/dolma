@@ -27,6 +27,8 @@ from msgspec.json import Decoder
 from dolma.core.data_types import OutputSpec
 from dolma.core.paths import glob_path, mkdir_p
 
+import numpy as np
+
 
 def process_file(source_path: str):
     """Process a single file and extract attribute samples."""
@@ -102,6 +104,7 @@ def collect_attribute_samples(
     
     # Use tqdm to show progress
     results = []
+    
     for result in tqdm.tqdm(
         pool.imap_unordered(process_file, input_files), 
         total=len(input_files),
@@ -194,7 +197,7 @@ def generate_mixer_config(
     bin_percentages: List[float],
     bin_percentiles: List[float],
     documents_path: str,
-    sampling_fraction: Optional[float] = None,
+    bin_upsamples: Optional[List[float]] = None,
     output_path: str = None,
     processes: int = 190,
 ) -> Dict[str, Any]:
@@ -214,15 +217,6 @@ def generate_mixer_config(
 
     percentage_bins = list(zip(bin_percentages, bin_percentages[1:] + [100]))
     percentile_bins = list(zip(bin_percentiles, bin_percentiles[1:] + [float("inf")]))
-    
-    if sampling_fraction is not None:
-        bin_widths = [(percentage_bins[i][1] - percentage_bins[i][0]) / 100 for i in range(len(percentage_bins))]
-        total_amplify = sampling_fraction / sum(bin_widths)
-        inverse_bin_widths = [1 / bin_widths[i] for i in range(len(bin_widths))]
-        total_inverse_bin_widths = sum(inverse_bin_widths)
-        bin_upsamples = [total_amplify * inverse_bin_widths[i] / total_inverse_bin_widths for i in range(len(percentage_bins))]
-    else:
-        bin_upsamples = [1.0] * len(percentage_bins)
     
     # Prepare the mixer configuration
     streams = []
@@ -351,9 +345,24 @@ def main():
     else:
         percentiles = args.percentiles
         print("Percentiles:", percentiles)
+
+
+    if args.sampling_fraction is not None:
+        percentage_bins = list(zip(percentiles, percentiles[1:] + [100]))
+        
+        bin_widths = [(percentage_bins[i][1] - percentage_bins[i][0]) / 100 for i in range(len(percentage_bins))]
+        # Calculate bin upsamples to ensure equal area per bin while maintaining
+        # sum(bin_upsample[i] * bin_width[i]) == sampling_fraction
+        num_bins = len(bin_widths)
+        # Each bin should have equal area = sampling_fraction / num_bins
+        # For each bin, upsample = equal_area_per_bin / bin_width
+        bin_upsamples = [args.sampling_fraction / num_bins / bin_widths[i] for i in range(num_bins)]
+    else:
+        bin_upsamples = [1.0] * len(percentiles)
+
+    print("Bin upsamples:", bin_upsamples)
     
-    
-    # Collect attribute samples
+    # Collect attribute samples only for the specified attribute if provided
     all_samples, total_docs = collect_attribute_samples(
         attributes=args.attributes,
         num_processes=args.num_processes_for_percentiles,
@@ -364,16 +373,26 @@ def main():
         print("No attribute samples collected. Exiting.")
         return
     
-    # Compute percentiles for all attributes
     stats = {}
-    for attr_name, samples in sorted(all_samples.items()):
-        # Compute percentiles 
+    if args.attribute_name:
+        # Compute percentiles for the target attribute
+        attr_name = args.attribute_name
+        samples = all_samples[attr_name]
         attr_stats = compute_attribute_percentiles(
             attr_name=attr_name,
             samples=samples,
             percentiles=percentiles,
         )
         stats[attr_name] = attr_stats
+    else:
+        # If no attribute name was specified, compute for all collected attributes
+        for attr_name, samples in sorted(all_samples.items()):
+            attr_stats = compute_attribute_percentiles(
+                attr_name=attr_name,
+                samples=samples,
+                percentiles=percentiles,
+            )
+            stats[attr_name] = attr_stats
     
     # Write statistics to JSON if output is specified
     if args.output_stats:
@@ -391,28 +410,16 @@ def main():
     
     # Generate mixer configuration if requested
     if args.config:
-        # Determine which attribute to use for filtering
-        attribute_name = args.attribute_name
-        
-        if not attribute_name:
-            # Default to first attribute with samples
-            for attr in all_samples:
-                if all_samples[attr]:
-                    attribute_name = attr
-                    break
-        
-        if not attribute_name or attribute_name not in all_samples:
-            print(f"No valid attribute found for configuration generation.")
-            return
-        
+        assert args.attribute_name is not None
+        assert args.attribute_name in all_samples
 
         # Generate the mixer configuration
         config = generate_mixer_config(
-            attribute=attribute_name,
+            attribute=args.attribute_name,
             bin_percentages=percentiles,
-            bin_percentiles=[stats[attribute_name]["weighted"][f"P{p:.3f}"] for p in percentiles],
+            bin_percentiles=[stats[args.attribute_name]["weighted"][f"P{p:.3f}"] for p in percentiles],
             documents_path=args.documents,
-            sampling_fraction=args.sampling_fraction,
+            bin_upsamples=bin_upsamples,
             output_path=args.output,
             processes=args.num_processes_for_mixer,
         )
