@@ -4,14 +4,8 @@ import os
 import re
 import string
 import sys
-from typing import List, Union, cast
-
-try:
-    import blingfire
-
-    BLINGFIRE_AVAILABLE = True
-except Exception:
-    BLINGFIRE_AVAILABLE = False
+from itertools import islice
+from typing import Generator, Iterable, List, Tuple, TypeVar, Union, cast
 
 import nltk
 import uniseg.wordbreak
@@ -26,12 +20,25 @@ try:
 except LookupError:
     nltk.download("punkt")
 
-
-from .data_types import TextSlice
+from .data_types import Span, TextSlice
 from .loggers import get_logger
+
+try:
+    import blingfire
+
+    BLINGFIRE_AVAILABLE = True
+except (ImportError, OSError):
+    BLINGFIRE_AVAILABLE = False
+
 
 sent_tokenizer = PunktSentenceTokenizer()
 logger = get_logger(__name__)
+
+T = TypeVar("T")
+
+
+# digits after the decimal point
+TAGGER_SCORE_PRECISION = 5
 
 
 def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> str:
@@ -46,6 +53,16 @@ def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> 
         raise ValueError(f"Invalid variable name {name}")
 
     return name
+
+
+def format_span_output(span: Span) -> Tuple[int, int, float]:
+    """Formats a span for output."""
+    return (span.start, span.end, round(float(span.score), TAGGER_SCORE_PRECISION))
+
+
+def format_span_key(experiment: str, tagger: str, span: Span) -> str:
+    """Formats a span key for output."""
+    return f"{experiment}__{tagger}__{make_variable_name(span.type)}"
 
 
 def split_words(text: str, remove_empty: bool = True) -> List[TextSlice]:
@@ -138,7 +155,7 @@ def import_modules(modules_path: Union[List[str], None]):
                 sys.path.insert(0, module_parent)
                 importlib.import_module(module_name)
             elif module_path in sys.modules[module_name].__path__:
-                logger.info(f"{module_path} has already been imported.")
+                logger.info("%s has already been imported.", module_path)
             else:
                 raise ImportError(
                     f"Failed to import {module_path} because the corresponding module name "
@@ -152,6 +169,27 @@ def dataclass_to_dict(dataclass_instance) -> dict:
 
     # force typecasting because a dataclass instance will always be a dict
     return cast(dict, om.to_object(om.structured(dataclass_instance)))
+
+
+def batch_iterator(
+    *iterables: Iterable[T], batch_size: int = 1, drop_last: bool = False
+) -> Generator[List[Tuple[T, ...]], None, None]:
+    """
+    Group one or more iterables into batches of size `batch_size`.
+
+    Args:
+        iterables (Iterable[T]): One or more iterables to group into batches.
+        batch_size (int): The size of each batch. Defaults to 1.
+        drop_last (bool): Whether to drop the last batch if it is smaller than `batch_size`. Defaults to False.
+    """
+    grouped_iterator = iter(zip(*iterables))
+    while True:
+        batch = list(islice(grouped_iterator, batch_size))
+        if not batch:
+            break
+        if len(batch) < batch_size and drop_last:
+            break
+        yield list(zip(*batch))
 
 
 def add_compression():
