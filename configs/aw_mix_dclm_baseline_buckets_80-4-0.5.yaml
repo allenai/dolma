@@ -1,0 +1,53 @@
+processes: 190
+streams:
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -4.242670000 && @.dclm__dclm_oh_eli5_log__score[0][2]
+      < -3.233950000)]
+  name: p80.000_to_p90.000
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_80-4-0.5/p80.000_to_p90.000
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -3.233950000 && @.dclm__dclm_oh_eli5_log__score[0][2]
+      < -2.402620000)]
+  name: p90.000_to_p95.000
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_80-4-0.5/p90.000_to_p95.000
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -2.402620000 && @.dclm__dclm_oh_eli5_log__score[0][2]
+      < -1.686630000)]
+  name: p95.000_to_p97.500
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_80-4-0.5/p95.000_to_p97.500
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -1.686630000)]
+  name: p97.500_to_p100.000
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_80-4-0.5/p97.500_to_p100.000
