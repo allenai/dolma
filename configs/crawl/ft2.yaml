@@ -1,0 +1,19 @@
+documents:
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2019-04/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2020-05/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2021-43/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2022-49/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2023-06/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2023-40/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-18/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-30/*/warc/*jsonl.zst
+  - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-33/*/warc/*jsonl.zst
+
+taggers:
+  - owmV2_FTsciV1_comb_vvhth_qt
+
+processes: 1  # depending on memory usage of a single tagger, you might need to reduce this number
+
+# for processes, start with maybe 64 and check memory usage of a single tagger
+# you can increase up to 188 if each tagger uses less than < 2GB

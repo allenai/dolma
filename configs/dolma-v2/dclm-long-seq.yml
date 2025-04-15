@@ -1,0 +1,30 @@
+streams:
+  - name: dclm
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/dclm/v0/documents/full/*.zstd
+    attributes:
+      - tokenizer_repetitions_v2r2
+    output:
+      max_size_in_bytes: 3_814_697_265
+      path: s3://ai2-llm/pretraining-data/sources/dclm/v0_repetitions/documents/full
+      discard_fields:
+        - attributes
+
+    compression:
+      input: zst
+      output: zst
+
+    filter:
+      exclude:
+        # Remove repetitions
+        - >-
+          (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition != null) and (.attributes.tokenizer_repetitions_v2r2__tokenizer_repetitions_v2r2__doc_max_score_repetition[0][-1] > 32)
+
+      syntax: jq
+    span_replacement: []
+
+work_dir:
+  input: "/home/ubuntu/dclm_v0_repetitions/input"
+  output: "/home/ubuntu/dclm_v0_repetitions/output"
+
+processes: 188

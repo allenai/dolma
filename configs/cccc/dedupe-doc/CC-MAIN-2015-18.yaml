@@ -1,0 +1,59 @@
+
+documents:
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0000.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0001.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0002.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0003.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0004.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0005.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0006.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0007.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0008.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0009.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0010.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0011.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0012.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0013.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0014.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0015.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0016.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0017.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0018.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0019.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0020.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0021.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0022.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0023.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0024.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0025.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0026.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0027.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0028.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0029.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0030.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0031.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0032.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0033.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0034.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0035.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0036.json.gz
+  - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2015-18/cccc-CC-MAIN-2015-18-0037.json.gz
+
+dedupe:
+  name: dedupe_doc
+  documents:
+    attribute_name: dedupe_doc
+    key: $.text
+  skip_empty: true
+
+
+bloom_filter:
+  file: /tmp/dedupe-doc/cccc-CC-MAIN-2015-18/filter.bloom
+  read_only: false
+  estimated_doc_count: 100_000_000
+  desired_false_positive_rate: 1e-05
+
+processes: 188
+work_dir:
+  input: "${oc.env:HOME}/status/dedupe-doc-v1/cccc-CC-MAIN-2015-18/input"
+  output: "${oc.env:HOME}/status/dedupe-doc-v1/cccc-CC-MAIN-2015-18/output"

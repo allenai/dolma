@@ -1,0 +1,117 @@
+streams:
+  - name: cc-science-v2
+    documents:
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861173.16/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861183.54/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861261.53/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861319.37/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861342.11/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861342.74/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861372.90/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861451.34/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861480.87/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861488.82/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861517.98/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861520.44/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861521.12/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861545.42/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861546.27/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861567.95/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861568.20/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861575.66/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861578.89/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861583.78/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861584.65/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861586.40/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861594.22/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861605.77/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861606.63/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861618.0/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861640.68/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861643.92/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861657.69/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861659.47/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861665.97/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861670.48/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861671.61/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861674.39/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861696.51/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861698.15/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861701.67/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861719.30/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861733.59/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861737.17/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861741.14/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861746.4/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861747.46/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861747.70/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861752.43/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861762.73/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861773.80/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861794.76/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861796.49/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861797.58/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861806.64/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861817.10/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861825.75/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861828.24/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861832.94/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861853.72/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861880.60/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861883.41/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861916.26/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861940.83/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861957.99/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198861989.79/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862006.96/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862032.71/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862036.35/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862040.7/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862070.5/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862125.45/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862132.50/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862157.88/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862189.36/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862249.29/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862252.86/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862310.25/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862396.85/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862404.32/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862410.56/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862420.91/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862425.28/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862430.93/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862464.38/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862466.81/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862474.84/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198862488.55/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198864850.31/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198864968.52/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198864986.57/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865074.62/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865348.3/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865383.8/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865401.1/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865482.23/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865490.6/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865545.19/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865560.33/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865694.2/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198865972.21/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198866143.18/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198866218.13/warc/*.jsonl.gz
+        - s3://ai2-llm/pretraining-data/sources/cc-science/v1/documents/CC-MAIN-2024-26/1718198866422.9/warc/*.jsonl.gz
+
+    attributes:
+      - owmV2_FTsciV1_comb_vvhth_qt
+
+    output:
+      max_size_in_bytes: 1_073_741_824
+      path: s3://ai2-llm/pretraining-data/sources/cc-science/v2/documents/CC-MAIN-2024-26
+
+    filter:
+      include:
+        - .attributes.owmV2_FTsciV1_comb_vvhth_qt__owmV2_FTsciV1_comb_vvhth_qt__science != "null"
+      syntax: jq
+
+processes: 188

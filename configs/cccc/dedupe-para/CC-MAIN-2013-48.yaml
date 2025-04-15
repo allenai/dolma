@@ -1,0 +1,58 @@
+
+documents:
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0000.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0001.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0002.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0003.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0004.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0005.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0006.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0007.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0008.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0009.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0010.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0011.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0012.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0013.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0014.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0015.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0016.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0017.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0018.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0019.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0020.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0021.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0022.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0023.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0024.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0025.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0026.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0027.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0028.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0029.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0030.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0031.json.gz
+    - s3://ai2-llm/pretraining-data/sources/cccc/v1_gopher_fix/documents/CC-MAIN-2013-48/cccc-CC-MAIN-2013-48-0032.json.gz
+
+dedupe:
+  name: dedupe_para
+  paragraphs:
+    attribute_name: dedupe_para
+    by_ngram:
+      ngram_length: 20
+      stride: 1
+      overlap_threshold: 0.5
+      skip_short_paragraphs: true
+  skip_empty: true
+
+
+bloom_filter:
+  file: /tmp/dedupe-para/cccc-CC-MAIN-2013-48/filter.bloom
+  read_only: false
+  estimated_doc_count: 50_000_000_000
+  desired_false_positive_rate: 1e-02
+
+processes: 188
+work_dir:
+  input: "${oc.env:HOME}/status/dedupe-para-v1/cccc-CC-MAIN-2013-48/input"
+  output: "${oc.env:HOME}/status/dedupe-para-v1/cccc-CC-MAIN-2013-48/output"
