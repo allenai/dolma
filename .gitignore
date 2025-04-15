@@ -72,6 +72,3 @@ target/
 
 # ignore uv files
 uv.lock
-
-# ingore Cargo.lock
-Cargo.lock
