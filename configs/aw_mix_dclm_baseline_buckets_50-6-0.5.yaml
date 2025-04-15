@@ -1,0 +1,79 @@
+processes: 190
+streams:
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -6.404580000 && @.dclm__dclm_oh_eli5_log__score[0][2]
+      < -4.636720000)]
+  name: p50.000_to_p75.000
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_50-6-0.5/p50.000_to_p75.000
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -4.636720000 && @.dclm__dclm_oh_eli5_log__score[0][2]
+      < -3.533920000)]
+  name: p75.000_to_p87.500
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_50-6-0.5/p75.000_to_p87.500
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -3.533920000 && @.dclm__dclm_oh_eli5_log__score[0][2]
+      < -2.657490000)]
+  name: p87.500_to_p93.750
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_50-6-0.5/p87.500_to_p93.750
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -2.657490000 && @.dclm__dclm_oh_eli5_log__score[0][2]
+      < -1.904210000)]
+  name: p93.750_to_p96.875
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_50-6-0.5/p93.750_to_p96.875
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -1.904210000 && @.dclm__dclm_oh_eli5_log__score[0][2]
+      < -1.261470000)]
+  name: p96.875_to_p98.438
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_50-6-0.5/p96.875_to_p98.438
+- attributes:
+  - dclm
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.dclm__dclm_oh_eli5_log__score[0][2] >= -1.261470000)]
+  name: p98.438_to_p100.000
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/dclm_baseline_buckets_50-6-0.5/p98.438_to_p100.000

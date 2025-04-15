@@ -66,7 +66,8 @@ class StreamConfig:
             "from the file extension."
         ),
     )
-
+    upsample: Optional[float] = field(default=None, help="Upsample ratio for the stream.")
+    seed: Optional[int] = field(default=None, help="Seed for the random number generator.")
 
 @dataclass
 class MixerConfig:
@@ -164,6 +165,11 @@ class MixerCli(BaseCli):
                     "path": str(stream_config.output.path),
                     "max_size_in_bytes": int(stream_config.output.max_size_in_bytes),
                 }
+
+                if stream_config.seed is not None:
+                    stream_config_dict["seed"] = stream_config.seed
+                if stream_config.upsample is not None:
+                    stream_config_dict["upsample"] = stream_config.upsample
 
                 # add compression config to the stream config dict
                 stream_config_dict["compression"] = {
