@@ -12,9 +12,9 @@ import regex
 import uniseg.wordbreak
 from tokenizers import Regex, Tokenizer, pre_tokenizers
 
-from ..core.data_types import DocResult, Document, Span, TextSlice
+from ..core.data_types import DocResult, Document, DocumentWithMetadata, Span, TextSlice
 from ..core.registry import TaggerRegistry
-from ..core.taggers import BaseTagger
+from ..core.taggers import BaseTagger, BaseTaggerWithMetadata
 from ..core.utils import split_paragraphs
 
 
@@ -161,16 +161,17 @@ class OlmoPreTokenizerParagraphsV1(OlmoPreTokenizerV1):
 
 
 @TaggerRegistry.add("dolma_v1_tokenizer")
-class DolmaV1Tokenizer(BaseTagger):
+class DolmaV1Tokenizer(BaseTaggerWithMetadata):
     TOKENIZER_NAME_OR_PATH = "allenai/gpt-neox-olmo-dolma-v1_5"
 
     def __init__(self) -> None:
         self.tokenizer = Tokenizer.from_pretrained(self.TOKENIZER_NAME_OR_PATH)
         super().__init__()
 
-    def predict(self, doc: Document) -> DocResult:
-        score = len(self.tokenizer.encode(text)) if (text := doc.text.strip()) else 0
-        return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:
+        text = doc.metadata["original_text"].strip()
+        score = len(self.tokenizer.encode(text)) if (text) else 0
+        return DocResult(doc=doc, spans=[Span(start=0, end=len(text), type="length", score=score)])
 
 
 @TaggerRegistry.add("dolma_v2_tokenizer")
