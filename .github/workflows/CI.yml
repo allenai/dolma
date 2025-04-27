@@ -5,12 +5,14 @@ on:
     branches:
       - main
       - master
+      - learn2code
     tags:
       - "*"
   pull_request:
     branches:
       - main
       - master
+      - learn2code
   workflow_dispatch:
 
 permissions:
@@ -56,7 +58,7 @@ jobs:
         run: |
           set +e
           has_updated=$(git diff --name-only '${{ github.event.pull_request.base.sha }}' | grep -E 'pyproject.toml|Cargo.toml')
-          is_main_or_release='${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/') }}'
+          is_main_or_release='${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/learn2code' || startsWith(github.ref, 'refs/tags/') }}'
           if [[ -n "${has_updated}" ]] || [[ "${is_main_or_release}" == 'true' ]]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
@@ -281,7 +283,7 @@ jobs:
     name: Release
     runs-on: ubuntu-latest
     if: "startsWith(github.ref, 'refs/tags/')"
-    needs: [build-linux, build-windows, build-macos, sdist]
+    needs: [build-linux, build-windows, build-macos, sdist, tests]
     steps:
       - uses: actions/download-artifact@v4
         with:

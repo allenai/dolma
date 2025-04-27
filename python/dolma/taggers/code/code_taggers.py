@@ -21,10 +21,16 @@ with necessary(["detect_secrets", "bs4", "regex", "pygments"], soft=True) as COD
     if CODE_DEPENDENCIES_AVAILABLE:
         from .starcoder import get_nl_ratio
         from .utils import (
+            b64_filter,
             filter_html,
             get_ext_to_lang_mapping,
+            get_line_stats,
+            get_proportion_alphabetic_chars,
             get_secrets,
             get_whitespace_regex,
+            hexadecimal_filter,
+            special_text_file_filter,
+            unicode_filter,
         )
 
 
@@ -267,5 +273,110 @@ class CodeStarCoderTaggers2(BaseTaggerWithMetadata):
         spans.append(Span(start=0, end=doc_length, type="num_github_stars_doc", score=float(num_github_stars)))
         spans.append(Span(start=0, end=doc_length, type="code_to_comment_ratio_doc", score=code_to_comment_ratio))
         spans.append(Span(start=0, end=doc_length, type="code_to_text_ratio_html_doc", score=code_to_text_ratio))
+
+        return DocResult(doc=doc, spans=spans)
+
+
+@TaggerRegistry.add("learn2code_taggers_v1")
+class Learn2CodeTaggers(BaseTaggerWithMetadata):
+    """
+    Based on a mix of filters from StarCoder and Granite
+    """
+
+    def __init__(self) -> None:
+        check_code_dependencies()
+        self.ext_to_lang_mapping = get_ext_to_lang_mapping()
+        super().__init__()
+
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
+        spans: List[Span] = []
+        doc_length = len(doc.text)
+
+        num_github_stars = doc.metadata.get("max_stars_count", 0) or doc.metadata.get("star_events_count", 0) or 0
+        proportion_alpha = get_proportion_alphabetic_chars(doc.text)
+        has_xml_template = 1.0 if "<?xml version=" in doc.text[:100] else 0.0
+        line_stats = get_line_stats(doc.text)
+        b64_filter_results = b64_filter(doc.text)
+        hexadecimal_filter_results = hexadecimal_filter(doc.text)
+        unicode_filter_results = unicode_filter(doc.text)
+
+        try:
+            lang = self.ext_to_lang_mapping[doc.metadata.get("ext", "-no-lang")]
+        except KeyError:
+            lang = "-no-lang"
+
+        filename = doc.metadata.get("path", None)
+
+        try:
+            proportion_comments_doc = get_nl_ratio(doc.text, lang)
+        except:  # pylint: disable=bare-except   # noqa: E722
+            proportion_comments_doc = -1
+
+        # Not relevant for non-html code
+        if lang == "html":
+            try:
+                proportion_text_in_html = filter_html(doc.text)
+            except:  # pylint: disable=bare-except   # noqa: E722
+                proportion_text_in_html = -1.0
+        else:
+            proportion_text_in_html = 1.0
+
+        is_special_text_file = 1 if special_text_file_filter(filename, lang) else 0
+
+        # document-level scores
+        spans.append(Span(start=0, end=doc_length, type="num_chars_doc", score=float(doc_length)))
+        spans.append(Span(start=0, end=doc_length, type="num_github_stars_doc", score=float(num_github_stars)))
+        spans.append(Span(start=0, end=doc_length, type="proportion_alpha_doc", score=proportion_alpha))
+        spans.append(Span(start=0, end=doc_length, type="has_xml_template_doc", score=has_xml_template))
+        spans.append(Span(start=0, end=doc_length, type="num_lines_doc", score=float(line_stats.total_count)))
+        spans.append(Span(start=0, end=doc_length, type="mean_line_length_doc", score=line_stats.mean_length))
+        spans.append(Span(start=0, end=doc_length, type="max_line_length_doc", score=float(line_stats.max_length)))
+        spans.append(
+            Span(
+                start=0, end=doc_length, type="longest_seq_b64_doc", score=float(b64_filter_results.longest_match)
+            )
+        )
+        spans.append(
+            Span(start=0, end=doc_length, type="proportion_b64_doc", score=b64_filter_results.proportion_match)
+        )
+        spans.append(
+            Span(
+                start=0,
+                end=doc_length,
+                type="longest_seq_hexadecimal_doc",
+                score=float(hexadecimal_filter_results.longest_match),
+            )
+        )
+        spans.append(
+            Span(
+                start=0,
+                end=doc_length,
+                type="proportion_hexadecimal_doc",
+                score=hexadecimal_filter_results.proportion_match,
+            )
+        )
+        spans.append(
+            Span(
+                start=0,
+                end=doc_length,
+                type="longest_seq_unicode_doc",
+                score=float(unicode_filter_results.longest_match),
+            )
+        )
+        spans.append(
+            Span(
+                start=0,
+                end=doc_length,
+                type="proportion_unicode_doc",
+                score=unicode_filter_results.proportion_match,
+            )
+        )
+        spans.append(Span(start=0, end=doc_length, type="proportion_comments_doc", score=proportion_comments_doc))
+        spans.append(
+            Span(start=0, end=doc_length, type="proportion_text_in_html_doc", score=proportion_text_in_html)
+        )
+        spans.append(
+            Span(start=0, end=doc_length, type="is_special_text_file_doc", score=float(is_special_text_file))
+        )
 
         return DocResult(doc=doc, spans=spans)
