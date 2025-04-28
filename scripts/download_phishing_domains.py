@@ -15,8 +15,8 @@ from cached_path import cached_path
 import tempfile
 
 # source location
-phishing_domains = "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/ALL-phishing-domains.tar.gz"    # noqa: E501
-phishing_links = "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/ALL-phishing-links.tar.gz"      # noqa: E501
+phishing_domains = "https://phish.co.za/latest/ALL-phishing-domains.tar.gz"    # noqa: E501
+phishing_links = "https://phish.co.za/latest/ALL-phishing-links.tar.gz"      # noqa: E501
 
 # S3 details
 s3_bucket: str = "dolma-artifacts"
