@@ -269,3 +269,51 @@ class CodeStarCoderTaggers2(BaseTaggerWithMetadata):
         spans.append(Span(start=0, end=doc_length, type="code_to_text_ratio_html_doc", score=code_to_text_ratio))
 
         return DocResult(doc=doc, spans=spans)
+
+
+@TaggerRegistry.add("code_dolma_taggers_v1")
+class CodeDolma2Taggers(BaseTaggerWithMetadata):
+    """
+    Based on StarCoder v1 and v2 taggers, but simpler because it
+    always calculates the code_to_comment_ratio_doc and code_to_text_ratio.
+
+    Language-specific logic (e.g. Python? HTML?) is offloaded to mixer.
+    """
+
+    def __init__(self) -> None:
+        check_code_dependencies()
+        self.ext_to_lang_mapping = get_ext_to_lang_mapping()
+        super().__init__()
+
+    def predict(self, doc: DocumentWithMetadata) -> DocResult:  # type: ignore
+        spans: List[Span] = []
+        doc_length = len(doc.text)
+
+        has_xml_template = 1.0 if "<?xml version=" in doc.text[:100] else 0.0
+        num_github_stars = doc.metadata.get("max_stars_count", 0) or 0
+
+        # Always try to get language, default to "-no-lang" if not found
+        try:
+            lang = self.ext_to_lang_mapping[doc.metadata.get("ext", "-no-lang")]
+        except KeyError:
+            lang = "-no-lang"
+
+        # Always calculate nl_ratio for all languages
+        try:
+            code_to_comment_ratio_doc = get_nl_ratio(doc.text, lang)
+        except:  # pylint: disable=bare-except   # noqa: E722
+            code_to_comment_ratio_doc = -1.0
+
+        # Always attempt to calculate filter_html ratio
+        try:
+            code_to_text_ratio = filter_html(doc.text)
+        except:  # pylint: disable=bare-except   # noqa: E722
+            code_to_text_ratio = -1.0
+
+        # document-level scores
+        spans.append(Span(start=0, end=doc_length, type="has_xml_template_doc", score=has_xml_template))
+        spans.append(Span(start=0, end=doc_length, type="num_github_stars_doc", score=float(num_github_stars)))
+        spans.append(Span(start=0, end=doc_length, type="code_to_comment_ratio_doc", score=code_to_comment_ratio_doc))
+        spans.append(Span(start=0, end=doc_length, type="code_to_text_ratio_html_doc", score=code_to_text_ratio))
+
+        return DocResult(doc=doc, spans=spans)

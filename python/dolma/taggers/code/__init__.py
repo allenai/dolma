@@ -1,5 +1,6 @@
 from .code_taggers import (
     CodeCopyrightTagger,
+    CodeDolma2Taggers,
     CodeRedPajamaTaggers,
     CodeSecretsTagger,
     CodeStarCoderTaggers,
@@ -12,4 +13,5 @@ __all__ = [
     "CodeRedPajamaTaggers",
     "CodeStarCoderTaggers",
     "CodeStarCoderTaggers2",
+    "CodeDolma2Taggers"
 ]
