@@ -1,18 +1,19 @@
 #!/bin/bash
 pool=${POOL:-"2shards-dedup"}
-attributes=${ATTRIBUTES:-"dclm"}
-attribute_name=${ATTRIBUTE_NAME:-"dclm__dclm_oh_eli5_log__score"}
-output_name=${OUTPUT_NAME:-"dclm_baseline"}
+tag=${TAG:-"dclm"}
+attribute=${ATTRIBUTE:-"dclm_oh_eli5_log"}
+#output=${OUTPUT:-"dclm_baseline"}
+output=${attribute}
 
 f=${F:-0.4}
 t=${T:-80}
 b=${B:-4}
 r=${R:-0.4}
 
-mix=${output_name}_f${f}-t${t}-b${b}-r${r}
+mix=${output}_f${f}-t${t}-b${b}-r${r}
 
 python scripts/make_quality_bin_config.py \
-    --attributes "s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/${pool}/attributes/${attributes}/global-shard_03_of_10/*/*.jsonl.zstd" \
+    --attributes "s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/${pool}/attributes/${tag}/global-shard_03_of_10/*/*.jsonl.zstd" \
     --max-files-for-percentiles 1000 --num-processes-for-percentiles 100 -o stats/${mix}.jsonl \
     --config configs/aw_mix_${mix}.yaml \
     -f ${f} \
@@ -20,7 +21,7 @@ python scripts/make_quality_bin_config.py \
     -b ${b} \
     -r ${r} \
     --documents "s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/${pool}/documents/global-shard_03_of_10/*/*.jsonl.zstd" \
-    --attribute-name ${attribute_name} \
+    --attribute-name ${tag}__${attribute}__score \
     --output "s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/${pool}/${mix}"
 
 

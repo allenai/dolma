@@ -1,8 +1,8 @@
-experiment: dclm_chunked
+experiment: dclm_chunked500
 taggers:
   - dclm-oh-eli5-log
-  - dclm-oh-eli5-log-chunk1k
-  - dclm-oh-eli5-log-chunk2k
+  - dclm-oh-eli5-log-single500
+  - dclm-oh-eli5-log-chunk500
   - random_number_v1
 processes: 150
 documents: 

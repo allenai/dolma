@@ -322,6 +322,7 @@ def main():
                         help="Name of the attribute to use for filtering (defaults to first found)")
     
     args = parser.parse_args()
+    args.attribute_name = args.attribute_name.replace("-", "_")
     
     if args.threshold is not None:
         assert args.num_bins is not None

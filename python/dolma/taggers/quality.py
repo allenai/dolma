@@ -16,14 +16,15 @@ from ..core.ft_tagger import BaseFastTextTagger, Prediction
 from ..core.registry import TaggerRegistry
 from ..core.utils import split_words
 
-
+import random
+import numpy as np
 def log_cap(x: float, cap: float = 1e-38) -> float:
     return math.log(max(x, 1e-38))
 
 
 @TaggerRegistry.add("dclm-oh-eli5")
 class DclmQualityClassifier(BaseFastTextTagger):
-    MODEL_PATH = "https://huggingface.co/mlfoundations/fasttext-oh-eli5/resolve/main/openhermes_reddit_eli5_vs_rw_v2_bigram_200k_train.bin"
+    MODEL_PATH = "/home/ec2-user/dolma/openhermes_reddit_eli5_vs_rw_v2_bigram_200k_train.bin"
 
     def __init__(self):
         super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
@@ -49,11 +50,64 @@ class DclmQualityClassifier(BaseFastTextTagger):
         return [Prediction(label="score", score=self.predict_text(text_slice.text))]
 
 
+@TaggerRegistry.add("fineweb-edu-fasttext-gt2")
+class FinewebEduBinaryClassifier(BaseFastTextTagger):
+    MODEL_PATH = "/home/ec2-user/dolma/fineweb_edu_gt2_bigram_200k.bin"
+    NUM_CLASSES = 2
+
+    def __init__(self):
+        super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
+
+    def predict_text(self, text: str) -> float:
+        # Clean the input text by joining all lines into a single string
+        text = " ".join(text.strip().splitlines())
+        pred = self.classifier.predict(text, k=self.NUM_CLASSES)
+
+        # Extract the predicted label and its probability
+        (labels, probs) = pred
+        
+        label_score = np.array([float(label.removeprefix("__label__")) for label in labels])
+        
+        mean_prediction = np.dot(label_score, probs).item()
+        return mean_prediction
+
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+        return [Prediction(label="score", score=self.predict_text(text_slice.text))]
+
+
+@TaggerRegistry.add("fineweb-edu-fasttext-5way")
+class FinewebEdu5WayClassifier(FinewebEduBinaryClassifier):
+    MODEL_PATH = "/home/ec2-user/dolma/fineweb_edu_5way_bigram_200k.bin"
+    NUM_CLASSES = 5
+    
 
 @TaggerRegistry.add("dclm-oh-eli5-log")
 class DclmQualityClassifierLog(DclmQualityClassifier):
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
         pred = self.predict_text(text_slice.text)
+        return [Prediction(label="score", score=log_cap(pred))]
+
+
+@TaggerRegistry.add("dclm-oh-eli5-log-single500")
+class DclmQualityClassifierLog(DclmQualityClassifier):
+    def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
+
+        words = split_words(text_slice.text)
+        # Define chunk size and create boundaries
+        chunk_size = 500
+        if len(words) <= chunk_size:
+            # If text is shorter than 500 words, use the entire text
+            chunk = text_slice
+        else:
+            # Select a random starting point for a 500-word chunk
+            max_start = len(words) - chunk_size
+            start_idx = random.randint(0, max_start)
+            end_idx = start_idx + chunk_size
+            
+            # Create a single chunk with the randomly selected 500 words
+            chunk = TextSlice(text_slice.text, words[start_idx].start, words[end_idx-1].end)
+
+        pred = self.predict_text(chunk.text)
         return [Prediction(label="score", score=log_cap(pred))]
 
 
@@ -68,42 +122,49 @@ class DclmQualityClassifierLogChunk(DclmQualityClassifier):
         # Chunk the text into chunks of at least 1000 words, 
         # only the last chunk is always between 250 - 1250 words to avoid an unnecessarily chunk
         words = split_words(text_slice.text)
-        boundaries = list(range(0, len(words) - self.MIN_CHUNK_SIZE, self.CHUNK_SIZE)) + [len(words)]
+        boundaries = list(range(0, max(len(words) - self.MIN_CHUNK_SIZE, 1), self.CHUNK_SIZE)) + [len(words)]
+        
         chunks = [
             TextSlice(text_slice.text, words[boundaries[i]].start, words[boundaries[i+1]-1].end)
             for i in range(len(boundaries) - 1)
         ]
+        # print(len(chunks), len(words))
 
         num_words = [boundaries[i+1] - boundaries[i] for i in range(len(boundaries) - 1)]
         total_num_words = sum(num_words)
         weights = [n / total_num_words for n in num_words]
+
+        chunk_scores = [self.predict_text(chunk.text) for chunk in chunks]
 
         # Calculate the probability of the document being high quality
         # P_{\text{doc}} = 1 - \prod_{i=1}^N (1 - p_i)
         # where p_i is the probability of the i-th chunk being high quality
         # and N is the number of chunks
         # Use log-probabilities to avoid underflow
-        doc_pred_noisy_or = 1 - sum(
-            (len(weights) * weight) * log_cap(1 - self.predict_text(chunk.text))
-            for chunk, weight in zip(chunks, weights)
-        )
+        doc_pred_noisy_or = 1 - math.exp(len(weights) * sum(
+            weight * log_cap(1 - chunk_score)
+            for chunk_score, weight in zip(chunk_scores, weights)
+        ))
 
         doc_pred_avg = sum(
-            weight * self.predict_text(chunk.text)
-            for chunk, weight in zip(chunks, weights)
+            weight * chunk_score
+            for chunk_score, weight in zip(chunk_scores, weights)
         )
 
         return [
             Prediction(label="noisy_or", score=log_cap(doc_pred_noisy_or)),
             Prediction(label="average", score=log_cap(doc_pred_avg)),
+            Prediction(label="n_chunks", score=len(chunk_scores)),
+            Prediction(label="min_score", score=log_cap(min(chunk_scores))),
+            Prediction(label="max_score", score=log_cap(max(chunk_scores))),
         ]
 
 
 
-@TaggerRegistry.add("dclm-oh-eli5-log-chunk2k")
-class DclmQualityClassifierLogChunk2k(DclmQualityClassifierLogChunk):
-    CHUNK_SIZE = 2000
-    MIN_CHUNK_SIZE = 500
+@TaggerRegistry.add("dclm-oh-eli5-log-chunk500")
+class DclmQualityClassifierLogChunk500(DclmQualityClassifierLogChunk):
+    CHUNK_SIZE = 500
+    MIN_CHUNK_SIZE = 250
 
 
 @TaggerRegistry.add("dolma17-quality")
