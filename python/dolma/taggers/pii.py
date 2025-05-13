@@ -7,7 +7,7 @@ Filters.
 """
 
 import re
-from typing import List
+from typing import List, Optional
 from warnings import warn
 
 from necessary import necessary
@@ -16,12 +16,16 @@ with necessary("presidio-analyzer", soft=True) as PRESIDIO_AVAILABLE:
     if PRESIDIO_AVAILABLE:
         from presidio_analyzer import AnalyzerEngine  # pylint: disable=import-error # pyright: ignore
 
+with necessary("spacy", soft=True) as SPACY_AVAILABLE:
+    if SPACY_AVAILABLE:
+        import spacy  # pylint: disable=import-error # pyright: ignore
+
 from ..core.data_types import DocResult, Document, Span, TextSlice
 from ..core.registry import TaggerRegistry
 from ..core.taggers import BaseTagger
 from ..core.utils import split_paragraphs
 
-__all__ = ["PiiPresidioV1", "PiiRegexV1", "PiiRegexV2", "FastPiiRegex", "PiiRegexWithCountV2"]
+__all__ = ["PiiPresidioV1", "PiiRegexV1", "PiiRegexV2", "FastPiiRegex", "PiiRegexWithCountV2", "PiiSpacyNERRatio", "PipeDelimitedLinesTagger"]
 
 
 class BasePiiFilter(BaseTagger):
@@ -290,3 +294,122 @@ class PiiRegexWithCountV2(BasePiiFilter):
         count = sum(1 for s in doc_result.spans if s.type != "doc")
         doc_result.spans.append(Span(start=0, end=len(doc.text), type="doc_count", score=count))
         return doc_result
+
+@TaggerRegistry.add("pii_spacy_ner_ratio")
+class PiiSpacyNERRatio(BaseTagger):
+    """
+    Tags documents with a score based on the ratio of words identified as named entities
+    by a small spaCy NER model.
+    """
+    
+    def __init__(self, model_name: str = "en_core_web_sm") -> None:
+        """
+        Initialize the PiiSpacyNERRatio tagger.
+        
+        Args:
+            model_name: Name of the spaCy model to use. Defaults to "en_core_web_sm".
+        """
+        if not SPACY_AVAILABLE:
+            raise RuntimeError("spaCy is not available; please run `pip install dolma[spacy]` or `pip install spacy`")
+        
+        try:
+            self.nlp = spacy.load(model_name, disable=["parser", "tagger"])
+            # Only keep the NER component
+            self.nlp.select_pipes(enable=["ner"])
+        except OSError:
+            raise RuntimeError(f"spaCy model '{model_name}' not found. Install it with: python -m spacy download {model_name}")
+    
+    def predict(self, doc: Document) -> DocResult:
+        """
+        Predict the ratio of named entities in the document.
+        
+        Args:
+            doc: The document to analyze.
+            
+        Returns:
+            DocResult: Results containing only a document-level score representing the 
+                      fraction of words that are part of named entities.
+        """
+        # Process the document with spaCy
+        MAX_SPACY_CHARS = 1000000
+        spacy_doc = self.nlp(doc.text[:MAX_SPACY_CHARS])
+        
+        # Count total words
+        total_words = len([token for token in spacy_doc if not token.is_space])
+        
+        # Count words that are part of PERSON and LOC named entities only
+        entity_tokens = set()
+        for ent in spacy_doc.ents:
+            if ent.label_ in ["PERSON", "LOC"]:
+                # Add indices of all tokens in this entity
+                for token in ent:
+                    entity_tokens.add(token.i)
+        
+        # Calculate ratio
+        try:
+            ratio = len(entity_tokens) / total_words if total_words > 0 else 0.0
+        except ZeroDivisionError:
+            # Empty document
+            ratio = 0.0
+        
+        # Only create the document-level score span
+        spans = [
+            Span(
+                start=0,
+                end=len(doc.text),
+                type="doc_ner_ratio",
+                score=ratio,
+            )
+        ]
+        
+        return DocResult(doc=doc, spans=spans)
+
+
+@TaggerRegistry.add("pipe_delimited_lines")
+class PipeDelimitedLinesTagger(BaseTagger):
+    """
+    Tags documents with a score indicating the percentage of lines that start and end with a '|' character.
+    
+    This tagger analyzes each line in a document and calculates what percentage of lines
+    (after stripping whitespace) both start and end with the pipe symbol '|'.
+    """
+    
+    def predict(self, doc: Document) -> DocResult:
+        """
+        Calculate the percentage of lines that start and end with '|'.
+        
+        Args:
+            doc: The document to analyze.
+            
+        Returns:
+            DocResult: Results containing a document-level score representing the
+                     percentage of lines that start and end with '|'.
+        """
+        # Split the document into lines
+        lines = doc.text.splitlines()
+        
+        # Count total non-empty lines
+        non_empty_lines = [line for line in lines if line.strip()]
+        total_lines = len(non_empty_lines)
+        
+        # Count lines that start and end with '|'
+        pipe_delimited_count = 0
+        for line in non_empty_lines:
+            line = line.strip()
+            if line and line.startswith('|') and line.endswith('|'):
+                pipe_delimited_count += 1
+        
+        # Calculate percentage
+        percentage = (pipe_delimited_count / total_lines) if total_lines > 0 else 0.0
+        
+        # Create a document-level span with the percentage score
+        spans = [
+            Span(
+                start=0,
+                end=len(doc.text),
+                type="pipe_delimited_lines_ratio",
+                score=percentage,
+            )
+        ]
+        
+        return DocResult(doc=doc, spans=spans)

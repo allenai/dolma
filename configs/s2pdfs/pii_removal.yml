@@ -1,0 +1,47 @@
+streams:
+  - name: s2pdf_pii_removal
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1/documents/*.jsonl.zst
+
+    attributes:
+      - model_pii_tagging_v2
+      - model_rich_pii_tagging
+
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii/documents
+      max_size_in_bytes: 104_857_600
+
+    filter:
+      syntax: jq
+      include: []
+      exclude: 
+        - (
+            (
+              (.attributes["google_gemma-3-12b-it_contains_pii"] | map(.[2]) | any(. == true)) and
+              ((.attributes["google_gemma-3-12b-it_is_public_document"] | map(.[2]) | any(. == true)) | not) and
+              ((.attributes["google_gemma-3-4b-it_v2tag__is_academic_paper"] | map(.[2]) | any(. == true)) | not) and 
+              ((.attributes["google_gemma-3-4b-it_v2tag__is_textbook"] | map(.[2]) | any(. == true)) | not) and 
+              ((.attributes["google_gemma-3-4b-it_v2tag__is_homework_assignment"] | map(.[2]) | any(. == true)) | not) and 
+              ((.attributes["google_gemma-3-4b-it_v2tag__is_test_or_quiz"] | map(.[2]) | any(. == true)) | not) and 
+              ((.attributes["google_gemma-3-4b-it_v2tag__is_class_syllabus"] | map(.[2]) | any(. == true)) | not) and 
+              ((.attributes["google_gemma-3-4b-it_v2tag__is_public_order"] | map(.[2]) | any(. == true)) | not) and 
+              ((.attributes["google_gemma-3-4b-it_v2tag__is_news_article"] | map(.[2]) | any(. == true)) | not)
+            ) or
+            (
+              (.attributes["google_gemma-3-4b-it_v2tag__is_resume_cv"] | map(.[2]) | any(. == true))
+            ) or
+            (
+              (.attributes["google_gemma-3-4b-it_v2tag__is_court_notice"] | map(.[2]) | any(. == true))
+            ) or
+            (
+              (.attributes["google_gemma-3-4b-it_v2tag__is_completion_certificate"] | map(.[2]) | any(. == true))
+            )
+          )
+
+          
+
+work_dir:
+  input: "/tmp/pii_removal_mix/input"
+  output: "/tmp/pii_removal_mix/output"
+
+processes: 63
