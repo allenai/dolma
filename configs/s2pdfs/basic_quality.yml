@@ -1,0 +1,40 @@
+streams:
+  - name: s2pdf_no_pii_basic_quality
+    documents:
+      - s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii/documents/*.jsonl.gz
+
+    attributes:
+      - avg_fraction_numbers_in_line_v1
+      - fineweb_edu_fasttext_gt2
+      - ft_lang_id_en_doc_v2
+      - pipe_delimited_lines_v1
+
+    output:
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality/documents
+      max_size_in_bytes: 104_857_600
+
+    filter:
+      syntax: jq
+      include:
+        - (
+            (
+              (.attributes["ft_lang_id_en_doc_v2__ft_lang_id_en_doc_v2__en"][0][2] > 0.5)
+            ) and
+            (
+              (.attributes["fineweb_edu_fasttext_gt2__fineweb_edu_fasttext_gt2__score"][0][2] > 0.001)
+            ) and
+            (
+              (.attributes["avg_fraction_numbers_in_line_v1__avg_fraction_numbers_in_line_v1__avg_fraction_numbers_in_line_ratio"][0][2] < 0.2)
+            ) and
+            (
+              (.attributes["pipe_delimited_lines_v1__pipe_delimited_lines_v1__pipe_delimited_lines_ratio"][0][2] < 0.3)
+            )
+          )      
+      exclude: []
+          
+
+work_dir:
+  input: "/tmp/pii_removal_mix/input"
+  output: "/tmp/pii_removal_mix/output"
+
+processes: 190
