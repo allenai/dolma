@@ -26,7 +26,7 @@ from .data_types import InputSpec, TokenizerOutput
 
 with necessary("transformers", soft=True) as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
-        from transformers import AutoTokenizer  # pylint: disable=import-error
+        from transformers import AutoTokenizer      # pyright: ignore pylint: disable=import-error
 
 PathOrStr = Union[str, PathLike]
 
@@ -379,7 +379,7 @@ def tokenize_file(
                         continue
 
                     # the actual tokenization happens here
-                    tokens = tokenizer.encode(text, add_special_tokens=True)
+                    tokens = tokenizer.encode(text, add_special_tokens=True)  # pyright: ignore
                 except Exception:
                     # in case of failure, we log the error and continue
                     # We refresh the tokenizer to prevent memory leaks from affecting the rest of the processing
@@ -394,7 +394,7 @@ def tokenize_file(
 
                 if (refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0) or force_refresh:
                     # to prevent memory leaks, we refresh the tokenizer every so often
-                    del tokenizer
+                    del tokenizer  # pyright: ignore
                     gc.collect()
                     tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
 
