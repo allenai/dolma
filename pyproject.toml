@@ -118,13 +118,14 @@ dev = [
 ]
 # extension to process code
 code = ["detect-secrets==1.4.0", "beautifulsoup4>=4", "pygments", "regex"]
+
 # extension to detect PIIs using presidio
 pii = ["presidio_analyzer==2.2.32", "regex"]
 
 # language detection; by default, we use fastttext, everything else is optional
 lang = [
     "fasttext-wheel==0.9.2",
-    "LTpycld2==0.42",                  # fork of pycld2 that works on Apple Silicon
+    "pycld2==0.42",
     "lingua-language-detector>=2.0.0",
     "langdetect>=1.0.9",
 ]
