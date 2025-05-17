@@ -41,4 +41,5 @@ To read Dolma toolkit's documentation, visit the following pages:
 - [Deduplication](deduplication.md)
 - [Mixer](mixer.md)
 - [Tokenization](tokenize.md)
+- [Writing a Parallel Processor](parallel-processor.md)
 - [Contributing to Dolma Toolkit](develop.md)
