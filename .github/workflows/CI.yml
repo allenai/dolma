@@ -169,6 +169,13 @@ jobs:
           # The cache key depends on pyproject.toml and Cargo.toml
           key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml, **/Cargo.lock') }}
 
+      - name: Install latest version of toolkit # this is if cache is out of date
+        run: |
+          uv run maturin build --release  -i $(which python) --out dist
+          wheel_path=$(ls dist/*.whl)
+          pip install "${wheel_path}[all]"
+
+
       - name: ${{ matrix.task.name }}
         run: |
           ${{ matrix.task.run }}
