@@ -95,6 +95,14 @@ class TokenizerConfig:
 
 
 @dataclass
+class FieldsConfig:
+    text_field_name: str = field(default="text", help="Name of the text field in the input files.")
+    text_field_type: str = field(default="str", help="Type of the text field in the input files.")
+    id_field_name: str | None = field(default="id", help="Name of the id field in the input files.")
+    id_field_type: str = field(default="str", help="Type of the id field in the input files.")
+
+
+@dataclass
 class TokenizationConfig:
     documents: List[str] = field(
         default=[],
@@ -131,6 +139,7 @@ class TokenizationConfig:
         help="Number of sequences to tokenize before writing to disk.",
     )
     ring_size: int = field(default=8, help="Number of files to open in parallel for tokenization.")
+    fields: FieldsConfig = field(default=FieldsConfig(), help="Configuration for the fields in the input files.")
     sample_ring_prop: bool = field(
         default=False,
         help="Whether to sample the ring proportionally to the number of documents in each source.",
@@ -221,4 +230,8 @@ class TokenizerCli(BaseCli):
                 sample_ring_prop=parsed_config.sample_ring_prop,
                 use_fast_tokenizer=parsed_config.tokenizer.fast,
                 refresh_tokenizer=parsed_config.tokenizer.refresh,
+                text_field_name=parsed_config.fields.text_field_name,
+                text_field_type=parsed_config.fields.text_field_type,
+                id_field_name=parsed_config.fields.id_field_name,
+                id_field_type=parsed_config.fields.id_field_type,
             )
