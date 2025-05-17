@@ -107,6 +107,7 @@ jobs:
         if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
           pip install -U uv
+          uv venv
           uv pip install maturin==1.8.6
 
       - name: Install Dolma wheels
