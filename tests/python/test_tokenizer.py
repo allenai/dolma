@@ -694,3 +694,16 @@ class TokenizeOnNonStandardFields(TestCase):
 
         for src, dst in zip(self.texts, decoded):
             self.assertEqual(src, dst)
+
+    def test_with_nested_text_and_id_field(self):
+        input_dir, output_dir = self._make_documents(text_field="text.nested", id_field="id.nested.more")
+        config = copy.deepcopy(self.default_config)
+        config["documents"] = [f"{input_dir}/*.json.gz"]
+        config["destination"] = output_dir
+        config.setdefault("fields", {})["id_field_name"] = "id.nested.more"
+        config.setdefault("fields", {})["text_field_name"] = "text.nested"
+        contents = self._run_tokenizer_and_read_output(config)
+        decoded = self._decode_contents(contents)
+
+        for src, dst in zip(self.texts, decoded):
+            self.assertEqual(src, dst)
