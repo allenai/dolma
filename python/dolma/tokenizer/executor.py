@@ -17,7 +17,7 @@ from ..core.paths import get_size, glob_path, join_path, mkdir_p
 from ..core.utils import TYPES_MAP
 from .data_types import TokenizerOutput  # pylint: disable=unused-import
 from .memmap_writer import MemmapWriter
-from .tokenizer import Tokenizer, make_tokenizer, tokenize_file
+from .tokenizer import make_tokenizer, tokenize_file
 
 TokenizedSeqsQueueType: TypeAlias = "Queue[List[TokenizerOutput]]"
 PathsQueueType: TypeAlias = "Queue[str]"

@@ -74,15 +74,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Cache Virtual Env
-        uses: actions/cache@v3
+      - name: Cache Virtual Env and Rust targets
+        uses: actions/cache@v4
         # name for referring later
         id: cache-venv
         with:
-          # what we cache: the virtualenv
-          path: ./.venv/
+          # what we cache: the virtualenv and rust target directory
+          path: |
+            ./.venv/
+            ./target/release/
           # The cache key depends on pyproject.toml and Cargo.toml
-          key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml, **/Cargo.lock') }}
+          key: ${{ runner.os }}-venv-rust-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml', '**/Cargo.lock') }}
 
       - name: Setup system libraries
         if: steps.cache-venv.outputs.cache-hit != 'true'
@@ -160,12 +162,14 @@ jobs:
           pip install -U uv
 
       - name: Cache Virtual Env
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         # name for referring later
         id: cache-venv
         with:
           # what we cache: the virtualenv
-          path: ./.venv/
+          path: |
+            ./.venv/
+            ./target/release/
           # The cache key depends on pyproject.toml and Cargo.toml
           key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml, **/Cargo.lock') }}
 

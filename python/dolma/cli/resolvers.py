@@ -1,11 +1,9 @@
 import multiprocessing
 from typing import List, TypeVar
-
-from cached_path import cached_path
 from omegaconf.omegaconf import OmegaConf as om
 from omegaconf.omegaconf import Resolver
 
-from ..core.paths import glob_path
+from ..core.paths import glob_path, cached_path
 
 __all__ = ["cache", "glob", "processes"]
 

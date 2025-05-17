@@ -33,7 +33,7 @@ from tokenizers import Tokenizer as BaseTokenizer
 
 from ..core.errors import DolmaConfigError
 from ..core.loggers import get_logger
-from .data_types import InputSpec, TokenizerOutput
+from .data_types import TokenizerOutput
 
 with necessary("transformers", soft=True) as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
