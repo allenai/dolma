@@ -17,7 +17,7 @@ from ..core.paths import get_size, glob_path, join_path, mkdir_p
 from ..core.utils import TYPES_MAP
 from .data_types import TokenizerOutput  # pylint: disable=unused-import
 from .memmap_writer import MemmapWriter
-from .tokenizer import Tokenizer, tokenize_file
+from .tokenizer import Tokenizer, make_tokenizer, tokenize_file
 
 TokenizedSeqsQueueType: TypeAlias = "Queue[List[TokenizerOutput]]"
 PathsQueueType: TypeAlias = "Queue[str]"
@@ -360,14 +360,19 @@ def tokenize_in_parallel(
     # variables to avoid issues with parallelism
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    # do it once so it gets cached (unless it's local path, so no need)
-    if not os.path.exists(tokenizer_name_or_path):
-        Tokenizer.from_pretrained(
-            identifier=tokenizer_name_or_path,
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
-            pad_token_id=pad_token_id,
-            use_fast=use_fast_tokenizer,
+    # do it once so it gets cached, and we can check if dtype is correct
+
+    tokenizer = make_tokenizer(
+        tokenizer_name_or_path,
+        bos_token_id=bos_token_id,
+        eos_token_id=eos_token_id,
+        pad_token_id=pad_token_id,
+        use_fast=use_fast_tokenizer,
+    )
+    if tokenizer.dtype != np.dtype(dtype):
+        raise TypeError(
+            f"Numpy type mismatch: provided dtype '{dtype}' does not match "
+            f"inferred dtype '{tokenizer.dtype}' based on vocab size {tokenizer.vocab_size:,}!"
         )
 
     # get a run hash

@@ -611,6 +611,7 @@ class TokenizeOnNonStandardFields(TestCase):
             "processes": 1,
             "seed": 3920,
             "dtype": "uint32",
+            "debug": True,
         }
         self.texts = sorted(
             [
@@ -707,3 +708,14 @@ class TokenizeOnNonStandardFields(TestCase):
 
         for src, dst in zip(self.texts, decoded):
             self.assertEqual(src, dst)
+
+
+class TestDtypeMismatch(TestCase):
+    def test_dtype_mismatch(self):
+        with self.assertRaises(TypeError), TemporaryDirectory() as tmpdir:
+            tokenize_in_parallel(
+                tokenizer_name_or_path=DOLMA2_TOKENIZER["filename"],
+                sources=[tmpdir],
+                destination=tmpdir,
+                dtype="uint16",
+            )
