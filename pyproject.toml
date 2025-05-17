@@ -4,11 +4,12 @@ version = "1.1.2"
 description = "Data filters"
 license = { text = "Apache-2.0" }
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.13"
 dependencies = [
     "anyascii>=0.3.2",
     "blingfire==0.1.8",
-    "boto3>=1.28",
+    # "boto3>=1.28",
+    "boto3",
     "cached-path>=1.5.1",
     # "fasttext==0.9.2",    # broken with new version of setuptools; using fasttext-wheel instead
     "fasttext-wheel==0.9.2",
@@ -26,7 +27,7 @@ dependencies = [
     "requests",
     "rich",
     "s3fs==2023.6.0",
-    "smart-open",
+    "smart-open>=7.0.4",
     "tokenizers>=0.15.0,<=0.19.1",
     "tqdm",
     "uniseg",
