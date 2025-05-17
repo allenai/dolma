@@ -106,16 +106,13 @@ jobs:
       - name: Create a new Python environment & install maturin
         if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install -U pip
-          pip install maturin==1.7.1
+          pip install -U uv
+          uv pip install maturin==1.8.6
 
-      - name: Install dolma wheels
+      - name: Install Dolma wheels
         if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
-          source .venv/bin/activate
-          maturin build --release  -i $(which python) --out dist
+          uv run maturin build --release  -i $(which python) --out dist
           wheel_path=$(ls dist/*.whl)
           pip install "${wheel_path}[all]"
 
@@ -134,8 +131,8 @@ jobs:
           - name: Check Python style
             run: |
               set -e
-              isort --check --verbose .
-              black --check --verbose .
+              uv run isort --check --verbose .
+              uv run black --check --verbose .
 
           - name: Check Rust style
             run: |
@@ -143,15 +140,15 @@ jobs:
 
           - name: Lint Python
             run: |
-              flake8 tests/python/ && flake8 python/
+              uv run flake8 tests/python/ && uv run flake8 python/
 
           - name: Types Python
             run: |
-              mypy tests/python/ && mypy python/
+              uv run mypy tests/python/ && uv run mypy python/
 
           - name: Run Python tests
             run: |
-              pytest -vs --color=yes tests/python/
+              uv run pytest -vs --color=yes tests/python/
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
@@ -168,7 +165,6 @@ jobs:
 
       - name: ${{ matrix.task.name }}
         run: |
-          source .venv/bin/activate
           ${{ matrix.task.run }}
 
   build-linux:

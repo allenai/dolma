@@ -3,8 +3,8 @@ import csv
 import json
 from contextlib import ExitStack
 from pathlib import Path
-# Line removed as it is unused
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import Optional
 from unittest import TestCase
 
 import numpy
@@ -633,7 +633,7 @@ class TokenizeOnNonStandardFields(TestCase):
         """Clean up any resources created in setUp."""
         self.stack.close()
 
-    def _make_documents(self, text_field: str, id_field: str | None):
+    def _make_documents(self, text_field: str, id_field: Optional[str]):
         def make_text_doc(my_text_field: str, my_text_content: str):
             if "." in my_text_field:
                 prefix, rest = my_text_field.split(".", 1)
@@ -641,7 +641,7 @@ class TokenizeOnNonStandardFields(TestCase):
             else:
                 return {my_text_field: my_text_content}
 
-        def make_id_doc(my_id_field: str | None, my_id_content: str):
+        def make_id_doc(my_id_field: Optional[str], my_id_content: str):
             return {} if my_id_field is None else make_text_doc(my_id_field, my_id_content)
 
         input_dir = self.stack.enter_context(TemporaryDirectory())

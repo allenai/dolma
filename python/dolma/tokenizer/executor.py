@@ -320,7 +320,7 @@ def tokenize_in_parallel(
     use_fast_tokenizer: bool = True,
     text_field_name: str = "text",
     text_field_type: str = "str",
-    id_field_name: str | None = "id",
+    id_field_name: Optional[str] = "id",
     id_field_type: str = "str",
 ):
     """

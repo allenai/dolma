@@ -425,7 +425,7 @@ def tokenize_file(
     path: str,
     text_field_name: str = "text",
     text_field_type: type = str,
-    id_field_name: str | None = "id",
+    id_field_name: Optional[str] = "id",
     id_field_type: type = str,
     refresh_tokenizer_every: int = 0,
     **tokenizer_kwargs,

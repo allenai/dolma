@@ -98,7 +98,7 @@ class TokenizerConfig:
 class FieldsConfig:
     text_field_name: str = field(default="text", help="Name of the text field in the input files.")
     text_field_type: str = field(default="str", help="Type of the text field in the input files.")
-    id_field_name: str | None = field(default="id", help="Name of the id field in the input files.")
+    id_field_name: Optional[str] = field(default="id", help="Name of the id field in the input files.")
     id_field_type: str = field(default="str", help="Type of the id field in the input files.")
 
 
