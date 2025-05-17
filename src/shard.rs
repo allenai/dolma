@@ -187,7 +187,7 @@ impl Shard {
     // Upload the output file to S3.
     pub fn process(&self, work_dirs: WorkDirConfig) -> Result<(), IoError> {
         let cache: FileCache = FileCache {
-            s3_client: Box::new(s3_util::new_client(None)?),
+            s3_client: Box::new(s3_util::new_client(None, None)?),
             work: work_dirs.clone(),
         };
         let min_text_length = self.min_text_length.clone().unwrap_or(0);
@@ -476,7 +476,7 @@ impl Shard {
                         }
                     }
                 }
-                cache.finalize_input(local_docs_file.to_str().unwrap())?;
+                cache.finalize_input(&input_path.doc_path)?;
                 for (index, attribute_path) in
                     find_objects_matching_patterns(&input_path.attribute_paths)
                         .unwrap()
@@ -738,7 +738,7 @@ impl FileCache {
                 bucket,
                 key,
                 &path,
-                Some(3), // retry twice if fail
+                Some(1),
             ))?;
             log::info!("Download complete.");
             Ok(path.clone())
@@ -802,7 +802,7 @@ impl FileCache {
                 &path,
                 bucket,
                 key,
-                Some(3), // retry twice if fail
+                Some(1),
             ))?;
             std::fs::remove_file(&path)?;
             {
@@ -831,7 +831,7 @@ pub fn find_objects_matching_patterns(patterns: &Vec<String>) -> Result<Vec<Stri
         }
         Ok(matches)
     } else if s3_url_count == patterns.len() {
-        let s3_client = s3_util::new_client(None)?;
+        let s3_client = s3_util::new_client(None, None)?;
         s3_util::find_objects_matching_patterns(&s3_client, patterns)
     } else {
         Err(IoError::new(
@@ -855,7 +855,7 @@ pub fn get_object_sizes(locations: &Vec<String>) -> Result<Vec<usize>, IoError> 
             .collect();
         Ok(sizes)
     } else if s3_url_count == locations.len() {
-        let s3_client = s3_util::new_client(None)?;
+        let s3_client = s3_util::new_client(None, None)?;
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()

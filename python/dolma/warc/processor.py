@@ -20,6 +20,7 @@ from ..core.utils import make_variable_name
 # from .documents import WarcDocument, WarcDocumentMetadata
 # from .filters import FilterInputType, partition_extractors
 from .linearizers import LinearizerRegistry
+from .record_info import WarcRecordInfo
 from .utils import UrlNormalizer, raise_warc_dependency_error
 
 with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
@@ -28,10 +29,7 @@ with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:
-        import dateparser
-
-
-DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
+        import dateparser  # noqa: F401
 
 
 class WarcProcessor(BaseParallelProcessor):
@@ -50,14 +48,6 @@ class WarcProcessor(BaseParallelProcessor):
         if timestamp is None:
             timestamp = datetime.datetime.now()
         return timestamp.strftime("%Y-%m-%dT%H:%M:%S.%f")[:23] + "Z"
-
-    @staticmethod
-    def _parse_warc_timestamp(timestamp_str: Optional[str]) -> datetime.datetime:
-        """Parse a WARC timestamp into a datetime object."""
-        if not timestamp_str:
-            return datetime.datetime.now()
-
-        return dateparser.parse(date_string=timestamp_str, date_formats=DATE_FORMATS) or datetime.datetime.now()
 
     @classmethod
     def increment_progressbar(  # type: ignore
@@ -138,7 +128,9 @@ class WarcProcessor(BaseParallelProcessor):
             smart_open.open(source_path, "rb") as warc_file,
             smart_open.open(destination_path, "wb") as output_file,
         ):
-            it = ArchiveIterator(warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo)
+            it = ArchiveIterator(
+                warc_file, record_types=WarcRecordType.response | WarcRecordType.warcinfo | WarcRecordType.resource
+            )
             for record in it:
                 if record.record_type == WarcRecordType.warcinfo:
                     warc_date = record.record_date or None
@@ -164,24 +156,23 @@ class WarcProcessor(BaseParallelProcessor):
                 if not decoded_content:
                     continue
 
-                # metadata
-                ctype, *_ = (record.http_headers.get("Content-Type") or "").split(";")
-                date = cls._parse_warc_timestamp(record.http_headers.get("Date"))
-                target_uri = record.headers.get("WARC-Target-URI")
-                payload_id = record.headers.get("WARC-Payload-Digest").split(":")[1].lower()
+                warc_record_info = WarcRecordInfo(record)
+                if not warc_record_info.is_valid:
+                    continue
+
                 metadata = dict(
-                    warc_url=target_uri,
-                    url=url_normalizer(target_uri),
+                    warc_url=warc_record_info.target_uri,
+                    url=url_normalizer(warc_record_info.target_uri),
                     html=decoded_content,
                     warc_date=cls._format_to_dolma_timestamp(warc_date),
                     warc_filename=warc_filename or "",
-                    content_type=ctype,
+                    content_type=warc_record_info.ctype,
                     uncompressed_offset=record.stream_pos,
                 )
                 doc = InputSpecWithMetadataAndAttributes(
                     source=source_name,
                     version=source_version,
-                    id=payload_id,
+                    id=warc_record_info.payload_id,
                     text="",  # this will come later
                     metadata=metadata,
                 )
@@ -205,7 +196,7 @@ class WarcProcessor(BaseParallelProcessor):
                     for a_name, attr_values in attributes.items()
                 }
 
-                doc.created = cls._format_to_dolma_timestamp(date)
+                doc.created = cls._format_to_dolma_timestamp(warc_record_info.date)
                 doc.added = cls._format_to_dolma_timestamp(date_now)
 
                 if not store_html_in_metadata:

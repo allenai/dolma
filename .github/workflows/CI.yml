@@ -202,10 +202,10 @@ jobs:
             sudo apt-get update
             sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.4
+        uses: actions/upload-artifact@v4.4.1
         with:
           overwrite: true
-          name: wheels
+          name: release-wheel-linux-${{ matrix.target }}-${{ github.run_id }}
           path: dist
 
   build-windows:
@@ -228,10 +228,10 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.4
+        uses: actions/upload-artifact@v4.4.1
         with:
           overwrite: true
-          name: wheels
+          name: release-wheel-windows-${{ matrix.target }}-${{ github.run_id }}
           path: dist
 
   build-macos:
@@ -253,10 +253,10 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
       - name: Upload wheels
-        uses: actions/upload-artifact@v4.4
+        uses: actions/upload-artifact@v4.4.1
         with:
           overwrite: true
-          name: wheels
+          name: release-wheel-macos-${{ matrix.target }}-${{ github.run_id }}
           path: dist
 
   sdist:
@@ -271,10 +271,10 @@ jobs:
           command: sdist
           args: --out dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v4.4
+        uses: actions/upload-artifact@v4.4.1
         with:
           overwrite: true
-          name: wheels
+          name: release-sdist-${{ github.run_id }}
           path: dist
 
   release:
@@ -283,9 +283,9 @@ jobs:
     if: "startsWith(github.ref, 'refs/tags/')"
     needs: [build-linux, build-windows, build-macos, sdist]
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: wheels
+          pattern: release-*-${{ github.run_id }}
       - name: Publish to PyPI
         uses: PyO3/maturin-action@v1
         env:
@@ -293,4 +293,4 @@ jobs:
         with:
           command: upload
           maturin-version: 1.7.1
-          args: --skip-existing *
+          args: --skip-existing release-*-${{ github.run_id }}/*.*
