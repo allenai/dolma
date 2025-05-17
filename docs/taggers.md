@@ -50,7 +50,7 @@ A list of built-in taggers can be obtained by running `dolma list` command. At t
 | `cld3_en_paragraph_v2` | Uses [cld3](https://github.com/google/cld3) to detect the language of each paragraph. |
 | `cld3_en_paragraph_with_doc_score_v2` | Uses [cld3](https://github.com/google/cld3) to detect the language of each paragraph and assigns a score to the document based on the fraction of paragraphs that are English. |
 | `code_copyright_comments_v1` | For code documents, tags spans that contain a copyright statement |
-| `code_redpajama_taggers_v1` | Applies [RedPajama code processing rules](https://github.com/togethercomputer/RedPajama-Data/tree/main/data_prep/github) to tag spans of documents.
+| `code_redpajama_taggers_v1` | Applies [RedPajama code processing rules](https://github.com/togethercomputer/RedPajama-Data/tree/rp_v1/data_prep/github#github) to tag spans of documents.
 | `code_secrets_v1` | Tags spans that contain secrets (e.g., passwords, API keys, etc.) using the [yelp/detect-secrets](https://github.com/Yelp/detect-secrets) library |
 | `ft_lang_id_en_doc_v2` | Uses [fastText](https://fasttext.cc/) to detect the language of the document. |
 | `ft_lang_id_en_paragraph_v2` | Uses [fastText](https://fasttext.cc/) to detect the language of each paragraph. |
@@ -60,8 +60,8 @@ A list of built-in taggers can be obtained by running `dolma list` command. At t
 | `jigsaw_hatespeech_sentence_v2` | Tags spans of documents as containing hate speech or not using a FastText classifier trained on the [Jigsaw](https://www.kaggle.com/c/jigsaw-unintended-bias-in-toxicity-classification) hate speech dataset. |
 | `jigsaw_nsfw_document_v1` | Tags documents as containing NSFW content or not using a FastText classifier trained on the [Jigsaw](https://www.kaggle.com/c/jigsaw-unintended-bias-in-toxicity-classification) NSFW dataset. |
 | `jigsaw_nsfw_sentence_v2` | Tags spans of documents as containing NSFW content or not using a FastText classifier trained on the [Jigsaw](https://www.kaggle.com/c/jigsaw-unintended-bias-in-toxicity-classification) NSFW dataset. |
-| `olmo_pretokenizer_v1` | Count the number of tokens in each document using pre-tokenizer used by [OLMo v1](allenai.org/olmo), which is a the same as [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b). |
-| `olmo_pretokenizer_with_paragraphs_v1` | Count the number of tokens in each document and each paragraph using pre-tokenizer used by [OLMo v1](allenai.org/olmo), which is a the same as [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b). |
+| `olmo_pretokenizer_v1` | Count the number of tokens in each document using pre-tokenizer used by [OLMo v1](https://allenai.org/olmo), which is a the same as [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b). |
+| `olmo_pretokenizer_with_paragraphs_v1` | Count the number of tokens in each document and each paragraph using pre-tokenizer used by [OLMo v1](https://allenai.org/olmo), which is a the same as [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b). |
 | `pii_presidio_v1` | Tags spans of documents that contain personally identifiable information (PII) using the [Presidio Analyzer](https://microsoft.github.io/presidio/analyzer/) library. |
 | `pii_regex_v1` | Tags spans of documents that contain personally identifiable information (PII) using a set of regular expressions. |
 | `pii_regex_v2` | Faster implementation of `pii_regex_v1`. |
