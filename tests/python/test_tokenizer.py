@@ -1,6 +1,7 @@
 import copy
 import csv
 import json
+from contextlib import ExitStack
 from pathlib import Path
 from re import M
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -595,3 +596,101 @@ class TestBosEosTokenAddition(TestCase):
             self.assertEqual(sequence, expected[pos])
             expected.pop(pos)
         self.assertEqual(expected, [])
+
+
+class TokenizeOnNonStandardFields(TestCase):
+    def setUp(self):
+        self.stack = ExitStack()
+        self.default_config = {
+            "tokenizer": {
+                "name_or_path": DOLMA2_TOKENIZER["filename"],
+                "bos_token_id": DOLMA2_TOKENIZER["eos_token_id"],
+                "eos_token_id": DOLMA2_TOKENIZER["eos_token_id"],
+                "pad_token_id": DOLMA2_TOKENIZER["pad_token_id"],
+            },
+            "processes": 1,
+            "seed": 3920,
+            "dtype": "uint32",
+        }
+        self.texts = sorted(
+            [
+                "To be or not to be, that is the question.",
+                "I think, therefore I am.",
+                "The only way to do great work is to love what you do.",
+                "Be the change you wish to see in the world.",
+                "All that glitters is not gold.",
+                "The road not taken makes all the difference.",
+                "To thine own self be true.",
+                "Life is what happens while you're busy making other plans.",
+                "The early bird catches the worm.",
+                "Where there's a will, there's a way.",
+            ]
+        )
+        self.tokenizer = Tokenizer.from_file(**DOLMA2_TOKENIZER)
+
+    def tearDown(self):
+        """Clean up any resources created in setUp."""
+        self.stack.close()
+
+    def _make_documents(self, text_field: str, id_field: str | None):
+        def make_text_doc(my_text_field: str, my_text_content: str):
+            if "." in my_text_field:
+                prefix, rest = my_text_field.split(".", 1)
+                return {prefix: make_text_doc(rest, my_text_content)}
+            else:
+                return {my_text_field: my_text_content}
+
+        def make_id_doc(my_id_field: str | None, my_id_content: str):
+            return {} if my_id_field is None else make_text_doc(my_id_field, my_id_content)
+
+        input_dir = self.stack.enter_context(TemporaryDirectory())
+        output_dir = self.stack.enter_context(TemporaryDirectory())
+
+        for i, text in enumerate(self.texts):
+            with smart_open.open(f"{input_dir}/{i:03d}.json.gz", "wt", encoding="utf-8") as f:
+                doc = {**make_text_doc(text_field, text), **make_id_doc(id_field, f"doc-{i}")}
+                f.write(json.dumps(doc) + "\n")
+
+        return input_dir, output_dir
+
+    def _run_tokenizer_and_read_output(self, config: dict) -> list[int]:
+        with NamedTemporaryFile(mode="wt") as f:
+            json.dump(config, f)
+            f.flush()
+            main(argv=["-c", f.name, "tokens"])
+
+        contents = []
+        for fn in Path(config["destination"]).glob("*.npy"):
+            with smart_open.open(fn, "rb") as f:
+                contents.extend(numpy.memmap(f, dtype=config["dtype"], mode="r").tolist())
+        return contents
+
+    def _decode_contents(self, contents: list[int]) -> list[str]:
+        # partition sequences
+        extracted_sequences = []
+        for i, token in enumerate(contents):
+            if i == 0:
+                # first bos
+                extracted_sequences.append([])
+            if i == len(contents) - 1:
+                # do nothing on last symbol (should be eos, but you checked that above)
+                continue
+            elif token != DOLMA2_TOKENIZER["eos_token_id"]:
+                extracted_sequences[-1].append(token)
+            elif contents[i - 1] != DOLMA2_TOKENIZER["eos_token_id"]:
+                # this is EOS, otherwise previous token wouldnt be EOS
+                extracted_sequences.append([])
+
+        return sorted([self.tokenizer.decode(seq) for seq in extracted_sequences])
+
+    def test_tokenize_with_no_id_field(self):
+        input_dir, output_dir = self._make_documents(text_field="text", id_field=None)
+        config = copy.deepcopy(self.default_config)
+        config["documents"] = [f"{input_dir}/*.json.gz"]
+        config["destination"] = output_dir
+        config.setdefault("fields", {})["id_field_name"] = None
+        contents = self._run_tokenizer_and_read_output(config)
+        decoded = self._decode_contents(contents)
+
+        for src, dst in zip(self.texts, decoded):
+            self.assertEqual(src, dst)
