@@ -366,7 +366,7 @@ def make_tokenizer(
     return tokenizer
 
 
-def make_spec_from_fields(name: str, *fields: tuple[str, type] | None) -> msgspec.Struct:
+def make_spec_from_fields(name: str, *fields: tuple[str, type] | None) -> type[msgspec.Struct]:
     """This function builds a msgspec.Struct from a list of field names and types.
     The field names can be nested, and the types can be nested dictionaries of types.
     """
@@ -383,7 +383,7 @@ def make_spec_from_fields(name: str, *fields: tuple[str, type] | None) -> msgspe
             nd = nd.setdefault(component, {})
         nd[last_component] = field_type
 
-    def recursively_make_struct(name: str, nested_dict: dict[str, type | dict]) -> msgspec.Struct:
+    def recursively_make_struct(name: str, nested_dict: dict[str, type | dict]) -> type[msgspec.Struct]:
         """This function recursively builds a msgspec.Struct from a nested dictionary of field names and types."""
         spec = []
         for k, v in nested_dict.items():
@@ -428,8 +428,6 @@ def tokenize_file(
     id_field_name: str | None = "id",
     id_field_type: type = str,
     refresh_tokenizer_every: int = 0,
-    add_eos_token: bool = True,
-    add_bos_token: bool = False,
     **tokenizer_kwargs,
 ) -> Generator[TokenizerOutput, None, None]:
     """Tokenize a file of documents using the provided tokenizer; file is expected to be a gzipped JSON lines
@@ -473,7 +471,8 @@ def tokenize_file(
                 if refresh_tokenizer_every:
                     # extra copy to prevent memory leaks
                     tokens = np.array(tokens, dtype=dtype)
-                yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens)
+
+                yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens, dtype=tokenizer.dtype)
 
                 if (refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0) or force_refresh:
                     # to prevent memory leaks, we refresh the tokenizer every so often
