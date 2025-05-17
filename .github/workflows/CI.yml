@@ -20,7 +20,6 @@ env:
   DOLMA_TESTS_SKIP_AWS: ${{ secrets.AWS_ACCESS_KEY_ID == '' && 'true' || 'false' }}
   DOLMA_TEST_S3_PREFIX: s3://dolma-tests
   RUST_CHANNEL: stable
-  UV_LOG_FORMAT: plain
 
 jobs:
   info:
@@ -74,17 +73,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Cache Virtual Env and Rust targets
-        uses: actions/cache@v4
+      - name: Cache Virtual Env
+        uses: actions/cache@v3
         # name for referring later
         id: cache-venv
         with:
-          # what we cache: the virtualenv and rust target directory
-          path: |
-            ./.venv/
-            ./target/release/
+          # what we cache: the virtualenv
+          path: ./.venv/
           # The cache key depends on pyproject.toml and Cargo.toml
-          key: ${{ runner.os }}-venv-rust-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml', '**/Cargo.lock') }}
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml, **/Cargo.lock') }}--${{ hashFiles('python/**', 'src/**') }}
 
       - name: Setup system libraries
         if: steps.cache-venv.outputs.cache-hit != 'true'
@@ -109,14 +106,16 @@ jobs:
       - name: Create a new Python environment & install maturin
         if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
-          pip install -U uv
-          uv venv
-          uv pip install maturin==1.8.6
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -U pip
+          pip install maturin==1.7.1
 
-      - name: Install Dolma wheels
+      - name: Install dolma wheels
         if: steps.cache-venv.outputs.cache-hit != 'true'
         run: |
-          uv run maturin build --release  -i $(which python) --out dist
+          source .venv/bin/activate
+          maturin build --release  -i $(which python) --out dist
           wheel_path=$(ls dist/*.whl)
           pip install "${wheel_path}[all]"
 
@@ -135,8 +134,8 @@ jobs:
           - name: Check Python style
             run: |
               set -e
-              uv run isort --check --verbose .
-              uv run black --check --verbose .
+              isort --check --verbose .
+              black --check --verbose .
 
           - name: Check Rust style
             run: |
@@ -144,44 +143,32 @@ jobs:
 
           - name: Lint Python
             run: |
-              uv run flake8 tests/python/ && uv run flake8 python/
+              flake8 tests/python/ && flake8 python/
 
           - name: Types Python
             run: |
-              uv run mypy tests/python/ && uv run mypy python/
+              mypy tests/python/ && mypy python/
 
           - name: Run Python tests
             run: |
-              uv run pytest -vs --color=yes tests/python/
+              pytest -vs --color=yes tests/python/
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install uv
-        run: |
-          pip install -U uv
-
       - name: Cache Virtual Env
-        uses: actions/cache@v4
+        uses: actions/cache@v3
         # name for referring later
         id: cache-venv
         with:
           # what we cache: the virtualenv
-          path: |
-            ./.venv/
-            ./target/release/
+          path: ./.venv/
           # The cache key depends on pyproject.toml and Cargo.toml
-          key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml, **/Cargo.lock') }}
-
-      - name: Install latest version of toolkit # this is if cache is out of date
-        run: |
-          uv run maturin build --release  -i $(which python) --out dist
-          wheel_path=$(ls dist/*.whl)
-          pip install "${wheel_path}[all]"
-
+          key: ${{ runner.os }}-venv-${{ hashFiles('**/pyproject.toml', '**/Cargo.toml, **/Cargo.lock') }}--${{ hashFiles('python/**', 'src/**') }}
 
       - name: ${{ matrix.task.name }}
         run: |
+          source .venv/bin/activate
           ${{ matrix.task.run }}
 
   build-linux:
