@@ -1,6 +1,8 @@
+import copy
 import csv
 import json
 from pathlib import Path
+from re import M
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest import TestCase
 
@@ -415,3 +417,181 @@ class TestTokenizeSpecialTokens(TestCase):
         tokens_default = tokenizer_default.encode(text)
         tokens_split = tokenizer_split.encode(text)
         self.assertEqual(tokens_default, tokens_split)
+
+
+class TestBosEosTokenAddition(TestCase):
+    def setUp(self):
+        self.tokenizer_config = DOLMA2_TOKENIZER
+        self.documents = [
+            "I do not like living barely on the edge of legality.",
+            "Poor is the man who does not see the sun's rays.",
+            "Ishmishing is a word that is not in the dictionary, but in our hearts.",
+            "All must dress for the main event.",
+            "Coded springs are behind us.",
+        ]
+
+        self.tokenizer = Tokenizer.from_file(**self.tokenizer_config)
+
+        self.document_tokenized = [self.tokenizer.encode(doc, add_special_tokens=False) for doc in self.documents]
+
+        with TemporaryDirectory(delete=False) as tmpdir:
+            self.tmpdir = Path(tmpdir)
+            self.input_dir = self.tmpdir / "input"
+            self.output_dir = self.tmpdir / "output"
+            self.input_dir.mkdir(parents=True, exist_ok=True)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            with smart_open.open(self.input_dir / "000.json.gz", "wt") as f:
+                for i, doc in enumerate(self.documents):
+                    f.write(json.dumps({"text": doc, "id": f"doc-{i}"}) + "\n")
+
+        self.default_config = {
+            "destination": f"{self.output_dir}",
+            "documents": [f"{self.input_dir}/*.json.gz"],
+            "processes": 1,
+            "seed": 3920,
+            "dtype": "uint32",
+        }
+
+    def tearDown(self):
+        """Clean up any resources created in setUp."""
+        if hasattr(self, "tmpdir"):
+            import shutil
+
+            shutil.rmtree(self.tmpdir)
+
+    def _get_config(self, add_bos: bool = False, add_eos: bool = False):
+        config = copy.deepcopy(self.default_config)
+        config["tokenizer"] = {
+            "name_or_path": self.tokenizer_config["filename"],
+            "pad_token_id": self.tokenizer_config["pad_token_id"],
+        }
+        if add_bos:
+            config["tokenizer"]["bos_token_id"] = self.tokenizer_config[
+                "eos_token_id"
+            ]  # using eos token as bos token
+        if add_eos:
+            config["tokenizer"]["eos_token_id"] = self.tokenizer_config["eos_token_id"]
+        return config
+
+    def _run_tokenizer_and_read_output(self, config: dict) -> tuple[list[MetadataDict], list[int]]:
+        with NamedTemporaryFile(mode="wt") as f:
+            json.dump(config, f)
+            f.flush()
+            main(argv=["-c", f.name, "tokens"])
+
+        with smart_open.open(Path(config["destination"]) / "part-0-00000.csv.gz", "rt", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            metadata = [
+                MetadataDict(start=int(row[0]), end=int(row[1]), id=row[2], src=row[3], pos=int(row[4]))
+                for row in reader
+            ]
+
+        with smart_open.open(Path(config["destination"]) / "part-0-00000.npy", "rb") as f:
+            contents = numpy.memmap(f, dtype=config["dtype"], mode="r").tolist()
+
+        return metadata, contents
+
+    def test_adding_bos_token(self):
+        config = self._get_config(add_bos=True)
+        _, contents = self._run_tokenizer_and_read_output(config)
+
+        # we should have as many bos tokens as documents
+        count_sep = sum(1 for t in contents if t == self.tokenizer_config["eos_token_id"])
+        self.assertEqual(count_sep, len(self.documents))
+
+        # the sequence should start with a bos token
+        self.assertEqual(contents[0], self.tokenizer_config["eos_token_id"])
+
+        # the sequence should NOT end with an eos token
+        self.assertNotEqual(contents[-1], self.tokenizer_config["eos_token_id"])
+
+        # partition sequences
+        extracted_sequences = []
+        for i, token in enumerate(contents):
+            if i == 0:
+                extracted_sequences.append([])
+            elif token != self.tokenizer_config["eos_token_id"]:
+                extracted_sequences[-1].append(token)
+            else:
+                extracted_sequences.append([])
+
+        # now check if partitioned sequences exist in the original document tokenized
+        # note that order can be different cuz we shuffle during tokenization
+        expected = self.document_tokenized[:]
+        for sequence in extracted_sequences:
+            pos = expected.index(sequence)
+            self.assertEqual(sequence, expected[pos])
+            expected.pop(pos)
+        self.assertEqual(expected, [])
+
+    def test_adding_eos_token(self):
+        config = self._get_config(add_eos=True)
+        _, contents = self._run_tokenizer_and_read_output(config)
+
+        # we should have as many eos tokens as documents
+        count_sep = sum(1 for t in contents if t == self.tokenizer_config["eos_token_id"])
+        self.assertEqual(count_sep, len(self.documents))
+
+        # the sequence should end with an eos token
+        self.assertEqual(contents[-1], self.tokenizer_config["eos_token_id"])
+
+        # the sequence should NOT start with a bos token
+        self.assertNotEqual(contents[0], self.tokenizer_config["eos_token_id"])
+
+        # partition sequences
+        extracted_sequences = [[]]
+        for i, token in enumerate(contents):
+            if i == len(contents) - 1:
+                # do nothing on last symbol (should be eos, but you checked that above)
+                continue
+            elif token != self.tokenizer_config["eos_token_id"]:
+                extracted_sequences[-1].append(token)
+            else:
+                extracted_sequences.append([])
+
+        # now check if partitioned sequences exist in the original document tokenized
+        # note that order can be different cuz we shuffle during tokenization
+        expected = self.document_tokenized[:]
+        for sequence in extracted_sequences:
+            pos = expected.index(sequence)
+            self.assertEqual(sequence, expected[pos])
+            expected.pop(pos)
+        self.assertEqual(expected, [])
+
+    def test_adding_bos_and_eos_tokens(self):
+        config = self._get_config(add_bos=True, add_eos=True)
+        _, contents = self._run_tokenizer_and_read_output(config)
+
+        # we should have as many bos/eos tokens as twice the documents (we use same symbol for bos and eos)
+        count_sep = sum(1 for t in contents if t == self.tokenizer_config["eos_token_id"])
+        self.assertEqual(count_sep, len(self.documents) * 2)
+
+        # the sequence should start with a bos token
+        self.assertEqual(contents[0], self.tokenizer_config["eos_token_id"])
+
+        # the sequence should end with an eos token
+        self.assertEqual(contents[-1], self.tokenizer_config["eos_token_id"])
+
+        # partition sequences
+        extracted_sequences = []
+        for i, token in enumerate(contents):
+            if i == 0:
+                # first bos
+                extracted_sequences.append([])
+            if i == len(contents) - 1:
+                # do nothing on last symbol (should be eos, but you checked that above)
+                continue
+            elif token != self.tokenizer_config["eos_token_id"]:
+                extracted_sequences[-1].append(token)
+            elif contents[i - 1] != self.tokenizer_config["eos_token_id"]:
+                # this is EOS, otherwise previous token wouldnt be EOS
+                extracted_sequences.append([])
+
+        # now check if partitioned sequences exist in the original document tokenized
+        # note that order can be different cuz we shuffle during tokenization
+        expected = self.document_tokenized[:]
+        for sequence in extracted_sequences:
+            pos = expected.index(sequence)
+            self.assertEqual(sequence, expected[pos])
+            expected.pop(pos)
+        self.assertEqual(expected, [])

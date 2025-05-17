@@ -12,7 +12,17 @@ from itertools import chain
 from os import PathLike
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Generator, List, Optional, Tuple, Union, TypeVar, Callable, Type
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Generator,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+)
 
 import msgspec
 import numpy as np
@@ -356,7 +366,6 @@ def make_tokenizer(
     return tokenizer
 
 
-
 def make_spec_from_fields(name: str, *fields: tuple[str, type] | None) -> msgspec.Struct:
     """This function builds a msgspec.Struct from a list of field names and types.
     The field names can be nested, and the types can be nested dictionaries of types.
@@ -389,13 +398,26 @@ def make_spec_from_fields(name: str, *fields: tuple[str, type] | None) -> msgspe
 
 T = TypeVar("T")
 
+
 def make_retriever_for_field(field_name: str, field_type: Type[T]) -> Callable[[msgspec.Struct], T]:
-    if '.' in field_name:
-        curr, rest = field_name.split('.', 1)
-        fn = make_retriever_for_field(curr, field_type)
-        return lambda spec: fn(getattr(spec, rest))
+    if "." in field_name:
+        curr, rest = field_name.split(".", 1)
+        fn = make_retriever_for_field(rest, field_type)
+
+        def retriever(spec: msgspec.Struct) -> T:
+            if not hasattr(spec, curr):
+                raise AttributeError(f"Field {field_name} not found in {spec}")
+            return fn(getattr(spec, curr))
+
+        return retriever
     else:
-        return lambda spec: getattr(spec, field_name)
+
+        def retriever(spec: msgspec.Struct) -> T:
+            if not hasattr(spec, field_name):
+                raise AttributeError(f"Field {field_name} not found in {spec}")
+            return getattr(spec, field_name)
+
+        return retriever
 
 
 def tokenize_file(
@@ -406,6 +428,8 @@ def tokenize_file(
     id_field_name: str | None = "id",
     id_field_type: type = str,
     refresh_tokenizer_every: int = 0,
+    add_eos_token: bool = True,
+    add_bos_token: bool = False,
     **tokenizer_kwargs,
 ) -> Generator[TokenizerOutput, None, None]:
     """Tokenize a file of documents using the provided tokenizer; file is expected to be a gzipped JSON lines
