@@ -3,7 +3,7 @@ import csv
 import json
 from contextlib import ExitStack
 from pathlib import Path
-from re import M
+# Line removed as it is unused
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest import TestCase
 
