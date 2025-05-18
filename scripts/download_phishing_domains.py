@@ -11,8 +11,9 @@ from pathlib import Path
 import shutil
 from datetime import datetime
 import boto3
-from cached_path import cached_path
 import tempfile
+
+from dolma.core.paths import cached_path
 
 # source location
 phishing_domains = "https://raw.githubusercontent.com/mitchellkrogza/Phishing.Database/master/ALL-phishing-domains.tar.gz"    # noqa: E501
