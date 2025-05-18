@@ -8,7 +8,7 @@ from dolma.tokenizer.tokenizer import make_retriever_for_field, make_spec_from_f
 class TestNestedStruct(unittest.TestCase):
     def test_simple_struct(self):
         spec = make_spec_from_fields("test", ("a", int), ("b", int))
-        unit = spec(a=1, b=2)  # type: ignore
+        unit = spec(a=1, b=2)
         assert unit.a == 1
         assert unit.b == 2
 

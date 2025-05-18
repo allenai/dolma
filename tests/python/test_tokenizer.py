@@ -507,7 +507,7 @@ class TestBosEosTokenAddition(TestCase):
         self.assertNotEqual(contents[-1], self.tokenizer_config["eos_token_id"])
 
         # partition sequences
-        extracted_sequences = []
+        extracted_sequences: list[list[int]] = []
         for i, token in enumerate(contents):
             if i == 0:
                 extracted_sequences.append([])
