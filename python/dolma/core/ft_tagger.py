@@ -15,8 +15,8 @@ from fasttext import train_supervised
 from fasttext.FastText import _FastText
 
 from .data_types import DocResult, Document, Span, TextSlice
-from .taggers import BaseTagger
 from .paths import cached_path
+from .taggers import BaseTagger
 from .utils import split_paragraphs, split_sentences
 
 
