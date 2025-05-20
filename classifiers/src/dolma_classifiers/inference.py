@@ -388,8 +388,8 @@ def main(args: argparse.Namespace) -> None:
 
     # initialize distributed processing
     #rank, world_size = setup()
-    rank = os.environ["BEAKER_REPLICA_RANK"]
-    world_size = os.environ["BEAKER_REPLICA_COUNT"]
+    rank = int(os.environ["BEAKER_REPLICA_RANK"])
+    world_size = int(os.environ["BEAKER_REPLICA_COUNT"])
 
     # initialize wandb logging (if enabled)
     WandbLogger()
