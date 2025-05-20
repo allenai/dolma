@@ -1,8 +1,8 @@
 #! /bin/bash
 
 # Input parameters
-DOCUMENTS='s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/documents/global-shard_01_of_10/*/*zstd'
-MODEL_NAME="data-delve/gte-base-en-v1.5_topic-v3.8_url1"
+DOCUMENTS='s3://ai2-oe-data/jakep/s2pdf_dedupe_minhash_v1_mini/documents/*.jsonl.zst'
+MODEL_NAME="WebOrganizer/TopicClassifier-NoURL"
 NUM_NODES=1
 BATCH_SIZE=100
 PRIORITY="high"
@@ -43,10 +43,10 @@ gantry run \
     --env LOG_FILTER_TYPE=local_rank0_only \
     --env OMP_NUM_THREADS=8\
     --env BEAKER_USER_ID=$(beaker account whoami --format json | jq '.[0].name' -cr) \
-    --env-secret AWS_ACCESS_KEY_ID=davidg_AWS_ACCESS_KEY_ID \
-    --env-secret AWS_SECRET_ACCESS_KEY=davidg_AWS_SECRET_ACCESS_KEY \
-    --env-secret WANDB_API_KEY=davidg_WANDB_API_KEY \
-    --env-secret HF_TOKEN=davidg_HF_TOKEN \
+    --env-secret AWS_ACCESS_KEY_ID=jakep_AWS_ACCESS_KEY_ID \
+    --env-secret AWS_SECRET_ACCESS_KEY=jakep_AWS_SECRET_ACCESS_KEY \
+    --env-secret WANDB_API_KEY=jakep_WANDB_API_KEY \
+    --env-secret HF_TOKEN=jakep_HF_TOKEN \
     --shared-memory 100GiB \
     --memory 800GiB \
     --install "pip install -e classifiers/" \
@@ -67,7 +67,7 @@ gantry run \
         --wandb-entity ai2-llm \
         --model-name ${MODEL_NAME} \
         --num-workers 1 \
-        --text-key '.id\n.text'"
+        --text-key '.text'"
 
 
 #        --s contrib/datacomp/DCLM-refinedweb/global_shard_01_of_10 \

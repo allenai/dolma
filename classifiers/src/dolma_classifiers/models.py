@@ -170,7 +170,7 @@ class QualityModel(nn.Module, PyTorchModelHubMixin):
         return SequenceClassifierOutput(logits=outputs[:, 0, :])
 
 #Alexw classifier
-@Registry.add("data-delve/gte-base-en-v1.5_topic-v3.8_url1")
+@Registry.add("WebOrganizer/TopicClassifier")
 class DataDelveClassifier(BaseQualityClassifier):
     def __init__(
         self,
@@ -180,6 +180,28 @@ class DataDelveClassifier(BaseQualityClassifier):
         compile: bool = False,
         trust_remote_code: bool = True,
         input_template: str = ".id\n.text"
+    ):
+        super().__init__(
+            model_name=model_name,
+            device=device,
+            dtype=dtype,
+            compile=compile,
+            trust_remote_code=trust_remote_code,
+            input_template=input_template
+        )
+        self.model = self.model.to(device)
+
+#Alexw classifier with no URL
+@Registry.add("WebOrganizer/TopicClassifier-NoURL")
+class DataDelveClassifierNoURL(BaseQualityClassifier):
+    def __init__(
+        self,
+        model_name: str,
+        device: str,
+        dtype: str,
+        compile: bool = False,
+        trust_remote_code: bool = True,
+        input_template: str = ".text"
     ):
         super().__init__(
             model_name=model_name,
