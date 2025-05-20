@@ -387,7 +387,9 @@ def main(args: argparse.Namespace) -> None:
     console_logger = get_logger("main")
 
     # initialize distributed processing
-    rank, world_size = setup()
+    #rank, world_size = setup()
+    rank = os.environ["BEAKER_REPLICA_RANK"]
+    world_size = os.environ["BEAKER_REPLICA_COUNT"]
 
     # initialize wandb logging (if enabled)
     WandbLogger()
@@ -446,7 +448,7 @@ def main(args: argparse.Namespace) -> None:
 
     console_logger.info(f"Partitioned into {world_size} workers of with avg {files_per_process:.2f} files.")
     console_logger.info(f"GPU {rank}/{world_size} processing {len(partition_source_paths)} files from index {start_idx} to {end_idx}")
-    os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
+    #os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
     #chunk_size = 8
    # n_chunks = math.ceil(len(partition_source_paths) / chunk_size)
    # actual_chunk_size = math.ceil(len(partition_source_paths) / n_chunks)

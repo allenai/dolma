@@ -1,9 +1,9 @@
 #! /bin/bash
 
 # Input parameters
-DOCUMENTS='s3://ai2-oe-data/jakep/s2pdf_dedupe_minhash_v1_mini/documents/*.jsonl.zst'
+DOCUMENTS='s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality/documents/*.jsonl.gz'
 MODEL_NAME="WebOrganizer/TopicClassifier-NoURL"
-NUM_NODES=1
+NUM_NODES=64
 BATCH_SIZE=100
 PRIORITY="high"
 CLUSTER="ai2/augusta-google-*" #"ai2/augusta-google-*" # # "ai2/s2-*" 
@@ -34,8 +34,7 @@ gantry run \
     --host-networking \
     --venv 'base' \
     --priority "${PRIORITY}" \
-    --leader-selection \
-    --gpus ${NUM_GPUS} \
+    --gpus 1\
     --replicas ${NUM_NODES} \
     --preemptible \
     --cluster "${CLUSTER}" \
@@ -51,14 +50,7 @@ gantry run \
     --memory 800GiB \
     --install "pip install -e classifiers/" \
     --yes \
-    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && torchrun \
-        --nnodes ${NUM_NODES}:${NUM_NODES} \
-        --nproc-per-node 1 \
-        --rdzv_id 12347 \
-        --rdzv_backend static \
-        --rdzv_endpoint \${BEAKER_LEADER_REPLICA_HOSTNAME}:29400 \
-        --node_rank \${BEAKER_REPLICA_RANK} \
-        --rdzv_conf 'read_timeout=3600' \
+    -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && python \
         -m dolma_classifiers.inference \
         --source-prefix ${DOCUMENTS} \
         --batch-size ${BATCH_SIZE} \
