@@ -46,8 +46,6 @@ gantry run \
     --env-secret AWS_SECRET_ACCESS_KEY=jakep_AWS_SECRET_ACCESS_KEY \
     --env-secret WANDB_API_KEY=jakep_WANDB_API_KEY \
     --env-secret HF_TOKEN=jakep_HF_TOKEN \
-    --shared-memory 100GiB \
-    --memory 800GiB \
     --install "pip install -e classifiers/" \
     --yes \
     -- /bin/bash -c "huggingface-cli download ${MODEL_NAME} && python \
