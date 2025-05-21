@@ -1,0 +1,519 @@
+streams:
+  - name: s2pdf_datadelve_adult
+    # common documents list
+    documents: &docs
+      - s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality/documents/*.jsonl.gz
+    # common attributes list
+    attributes: &attrs
+      - WebOrganizer_TopicClassifier_NoURL
+    # common output settings
+    output:
+      <<: &output_common
+        max_size_in_bytes: 104_857_600
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/adult/documents
+    # common filter skeleton
+    filter:
+      <<: &filter_common
+        syntax: jq
+        exclude: []
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Adult[0][0]
+
+  - name: s2pdf_datadelve_art_design
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/art_design/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Art_Design[0][0]
+
+  - name: s2pdf_datadelve_software_dev
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/software_dev/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Software_Dev[0][0]
+
+  - name: s2pdf_datadelve_crime_law
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/crime_law/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Crime_Law[0][0]
+
+  - name: s2pdf_datadelve_education_jobs
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/education_jobs/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Education_Jobs[0][0]
+
+  - name: s2pdf_datadelve_hardware
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/hardware/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Hardware[0][0]
+
+  - name: s2pdf_datadelve_entertainment
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/entertainment/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Entertainment[0][0]
+
+  - name: s2pdf_datadelve_social_life
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/social_life/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Social_Life[0][0]
+
+  - name: s2pdf_datadelve_fashion_beauty
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/fashion_beauty/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Fashion_Beauty[0][0]
+
+  - name: s2pdf_datadelve_finance_business
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/finance_business/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startsWith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Finance_Business[0][0]
+
+  - name: s2pdf_datadelve_food_dining
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/food_dining/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Food_Dining[0][0]
+
+  - name: s2pdf_datadelve_games
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/games/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Games[0][0]
+
+  - name: s2pdf_datadelve_health
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/health/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Health[0][0]
+
+  - name: s2pdf_datadelve_history
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/history/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_History[0][0]
+
+  - name: s2pdf_datadelve_home_hobbies
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/home_hobbies/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Home_Hobbies[0][0]
+
+  - name: s2pdf_datadelve_industrial
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/industrial/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Industrial[0][0]
+
+  - name: s2pdf_datadelve_literature
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/literature/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Literature[0][0]
+
+  - name: s2pdf_datadelve_politics
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/politics/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Politics[0][0]
+
+  - name: s2pdf_datadelve_religion
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/religion/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Religion[0][0]
+
+  - name: s2pdf_datadelve_science_tech
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/science_tech/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Science_Tech[0][0]
+
+  - name: s2pdf_datadelve_software
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/software/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Software[0][0]
+
+  - name: s2pdf_datadelve_sports_fitness
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/sports_fitness/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Sports_Fitness[0][0]
+
+  - name: s2pdf_datadelve_transportation
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/transportation/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Transportation[0][0]
+
+  - name: s2pdf_datadelve_travel
+    documents: *docs
+    attributes: *attrs
+    output:
+      <<: *output_common
+      path: s3://ai2-llm/pretraining-data/sources/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve/travel/documents
+    filter:
+      <<: *filter_common
+      include:
+        - >-
+          (
+            .attributes
+            | to_entries
+            | map(
+                select(.key | startswith("WebOrganizer_TopicClassifier_NoURL_"))
+                | .value[0][0]
+              )
+            | max
+          )
+          == .attributes.WebOrganizer_TopicClassifier_NoURL_Travel[0][0]
+
+work_dir:
+  input:  "/tmp/pii_removal_mix/input"
+  output: "/tmp/pii_removal_mix/output"
+
+processes: 94
