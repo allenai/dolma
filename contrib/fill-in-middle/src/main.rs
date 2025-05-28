@@ -1,10 +1,14 @@
 use clap::Parser;
 use std::io::{BufRead, Error};
 use std::path::PathBuf;
+use std::fs::File;
+use std::io::Read;
 
+use glob::glob;
 use mj_io::{build_pbar, expand_dirs, read_pathbuf_to_mem, write_mem_to_pathbuf};
 use rayon::prelude::*;
 use serde_json;
+use zstd::stream::Decoder;
 
 mod fim;
 
@@ -106,33 +110,77 @@ fn map_paths_to_destination(inputs: &Vec<PathBuf>, dest_prefix: PathBuf) -> Vec<
 fn find_all_paths(inputs: Vec<PathBuf>) -> Vec<PathBuf> {
     let all_paths: Vec<PathBuf> = inputs
         .into_iter()
-        .map(|path| {
-            let manual_ext: Option<Vec<String>>; // Store Vec<String> instead of &[&str]
-            let input_paths: Vec<PathBuf>;
+        .flat_map(|path| {
+            // Check if the path string contains wildcards
+            let path_str = path.to_string_lossy();
+            if path_str.contains('*') || path_str.contains('?') || path_str.contains('[') {
+                // Handle wildcard patterns directly with glob
+                match glob(&path_str) {
+                    Ok(entries) => entries.filter_map(Result::ok).collect(),
+                    Err(_) => Vec::new(),
+                }
+            } else if path.is_file() {
+                // For a single file, just return it
+                vec![path]
+            } else {
+                // Handle regular paths 
+                let manual_ext: Option<Vec<String>>;
+                let input_paths: Vec<PathBuf>;
 
-            match path.extension() {
-                Some(ext) => {
-                    let ext_str = ext.to_string_lossy().into_owned(); // Convert to owned String
-                    manual_ext = Some(vec![ext_str]); // Store as Vec<String>
-                    let mut trunk_path = path.clone();
-                    trunk_path.pop();
-                    input_paths = vec![trunk_path];
+                match path.extension() {
+                    Some(ext) => {
+                        let ext_str = ext.to_string_lossy().into_owned();
+                        manual_ext = Some(vec![ext_str]);
+                        let mut trunk_path = path.clone();
+                        trunk_path.pop();
+                        input_paths = vec![trunk_path];
+                    }
+                    None => {
+                        manual_ext = None;
+                        input_paths = vec![path];
+                    }
                 }
-                None => {
-                    manual_ext = None;
-                    input_paths = vec![path];
-                }
+
+                let manual_ext_refs: Option<Vec<&str>> = manual_ext
+                    .as_ref()
+                    .map(|v| v.iter().map(|s| s.as_str()).collect());
+                
+                expand_dirs(input_paths, manual_ext_refs.as_deref()).unwrap_or_default()
             }
-
-            // Convert Vec<String> to Vec<&str> before passing it to expand_dirs
-            let manual_ext_refs: Option<Vec<&str>> = manual_ext
-                .as_ref()
-                .map(|v| v.iter().map(|s| s.as_str()).collect());
-            expand_dirs(input_paths, manual_ext_refs.as_deref()).unwrap_or_default()
         })
-        .flatten()
         .collect();
-    return all_paths;
+    
+    all_paths
+}
+
+// Function to read either normal or zstd-compressed file
+fn read_file_with_zstd_support(path: &PathBuf) -> Result<Vec<u8>, Error> {
+    // Check if file has .zst extension
+    let is_zstd = path.extension().map_or(false, |ext| ext == "zst") || 
+                 path.to_string_lossy().ends_with(".jsonl.zst");
+    
+    if is_zstd {
+        // Handle zstd compressed file
+        let file = File::open(path)?;
+        let mut decoder = Decoder::new(file)?;
+        let mut buffer = Vec::new();
+        decoder.read_to_end(&mut buffer)?;
+        Ok(buffer)
+    } else {
+        // Convert from BufReader<Cursor<Vec<u8>>> to Vec<u8>
+        match read_pathbuf_to_mem(path) {
+            Ok(buf_reader) => {
+                let mut buffer = Vec::new();
+                for line in buf_reader.lines() {
+                    let line = line?;
+                    buffer.extend_from_slice(line.as_bytes());
+                    buffer.push(b'\n');
+                }
+                Ok(buffer)
+            },
+            Err(e) => Err(Error::new(std::io::ErrorKind::Other, format!("Failed to read file: {:?}", e))),
+        }
+    }
 }
 
 fn process_single(
@@ -155,7 +203,7 @@ fn process_single(
     };
 
     println!("Processing {:?} -> {:?}", src_path, dst_path);
-    let src_buf = read_pathbuf_to_mem(src_path).unwrap();
+    let src_buf = read_file_with_zstd_support(src_path)?;
     let mut out_bytes: Vec<u8> = Vec::new();
     let newline: u8 = b'\n';
 
