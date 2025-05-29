@@ -6,8 +6,11 @@ Unit tests for code taggers.
 
 """
 
+import base64
 import re
 import unittest
+from pathlib import Path
+from typing import Optional
 
 from bs4 import BeautifulSoup
 
@@ -17,6 +20,7 @@ from dolma.taggers.code import (
     CodeRedPajamaTaggers,
     CodeSecretsTagger,
     CodeStarCoderTaggers2,
+    Learn2CodeTaggers,
 )
 
 DOC_WITH_SECRETS_AND_COPYRIGHT = """
@@ -236,3 +240,184 @@ class TestStarCoderTaggers(unittest.TestCase):
 
         self.assertEqual(result.spans[3].type, "code_to_text_ratio_html_doc")
         self.assertEqual(result.spans[3].score, 0.0)
+
+
+class TestLearn2CodeTaggers(unittest.TestCase):
+    def mk_doc(self, id="0", text="asdf", source=__file__, metadata_overrides=None) -> DocumentWithMetadata:
+        return DocumentWithMetadata(
+            id=id,
+            text=text,
+            source=source,
+            metadata={
+                "ext": "py",
+                "path": "/some/path/to/this/file.py",
+                **(metadata_overrides or {}),
+            },
+        )
+
+    def assert_doc_span_score(
+        self, doc: DocumentWithMetadata, span_type: str, span_score: float, msg: Optional[str] = None
+    ) -> None:
+        for span in doc.spans:
+            if span.type is span_type:
+                self.assertEqual(span.score, span_score, msg=msg)
+                break
+        else:
+            raise AssertionError(f"No span of type `{span_type}`")
+
+    def test_doc_length(self) -> None:
+        tagger = Learn2CodeTaggers()
+        doc = self.mk_doc(text="a" * 9001)
+        tagged_doc = tagger.predict(doc)
+        self.assert_doc_span_score(tagged_doc, "num_chars_doc", 9001)
+
+    def test_gh_star_tagging(self) -> None:
+        tagger = Learn2CodeTaggers()
+
+        doc1 = self.mk_doc(metadata_overrides={"max_stars_count": 9000})
+        tagged_doc1 = tagger.predict(doc1)
+        self.assert_doc_span_score(tagged_doc1, "num_github_stars_doc", 9000)
+
+        doc2 = self.mk_doc(metadata_overrides={"star_events_count": 9000})
+        tagged_doc2 = tagger.predict(doc2)
+        self.assert_doc_span_score(tagged_doc2, "num_github_stars_doc", 9000)
+
+    def test_proportion_alpha_doc(self) -> None:
+        tagger = Learn2CodeTaggers()
+
+        texts_percentage_pairs = [
+            ("12345!@#%$", 0.0),
+            ("f234567890", 0.1),
+            ("f2a4567890", 0.2),
+            ("fDSa5j7890", 0.5),
+            ("ABcdEFgHij", 1.0),
+        ]
+
+        for doc_text, expected_percent_alpha in texts_percentage_pairs:
+            doc = self.mk_doc(text=doc_text)
+            tagged_doc = tagger.predict(doc)
+            self.assert_doc_span_score(tagged_doc, "proportion_alpha_doc", expected_percent_alpha)
+
+    def test_has_xml_template_doc(self) -> None:
+        tagger = Learn2CodeTaggers()
+
+        not_xml = "a" * 100 + "<?xml version="  # doesn't occur in first hundred characters
+        not_xml_doc = self.mk_doc(text=not_xml)
+        tagged_not_xml_doc = tagger.predict(not_xml_doc)
+        self.assert_doc_span_score(tagged_not_xml_doc, "has_xml_template_doc", 0.0)
+
+        is_xml = '<?xml version="1.0" encoding="UTF-8"?>\n<iamtag></iamtag>'
+        is_xml_doc = self.mk_doc(text=is_xml)
+        tagged_is_xml_doc = tagger.predict(is_xml_doc)
+        self.assert_doc_span_score(tagged_is_xml_doc, "has_xml_template_doc", 1.0)
+
+    def test_line_stats(self) -> None:
+        tagger = Learn2CodeTaggers()
+
+        lines = ["1" * 50, "2" * 150, "3" * 100]
+        text = "\n".join(lines)
+
+        doc = self.mk_doc(text=text)
+        tagged_doc = tagger.predict(doc)
+        self.assert_doc_span_score(tagged_doc, "num_lines_doc", 3)
+        self.assert_doc_span_score(tagged_doc, "mean_line_length_doc", 100.0)
+        self.assert_doc_span_score(tagged_doc, "max_line_length_doc", 150)
+
+    def test_b64_encoding_tagging(self) -> None:
+        tagger = Learn2CodeTaggers()
+
+        to_encode = b"hello i am some text that is sufficiently long to encode and trigger the regexes we have"
+        base64_encoded_substring = base64.b64encode(to_encode).decode("utf-8")
+        full_text = (
+            " " * len(base64_encoded_substring)
+            + base64_encoded_substring
+            + " " * 2 * len(base64_encoded_substring)
+        )
+
+        doc = self.mk_doc(text=full_text)
+        tagged_doc = tagger.predict(doc)
+        self.assert_doc_span_score(tagged_doc, "longest_seq_b64_doc", len(base64_encoded_substring))
+        self.assert_doc_span_score(tagged_doc, "proportion_b64_doc", 0.25)
+
+    def test_hexadecimal_filter(self) -> None:
+        tagger = Learn2CodeTaggers()
+
+        hex_examples = [
+            ("c_style_array", "0x1A,0x2B,0x3C,0x4D,0x5E,0x6F,0x7A,0x8B "),
+            ("hex_dump", "1A 2B 3C 4D 5E 6F 7A 8B "),
+        ]
+
+        for name, example in hex_examples:
+            full_text = "a" * (len(example) - 1) + " " + example + "z" * 2 * len(example)
+            doc = self.mk_doc(text=full_text)
+            tagged_doc = tagger.predict(doc)
+            self.assert_doc_span_score(
+                tagged_doc, "longest_seq_hexadecimal_doc", len(example), f"{name} is wrong length"
+            )
+            self.assert_doc_span_score(tagged_doc, "proportion_hexadecimal_doc", 0.25, f"{name} wrong percentage")
+
+    def test_unicode_filter(self) -> None:
+        tagger = Learn2CodeTaggers()
+        unicode = "\\u0041\\u0042\\u0043\\u0044\\u0045\\u0046\\u0047\\u0048"
+        full_text = " " * len(unicode) + unicode + " " * len(unicode) + unicode
+        doc = self.mk_doc(text=full_text)
+        tagged_doc = tagger.predict(doc)
+        self.assert_doc_span_score(tagged_doc, "longest_seq_unicode_doc", len(unicode))
+        self.assert_doc_span_score(tagged_doc, "proportion_unicode_doc", 0.5)
+
+    def test_proportion_comments_doc(self) -> None:
+        tagger = Learn2CodeTaggers()
+        text = """
+        def thingy(asdf):
+            '''I am a docstring'''
+            return asdf
+        """.strip()
+
+        expected_comment_length = len("I am a docstring")
+
+        doc = self.mk_doc(text=text, metadata_overrides={"ext": "py"})
+        tagged_doc = tagger.predict(doc)
+        self.assert_doc_span_score(tagged_doc, "proportion_comments_doc", expected_comment_length / len(text))
+
+    def test_proportion_text_in_html(self) -> None:
+        tagger = Learn2CodeTaggers()
+        visible_text = "I am the visible text" * 20
+        text = f"""<html><body><div>{visible_text}</div></body></html>""".strip()
+
+        expected_visible_text_length = len(visible_text)
+        doc = self.mk_doc(text=text, metadata_overrides={"ext": "html"})
+        tagged_doc = tagger.predict(doc)
+        self.assert_doc_span_score(
+            tagged_doc, "proportion_text_in_html_doc", expected_visible_text_length / len(text)
+        )
+
+    def test_is_special_text_file_doc(self) -> None:
+        tagger = Learn2CodeTaggers()
+
+        special_ones = [
+            "asdf/requirement.txt",
+            "asdf/requirements.txt",
+            "asdf/dev_requirements.txt",
+            "asdf/readme.txt",
+            "asdf/todo.txt",
+            "asdf/Description.txt",
+            "asdf/CMAKELISTS.txt",
+        ]
+
+        not_so_special_ones = ["asdf/birthdays.txt", "asdf/readme.md", "readme"]
+
+        for special_one in special_ones:
+            extension = Path(special_one).suffix.replace(".", "")
+            doc = self.mk_doc(special_one, metadata_overrides={"path": special_one, "ext": extension})
+            tagged_doc = tagger.predict(doc)
+            self.assert_doc_span_score(
+                tagged_doc, "is_special_text_file_doc", 1, msg=f"`{special_one}` wasn't so special"
+            )
+
+        for not_special in not_so_special_ones:
+            extension = Path(not_special).suffix.replace(".", "")
+            doc = self.mk_doc(not_special, metadata_overrides={"path": not_special, "ext": extension})
+            tagged_doc = tagger.predict(doc)
+            self.assert_doc_span_score(
+                tagged_doc, "is_special_text_file_doc", 0, msg=f"`{not_special}` was seen as special"
+            )
