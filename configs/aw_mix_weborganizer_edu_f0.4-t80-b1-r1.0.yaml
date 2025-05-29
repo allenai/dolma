@@ -1,0 +1,18 @@
+processes: 190
+streams:
+- attributes:
+  - weborganizer_fasttext
+  compression:
+    input: zst
+    output: zst
+  documents:
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  filter:
+    exclude: []
+    include:
+    - $.attributes[?(@.weborganizer_fasttext__weborganizer_edu__score[0][2] >= 0.354260000)]
+  name: p80.000_to_p100.000
+  output:
+    max_size_in_bytes: 1073741824
+    path: s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/weborganizer_edu_f0.4-t80-b1-r1.0/p80.000_to_p100.000
+  upsample: 2.0

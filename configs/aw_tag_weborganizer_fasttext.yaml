@@ -1,0 +1,11 @@
+experiment: weborganizer_fasttext
+taggers:
+  - weborganizer-edu
+  - weborganizer-dclm
+  - weborganizer-edu-regmix
+  - weborganizer-dclm-regmix
+  - random_number_v1
+processes: 80
+documents: 
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  # - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd

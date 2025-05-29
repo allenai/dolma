@@ -50,6 +50,13 @@ class DclmQualityClassifier(BaseFastTextTagger):
         return [Prediction(label="score", score=self.predict_text(text_slice.text))]
 
 
+def float_or_zero(s: str) -> float:
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
 @TaggerRegistry.add("fineweb-edu-fasttext-gt2")
 class FinewebEduBinaryClassifier(BaseFastTextTagger):
     MODEL_PATH = "/home/ec2-user/dolma/fineweb_edu_gt2_bigram_200k.bin"
@@ -66,8 +73,8 @@ class FinewebEduBinaryClassifier(BaseFastTextTagger):
         # Extract the predicted label and its probability
         (labels, probs) = pred
         
-        label_score = np.array([float(label.removeprefix("__label__")) for label in labels])
-        
+        label_score = np.array([float_or_zero(label.removeprefix("__label__")) for label in labels])
+            
         mean_prediction = np.dot(label_score, probs).item()
         return mean_prediction
 
@@ -75,12 +82,37 @@ class FinewebEduBinaryClassifier(BaseFastTextTagger):
         return [Prediction(label="score", score=self.predict_text(text_slice.text))]
 
 
+
+@TaggerRegistry.add("weborganizer-edu")
+class WebOrganizerEduClassifier(FinewebEduBinaryClassifier):
+    MODEL_PATH = "/home/ec2-user/dolma/weborganizer_0.25edu_bigram_200k.bin"
+
+
+@TaggerRegistry.add("weborganizer-dclm")
+class WebOrganizerDclmClassifier(FinewebEduBinaryClassifier):
+    MODEL_PATH = "/home/ec2-user/dolma/weborganizer_0.25fasttext_bigram_200k.bin"
+
+@TaggerRegistry.add("weborganizer-edu-regmix")
+class WebOrganizerEduRegmixClassifier(FinewebEduBinaryClassifier):
+    MODEL_PATH = "/home/ec2-user/dolma/weborganizer_0.25edu-regmix_bigram_200k.bin"
+
+
+@TaggerRegistry.add("weborganizer-dclm-regmix")
+class WebOrganizerDclmRegmixClassifier(FinewebEduBinaryClassifier):
+    MODEL_PATH = "/home/ec2-user/dolma/weborganizer_0.25fasttext-regmix_bigram_200k.bin"
+
+
+@TaggerRegistry.add("luca-fineweb2")
+class LucaFineweb2Classifier(FinewebEduBinaryClassifier):
+    MODEL_PATH = "/home/ec2-user/dolma/whitespace-fineweb2_lr05_ng3_n3M6.bin"
+
+
+
 @TaggerRegistry.add("fineweb-edu-fasttext-5way")
 class FinewebEdu5WayClassifier(FinewebEduBinaryClassifier):
     MODEL_PATH = "/home/ec2-user/dolma/fineweb_edu_5way_bigram_200k.bin"
-    NUM_CLASSES = 5
+    NUM_CLASSES = 6
     
-
 @TaggerRegistry.add("dclm-oh-eli5-log")
 class DclmQualityClassifierLog(DclmQualityClassifier):
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
