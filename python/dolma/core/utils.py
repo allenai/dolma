@@ -34,6 +34,24 @@ sent_tokenizer = PunktSentenceTokenizer()
 logger = get_logger(__name__)
 
 
+TYPES_MAP = {
+    "object": dict,
+    "dict": dict,
+    "array": list,
+    "list": list,
+    "string": str,
+    "str": str,
+    "number": float,
+    "float": float,
+    "integer": int,
+    "int": int,
+    "boolean": bool,
+    "bool": bool,
+    "null": type(None),
+    "None": type(None),
+}
+
+
 def make_variable_name(name: str, remove_multiple_underscores: bool = False) -> str:
     # use underscores for any non-valid characters in variable name
     name = re.sub(r"[^a-zA-Z0-9_]", "_", name)

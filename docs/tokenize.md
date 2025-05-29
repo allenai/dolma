@@ -44,3 +44,7 @@ The following parameters are supported either via CLI (e.g. `dolma tokens --para
 |`work_dir.output`|No| Path to a local scratch directory where temporary output files can be placed. If not provided, Dolma will make one for you and delete it upon completion. |
 |`dryrun`|No| If true, only print the configuration and exit without running the tokenizer. |
 |`seed`|No| Seed for random number generation. |
+|`fields.text_field_name`|No|Name of the text field in the input files. Can be a nested field (e.g. "text.nested"). Defaults to "text". |
+|`fields.text_field_type`|No|Type of the text field in the input files. Defaults to "str". |
+|`fields.id_field_name`|No|Name of the id field in the input files. Can be a nested field (e.g. "id.nested.more"). Can be set to null to disable id field. Defaults to "id". |
+|`fields.id_field_type`|No|Type of the id field in the input files. Defaults to "str". |
