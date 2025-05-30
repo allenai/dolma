@@ -1,0 +1,8 @@
+experiment: oh_uc_wc_eli5_fasttext
+taggers:
+  - oh-uc-wc-eli5
+  - oh-uc-wc-eli5-edu2 
+processes: 90
+documents: 
+  - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/2shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd
+  # - s3://ai2-llm/pretraining-data/sources/dclm/refinedweb/dolma_reformat/pools/5shards-dedup/documents/global-shard_03_of_10/*/*.jsonl.zstd

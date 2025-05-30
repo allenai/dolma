@@ -106,7 +106,13 @@ class WebOrganizerDclmRegmixClassifier(FinewebEduBinaryClassifier):
 class LucaFineweb2Classifier(FinewebEduBinaryClassifier):
     MODEL_PATH = "/home/ec2-user/dolma/whitespace-fineweb2_lr05_ng3_n3M6.bin"
 
+@TaggerRegistry.add("oh-uc-wc-eli5-edu2")
+class OhUcWcEli5Edu2Classifier(FinewebEduBinaryClassifier):
+    MODEL_PATH = "/home/ec2-user/dolma/oh_uc_wc_eli5_edu2_fasttext_model_bigram_200k.bin"
 
+@TaggerRegistry.add("oh-uc-wc-eli5")
+class OhUcWcEli5Classifier(FinewebEduBinaryClassifier):
+    MODEL_PATH = "/home/ec2-user/dolma/oh_uc_wc_eli5_fasttext_model_bigram_200k.bin"
 
 @TaggerRegistry.add("fineweb-edu-fasttext-5way")
 class FinewebEdu5WayClassifier(FinewebEduBinaryClassifier):
