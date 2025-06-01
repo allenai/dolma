@@ -1,10 +1,10 @@
 [project]
 name = "dolma"
-version = "1.1.2"
-description = "Data filters"
+version = "1.2.0"
+description = "Toolkit for pre-processing LLM training data."
 license = { text = "Apache-2.0" }
 readme = "README.md"
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "anyascii>=0.3.2",
     "blingfire==0.1.8",
@@ -232,7 +232,7 @@ recursive = true
 aggressive = 3
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 ignore_missing_imports = true
 no_site_packages = true
 allow_redefinition = false

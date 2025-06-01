@@ -20,8 +20,10 @@ from typing import (
     Optional,
     Tuple,
     Type,
+    TypeAlias,
     TypeVar,
     Union,
+    cast,
 )
 
 import msgspec
@@ -37,8 +39,8 @@ from .data_types import TokenizerOutput
 
 with necessary("transformers", soft=True) as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
-        from transformers import (
-            AutoTokenizer,  # pylint: disable=import-error # pyright: ignore
+        from transformers import (  # pylint: disable=import-error # pyright: ignore
+            AutoTokenizer,
         )
 
 PathOrStr = Union[str, PathLike]
@@ -368,6 +370,10 @@ def make_tokenizer(
     return tokenizer
 
 
+# we need type: ignore because mypy cannot deal with recursive type aliases
+NestedDict: TypeAlias = dict[str, Union[type, "NestedDict"]]  # type: ignore
+
+
 def make_spec_from_fields(name: str, *fields: tuple[str, type] | None) -> type[msgspec.Struct]:
     """This function builds a msgspec.Struct from a list of field names and types.
     The field names can be nested, and the types can be nested dictionaries of types.
@@ -376,16 +382,15 @@ def make_spec_from_fields(name: str, *fields: tuple[str, type] | None) -> type[m
     # we ignore any fields that are None; we group them into nested dictionary for shared prefixes.
     # we also need to keep track of the type of the field, so that we can use the correct decoder.
 
-    nested_dict = {}
-    for field in (f for f in fields if f is not None):
-        field_name, field_type = field
+    nested_dict: NestedDict = {}
+    for field_name, field_type in (f for f in fields if f is not None):
         nd = nested_dict
         *components, last_component = field_name.split(".")
         for component in components:
-            nd = nd.setdefault(component, {})
-        nd[last_component] = field_type
+            nd = cast(NestedDict, nd.setdefault(component, {}))
+        nd[last_component] = field_type  # pyright: ignore
 
-    def recursively_make_struct(name: str, nested_dict: dict[str, type | dict]) -> type[msgspec.Struct]:
+    def recursively_make_struct(name: str, nested_dict: NestedDict) -> type[msgspec.Struct]:
         """This function recursively builds a msgspec.Struct from a nested dictionary of field names and types."""
         spec = []
         for k, v in nested_dict.items():
@@ -443,8 +448,17 @@ def tokenize_file(
         (text_field_name, text_field_type),
         ((id_field_name, id_field_type) if id_field_name else None),
     )
-    text_retriever = make_retriever_for_field(text_field_name, text_field_type)
-    id_retriever = make_retriever_for_field(id_field_name, id_field_type) if id_field_name else None
+    text_retriever: Callable[[msgspec.Struct], str] = make_retriever_for_field(
+        field_name=text_field_name, field_type=text_field_type
+    )
+    id_retriever: Callable[[msgspec.Struct], str] | None = (
+        make_retriever_for_field(
+            field_name=id_field_name,
+            field_type=id_field_type,
+        )
+        if id_field_name
+        else None
+    )
     decoder = msgspec.json.Decoder(spec)
     force_refresh = False
 
@@ -474,7 +488,7 @@ def tokenize_file(
                     # extra copy to prevent memory leaks
                     tokens = np.array(tokens, dtype=dtype)
 
-                yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens)  # type: ignore
+                yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens)  # pyright: ignore
 
                 if (refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0) or force_refresh:
                     # to prevent memory leaks, we refresh the tokenizer every so often
