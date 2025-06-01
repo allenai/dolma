@@ -212,8 +212,9 @@ def _write_sample_to_streams(
             attributes_by_stream[tagger_output.path] = {}
 
         for tagger_key, tagger_value in tagger_data.items():
-            tagger_key = f"{tagger_output.exp}__{tagger_output.name}__{make_variable_name(tagger_key)}"
-            attributes_by_stream[tagger_output.path][tagger_key] = tagger_value
+            if tagger_key:
+                tagger_key = f"{tagger_output.exp}__{tagger_output.name}__{make_variable_name(tagger_key)}"
+                attributes_by_stream[tagger_output.path][tagger_key] = tagger_value
 
     for stream_path, attributes in attributes_by_stream.items():
         # actually write
