@@ -668,7 +668,7 @@ class TokenizeOnNonStandardFields(TestCase):
 
     def _decode_contents(self, contents: list[int]) -> list[str]:
         # partition sequences
-        extracted_sequences = []
+        extracted_sequences: list[list[int]] = []
         for i, token in enumerate(contents):
             if i == 0:
                 # first bos

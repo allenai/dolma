@@ -127,9 +127,10 @@ pii = [
 # language detection; by default, we use fastttext, everything else is optional
 lang = [
     "fasttext-wheel==0.9.2",
-    "LTpycld2==0.42",                  # fork of pycld2 that works on Apple Silicon
+    # "LTpycld2==0.42",                  # LTpycld2/pycld2 all so buggy; recommending user install them on their own
+    "pycld2",
     "lingua-language-detector>=2.0.0",
-    "langdetect>=1.0.9",
+    # "langdetect>=1.0.9",
 ]
 
 # extension to parse warc files

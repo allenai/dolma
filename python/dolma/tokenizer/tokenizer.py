@@ -37,7 +37,7 @@ from .data_types import TokenizerOutput
 
 with necessary("transformers", soft=True) as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
-        from transformers import AutoTokenizer  # pylint: disable=import-error
+        from transformers import AutoTokenizer  # pylint: disable=import-error # pyright: ignore
 
 PathOrStr = Union[str, PathLike]
 
@@ -472,7 +472,7 @@ def tokenize_file(
                     # extra copy to prevent memory leaks
                     tokens = np.array(tokens, dtype=dtype)
 
-                yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens, dtype=tokenizer.dtype)
+                yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens)    # type: ignore
 
                 if (refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0) or force_refresh:
                     # to prevent memory leaks, we refresh the tokenizer every so often
