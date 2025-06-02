@@ -1,9 +1,10 @@
 import copy
 import csv
 import json
+import shutil
 from contextlib import ExitStack
 from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory, mkdtemp
 from typing import Optional
 from unittest import TestCase
 
@@ -332,9 +333,10 @@ class TestShufflingTokenizer(TestCase):
             tokenizer_id, bos_token_id=bos_token_id, eos_token_id=eos_token_id, pad_token_id=pad_token_id
         )
 
-        with TemporaryDirectory() as tmpdir:
-            (source := Path(tmpdir) / "src").mkdir(parents=True, exist_ok=True)
-            (destination := Path(tmpdir) / "dst").mkdir(parents=True, exist_ok=True)
+        tmpdir = Path(mkdtemp())
+        try:
+            (source := tmpdir / "src").mkdir(parents=True, exist_ok=True)
+            (destination := tmpdir / "dst").mkdir(parents=True, exist_ok=True)
 
             RING_SIZE = 4
             LOCAL_SHUFFLE = 8
@@ -390,6 +392,9 @@ class TestShufflingTokenizer(TestCase):
             # verify that there has bee shuffling
             self.assertNotEqual(list(all_tokens), sorted(all_tokens))
 
+        finally:
+            shutil.rmtree(tmpdir)
+
 
 class TestTokenizeSpecialTokens(TestCase):
     def test_tokenize_special_tokens(self):
@@ -435,15 +440,14 @@ class TestBosEosTokenAddition(TestCase):
 
         self.document_tokenized = [self.tokenizer.encode(doc, add_special_tokens=False) for doc in self.documents]
 
-        with TemporaryDirectory(delete=False) as tmpdir:
-            self.tmpdir = Path(tmpdir)
-            self.input_dir = self.tmpdir / "input"
-            self.output_dir = self.tmpdir / "output"
-            self.input_dir.mkdir(parents=True, exist_ok=True)
-            self.output_dir.mkdir(parents=True, exist_ok=True)
-            with smart_open.open(self.input_dir / "000.json.gz", "wt") as f:
-                for i, doc in enumerate(self.documents):
-                    f.write(json.dumps({"text": doc, "id": f"doc-{i}"}) + "\n")
+        self.tmpdir = Path(mkdtemp())
+        self.input_dir = self.tmpdir / "input"
+        self.output_dir = self.tmpdir / "output"
+        self.input_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        with smart_open.open(self.input_dir / "000.json.gz", "wt") as f:
+            for i, doc in enumerate(self.documents):
+                f.write(json.dumps({"text": doc, "id": f"doc-{i}"}) + "\n")
 
         self.default_config = {
             "destination": f"{self.output_dir}",
@@ -456,8 +460,6 @@ class TestBosEosTokenAddition(TestCase):
     def tearDown(self):
         """Clean up any resources created in setUp."""
         if hasattr(self, "tmpdir"):
-            import shutil
-
             shutil.rmtree(self.tmpdir)
 
     def _get_config(self, add_bos: bool = False, add_eos: bool = False):
