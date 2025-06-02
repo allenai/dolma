@@ -9,7 +9,6 @@ from copy import deepcopy
 from enum import Enum
 from functools import cached_property
 from itertools import chain
-from logging import exception
 from os import PathLike
 from pathlib import Path
 from tempfile import TemporaryDirectory
