@@ -9,6 +9,7 @@ from copy import deepcopy
 from enum import Enum
 from functools import cached_property
 from itertools import chain
+from logging import exception
 from os import PathLike
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -462,10 +463,10 @@ def tokenize_file(
     decoder = msgspec.json.Decoder(spec)
     force_refresh = False
 
-    with smart_open.open(path, mode="rt") as input_stream:
-        path_hash = hashlib.sha256(path.encode()).hexdigest()
-        for i, line in enumerate(input_stream, start=1):
-            try:
+    try:
+        with smart_open.open(path, mode="rt") as input_stream:
+            path_hash = hashlib.sha256(path.encode()).hexdigest()
+            for i, line in enumerate(input_stream, start=1):
                 try:
                     row = decoder.decode(line)
                     row_id = id_retriever(row) if id_retriever else f"{path_hash}-{i}"
@@ -477,27 +478,28 @@ def tokenize_file(
 
                     # the actual tokenization happens here
                     tokens = tokenizer.encode(text, add_special_tokens=True)
-                except Exception:
+
+                    if refresh_tokenizer_every:
+                        # extra copy to prevent memory leaks
+                        tokens = np.array(tokens, dtype=dtype)
+
+                    yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens)  # pyright: ignore
+
+                    if (refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0) or force_refresh:
+                        # to prevent memory leaks, we refresh the tokenizer every so often
+                        del tokenizer
+                        gc.collect()
+                        tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
+
+                        # we reset the flag after refreshing the tokenizer
+                        force_refresh = False
+
+                except Exception as ex:
                     # in case of failure, we log the error and continue
                     # We refresh the tokenizer to prevent memory leaks from affecting the rest of the processing
-                    logger.warning("Error tokenizing %s:%d", path, i)
+                    logger.warning("Error processing line %s:%d: %s", path, i, ex)
                     force_refresh = True
                     continue
-
-                if refresh_tokenizer_every:
-                    # extra copy to prevent memory leaks
-                    tokens = np.array(tokens, dtype=dtype)
-
-                yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens)  # pyright: ignore
-
-                if (refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0) or force_refresh:
-                    # to prevent memory leaks, we refresh the tokenizer every so often
-                    del tokenizer
-                    gc.collect()
-                    tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
-
-                    # we reset the flag after refreshing the tokenizer
-                    force_refresh = False
-
-            except Exception as ex:
-                logger.error("Error processing %s:%d", path, i, exc_info=ex)
+    except Exception as ex:
+        # more catastrophic error, so we log the error and re-raise
+        logger.error("Error processing file %s", path, exc_info=ex)
