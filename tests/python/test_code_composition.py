@@ -1,4 +1,5 @@
 from unittest import TestCase
+import unittest
 
 from dolma.core.data_types import Document
 from dolma.taggers.code_composition import CodeProseCompositionClassifier
@@ -37,6 +38,7 @@ def baz():
 """
 
 
+@unittest.skip("Disable until path hf:// for code prose classifier is fixed")
 class TestDolmaCodeProseCompositionClassifier(TestCase):
     def setUp(self) -> None:
         self.code_composition_tagger = CodeProseCompositionClassifier()
