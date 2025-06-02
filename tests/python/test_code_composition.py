@@ -1,5 +1,5 @@
-from unittest import TestCase
 import unittest
+from unittest import TestCase
 
 from dolma.core.data_types import Document
 from dolma.taggers.code_composition import CodeProseCompositionClassifier
