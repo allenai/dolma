@@ -68,7 +68,7 @@ class BasePiiFilter(BaseTagger):
         # presidio
         if self.method == self.PRESIDIO:
             if not PRESIDIO_AVAILABLE:
-                raise RuntimeError("Presidio is not available; please run `pip install dolma[pii]`")
+                raise RuntimeError("Presidio is not available; please run `pip install presidio-analyzer`")
             self.analyzer = AnalyzerEngine()
 
     def predict(self, doc: Document) -> DocResult:
