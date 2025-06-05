@@ -7,9 +7,10 @@ from transformers import AutoTokenizer
 
 @click.command()
 @click.argument("tokenized_file")
-@click.option("--tokenizer-name-or-path", default="allenai/gpt-neox-olmo-dolma-v1_5")
+@click.option("--tokenizer-name-or-path", default="allenai/dolma2-tokenizer")
+@click.option("--dtype", default="uint32")
 @click.option("--chunk-size", default=1024**2, type=int)
-def inspect_tokenized(tokenized_file: str, tokenizer_name_or_path: str, chunk_size: int):
+def inspect_tokenized(tokenized_file: str, tokenizer_name_or_path: str, dtype: str, chunk_size: int):
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name_or_path)
 
     print('Vocab size:', tokenizer.vocab_size)
@@ -20,7 +21,7 @@ def inspect_tokenized(tokenized_file: str, tokenizer_name_or_path: str, chunk_si
 
     path = cached_path(tokenized_file)
     size = os.path.getsize(path)
-    data = np.memmap(path, dtype='uint16', mode='r', shape=(size // 2,))
+    data = np.memmap(path, dtype=dtype, mode='r', shape=(size // 2,))
 
     collection = []
     i = 0
