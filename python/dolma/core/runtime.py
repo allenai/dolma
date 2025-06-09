@@ -393,6 +393,7 @@ def create_and_run_tagger(
     profile_steps: Optional[int] = None,
     profile_sort_key: str = "tottime",
     profile_lines: int = 100,
+    document_dir: str = "documents",
 ):
     """This function creates a tagger and runs it on a list of documents.
 
@@ -445,7 +446,7 @@ def create_and_run_tagger(
 
     if destination is None:
         try:
-            destination = _make_paths_from_substitution(documents, "documents", f"attributes/{experiment}")
+            destination = _make_paths_from_substitution(documents, document_dir, f"attributes/{experiment}")
         except Exception as exp:
             raise RuntimeError("Could not make destination paths from documents paths") from exp
     elif isinstance(destination, str):
