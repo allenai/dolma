@@ -10,11 +10,12 @@ import argparse
 import logging
 import os
 import random
+import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from csv import reader, writer
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import mkdtemp
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -268,6 +269,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--source-prefix", type=str, required=True)
     parser.add_argument("-d", "--destination-prefix", type=str, required=True)
+    parser.add_argument("-l", "--local-tempdir", type=str, default=None)
     parser.add_argument("-m", "--min-size", type=int, default=1024 * 1024 * 1024)
     parser.add_argument("-w", "--max-workers", type=int, default=None)
     parser.add_argument("-r", "--random-seed", type=int, default=42)
@@ -288,6 +290,7 @@ def is_remote_path(path: str) -> bool:
 def main(
     source_prefix: str,
     destination_prefix: str,
+    local_tempdir: str | None = None,
     min_size: int = 1024 * 1024 * 1024,
     max_workers: int | None = None,
     random_seed: int = 42,
@@ -295,8 +298,8 @@ def main(
 ):
     random.seed(random_seed)
 
-    with TemporaryDirectory() as tempdir:
-        tempdir = Path(tempdir)
+    try:
+        tempdir = Path(local_tempdir) if local_tempdir else Path(mkdtemp())
         if is_remote_path(source_prefix):
             local_paths = download_remote_paths(
                 source_prefix,
@@ -322,6 +325,8 @@ def main(
                 remote_prefix=destination_prefix,
                 max_workers=max_workers,
             )
+    finally:
+        shutil.rmtree(tempdir)
 
 
 if __name__ == "__main__":
@@ -333,4 +338,5 @@ if __name__ == "__main__":
         max_workers=args.max_workers,
         random_seed=args.random_seed,
         tokenizer_name_or_path=args.tokenizer_name_or_path,
+        local_tempdir=args.local_tempdir,
     )
