@@ -1,6 +1,37 @@
 """
+# Resharding Npy Files
+
 Given a prefix with npy and csv.gz files, this script will merge the npy files so that the output
 satisfies a minimum size constraint.
+
+
+## Usage
+
+In case we wanna reshard from S3, we can do:
+
+```bash
+python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded
+```
+
+If you wanna customize which local tempdir to use, you can do:
+
+```bash
+python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded -l /mnt/raid0/tempdir
+```
+
+If you want to reshard locally, you can do:
+
+```
+python -m dolma.tokenizer.reshard -s /path/to/local/prefix -d /path/to/local/prefix-resharded
+```
+
+To change number of workers, you can do:
+
+```bash
+python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded -w 10
+```
+
+## Contact info
 
 Author: Luca Soldaini
 Email:  luca@soldaini.net
