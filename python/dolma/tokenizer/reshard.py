@@ -11,11 +11,10 @@ import logging
 import os
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import ExitStack
 from csv import reader, writer
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import TemporaryDirectory, mkdtemp
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
