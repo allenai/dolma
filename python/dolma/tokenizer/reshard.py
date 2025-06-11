@@ -70,6 +70,19 @@ def download_file(remote_path: str, local_prefix: str | Path, client: "S3Client"
     return TokensMetadataPaths(local_npy, local_csv_gz)
 
 
+
+def map_local_paths(local_prefix: str | Path) -> list[TokensMetadataPaths]:
+    paths = []
+    for root, _, files in os.walk(local_prefix):
+        for file in files:
+            if file.endswith(".npy"):
+                npy_path = os.path.join(root, file)
+                csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
+                paths.append(TokensMetadataPaths(npy_path, csv_path))
+    return paths
+
+
+
 def download_remote_paths(
     remote_path: str,
     local_prefix: str | Path,
@@ -121,7 +134,7 @@ def download_remote_paths(
     return all_paths
 
 
-def merge_single_npys(
+def merge_single_npy(
     paths: list[TokensMetadataPaths],
     destination: str | Path,
     dtype: np.dtype,
@@ -147,7 +160,7 @@ def merge_single_npys(
                 for row in rd:
                     start, end, id_, src, idx = row
                     rw.writerow(
-                        [int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx) + row_offset]
+                        [int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)]
                     )
                     row_count += 1
 
@@ -166,7 +179,13 @@ def merge_all_npys(
     max_workers = max_workers or os.cpu_count() or 1
 
     destination = Path(destination)
-    tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path)
+
+    if Path(tokenizer_name_or_path).exists():
+        logger.info("Loading tokenizer from local file %s", tokenizer_name_or_path)
+        tokenizer = Tokenizer.from_file(tokenizer_name_or_path)
+    else:
+        logger.info("Loading tokenizer from Hugging Face %s", tokenizer_name_or_path)
+        tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path)
 
     # We group together npys that need to be merged.
     grouped_paths: list[list[TokensMetadataPaths]] = [[]]
@@ -184,7 +203,7 @@ def merge_all_npys(
         futures = []
         for i, group in enumerate(grouped_paths):
             future = pool.submit(
-                merge_single_npys,
+                merge_single_npy,
                 paths=group,
                 destination=destination / f"{i:06d}.npy",
                 dtype=tokenizer.dtype,
@@ -261,31 +280,61 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-    random.seed(args.random_seed)
+def is_remote_path(path: str) -> bool:
+    prot = urlparse(path).scheme
+    if prot == "s3":
+        return True
+    elif prot == "file" or prot == "":
+        return False
+    else:
+        raise ValueError(f"Invalid protocol: {prot}; only S3 or local paths are supported.")
+
+
+def main(
+    source_prefix: str,
+    destination_prefix: str,
+    min_size: int = 1024 * 1024 * 1024,
+    max_workers: int | None = None,
+    random_seed: int = 42,
+    tokenizer_name_or_path: str = "allenai/dolma2-tokenizer",
+):
+    random.seed(random_seed)
 
     with TemporaryDirectory() as tempdir:
         tempdir = Path(tempdir)
-        local_paths = download_remote_paths(
-            args.source_prefix,
-            local_prefix=tempdir / "input",
-            max_workers=args.max_workers,
-        )
+        if is_remote_path(source_prefix):
+            local_paths = download_remote_paths(
+                source_prefix,
+                local_prefix=tempdir / "input",
+                max_workers=max_workers,
+            )
+        else:
+            local_paths = map_local_paths(source_prefix)
+
         random.shuffle(local_paths)
+
+        merge_destination = tempdir / "output" if is_remote_path(destination_prefix) else destination_prefix
         merge_all_npys(
             local_paths,
-            destination=tempdir / "output",
-            max_size=args.min_size,
-            tokenizer_name_or_path=args.tokenizer_name_or_path,
-            max_workers=args.max_workers,
+            destination=merge_destination,
+            max_size=min_size,
+            tokenizer_name_or_path=tokenizer_name_or_path,
+            max_workers=max_workers,
         )
-        upload_to_s3(
-            local_prefix=tempdir / "output",
-            remote_prefix=args.destination_prefix,
-            max_workers=args.max_workers,
-        )
-
+        if is_remote_path(destination_prefix):
+            upload_to_s3(
+                local_prefix=tempdir / "output",
+                remote_prefix=destination_prefix,
+                max_workers=max_workers,
+            )
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(
+        source_prefix=args.source_prefix,
+        destination_prefix=args.destination_prefix,
+        min_size=args.min_size,
+        max_workers=args.max_workers,
+        random_seed=args.random_seed,
+        tokenizer_name_or_path=args.tokenizer_name_or_path,
+    )
