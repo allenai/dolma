@@ -79,6 +79,8 @@ def download_remote_paths(
 
     client = client or boto3.client("s3")
 
+    max_workers = max_workers or os.cpu_count() or 1
+
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = []
 
@@ -99,6 +101,8 @@ def download_remote_paths(
             )
             futures.append(future)
 
+        logger.info(f"Downloading %s files from %s using %s workers...", len(futures), remote_path, max_workers)
+
         all_paths: list[TokensMetadataPaths] = []
         for future in tqdm(as_completed(futures), total=len(futures), desc="Downloading files"):
             try:
@@ -109,7 +113,9 @@ def download_remote_paths(
                 raise e
 
         logger.info(
-            f"{len(all_paths):,} NPYs; total: {sum(p.size for p in all_paths) / 1024 / 1024 / 1024:.2f} GB"
+            f"Found %s NumPy memmaps; total: %s GB",
+            len(all_paths),
+            sum(p.size for p in all_paths) / 1024 / 1024 / 1024,
         )
 
     return all_paths
@@ -157,6 +163,8 @@ def merge_all_npys(
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer",
     max_workers: int | None = None,
 ):
+    max_workers = max_workers or os.cpu_count() or 1
+
     destination = Path(destination)
     tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path)
 
@@ -168,7 +176,7 @@ def merge_all_npys(
         else:
             grouped_paths[-1].append(paired_path)
 
-    logger.info(f"Organizing files into {len(grouped_paths):,} groups...")
+    logger.info(f"Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers)
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = []
@@ -188,6 +196,8 @@ def merge_all_npys(
                 for future in futures:
                     future.cancel()
                 raise e
+
+        logger.info("Done merging NumPy memmaps.")
 
 
 def upload_single_file(
@@ -224,6 +234,9 @@ def upload_to_s3(
                     client=client,
                 )
                 futures.append(future)
+
+        logger.info(f"Uploading %s to %s using %s workers...", len(futures), remote_prefix, max_workers)
+
         for future in tqdm(as_completed(futures), total=len(futures), desc="Uploading files"):
             try:
                 future.result()
@@ -232,6 +245,7 @@ def upload_to_s3(
                     future.cancel()
                 raise e
 
+        logger.info("Done uploading files to S3.")
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -239,14 +253,14 @@ def parse_args():
     parser.add_argument("-d", "--destination-prefix", type=str, required=True)
     parser.add_argument("-m", "--min-size", type=int, default=1024 * 1024 * 1024)
     parser.add_argument("-w", "--max-workers", type=int, default=None)
-    parser.add_argument("-s", "--seed", type=int, default=42)
+    parser.add_argument("-r", "--random-seed", type=int, default=42)
     parser.add_argument("-t", "--tokenizer-name-or-path", type=str, default="allenai/dolma2-tokenizer")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    random.seed(args.seed)
+    random.seed(args.random_seed)
 
     with TemporaryDirectory() as tempdir:
         tempdir = Path(tempdir)
