@@ -101,7 +101,7 @@ def download_remote_paths(
             )
             futures.append(future)
 
-        logger.info(f"Downloading %s files from `%s` using %s workers...", len(futures), remote_path, max_workers)
+        logger.info("Downloading %s files from `%s` using %s workers...", len(futures), remote_path, max_workers)
 
         all_paths: list[TokensMetadataPaths] = []
         for future in tqdm(as_completed(futures), total=len(futures), desc="Downloading files"):
@@ -113,7 +113,7 @@ def download_remote_paths(
                 raise e
 
         logger.info(
-            f"Found %s NumPy memmaps; total: %.2f GB",
+            "Found %s NumPy memmaps; total: %.2f GB",
             len(all_paths),
             sum(p.size for p in all_paths) / 1024 / 1024 / 1024,
         )
@@ -177,7 +177,7 @@ def merge_all_npys(
             grouped_paths[-1].append(paired_path)
 
     logger.info(
-        f"Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
+        "Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
     )
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -237,7 +237,7 @@ def upload_to_s3(
                 )
                 futures.append(future)
 
-        logger.info(f"Uploading %s files to `%s` using %s workers...", len(futures), remote_prefix, max_workers)
+        logger.info("Uploading %s files to `%s` using %s workers...", len(futures), remote_prefix, max_workers)
 
         for future in tqdm(as_completed(futures), total=len(futures), desc="Uploading files"):
             try:
