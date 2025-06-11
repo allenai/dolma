@@ -6,25 +6,26 @@ Author: Luca Soldaini
 Email:  luca@soldaini.net
 """
 
+import argparse
+import logging
+import os
 import random
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tempfile import mkdtemp
-from urllib.parse import urlparse
-from dolma.tokenizer.tokenizer import Tokenizer
-import numpy as np
-import smart_open
-import boto3
-from tqdm import tqdm
 from contextlib import ExitStack
 from csv import reader, writer
 from dataclasses import dataclass
-import argparse
-import os
 from pathlib import Path
+from tempfile import TemporaryDirectory, mkdtemp
 from typing import TYPE_CHECKING
-from tempfile import TemporaryDirectory
+from urllib.parse import urlparse
+
+import boto3
+import numpy as np
+import smart_open
+from tqdm import tqdm
+
 from dolma.core.loggers import get_logger
-import logging
+from dolma.tokenizer.tokenizer import Tokenizer
 
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
@@ -58,6 +59,7 @@ def get_local_paths(prefix: str) -> list[TokensMetadataPaths]:
                 paths.append(TokensMetadataPaths(npy_path, csv_path))
     return paths
 
+
 def download_file(remote_path: str, local_prefix: str | Path, client: "S3Client") -> TokensMetadataPaths:
     assert remote_path.endswith(".npy")
     local_npy = os.path.join(local_prefix, basename := os.path.basename(remote_path))
@@ -68,8 +70,6 @@ def download_file(remote_path: str, local_prefix: str | Path, client: "S3Client"
     return TokensMetadataPaths(local_npy, local_csv_gz)
 
 
-
-
 def download_remote_paths(
     remote_path: str,
     local_prefix: str | Path,
@@ -78,8 +78,6 @@ def download_remote_paths(
 ) -> list[TokensMetadataPaths]:
 
     client = client or boto3.client("s3")
-
-
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = []
@@ -97,10 +95,7 @@ def download_remote_paths(
             local_path = local_prefix / Path(key).relative_to(prefix)
             local_path.parent.mkdir(parents=True, exist_ok=True)
             future = pool.submit(
-                download_file,
-                remote_path=remote_path,
-                local_prefix=local_path.parent,
-                client=client
+                download_file, remote_path=remote_path, local_prefix=local_path.parent, client=client
             )
             futures.append(future)
 
@@ -131,38 +126,28 @@ def merge_single_npys(
 
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
 
-    target_memmap = np.memmap(
-        npy_destination,
-        mode="w+",
-        shape=(total_size // dtype.itemsize,),
-        dtype=dtype
-    )
+    target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
 
     bytes_offset = row_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
         for path in paths:
             rw = writer(f)
             source_memmap = np.memmap(path.npy_path, mode="r", dtype=dtype, shape=(path.size // dtype.itemsize,))
-            target_memmap[bytes_offset:bytes_offset + source_memmap.shape[0]] = source_memmap
+            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = source_memmap
 
             row_count = 0
             with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
                 rd = reader(g)
                 for row in rd:
                     start, end, id_, src, idx = row
-                    rw.writerow([
-                        int(start) + bytes_offset,
-                        int(end) + bytes_offset,
-                        id_,
-                        src,
-                        int(idx) + row_offset
-                    ])
+                    rw.writerow(
+                        [int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx) + row_offset]
+                    )
                     row_count += 1
 
             bytes_offset += source_memmap.shape[0]
             row_offset += row_count
             del source_memmap
-
 
 
 def merge_all_npys(
@@ -246,6 +231,7 @@ def upload_to_s3(
                 for future in futures:
                     future.cancel()
                 raise e
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
