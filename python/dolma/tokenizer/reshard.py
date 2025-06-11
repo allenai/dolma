@@ -70,7 +70,6 @@ def download_file(remote_path: str, local_prefix: str | Path, client: "S3Client"
     return TokensMetadataPaths(local_npy, local_csv_gz)
 
 
-
 def map_local_paths(local_prefix: str | Path) -> list[TokensMetadataPaths]:
     paths = []
     for root, _, files in os.walk(local_prefix):
@@ -80,7 +79,6 @@ def map_local_paths(local_prefix: str | Path) -> list[TokensMetadataPaths]:
                 csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
                 paths.append(TokensMetadataPaths(npy_path, csv_path))
     return paths
-
 
 
 def download_remote_paths(
@@ -159,9 +157,7 @@ def merge_single_npy(
                 rd = reader(g)
                 for row in rd:
                     start, end, id_, src, idx = row
-                    rw.writerow(
-                        [int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)]
-                    )
+                    rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
                     row_count += 1
 
             bytes_offset += source_memmap.shape[0]
@@ -327,6 +323,7 @@ def main(
                 remote_prefix=destination_prefix,
                 max_workers=max_workers,
             )
+
 
 if __name__ == "__main__":
     args = parse_args()

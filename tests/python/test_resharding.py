@@ -1,13 +1,14 @@
 import csv
-from pathlib import Path
 import shutil
-import unittest
 import tempfile
-from dolma.cli.__main__ import main as cli_main
-from dolma.tokenizer.reshard import main as reshard_main
+import unittest
+from pathlib import Path
+
 import numpy as np
 import smart_open
 
+from dolma.cli.__main__ import main as cli_main
+from dolma.tokenizer.reshard import main as reshard_main
 
 DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2-test-tokenizer.json"
 
@@ -15,10 +16,10 @@ DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2
 class TestSynthResharding(unittest.TestCase):
 
     def make_memmap_and_csv(
-            self,
-            path: str,
-            doc_contents: list[list[int]],
-            doc_name: str,
+        self,
+        path: str,
+        doc_contents: list[list[int]],
+        doc_name: str,
     ):
         csv_path = Path(path).with_suffix(".csv.gz")
         npy_path = Path(path).with_suffix(".npy")
@@ -28,12 +29,12 @@ class TestSynthResharding(unittest.TestCase):
         with smart_open.open(csv_path, "w") as f:
             writer = csv.writer(f)
             total_length = sum(len(seq) for seq in doc_contents)
-            memmap_file = np.memmap(npy_path, mode="w+", shape=(total_length, ), dtype=np.uint32)
+            memmap_file = np.memmap(npy_path, mode="w+", shape=(total_length,), dtype=np.uint32)
 
             current_offset = 0
             for i, seq in enumerate(doc_contents):
-                memmap_file[current_offset:current_offset+len(seq)] = seq
-                writer.writerow([current_offset, current_offset+len(seq), f"{doc_name}_s{i:03d}", path, i])
+                memmap_file[current_offset : current_offset + len(seq)] = seq
+                writer.writerow([current_offset, current_offset + len(seq), f"{doc_name}_s{i:03d}", path, i])
                 current_offset += len(seq)
             memmap_file.flush()
 
@@ -44,23 +45,22 @@ class TestSynthResharding(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp_dir)
 
-
     def _read_all_sequences(self, dir: Path) -> tuple[dict[str, list[int]], dict[str, tuple[str, int]]]:
         sequences: dict[str, list[int]] = {}
         locations: dict[str, tuple[str, int]] = {}
         # check if contents are the same. order might be different so make you have to fetch metadata and compare
         for npy_path in dir.rglob("*.npy"):
-            arr = np.memmap(npy_path, mode="r", dtype=np.uint32, shape=(npy_path.stat().st_size // 4, ))
+            arr = np.memmap(npy_path, mode="r", dtype=np.uint32, shape=(npy_path.stat().st_size // 4,))
             csv_path = npy_path.with_suffix(".csv.gz")
             with smart_open.open(csv_path, "r") as f:
                 for row in csv.reader(f):
                     start, end, seq_id, path, loc = row
-                    sequences[seq_id] = arr[int(start):int(end)].tolist()
+                    sequences[seq_id] = arr[int(start) : int(end)].tolist()
                     locations[seq_id] = (path, int(loc))
         return sequences, locations
 
     def test_resharding(self):
-        target_size = 1024 #1 KB, doesnt matter
+        target_size = 1024  # 1 KB, doesnt matter
 
         doc1_contents = [
             [1, 2, 3, 4, 5],
@@ -75,7 +75,7 @@ class TestSynthResharding(unittest.TestCase):
             [51, 52, 53, 54, 55],
             [56, 57, 58, 59, 60],
             [61, 62, 63, 64, 65, 66, 67, 68, 69],
-            [70]
+            [70],
         ]
         for i, doc_contents in enumerate([doc1_contents, doc2_contents]):
             self.make_memmap_and_csv(
