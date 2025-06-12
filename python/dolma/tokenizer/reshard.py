@@ -1,5 +1,5 @@
 """
-# Resharding Npy Files
+# Adding tool to reshard npy files based on minimum desired size.
 
 Given a prefix with npy and csv.gz files, this script will merge the npy files so that the output
 satisfies a minimum size constraint.
@@ -37,14 +37,18 @@ Author: Luca Soldaini
 Email:  luca@soldaini.net
 """
 
-import argparse
+import csv
 import logging
+import math
 import os
 import random
+import re
 import shutil
+import subprocess
+import sys
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from csv import reader, writer
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import TYPE_CHECKING
@@ -53,6 +57,7 @@ from urllib.parse import urlparse
 import boto3
 import numpy as np
 import smart_open
+import yaml
 from tqdm import tqdm
 
 from dolma.core.loggers import get_logger
@@ -80,94 +85,14 @@ class TokensMetadataPaths:
         return os.path.getsize(self.npy_path)
 
 
-def get_local_paths(prefix: str) -> list[TokensMetadataPaths]:
-    paths = []
-    for root, _, files in os.walk(prefix):
-        for file in files:
-            if file.endswith(".npy"):
-                npy_path = os.path.join(root, file)
-                csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
-                paths.append(TokensMetadataPaths(npy_path, csv_path))
-    return paths
-
-
-def download_file(remote_path: str, local_prefix: str | Path, client: "S3Client") -> TokensMetadataPaths:
-    assert remote_path.endswith(".npy")
-    local_npy = os.path.join(local_prefix, basename := os.path.basename(remote_path))
-    local_csv_gz = os.path.join(local_prefix, basename.replace(".npy", ".csv.gz"))
-    bucket, key = (p := urlparse(remote_path)).netloc, p.path.lstrip("/")
-    client.download_file(bucket, key, local_npy)
-    client.download_file(bucket, key.replace(".npy", ".csv.gz"), local_csv_gz)
-    return TokensMetadataPaths(local_npy, local_csv_gz)
-
-
-def map_local_paths(local_prefix: str | Path) -> list[TokensMetadataPaths]:
-    paths = []
-    for root, _, files in os.walk(local_prefix):
-        for file in files:
-            if file.endswith(".npy"):
-                npy_path = os.path.join(root, file)
-                csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
-                paths.append(TokensMetadataPaths(npy_path, csv_path))
-    return paths
-
-
-def download_remote_paths(
-    remote_path: str,
-    local_prefix: str | Path,
-    client: "S3Client | None" = None,
-    max_workers: int | None = None,
-) -> list[TokensMetadataPaths]:
-
-    client = client or boto3.client("s3")
-
-    max_workers = max_workers or os.cpu_count() or 1
-
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = []
-
-        bucket, prefix = (p := urlparse(remote_path)).netloc, p.path.lstrip("/")
-        for file_attrs in client.list_objects(Bucket=bucket, Prefix=prefix).get("Contents", []):
-            assert isinstance(file_attrs, dict)
-            if (key := file_attrs.get("Key")) is None:
-                continue
-
-            if not key.endswith(".npy"):
-                continue
-
-            remote_path = f"s3://{bucket}/{key}"
-            local_path = local_prefix / Path(key).relative_to(prefix)
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            future = pool.submit(
-                download_file, remote_path=remote_path, local_prefix=local_path.parent, client=client
-            )
-            futures.append(future)
-
-        logger.info("Downloading %s files from `%s` using %s workers...", len(futures), remote_path, max_workers)
-
-        all_paths: list[TokensMetadataPaths] = []
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Downloading files"):
-            try:
-                all_paths.append(future.result())
-            except Exception as e:
-                for future in futures:
-                    future.cancel()
-                raise e
-
-        logger.info(
-            "Found %s NumPy memmaps; total: %.2f GB",
-            len(all_paths),
-            sum(p.size for p in all_paths) / 1024 / 1024 / 1024,
-        )
-
-    return all_paths
-
-
-def merge_single_npy(
+def merge_group(
     paths: list[TokensMetadataPaths],
     destination: str | Path,
     dtype: np.dtype,
 ):
+    """
+    Given a list of paths, merge them into a single memmap.
+    """
     npy_destination = Path(destination)
     csv_destination = npy_destination.with_suffix(".csv.gz")
     total_size = sum(p.size for p in paths)
@@ -179,13 +104,14 @@ def merge_single_npy(
     bytes_offset = row_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
         for path in paths:
-            rw = writer(f)
+            rw = csv.writer(f)
             source_memmap = np.memmap(path.npy_path, mode="r", dtype=dtype, shape=(path.size // dtype.itemsize,))
             target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = source_memmap
+            target_memmap.flush()
 
             row_count = 0
             with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
-                rd = reader(g)
+                rd = csv.reader(g)
                 for row in rd:
                     start, end, id_, src, idx = row
                     rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
@@ -196,14 +122,87 @@ def merge_single_npy(
             del source_memmap
 
 
+def group_paths_by_max_size(
+    paths: list[TokensMetadataPaths],
+    max_size_bytes: int,
+) -> list[list[TokensMetadataPaths]]:
+    """
+    Group paths by max size.
+    """
+    counts = Counter(paths)
+    logger.info(
+        "Found %s unique paths from %s files; max repetition is %s",
+        len(counts),
+        len(paths),
+        max(counts.values()),
+    )
+
+    grouped_paths: list[list[TokensMetadataPaths]] = []
+    while len(counts) > 0:
+        # add a fresh group
+        grouped_paths.append([])
+
+        # partition in groups of max_num_files
+        for path, _ in sorted(counts.items(), key=lambda x: -x[1]):
+            if sum(p.size for p in grouped_paths[-1]) + path.size > max_size_bytes:
+                grouped_paths.append([path])
+            else:
+                grouped_paths[-1].append(path)
+
+        # decrease counts, remove paths with 0 count.
+        counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
+
+    logger.info(
+        "By size: organized %s files into %s groups of max %.2f GB",
+        len(paths),
+        len(grouped_paths),
+        max_size_bytes / 1024**3,
+    )
+
+    return grouped_paths
+
+
+def group_paths_by_max_num_files(
+    paths: list[TokensMetadataPaths],
+    max_num_files: int,
+) -> list[list[TokensMetadataPaths]]:
+    """
+    Group paths by max number of files.
+    """
+    counts = Counter(paths)
+    logger.info(
+        "Found %s unique paths from %s files; max repetition is %s",
+        len(counts),
+        len(paths),
+        max(counts.values()),
+    )
+
+    if (m := max(counts.values())) > max_num_files:
+        raise ValueError(f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}")
+
+    grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
+    # Distribute each element across groups in round-robin fashion
+    for element, count in counts.items():
+        # sample count buckets out of max_num_files where we could put the element
+        buckets = random.sample(range(max_num_files), count)
+        for bucket in buckets:
+            grouped_paths[bucket].append(element)
+
+    return grouped_paths
+
+
 def merge_all_npys(
     paths: list[TokensMetadataPaths],
     destination: str | Path,
-    max_size: int = 1024 * 1024 * 1024,
+    max_size_bytes: int | None = None,
+    max_num_files: int | None = None,
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer",
     max_workers: int | None = None,
 ):
     max_workers = max_workers or os.cpu_count() or 1
+
+    if len(paths) == 0:
+        raise ValueError("No paths provided")
 
     destination = Path(destination)
 
@@ -214,13 +213,13 @@ def merge_all_npys(
         logger.info("Loading tokenizer from Hugging Face %s", tokenizer_name_or_path)
         tokenizer = Tokenizer.from_pretrained(tokenizer_name_or_path)
 
-    # We group together npys that need to be merged.
-    grouped_paths: list[list[TokensMetadataPaths]] = [[]]
-    for paired_path in paths:
-        if sum(p.size for p in grouped_paths[-1]) + paired_path.size > max_size:
-            grouped_paths.append([paired_path])
-        else:
-            grouped_paths[-1].append(paired_path)
+    grouped_paths: list[list[TokensMetadataPaths]]
+    if max_num_files is not None:
+        grouped_paths = group_paths_by_max_num_files(paths, max_num_files)
+    elif max_size_bytes is not None:
+        grouped_paths = group_paths_by_max_size(paths, max_size_bytes)
+    else:
+        raise ValueError("Either max_size_bytes or max_num_files must be provided")
 
     logger.info(
         "Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
@@ -230,7 +229,7 @@ def merge_all_npys(
         futures = []
         for i, group in enumerate(grouped_paths):
             future = pool.submit(
-                merge_single_npy,
+                merge_group,
                 paths=group,
                 destination=destination / f"{i:06d}.npy",
                 dtype=tokenizer.dtype,
@@ -248,126 +247,181 @@ def merge_all_npys(
         logger.info("Done merging NumPy memmaps.")
 
 
-def upload_single_file(
-    local_path: str | Path,
-    remote_path: str,
-    client: "S3Client | None" = None,
-):
-    client = client or boto3.client("s3")
-    bucket, key = (p := urlparse(remote_path)).netloc, p.path.lstrip("/")
-    client.upload_file(Filename=str(local_path), Bucket=bucket, Key=key)
+@dataclass
+class ReshardingPrefixConfig:
+    """
+    Configuration for a resharding source.
 
+    Can be used to download the files and compute file up/down sampling.
+    """
 
-def upload_to_s3(
-    local_prefix: str | Path,
-    remote_prefix: str,
-    client: "S3Client | None" = None,
-    max_workers: int | None = None,
-):
-    client = client or boto3.client("s3")
-    local_prefix = Path(local_prefix)
+    prefix: str | Path
+    sample_rate: float
 
-    bucket, prefix = (p := urlparse(remote_prefix)).netloc, p.path.lstrip("/")
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = []
+    def __post_init__(self):
+        assert self.sample_rate > 0
+
+    def download(self, local_prefix: str | Path) -> "ReshardingPrefixConfig":
+        if urlparse(str(self.prefix)).scheme != "s3":
+            return self
+
+        logger.info("Downloading %s to %s", self.prefix, local_prefix)
+        remote_prefix_no_star = re.sub(r"(/|/\*)$", "", str(self.prefix))
+        local_prefix_no_trailing_slash = str(local_prefix).rstrip("/")
+        cmd = ["s5cmd", "cp", f"{remote_prefix_no_star}/*", f"{local_prefix_no_trailing_slash}/"]
+
+        logger.info("Running command: %s", " ".join(cmd))
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            print(f"s5cmd failed with error: {result.stderr}")
+            raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
+        return ReshardingPrefixConfig(
+            prefix=local_prefix,
+            sample_rate=self.sample_rate,
+        )
+
+    def take(self) -> list[TokensMetadataPaths]:
+        if urlparse(str(self.prefix)).scheme not in {"file", ""}:
+            raise ValueError(
+                f"Invalid protocol: {urlparse(str(self.prefix)).scheme}; "
+                f"only local paths are supported; download the files first."
+            )
+
+        local_prefix = Path(self.prefix)
+        paths = []
         for root, _, files in os.walk(local_prefix):
-
             for file in files:
-                rel_path = (Path(root) / file).relative_to(local_prefix)
-                dst = f"s3://{bucket}/{prefix}/{rel_path}"
-                future = pool.submit(
-                    upload_single_file,
-                    local_path=os.path.join(root, file),
-                    remote_path=dst,
-                    client=client,
-                )
-                futures.append(future)
+                if file.endswith(".npy"):
+                    npy_path = os.path.join(root, file)
+                    csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
+                    paths.append(TokensMetadataPaths(npy_path, csv_path))
 
-        logger.info("Uploading %s files to `%s` using %s workers...", len(futures), remote_prefix, max_workers)
+        repetition_rate = int(math.floor(self.sample_rate))
+        residual_frac = self.sample_rate - repetition_rate
 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Uploading files"):
-            try:
-                future.result()
-            except Exception as e:
-                for future in futures:
-                    future.cancel()
-                raise e
+        new_paths = paths * repetition_rate + random.sample(paths, round(residual_frac * len(paths)))
+        logger.info("Taking %s paths from %s using %s sample rate", len(new_paths), len(paths), self.sample_rate)
+        return new_paths
 
-        logger.info("Done uploading files to S3.")
+    def to_dict(self) -> dict:
+        return {"prefix": str(self.prefix), "sample_rate": self.sample_rate}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ReshardingPrefixConfig":
+        return cls(**d)
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-s", "--source-prefix", type=str, required=True)
-    parser.add_argument("-d", "--destination-prefix", type=str, required=True)
-    parser.add_argument("-l", "--local-tempdir", type=str, default=None)
-    parser.add_argument("-m", "--min-size", type=int, default=1024 * 1024 * 1024)
-    parser.add_argument("-w", "--max-workers", type=int, default=None)
-    parser.add_argument("-r", "--random-seed", type=int, default=42)
-    parser.add_argument("-t", "--tokenizer-name-or-path", type=str, default="allenai/dolma2-tokenizer")
-    return parser.parse_args()
+@dataclass
+class ReshardingConfig:
+    """Base configuration for resharding."""
+
+    source_prefixes: list[ReshardingPrefixConfig]
+    destination_prefix: str
+    local_tempdir: str | Path | None = None
+    max_size_bytes: int | None = None
+    max_num_files: int | None = None
+    max_workers: int = os.cpu_count() or 1
+    random_seed: int = 42
+    tokenizer_name_or_path: str = "allenai/dolma2-tokenizer"
+
+    def __post_init__(self):
+        if self.max_size_bytes is not None and self.max_num_files is not None:
+            raise ValueError("Cannot provide both max_size_bytes and max_num_files")
+        if self.max_size_bytes is None and self.max_num_files is None:
+            raise ValueError("Either max_size_bytes or max_num_files must be provided")
+
+        if self.local_tempdir is None:
+            logging.warning("No local tempdir provided; using a temporary directory")
+            self.local_tempdir = Path(mkdtemp())
+        else:
+            self.local_tempdir = Path(self.local_tempdir)
+
+    def to_dict(self) -> dict:
+        source_prefixes_dict = [p.to_dict() for p in self.source_prefixes]
+        return {**asdict(self), "source_prefixes": source_prefixes_dict}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ReshardingConfig":
+        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
+        return cls(**{**d, "source_prefixes": source_prefixes})
+
+    @classmethod
+    def from_file(cls, file_path: str | Path) -> "ReshardingConfig":
+        if file_path == "-":
+            return cls.from_dict(yaml.safe_load(sys.stdin))
+
+        with open(file_path, "r") as f:
+            return cls.from_dict(yaml.safe_load(f))
 
 
-def is_remote_path(path: str) -> bool:
-    prot = urlparse(path).scheme
-    if prot == "s3":
-        return True
-    elif prot == "file" or prot == "":
-        return False
-    else:
-        raise ValueError(f"Invalid protocol: {prot}; only S3 or local paths are supported.")
+def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int):
+    """
+    Upload a local directory to S3.
+    """
+    if urlparse(remote_prefix).scheme != "s3":
+        return
+
+    local_prefix_no_star = re.sub(r"(/|/\*)$", "", str(local_prefix))
+    remote_prefix_no_trailing_slash = str(remote_prefix).rstrip("/")
+    cmd = ["s5cmd", "cp", f"{local_prefix_no_star}/*", f"{remote_prefix_no_trailing_slash}/"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print(f"s5cmd failed with error: {result.stderr}")
+        raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
 
 
-def main(
-    source_prefix: str,
-    destination_prefix: str,
-    local_tempdir: str | None = None,
-    min_size: int = 1024 * 1024 * 1024,
-    max_workers: int | None = None,
-    random_seed: int = 42,
-    tokenizer_name_or_path: str = "allenai/dolma2-tokenizer",
-):
-    random.seed(random_seed)
+def reshard(config: ReshardingConfig):
+    random.seed(config.random_seed)
 
     try:
-        tempdir = Path(local_tempdir) if local_tempdir else Path(mkdtemp())
-        if is_remote_path(source_prefix):
-            local_paths = download_remote_paths(
-                source_prefix,
-                local_prefix=tempdir / "input",
-                max_workers=max_workers,
-            )
-        else:
-            local_paths = map_local_paths(source_prefix)
+        local_tempdir = Path(config.local_tempdir or mkdtemp())
+        local_tempdir.mkdir(parents=True, exist_ok=True)
 
-        random.shuffle(local_paths)
-
-        merge_destination = tempdir / "output" if is_remote_path(destination_prefix) else destination_prefix
-        merge_all_npys(
-            local_paths,
-            destination=merge_destination,
-            max_size=min_size,
-            tokenizer_name_or_path=tokenizer_name_or_path,
-            max_workers=max_workers,
+        local_output_dir = (
+            local_tempdir / "output"
+            if urlparse(config.destination_prefix).scheme == "s3"
+            else Path(config.destination_prefix)
         )
-        if is_remote_path(destination_prefix):
-            upload_to_s3(
-                local_prefix=tempdir / "output",
-                remote_prefix=destination_prefix,
-                max_workers=max_workers,
-            )
+
+        # download the files
+        source_prefixes = [
+            source_prefix.download(local_tempdir / f"input/{i:06d}")
+            for i, source_prefix in enumerate(config.source_prefixes)
+        ]
+
+        # get repetition aware samples
+        source_paths = [path for source_prefix in source_prefixes for path in source_prefix.take()]
+
+        # make destination directory
+        local_output_dir.mkdir(parents=True, exist_ok=True)
+
+        # merge the files
+        merge_all_npys(
+            source_paths,
+            destination=local_output_dir,
+            max_size_bytes=config.max_size_bytes,
+            max_num_files=config.max_num_files,
+            max_workers=config.max_workers,
+            tokenizer_name_or_path=config.tokenizer_name_or_path,
+        )
+
+        # upload the files
+        upload_to_s3(
+            local_prefix=local_output_dir,
+            remote_prefix=config.destination_prefix,
+            max_workers=config.max_workers,
+        )
+
     finally:
-        shutil.rmtree(tempdir)
+        shutil.rmtree(local_tempdir)
+
+
+def main():
+    config = ReshardingConfig.from_file(sys.argv[1])
+    reshard(config)
 
 
 if __name__ == "__main__":
-    args = parse_args()
-    main(
-        source_prefix=args.source_prefix,
-        destination_prefix=args.destination_prefix,
-        min_size=args.min_size,
-        max_workers=args.max_workers,
-        random_seed=args.random_seed,
-        tokenizer_name_or_path=args.tokenizer_name_or_path,
-        local_tempdir=args.local_tempdir,
-    )
+    main()

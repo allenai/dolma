@@ -9,7 +9,7 @@ import numpy as np
 import smart_open
 
 from dolma.cli.__main__ import main as cli_main
-from dolma.tokenizer.reshard import main as reshard_main
+from dolma.tokenizer.reshard import ReshardingConfig, reshard
 
 DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2-test-tokenizer.json"
 
@@ -126,14 +126,22 @@ class TestSynthResharding(BaseTestResharding):
 
         input_dir = Path(self.tmp_dir) / "input"
         output_dir = Path(self.tmp_dir) / "output"
-        reshard_main(
-            source_prefix=str(input_dir),
-            destination_prefix=str(output_dir),
-            min_size=target_size,
-            max_workers=1,
-            random_seed=42,
-            tokenizer_name_or_path=str(DOLMA2_TOKENIZER),
+
+        config = ReshardingConfig.from_dict(
+            {
+                "source_prefixes": [
+                    {
+                        "prefix": str(input_dir),
+                        "sample_rate": 1.0,
+                    }
+                ],
+                "destination_prefix": str(output_dir),
+                "max_size_bytes": target_size,
+                "random_seed": 42,
+                "tokenizer_name_or_path": str(DOLMA2_TOKENIZER),
+            }
         )
+        reshard(config)
 
         # check if size of npy files in input dir is less than target size
         input_dir_size = sum(f.stat().st_size for f in input_dir.rglob("*.npy"))
@@ -264,13 +272,17 @@ class TestEndToEndResharding(BaseTestResharding):
                 f.flush()
                 cli_main(["-c", f.name, "tokens"])
 
-        reshard_main(
-            source_prefix=f"{self.tmp_dir}/tokens",
-            destination_prefix=f"{self.tmp_dir}/resharded",
-            min_size=1000,
-            max_workers=1,
-            random_seed=42,
-            tokenizer_name_or_path=str(DOLMA2_TOKENIZER),
+        config = ReshardingConfig.from_dict(
+            {
+                "source_prefixes": [
+                    {"prefix": f"{self.tmp_dir}/tokens", "sample_rate": 1.0},
+                ],
+                "destination_prefix": f"{self.tmp_dir}/resharded",
+                "max_size_bytes": 1000,
+                "random_seed": 42,
+                "tokenizer_name_or_path": str(DOLMA2_TOKENIZER),
+            }
         )
+        reshard(config)
 
         self._check_equal(Path(self.tmp_dir) / "tokens", Path(self.tmp_dir) / "resharded")
