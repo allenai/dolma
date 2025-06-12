@@ -112,6 +112,14 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
         tokenizer_ring: List[Generator[TokenizerOutput, None, None]] = []
         tokenizer_sizes: List[int] = []
+
+        # TODO: make it work when ring_size < len(source_paths)
+        if ring_size < len(source_paths):
+            raise ValueError(
+                f"ring_size ({ring_size}) should be ≥ # of source_paths ({len(source_paths)}); "
+                "for now, increase ring_size or processes to avoid this error. Will be fixed in the future."
+            )
+
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
             tokenizer_ring.append(
@@ -137,6 +145,13 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
             while len(source_paths) > 0 or len(tokenizer_ring) > 0:
                 for i in range(local_shuffle):
+
+                    if len(tokenizer_ring) == 0:
+                        # this can happen when the amount of content in the ring is not
+                        # enough to collect a local_shuffle amount of rows. This is normal
+                        # in cases where we are trying to tokenize very small files.
+                        break
+
                     if sample_ring_prop:
                         # you are sampling proportionally to the size of files in the ring
                         j = np.random.choice(len(tokenizer_ring), p=tokenizer_probs)
@@ -192,11 +207,14 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
                 # try to write all the sequences, collect the ones that don't fit in remaining
                 remaining = memwriter.write_many(outputs=accumulator, flush=documents_cnt == 0)
-
-                if remaining:
+                # we need to pass over remaining multiple times cuz not all
+                # the remaining might fit onto a single memmap
+                while remaining:
                     # if we have remaining sequences, we need to close the current memwriter and open a new one
                     mm_cnt += 1
                     stack.pop_all().close()
+
+                    # create a new memwriter for the few remaining sequences
                     memwriter = stack.enter_context(
                         MemmapWriter(
                             path=destination_path + f"-{mm_cnt:05d}",
@@ -206,12 +224,16 @@ class MemMapParallelWriter(BaseParallelProcessor):
                     )
                     cls.increment_progressbar(queue, memmaps=1)
 
-                    # finally, write the remaining sequences
-                    memwriter.write_many(outputs=remaining, flush=True)
+                    # shuffle the remaining sequences
+                    random.shuffle(remaining)
 
+                    # finally, write the remaining sequences
+                    remaining = memwriter.write_many(outputs=remaining, flush=True)
+
+                # done writing, flush
+                memwriter.flush()
                 accumulator = []
 
-                memwriter.flush()
 
         cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
 
