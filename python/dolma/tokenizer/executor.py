@@ -234,7 +234,6 @@ class MemMapParallelWriter(BaseParallelProcessor):
                 memwriter.flush()
                 accumulator = []
 
-
         cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
 
     def __call__(self, num_readers: Optional[int] = None, **process_single_kwargs: Any):
