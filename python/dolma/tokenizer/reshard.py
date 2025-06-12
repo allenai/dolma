@@ -51,10 +51,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import mkdtemp
-from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
-import boto3
 import numpy as np
 import smart_open
 import yaml
@@ -65,9 +63,6 @@ from dolma.tokenizer.tokenizer import Tokenizer
 
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
-
-if TYPE_CHECKING:
-    from mypy_boto3_s3.client import S3Client
 
 
 @dataclass(frozen=True)
@@ -268,10 +263,10 @@ class ReshardingPrefixConfig:
         logger.info("Downloading %s to %s", self.prefix, local_prefix)
         remote_prefix_no_star = re.sub(r"(/|/\*)$", "", str(self.prefix))
         local_prefix_no_trailing_slash = str(local_prefix).rstrip("/")
-        cmd = ["s5cmd", "cp", f"{remote_prefix_no_star}/*", f"{local_prefix_no_trailing_slash}/"]
+        cmd = ["s5cmd", "cp", "-sp", f"{remote_prefix_no_star}/*", f"{local_prefix_no_trailing_slash}/"]
 
         logger.info("Running command: %s", " ".join(cmd))
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if result.returncode != 0:
             print(f"s5cmd failed with error: {result.stderr}")
@@ -364,8 +359,8 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
 
     local_prefix_no_star = re.sub(r"(/|/\*)$", "", str(local_prefix))
     remote_prefix_no_trailing_slash = str(remote_prefix).rstrip("/")
-    cmd = ["s5cmd", "cp", f"{local_prefix_no_star}/*", f"{remote_prefix_no_trailing_slash}/"]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    cmd = ["s5cmd", "cp", "-sp", f"{local_prefix_no_star}/*", f"{remote_prefix_no_trailing_slash}/"]
+    result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     if result.returncode != 0:
         print(f"s5cmd failed with error: {result.stderr}")
