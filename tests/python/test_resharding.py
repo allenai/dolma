@@ -4,20 +4,30 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import smart_open
 
 from dolma.cli.__main__ import main as cli_main
+from dolma.tokenizer import Tokenizer
 from dolma.tokenizer.reshard import ReshardingConfig, reshard
 
 DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2-test-tokenizer.json"
 
 
+class Sequence(NamedTuple):
+    tokens_ids: list[int]
+    path: str
+    loc: int
+    doc_id: str
+
+
 class BaseTestResharding(unittest.TestCase):
-    def _read_all_sequences(self, dir: Path) -> tuple[dict[str, list[int]], dict[str, tuple[str, int]]]:
-        sequences: dict[str, list[int]] = {}
-        locations: dict[str, tuple[str, int]] = {}
+    def _read_all_sequences(self, dir: Path) -> list[Sequence]:
+
+        sequences: list[Sequence] = []
+
         # check if contents are the same. order might be different so make you have to fetch metadata and compare
         for npy_path in dir.rglob("*.npy"):
             arr = np.memmap(npy_path, mode="r", dtype=np.uint32, shape=(npy_path.stat().st_size // 4,))
@@ -25,9 +35,14 @@ class BaseTestResharding(unittest.TestCase):
             with smart_open.open(csv_path, "r") as f:
                 for row in csv.reader(f):
                     start, end, seq_id, path, loc = row
-                    sequences[seq_id] = arr[int(start) : int(end)].tolist()
-                    locations[seq_id] = (path, int(loc))
-        return sequences, locations
+                    sequence = Sequence(
+                        tokens_ids=arr[int(start) : int(end)].tolist(),
+                        path=path,
+                        loc=int(loc),
+                        doc_id=seq_id,
+                    )
+                    sequences.append(sequence)
+        return sequences
 
     def _check_equal(self, input_dir: Path, output_dir: Path):
         # check if size of npy files in input dir is less than target size
@@ -52,19 +67,22 @@ class BaseTestResharding(unittest.TestCase):
         print(f"Found {input_csv_rows} csv rows in {input_dir}")
         print(f"Found {output_csv_rows} csv rows in {output_dir}")
 
-        input_sequences, input_locations = self._read_all_sequences(input_dir)
-        output_sequences, output_locations = self._read_all_sequences(output_dir)
+        input_sequences = self._read_all_sequences(input_dir)
+        output_sequences = self._read_all_sequences(output_dir)
 
         print(f"Found {len(input_sequences)} sequences in {input_dir}")
         print(f"Found {len(output_sequences)} sequences in {output_dir}")
 
-        for k in input_sequences:
-            self.assertIn(k, output_sequences)
-            self.assertEqual(input_sequences[k], output_sequences[k])
+        #
+        for input_seq in input_sequences:
+            output_locs = [i for i, v in enumerate(output_sequences) if v == input_seq]
+            self.assertGreaterEqual(len(output_locs), 1)
+            output_seq = output_sequences.pop(output_locs[0])
+            self.assertEqual(input_seq.tokens_ids, output_seq.tokens_ids)
+            self.assertEqual(input_seq.path, output_seq.path)
 
-        for k in input_locations:
-            self.assertIn(k, output_locations)
-            self.assertEqual(input_locations[k], output_locations[k])
+        # no more left
+        self.assertEqual(len(output_sequences), 0)
 
 
 class TestSynthResharding(BaseTestResharding):
@@ -286,3 +304,109 @@ class TestEndToEndResharding(BaseTestResharding):
         reshard(config)
 
         self._check_equal(Path(self.tmp_dir) / "tokens", Path(self.tmp_dir) / "resharded")
+
+    def test_resharding_with_multipliers(self):
+        paragraphs = [
+            [
+                [
+                    "The mountain trail twisted through ancient pines, their branches heavy with morning frost.",
+                    "Sarah adjusted her backpack and checked her compass one final time.",
+                    "Adventure called from the summit above, promising breathtaking views and the satisfaction of conquest.",
+                    "Each step forward brought her closer to her dream.",
+                ],
+                [
+                    "Captain Zorx piloted the starship through the nebula's swirling purple gases.",
+                    "The navigation computer beeped warnings about temporal anomalies ahead.",
+                    "His three-eyed crew members worked frantically at their holographic control panels.",
+                    "Earth was still twelve parsecs away, but the mission to save humanity had begun.",
+                ],
+            ],
+            [
+                [
+                    "Grandmother's secret recipe called for exactly seven pinches of cardamom.",
+                    "The kitchen filled with aromatic steam as the curry simmered gently.",
+                    "Three generations had perfected this dish, each adding their own special touch.",
+                    "Tonight, the family would gather to taste tradition made manifest in every spoonful.",
+                ],
+                [
+                    "The archaeologist's brush revealed intricate hieroglyphs carved into limestone.",
+                    "Each symbol told stories of pharaohs and gods from four thousand years past.",
+                    "Desert sand had preserved these ancient messages like a time capsule.",
+                    "Dr. Chen photographed every detail, knowing this discovery would rewrite history books completely.",
+                ],
+            ],
+        ]
+
+        doc_counts = {}
+        for i, paragraphs_group in enumerate(paragraphs):
+            location_group = self.tmp_dir / "documents" / f"g{i:03d}"
+            location_group.mkdir(parents=True, exist_ok=True)
+
+            for j, doc_texts in enumerate(paragraphs_group):
+                contents = doc_texts * 100
+                self._make_documents(
+                    texts=contents,
+                    doc_name=f"g{i:03d}_f{j:03d}",
+                    path=location_group / f"f{j:03d}.jsonl",
+                )
+                doc_counts[f"g{i:03d}"] = doc_counts.get(f"g{i:03d}", 0) + len(contents)
+
+            tokenizer_config = {
+                "documents": [f"{location_group}/*.jsonl"],
+                "destination": f"{self.tmp_dir}/tokens/g{i:03d}",
+                "tokenizer": {
+                    "name_or_path": str(DOLMA2_TOKENIZER),
+                    "eos_token_id": 100257,
+                    "pad_token_id": 100277,
+                },
+                # hack; tweaked max size to make sure we get 4 files per group of roughly same size
+                "max_size": 3150,
+                "ring_size": 2,
+                "debug": True,
+                "dtype": "uint32",
+            }
+
+            with tempfile.NamedTemporaryFile(mode="w") as f:
+                json.dump(tokenizer_config, f)
+                f.flush()
+                cli_main(["-c", f.name, "tokens"])
+
+        config = ReshardingConfig.from_dict(
+            {
+                "source_prefixes": [
+                    {"prefix": f"{self.tmp_dir}/tokens/g{i:03d}", "sample_rate": sample}
+                    for i, sample in enumerate((0.5, 3.3))
+                ],
+                "destination_prefix": f"{self.tmp_dir}/resharded",
+                "max_num_files": 4,
+                "random_seed": 42,
+                "tokenizer_name_or_path": str(DOLMA2_TOKENIZER),
+            }
+        )
+        reshard(config)
+
+        tokenizer = Tokenizer.from_file(str(DOLMA2_TOKENIZER), pad_token_id=100277, eos_token_id=100257)
+
+        docs = self._read_all_sequences(Path(self.tmp_dir) / "resharded")
+
+        counters: dict[str, dict[str, int]] = {}
+        text_counts: dict[str, int] = {}
+        for doc in docs:
+            text = tokenizer.decode(doc.tokens_ids)
+            text_counts[text] = text_counts.get(text, 0) + 1
+            group, file_seq = doc.doc_id.split("_", 1)
+            counters[group][file_seq] = counters.setdefault(group, {}).get(file_seq, 0) + 1
+
+        print(self.tmp_dir)
+        self.assertEqual(len(counters), 2)
+
+        # we take approximately half of this source, so we expect half of the IDs.
+        self.assertAlmostEqual(len(counters["g000"]), doc_counts["g000"] // 2, delta=10)
+
+        # we take 3.3x of this source, so we expect all ids to show up.
+        self.assertEqual(len(counters["g001"]), doc_counts["g001"])
+
+        # let's check that counts of ids are all over 3 for g001 but less than or equal to 4
+        for _, count in counters["g001"].items():
+            self.assertGreaterEqual(count, 3)
+            self.assertLessEqual(count, 5)

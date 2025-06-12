@@ -292,10 +292,18 @@ class ReshardingPrefixConfig:
                     csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
                     paths.append(TokensMetadataPaths(npy_path, csv_path))
 
-        repetition_rate = int(math.floor(self.sample_rate))
-        residual_frac = self.sample_rate - repetition_rate
+        new_paths = []
 
-        new_paths = paths * repetition_rate + random.sample(paths, round(residual_frac * len(paths)))
+        # if the multiplier k is > 1, we first take ⌊k⌋ copies of each path.
+        if (repetition_rate := int(math.floor(self.sample_rate))) > 0:
+            new_paths.extend(paths * repetition_rate)
+
+        # this is the remaining non-integer part of the sample rate; because the npys are actually uneven in
+        # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
+        # of same size, we can just take a random sample.
+        if (residual_frac := self.sample_rate - repetition_rate) > 0:
+            new_paths.extend(random.sample(paths, round(residual_frac * len(paths))))
+
         logger.info("Taking %s paths from %s using %s sample rate", len(new_paths), len(paths), self.sample_rate)
         return new_paths
 
