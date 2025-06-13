@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer//arxiv
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/arxiv
 local_tempdir: /mnt/raid0/resharding/arxiv
 max_num_files: 8
 source_prefixes:

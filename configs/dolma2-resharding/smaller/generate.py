@@ -23,7 +23,7 @@ paths = {
 }
 
 code_base_tokenized_path = "s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer"
-destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/"
+destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer"
 
 token_target = 6_000_000_000_000
 
@@ -71,8 +71,8 @@ script_dir = Path(__file__).parent
 def main():
     sizes = {}
 
-    for subset, path in tqdm.tqdm(paths.items(), desc="Getting sizes"):
-        sizes[subset] = get_size_of_prefix(f"{path}/") // 4 # 4 bytes per token
+    for subset, og_prefix in tqdm.tqdm(paths.items(), desc="Getting sizes"):
+        sizes[subset] = get_size_of_prefix(f"{og_prefix}/") // 4 # 4 bytes per token
 
     for subset, natural_size in sizes.items():
         desired_size = token_target * cross_source_pstar[subset]
@@ -94,7 +94,7 @@ def main():
         lang_config = {
             "source_prefixes": [
                 {
-                    "prefix": f"{path}/",
+                    "prefix": f"{paths[subset]}/",
                     "sample_rate": desired_size / natural_size,
                 }
             ],
