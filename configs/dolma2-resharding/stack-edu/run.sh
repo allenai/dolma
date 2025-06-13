@@ -25,5 +25,5 @@ set -ex
 
 
 for lang in "${langs[@]}"; do
-    uv run python -m dolma.tokenizer.reshard -c $script_dir/config/$lang.yaml
+    uv run python -m dolma.tokenizer.reshard $script_dir/config/$lang.yaml
 done
