@@ -157,6 +157,15 @@ def group_paths_by_max_size(
     return grouped_paths
 
 
+def weighted_bucket_sample(values: list, count: int, weights: list[float]) -> list[int]:
+    """Sample bucket indices with optional weights."""
+
+    # Use the weighted sampling approach
+    keys = [random.random() * (w / sum(weights)) for w in weights]
+    indices = sorted(range(len(values)), key=lambda i: keys[i], reverse=True)[:count]
+    return indices
+
+
 def group_paths_by_max_num_files(
     paths: list[TokensMetadataPaths],
     max_num_files: int,
@@ -179,9 +188,18 @@ def group_paths_by_max_num_files(
     # Distribute each element across groups in round-robin fashion
     for element, count in counts.items():
         # sample count buckets out of max_num_files where we could put the element
-        buckets = random.sample(range(max_num_files), count)
+        # we sample with weights proportional to the number of elements in the bucket,
+        # so that we are more likely to sample buckets with fewer elements.
+        buckets = weighted_bucket_sample(
+            values=list(range(max_num_files)),
+            count=count,
+            weights=[1 / (len(grouped_paths[i]) + 1) for i in range(max_num_files)],
+        )
         for bucket in buckets:
             grouped_paths[bucket].append(element)
+
+    # there is still a change that some buckets might be empty; we remove them.
+    grouped_paths = [group for group in grouped_paths if len(group) > 0]
 
     return grouped_paths
 
