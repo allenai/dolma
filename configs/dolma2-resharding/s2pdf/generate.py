@@ -86,6 +86,10 @@ def main():
 
         print('\n')
 
+        if desired_size == 0:
+            print(f"Skipping {lang} because desired size is 0")
+            continue
+
         lang_config = {
             "source_prefixes": [
                 {

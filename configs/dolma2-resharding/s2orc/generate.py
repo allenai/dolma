@@ -84,6 +84,10 @@ def main():
             print(f"Final size     : {dest_size / 1024 ** 3:.1f}B")
             print(f"Off by         : {(dest_size - desired_size) / desired_size:.2%}")
 
+        if desired_size == 0:
+            print(f"Skipping {lang} because desired size is 0\n")
+            continue
+
         print('\n')
 
         lang_config = {
