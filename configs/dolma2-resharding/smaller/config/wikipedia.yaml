@@ -1,0 +1,6 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/wikipedia
+local_tempdir: /mnt/raid0/resharding/wikipedia
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/wikipedia-dolma-0823/allenai/dolma2-tokenizer/
+  sample_rate: 0.6762205517514716

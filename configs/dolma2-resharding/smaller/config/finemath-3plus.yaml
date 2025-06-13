@@ -1,0 +1,6 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/finemath-3plus
+local_tempdir: /mnt/raid0/resharding/finemath-3plus
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/olmo3-final/math/allenai/dolma2-tokenizer/finemath_3plus_all/
+  sample_rate: 4.464219209990116

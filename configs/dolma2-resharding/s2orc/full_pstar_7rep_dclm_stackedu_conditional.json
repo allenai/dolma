@@ -1,0 +1,358 @@
+[
+  {
+    "domain": "finemath-3plus",
+    "weight": 0.02534037692905428
+  },
+  {
+    "domain": "arxiv",
+    "weight": 0.008284928006565287
+  },
+  {
+    "domain": "pes2o:agricultural-and-food-sciences",
+    "weight": 4.622617472706787e-05
+  },
+  {
+    "domain": "pes2o:art",
+    "weight": 4.6581338855215934e-05
+  },
+  {
+    "domain": "pes2o:biology",
+    "weight": 0.002412074178227011
+  },
+  {
+    "domain": "pes2o:business",
+    "weight": 4.705935218449206e-05
+  },
+  {
+    "domain": "pes2o:chemistry",
+    "weight": 0.00038247640503047577
+  },
+  {
+    "domain": "pes2o:computer-science",
+    "weight": 0.002239127111060107
+  },
+  {
+    "domain": "pes2o:economics",
+    "weight": 3.806030910401286e-05
+  },
+  {
+    "domain": "pes2o:education",
+    "weight": 1.4034843035037573e-05
+  },
+  {
+    "domain": "pes2o:engineering",
+    "weight": 0.0005776059236165428
+  },
+  {
+    "domain": "pes2o:environmental-science",
+    "weight": 0.00018825952878749036
+  },
+  {
+    "domain": "pes2o:geography",
+    "weight": 0.0
+  },
+  {
+    "domain": "pes2o:geology",
+    "weight": 3.9831108832885e-05
+  },
+  {
+    "domain": "pes2o:history",
+    "weight": 0.00019765378465017597
+  },
+  {
+    "domain": "pes2o:law",
+    "weight": 1.8715070478088768e-05
+  },
+  {
+    "domain": "pes2o:linguistics",
+    "weight": 0.0
+  },
+  {
+    "domain": "pes2o:materials-science",
+    "weight": 0.0004607075043111136
+  },
+  {
+    "domain": "pes2o:mathematics",
+    "weight": 0.0018546650875141467
+  },
+  {
+    "domain": "pes2o:medicine",
+    "weight": 0.0010734980783660393
+  },
+  {
+    "domain": "pes2o:philosophy",
+    "weight": 1.4311264117702517e-06
+  },
+  {
+    "domain": "pes2o:physics",
+    "weight": 0.001611378196129854
+  },
+  {
+    "domain": "pes2o:political-science",
+    "weight": 2.9735076810267174e-05
+  },
+  {
+    "domain": "pes2o:psychology",
+    "weight": 0.00011373228640587412
+  },
+  {
+    "domain": "pes2o:sociology",
+    "weight": 0.0
+  },
+  {
+    "domain": "wikipedia",
+    "weight": 0.0004161560262896992
+  },
+  {
+    "domain": "dclm:adult_content",
+    "weight": 0.0008604637538225818
+  },
+  {
+    "domain": "dclm:art_and_design",
+    "weight": 0.009398751445974391
+  },
+  {
+    "domain": "dclm:crime_and_law",
+    "weight": 0.021986819214342
+  },
+  {
+    "domain": "dclm:education_and_jobs",
+    "weight": 0.03224661303882609
+  },
+  {
+    "domain": "dclm:electronics_and_hardware",
+    "weight": 0.025964764527542726
+  },
+  {
+    "domain": "dclm:entertainment",
+    "weight": 0.07218784607270744
+  },
+  {
+    "domain": "dclm:fashion_and_beauty",
+    "weight": 9.576687137425168e-05
+  },
+  {
+    "domain": "dclm:finance_and_business",
+    "weight": 0.030587142205702363
+  },
+  {
+    "domain": "dclm:food_and_dining",
+    "weight": 0.010593864751442276
+  },
+  {
+    "domain": "dclm:games",
+    "weight": 0.05182771081249331
+  },
+  {
+    "domain": "dclm:health",
+    "weight": 0.07477279279505242
+  },
+  {
+    "domain": "dclm:history_and_geography",
+    "weight": 0.02038017886522691
+  },
+  {
+    "domain": "dclm:home_and_hobbies",
+    "weight": 0.006939006735919606
+  },
+  {
+    "domain": "dclm:industrial",
+    "weight": 0.011842017344805078
+  },
+  {
+    "domain": "dclm:literature",
+    "weight": 0.05133017161876193
+  },
+  {
+    "domain": "dclm:politics",
+    "weight": 0.016322807851153
+  },
+  {
+    "domain": "dclm:religion",
+    "weight": 0.014864938686090618
+  },
+  {
+    "domain": "dclm:science_math_and_technology",
+    "weight": 0.15812710692921592
+  },
+  {
+    "domain": "dclm:social_life",
+    "weight": 0.0034943576926323725
+  },
+  {
+    "domain": "dclm:software",
+    "weight": 0.03560252466837871
+  },
+  {
+    "domain": "dclm:software_development",
+    "weight": 0.08379739930984198
+  },
+  {
+    "domain": "dclm:sports_and_fitness",
+    "weight": 0.009831245585423438
+  },
+  {
+    "domain": "dclm:transportation",
+    "weight": 0.007369300773522248
+  },
+  {
+    "domain": "dclm:travel_and_tourism",
+    "weight": 0.0016525897675316314
+  },
+  {
+    "domain": "s2pdf:adult_content",
+    "weight": 1.3501041593759185e-05
+  },
+  {
+    "domain": "s2pdf:art_and_design",
+    "weight": 0.00012758814793678984
+  },
+  {
+    "domain": "s2pdf:crime_and_law",
+    "weight": 0.002061793251198444
+  },
+  {
+    "domain": "s2pdf:education_and_jobs",
+    "weight": 0.006981215913754443
+  },
+  {
+    "domain": "s2pdf:electronics_and_hardware",
+    "weight": 0.0007231005649672861
+  },
+  {
+    "domain": "s2pdf:entertainment",
+    "weight": 0.0002929328057536694
+  },
+  {
+    "domain": "s2pdf:fashion_and_beauty",
+    "weight": 0.0
+  },
+  {
+    "domain": "s2pdf:finance_and_business",
+    "weight": 0.0018435718914506468
+  },
+  {
+    "domain": "s2pdf:food_and_dining",
+    "weight": 8.627717468784264e-06
+  },
+  {
+    "domain": "s2pdf:games",
+    "weight": 3.164157802831277e-05
+  },
+  {
+    "domain": "s2pdf:health",
+    "weight": 0.015912295840079287
+  },
+  {
+    "domain": "s2pdf:history_and_geography",
+    "weight": 0.0006696020786176796
+  },
+  {
+    "domain": "s2pdf:home_and_hobbies",
+    "weight": 0.00010985009343144718
+  },
+  {
+    "domain": "s2pdf:industrial",
+    "weight": 0.007147084497447313
+  },
+  {
+    "domain": "s2pdf:literature",
+    "weight": 0.0012121683457820128
+  },
+  {
+    "domain": "s2pdf:politics",
+    "weight": 0.002442810645420764
+  },
+  {
+    "domain": "s2pdf:religion",
+    "weight": 0.0006760868013186327
+  },
+  {
+    "domain": "s2pdf:science_math_and_technology",
+    "weight": 0.08000817932498501
+  },
+  {
+    "domain": "s2pdf:social_life",
+    "weight": 2.8817054693909685e-05
+  },
+  {
+    "domain": "s2pdf:software",
+    "weight": 0.0016203804495775838
+  },
+  {
+    "domain": "s2pdf:software_development",
+    "weight": 0.011616077413179444
+  },
+  {
+    "domain": "s2pdf:sports_and_fitness",
+    "weight": 0.00048094175719034333
+  },
+  {
+    "domain": "s2pdf:transportation",
+    "weight": 0.0002983037057086616
+  },
+  {
+    "domain": "s2pdf:travel_and_tourism",
+    "weight": 1.3569255074814283e-05
+  },
+  {
+    "domain": "stack-edu:C",
+    "weight": 0.002763955092668454
+  },
+  {
+    "domain": "stack-edu:CSharp",
+    "weight": 0.00418942665795049
+  },
+  {
+    "domain": "stack-edu:Cpp",
+    "weight": 0.008175159289822114
+  },
+  {
+    "domain": "stack-edu:Go",
+    "weight": 0.0008958592033430516
+  },
+  {
+    "domain": "stack-edu:Java",
+    "weight": 0.01088783572014236
+  },
+  {
+    "domain": "stack-edu:JavaScript",
+    "weight": 0.005938910924847719
+  },
+  {
+    "domain": "stack-edu:Markdown",
+    "weight": 0.01134442050880124
+  },
+  {
+    "domain": "stack-edu:PHP",
+    "weight": 0.0041366010883721474
+  },
+  {
+    "domain": "stack-edu:Python",
+    "weight": 0.01246980070241549
+  },
+  {
+    "domain": "stack-edu:Ruby",
+    "weight": 0.0008956377157911114
+  },
+  {
+    "domain": "stack-edu:Rust",
+    "weight": 0.0009559790044866181
+  },
+  {
+    "domain": "stack-edu:SQL",
+    "weight": 0.001243368961502004
+  },
+  {
+    "domain": "stack-edu:Shell",
+    "weight": 0.001741265512388854
+  },
+  {
+    "domain": "stack-edu:Swift",
+    "weight": 0.0009666249589924565
+  },
+  {
+    "domain": "stack-edu:TypeScript",
+    "weight": 0.0015645197195864279
+  }
+]

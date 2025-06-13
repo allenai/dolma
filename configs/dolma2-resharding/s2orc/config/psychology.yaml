@@ -1,0 +1,6 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2orc/psychology
+local_tempdir: /mnt/raid0/resharding/s2orc/psychology
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/olmo3-final/s2orc/allenai/dolma2-tokenizer/psychology
+  sample_rate: 0.11140498129401391

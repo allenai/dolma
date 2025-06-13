@@ -1,0 +1,6 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2pdf/health
+local_tempdir: /mnt/raid0/resharding/s2pdf/health
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/health
+  sample_rate: 0.9071596856277312
