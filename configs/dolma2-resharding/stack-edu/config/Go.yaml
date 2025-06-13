@@ -1,4 +1,5 @@
 destination_prefix: s3://ai2-llm/preprocessed/dolma2/v01/allenai/dolma2-tokenizer/stack-edu/Go
+local_tempdir: /mnt/raid0/resharding/stack-edu/Go
 max_num_files: 8
 source_prefixes:
 - prefix: s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Go

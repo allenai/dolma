@@ -89,6 +89,7 @@ def main():
                 }
             ],
             "destination_prefix": f"{destination_path}/{lang}",
+            "local_tempdir": f"/mnt/raid0/resharding/stack-edu/{lang}",
             "max_num_files": 8
         }
         dest = script_dir / f"config/{lang}.yaml"
