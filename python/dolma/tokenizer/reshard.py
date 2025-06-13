@@ -320,8 +320,9 @@ class ReshardingPrefixConfig:
         # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
         # of same size, we can just take a random sample.
         if (residual_frac := self.sample_rate - repetition_rate) > 0:
-            new_paths.extend(random.sample(paths, round(residual_frac * len(paths))))
+            new_paths.extend(random.sample(paths, max(1, round(residual_frac * len(paths)))))
 
+        # sort by size
         logger.info("Taking %s paths from %s using %s sample rate", len(new_paths), len(paths), self.sample_rate)
         return new_paths
 
