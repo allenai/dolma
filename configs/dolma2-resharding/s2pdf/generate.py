@@ -19,8 +19,8 @@ cross_source_pstar = {
 with open(Path(__file__).parent / "full_pstar_7rep_dclm_stackedu_conditional.json", "r") as f:
     full_pstar = json.load(f)
 
-code_base_tokenized_path = "s3://ai2-llm/preprocessed/olmo3-final/s2orc/allenai/dolma2-tokenizer"
-destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2orc"
+code_base_tokenized_path = "s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer"
+destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2pdf"
 
 token_target = 6_000_000_000_000
 
@@ -51,21 +51,21 @@ script_dir = Path(__file__).parent
 
 def main():
 
-    s2orc_pstar = {
-        d['domain'].replace("pes2o:", ""): d['weight']
-        for d in full_pstar if d['domain'].startswith("pes2o:")
+    s2pdf_pstar = {
+        d['domain'].replace("s2pdf:", ""): d['weight']
+        for d in full_pstar if d['domain'].startswith("s2pdf:")
     }
 
     sizes = {}
-    for lang in tqdm.tqdm(s2orc_pstar, desc="Getting sizes"):
+    for lang in tqdm.tqdm(s2pdf_pstar, desc="Getting sizes"):
         sizes[lang] = get_size_of_prefix(f"{code_base_tokenized_path}/{lang}/") // 4 # 4 bytes per token
 
-    assert math.isclose(sum(s2orc_pstar.values()), cross_source_pstar["s2orc"], rel_tol=1e-6)
-    desired_code_size = token_target * sum(s2orc_pstar.values())
+    assert math.isclose(sum(s2pdf_pstar.values()), cross_source_pstar["s2pdf"], rel_tol=1e-6)
+    desired_code_size = token_target * sum(s2pdf_pstar.values())
     natural_code_size = sum(sizes.values())
 
     print(f"Found {natural_code_size / 1024 ** 3:.1f}B tokens in {len(sizes)} FoS")
-    print(f"Desired s2orc size: {desired_code_size / 1024 ** 3:.1f}B tokens")
+    print(f"Desired s2pdf size: {desired_code_size / 1024 ** 3:.1f}B tokens")
     print("\n")
 
     total_size_computed = 0
@@ -73,7 +73,7 @@ def main():
     for lang, size in sizes.items():
         print(f"Language       : {lang}")
         print(f"Natural tokens : {size / 1024 ** 3:.1f}B")
-        desired_size = token_target * s2orc_pstar[lang]
+        desired_size = token_target * s2pdf_pstar[lang]
         print(f"Desired tokens : {desired_size / 1024 ** 3:.1f}B")
         print(f"Sampling rate  : {desired_size / size:.2f}x")
         total_size_computed += desired_size
@@ -94,7 +94,7 @@ def main():
                 }
             ],
             "destination_prefix": f"{destination_path}/{lang}",
-            "local_tempdir": f"/mnt/raid0/resharding/s2orc/{lang}",
+            "local_tempdir": f"/mnt/raid0/resharding/s2pdf/{lang}",
             "max_num_files": 8
         }
         dest = script_dir / f"config/{lang}.yaml"
