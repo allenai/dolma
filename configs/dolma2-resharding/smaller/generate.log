@@ -11,5 +11,8 @@ Sampling rate  : 0.68x
 
 
 Subset       : arxiv
-Natural tokens : 0.0B
+Natural tokens : 19.9B
 Desired tokens : 46.3B
+Sampling rate  : 2.33x
+
+
