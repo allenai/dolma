@@ -113,7 +113,7 @@ def single_config(path: str | Path):
                 "prefix": f"{src_tokenized_path}/{topic}/{vig}",
                 "sample_rate": desired_vig_size / size,
             })
-            total_topic_size += size
+            total_topic_size += desired_vig_size
 
         print(f"Desired topic size : {total_topic_size / 1024 ** 3:.1f}B")
         print(f"Ratio of web       : {total_topic_size / desired_total_size:.1%}")

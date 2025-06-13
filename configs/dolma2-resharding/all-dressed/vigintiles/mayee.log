@@ -38,8 +38,8 @@ Natural tokens : 0.4B
 Desired tokens : 0.1B
 Sampling rate  : 0.13x
 
-Desired topic size : 38.1B
-Ratio of web       : 0.9%
+Desired topic size : 4.8B
+Ratio of web       : 0.1%
 
 ---
 
@@ -81,8 +81,8 @@ Natural tokens : 11.2B
 Desired tokens : 7.0B
 Sampling rate  : 0.62x
 
-Desired topic size : 83.6B
-Ratio of web       : 2.0%
+Desired topic size : 52.5B
+Ratio of web       : 1.2%
 
 ---
 
@@ -124,8 +124,8 @@ Natural tokens : 15.5B
 Desired tokens : 17.3B
 Sampling rate  : 1.12x
 
-Desired topic size : 110.3B
-Ratio of web       : 2.6%
+Desired topic size : 122.9B
+Ratio of web       : 2.9%
 
 ---
 
@@ -167,7 +167,7 @@ Natural tokens : 23.4B
 Desired tokens : 23.7B
 Sampling rate  : 1.01x
 
-Desired topic size : 178.8B
+Desired topic size : 180.2B
 Ratio of web       : 4.3%
 
 ---
@@ -210,8 +210,8 @@ Natural tokens : 12.6B
 Desired tokens : 19.3B
 Sampling rate  : 1.53x
 
-Desired topic size : 94.8B
-Ratio of web       : 2.3%
+Desired topic size : 145.1B
+Ratio of web       : 3.5%
 
 ---
 
@@ -248,8 +248,8 @@ Natural tokens : 48.7B
 Desired tokens : 70.9B
 Sampling rate  : 1.46x
 
-Desired topic size : 276.9B
-Ratio of web       : 6.6%
+Desired topic size : 403.4B
+Ratio of web       : 9.6%
 
 ---
 
@@ -291,8 +291,8 @@ Natural tokens : 15.4B
 Desired tokens : 0.1B
 Sampling rate  : 0.00x
 
-Desired topic size : 114.2B
-Ratio of web       : 2.7%
+Desired topic size : 0.5B
+Ratio of web       : 0.0%
 
 ---
 
@@ -334,8 +334,8 @@ Natural tokens : 46.7B
 Desired tokens : 21.2B
 Sampling rate  : 0.45x
 
-Desired topic size : 377.4B
-Ratio of web       : 9.0%
+Desired topic size : 170.9B
+Ratio of web       : 4.1%
 
 ---
 
@@ -377,8 +377,8 @@ Natural tokens : 14.6B
 Desired tokens : 7.1B
 Sampling rate  : 0.49x
 
-Desired topic size : 121.3B
-Ratio of web       : 2.9%
+Desired topic size : 59.2B
+Ratio of web       : 1.4%
 
 ---
 
@@ -420,8 +420,8 @@ Natural tokens : 24.1B
 Desired tokens : 43.1B
 Sampling rate  : 1.79x
 
-Desired topic size : 161.7B
-Ratio of web       : 3.8%
+Desired topic size : 289.6B
+Ratio of web       : 6.9%
 
 ---
 
@@ -463,8 +463,8 @@ Natural tokens : 37.7B
 Desired tokens : 50.6B
 Sampling rate  : 1.34x
 
-Desired topic size : 310.3B
-Ratio of web       : 7.4%
+Desired topic size : 417.8B
+Ratio of web       : 9.9%
 
 ---
 
@@ -501,8 +501,8 @@ Natural tokens : 12.3B
 Desired tokens : 15.3B
 Sampling rate  : 1.25x
 
-Desired topic size : 91.1B
-Ratio of web       : 2.2%
+Desired topic size : 113.9B
+Ratio of web       : 2.7%
 
 ---
 
@@ -544,8 +544,8 @@ Natural tokens : 41.6B
 Desired tokens : 5.3B
 Sampling rate  : 0.13x
 
-Desired topic size : 302.6B
-Ratio of web       : 7.2%
+Desired topic size : 38.8B
+Ratio of web       : 0.9%
 
 ---
 
@@ -592,8 +592,8 @@ Natural tokens : 7.8B
 Desired tokens : 8.1B
 Sampling rate  : 1.04x
 
-Desired topic size : 63.6B
-Ratio of web       : 1.5%
+Desired topic size : 66.2B
+Ratio of web       : 1.6%
 
 ---
 
@@ -625,8 +625,8 @@ Natural tokens : 30.9B
 Desired tokens : 55.4B
 Sampling rate  : 1.80x
 
-Desired topic size : 159.5B
-Ratio of web       : 3.8%
+Desired topic size : 286.8B
+Ratio of web       : 6.8%
 
 ---
 
@@ -668,8 +668,8 @@ Natural tokens : 41.3B
 Desired tokens : 11.7B
 Sampling rate  : 0.28x
 
-Desired topic size : 320.8B
-Ratio of web       : 7.6%
+Desired topic size : 91.2B
+Ratio of web       : 2.2%
 
 ---
 
@@ -706,8 +706,8 @@ Natural tokens : 20.6B
 Desired tokens : 11.9B
 Sampling rate  : 0.58x
 
-Desired topic size : 145.6B
-Ratio of web       : 3.5%
+Desired topic size : 83.1B
+Ratio of web       : 2.0%
 
 ---
 
@@ -744,8 +744,8 @@ Natural tokens : 26.8B
 Desired tokens : 112.1B
 Sampling rate  : 4.17x
 
-Desired topic size : 212.0B
-Ratio of web       : 5.0%
+Desired topic size : 883.6B
+Ratio of web       : 21.0%
 
 ---
 
@@ -787,8 +787,8 @@ Natural tokens : 24.2B
 Desired tokens : 2.7B
 Sampling rate  : 0.11x
 
-Desired topic size : 172.6B
-Ratio of web       : 4.1%
+Desired topic size : 19.5B
+Ratio of web       : 0.5%
 
 ---
 
@@ -830,8 +830,8 @@ Natural tokens : 11.9B
 Desired tokens : 23.2B
 Sampling rate  : 1.94x
 
-Desired topic size : 102.2B
-Ratio of web       : 2.4%
+Desired topic size : 198.9B
+Ratio of web       : 4.7%
 
 ---
 
@@ -873,8 +873,8 @@ Natural tokens : 11.2B
 Desired tokens : 58.2B
 Sampling rate  : 5.19x
 
-Desired topic size : 90.6B
-Ratio of web       : 2.2%
+Desired topic size : 468.3B
+Ratio of web       : 11.1%
 
 ---
 
@@ -916,8 +916,8 @@ Natural tokens : 31.2B
 Desired tokens : 7.0B
 Sampling rate  : 0.22x
 
-Desired topic size : 246.2B
-Ratio of web       : 5.9%
+Desired topic size : 54.9B
+Ratio of web       : 1.3%
 
 ---
 
@@ -959,8 +959,8 @@ Natural tokens : 13.4B
 Desired tokens : 5.7B
 Sampling rate  : 0.43x
 
-Desired topic size : 95.8B
-Ratio of web       : 2.3%
+Desired topic size : 41.2B
+Ratio of web       : 1.0%
 
 ---
 
@@ -1007,8 +1007,8 @@ Natural tokens : 18.6B
 Desired tokens : 1.1B
 Sampling rate  : 0.06x
 
-Desired topic size : 157.3B
-Ratio of web       : 3.7%
+Desired topic size : 9.2B
+Ratio of web       : 0.2%
 
 ---
 
