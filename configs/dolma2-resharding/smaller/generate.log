@@ -1,0 +1,15 @@
+Subset       : finemath-3plus
+Natural tokens : 31.7B
+Desired tokens : 141.6B
+Sampling rate  : 4.46x
+
+
+Subset       : wikipedia
+Natural tokens : 3.4B
+Desired tokens : 2.3B
+Sampling rate  : 0.68x
+
+
+Subset       : arxiv
+Natural tokens : 0.0B
+Desired tokens : 46.3B

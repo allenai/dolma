@@ -28,19 +28,36 @@ token_target = 6_000_000_000_000
 def get_size_of_prefix(prefix: str, ext: str = ".npy") -> int:
     bucket, prefix = (p := urlparse(prefix)).netloc, p.path.lstrip("/")
     s3 = boto3.client("s3")
-    response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+
     total_size = 0
-    for obj in response.get("Contents", []):
-        if "Key" not in obj:
-            continue
+    continuation_token = None
 
-        if not obj["Key"].endswith(ext):
-            continue
+    while True:
+        if continuation_token:
+            response = s3.list_objects_v2(
+                Bucket=bucket,
+                Prefix=prefix,
+                ContinuationToken=continuation_token
+            )
+        else:
+            response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
 
-        if "Size" not in obj:
-            continue
+        for obj in response.get("Contents", []):
+            if "Key" not in obj:
+                continue
 
-        total_size += int(obj["Size"])
+            if not obj["Key"].endswith(ext):
+                continue
+
+            if "Size" not in obj:
+                continue
+
+            total_size += int(obj["Size"])
+
+        if response.get("IsTruncated", False):
+            continuation_token = response.get("NextContinuationToken")
+        else:
+            break
 
     return total_size
 
@@ -59,6 +76,8 @@ def main():
     sizes = {}
     for lang in tqdm.tqdm(s2pdf_pstar, desc="Getting sizes"):
         sizes[lang] = get_size_of_prefix(f"{code_base_tokenized_path}/{lang}/") // 4 # 4 bytes per token
+
+    breakpoint()
 
     assert math.isclose(sum(s2pdf_pstar.values()), cross_source_pstar["s2pdf"], rel_tol=1e-6)
     desired_code_size = token_target * sum(s2pdf_pstar.values())
