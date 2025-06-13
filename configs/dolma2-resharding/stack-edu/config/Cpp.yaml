@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2/v01/allenai/dolma2-tokenizer/stack-edu/Cpp
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/stack-edu/Cpp
 local_tempdir: /mnt/raid0/resharding/stack-edu/Cpp
 max_num_files: 8
 source_prefixes:

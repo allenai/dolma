@@ -32,7 +32,7 @@ stack_edu_pstar = {
 }
 
 code_base_tokenized_path = "s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer"
-destination_path = "s3://ai2-llm/preprocessed/dolma2/v01/allenai/dolma2-tokenizer/stack-edu"
+destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/stack-edu"
 
 token_target = 6_000_000_000_000
 
@@ -64,7 +64,7 @@ script_dir = Path(__file__).parent
 def main():
     sizes = {}
     for lang in stack_edu_pstar:
-        sizes[lang] = get_size_of_prefix(f"{code_base_tokenized_path}/{lang}") // 4 # 4 bytes per token
+        sizes[lang] = get_size_of_prefix(f"{code_base_tokenized_path}/{lang}/") // 4 # 4 bytes per token
 
     desired_code_size = token_target * cross_source_pstar["stack-edu"]
     natural_code_size = sum(sizes.values())
@@ -79,6 +79,13 @@ def main():
         desired_size = desired_code_size * stack_edu_pstar[lang]
         print(f"Desired tokens : {desired_size / 1024 ** 3:.1f}B")
         print(f"Sampling rate  : {desired_size / size:.2f}x")
+
+        # if destination exists, then get the final size nad print how much we are off
+        dest_size = get_size_of_prefix(f"{destination_path}/{lang}/") // 4
+        if dest_size > 0:
+            print(f"Final size     : {dest_size / 1024 ** 3:.1f}B")
+            print(f"Off by         : {(dest_size - desired_size) / desired_size:.2%}")
+
         print('\n')
 
         lang_config = {
