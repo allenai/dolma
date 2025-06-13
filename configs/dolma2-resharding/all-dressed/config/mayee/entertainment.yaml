@@ -1,0 +1,16 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-mayee/entertainment
+local_tempdir: /mnt/raid0/resharding/all-dressed/entertainment
+max_num_files: 32
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0014
+  sample_rate: 1.45621815348469
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0015
+  sample_rate: 1.4518700670981897
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0016
+  sample_rate: 1.4569218317106347
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0017
+  sample_rate: 1.4607042300627755
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0018
+  sample_rate: 1.457332332439303
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0020
+  sample_rate: 1.4565584164255196

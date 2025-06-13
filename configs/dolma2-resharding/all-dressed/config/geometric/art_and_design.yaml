@@ -1,0 +1,18 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-geometric/art_and_design
+local_tempdir: /mnt/raid0/resharding/all-dressed/art_and_design
+max_num_files: 32
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0013
+  sample_rate: 0.1424270982904148
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0014
+  sample_rate: 0.669437447612499
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0015
+  sample_rate: 0.6689450774621652
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0016
+  sample_rate: 0.668523472345589
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0017
+  sample_rate: 0.6663913565160282
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0018
+  sample_rate: 1.128991758456685
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0020
+  sample_rate: 2.0823630918548326
