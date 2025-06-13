@@ -1,0 +1,5 @@
+destination_prefix: s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/resharded/C
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/C
+  sample_rate: 0.677715562767968

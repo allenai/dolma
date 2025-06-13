@@ -1,0 +1,5 @@
+destination_prefix: s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/resharded/TypeScript
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/TypeScript
+  sample_rate: 3.7612357272148107
