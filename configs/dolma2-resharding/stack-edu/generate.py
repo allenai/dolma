@@ -32,6 +32,7 @@ stack_edu_pstar = {
 }
 
 code_base_tokenized_path = "s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer"
+destination_path = "s3://ai2-llm/preprocessed/dolma2/v01/allenai/dolma2-tokenizer/stack-edu"
 
 token_target = 6_000_000_000_000
 
@@ -80,8 +81,6 @@ def main():
         print(f"Sampling rate  : {desired_size / size:.2f}x")
         print('\n')
 
-        sample_rate = desired_size / size
-
         lang_config = {
             "source_prefixes": [
                 {
@@ -89,7 +88,7 @@ def main():
                     "sample_rate": desired_size / size,
                 }
             ],
-            "destination_prefix": f"{code_base_tokenized_path}/resharded/{lang}",
+            "destination_prefix": f"{destination_path}/{lang}",
             "max_num_files": 8
         }
         dest = script_dir / f"config/{lang}.yaml"
