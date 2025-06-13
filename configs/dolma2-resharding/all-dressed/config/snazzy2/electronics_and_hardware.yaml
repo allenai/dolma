@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-snazzy/electronics_and_hardware
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-snazzy2/electronics_and_hardware
 local_tempdir: /mnt/raid0/resharding/all-dressed/electronics_and_hardware
 max_num_files: 32
 source_prefixes:

@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-snazzy/science_math_and_technology
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-snazzy2/science_math_and_technology
 local_tempdir: /mnt/raid0/resharding/all-dressed/science_math_and_technology
 max_num_files: 32
 source_prefixes:

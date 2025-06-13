@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-snazzy/crime_and_law
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-snazzy2/crime_and_law
 local_tempdir: /mnt/raid0/resharding/all-dressed/crime_and_law
 max_num_files: 32
 source_prefixes:

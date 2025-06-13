@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-snazzy/food_and_dining
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-snazzy2/food_and_dining
 local_tempdir: /mnt/raid0/resharding/all-dressed/food_and_dining
 max_num_files: 32
 source_prefixes:
