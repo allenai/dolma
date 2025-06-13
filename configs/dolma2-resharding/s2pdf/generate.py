@@ -77,8 +77,6 @@ def main():
     for lang in tqdm.tqdm(s2pdf_pstar, desc="Getting sizes"):
         sizes[lang] = get_size_of_prefix(f"{code_base_tokenized_path}/{lang}/") // 4 # 4 bytes per token
 
-    breakpoint()
-
     assert math.isclose(sum(s2pdf_pstar.values()), cross_source_pstar["s2pdf"], rel_tol=1e-6)
     desired_code_size = token_target * sum(s2pdf_pstar.values())
     natural_code_size = sum(sizes.values())

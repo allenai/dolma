@@ -40,6 +40,8 @@ Sampling rate  : 1.30x
 
 Desired topic size : 16.0B
 Ratio of web       : 0.4%
+Final size         : 15.9B
+Off by             : -0.36%
 
 ---
 
@@ -83,6 +85,8 @@ Sampling rate  : 2.79x
 
 Desired topic size : 136.4B
 Ratio of web       : 3.2%
+Final size         : 136.3B
+Off by             : -0.07%
 
 ---
 
@@ -126,6 +130,8 @@ Sampling rate  : 2.08x
 
 Desired topic size : 73.7B
 Ratio of web       : 1.8%
+Final size         : 73.7B
+Off by             : 0.05%
 
 ---
 
@@ -169,6 +175,8 @@ Sampling rate  : 2.76x
 
 Desired topic size : 216.3B
 Ratio of web       : 5.1%
+Final size         : 216.2B
+Off by             : -0.03%
 
 ---
 
@@ -212,6 +220,8 @@ Sampling rate  : 3.34x
 
 Desired topic size : 139.2B
 Ratio of web       : 3.3%
+Final size         : 139.3B
+Off by             : 0.01%
 
 ---
 
@@ -250,6 +260,8 @@ Sampling rate  : 2.99x
 
 Desired topic size : 405.3B
 Ratio of web       : 9.6%
+Final size         : 405.9B
+Off by             : 0.16%
 
 ---
 
@@ -293,6 +305,8 @@ Sampling rate  : 0.18x
 
 Desired topic size : 8.7B
 Ratio of web       : 0.2%
+Final size         : 8.7B
+Off by             : -0.22%
 
 ---
 
@@ -336,6 +350,8 @@ Sampling rate  : 1.89x
 
 Desired topic size : 309.0B
 Ratio of web       : 7.4%
+Final size         : 309.0B
+Off by             : 0.01%
 
 ---
 
@@ -379,6 +395,8 @@ Sampling rate  : 1.98x
 
 Desired topic size : 102.2B
 Ratio of web       : 2.4%
+Final size         : 102.3B
+Off by             : 0.14%
 
 ---
 
@@ -422,6 +440,8 @@ Sampling rate  : 3.41x
 
 Desired topic size : 243.5B
 Ratio of web       : 5.8%
+Final size         : 243.6B
+Off by             : 0.08%
 
 ---
 
@@ -465,6 +485,8 @@ Sampling rate  : 3.21x
 
 Desired topic size : 419.0B
 Ratio of web       : 10.0%
+Final size         : 419.4B
+Off by             : 0.10%
 
 ---
 
@@ -503,6 +525,8 @@ Sampling rate  : 2.93x
 
 Desired topic size : 113.1B
 Ratio of web       : 2.7%
+Final size         : 112.7B
+Off by             : -0.33%
 
 ---
 
@@ -546,6 +570,8 @@ Sampling rate  : 0.94x
 
 Desired topic size : 123.1B
 Ratio of web       : 2.9%
+Final size         : 122.7B
+Off by             : -0.36%
 
 ---
 
@@ -594,6 +620,8 @@ Sampling rate  : 2.79x
 
 Desired topic size : 73.9B
 Ratio of web       : 1.8%
+Final size         : 74.2B
+Off by             : 0.31%
 
 ---
 
@@ -627,6 +655,8 @@ Sampling rate  : 3.21x
 
 Desired topic size : 258.8B
 Ratio of web       : 6.2%
+Final size         : 258.9B
+Off by             : 0.04%
 
 ---
 
@@ -670,6 +700,8 @@ Sampling rate  : 1.45x
 
 Desired topic size : 200.8B
 Ratio of web       : 4.8%
+Final size         : 200.9B
+Off by             : 0.08%
 
 ---
 
@@ -708,6 +740,8 @@ Sampling rate  : 1.99x
 
 Desired topic size : 128.6B
 Ratio of web       : 3.1%
+Final size         : 128.5B
+Off by             : -0.01%
 
 ---
 
@@ -746,6 +780,8 @@ Sampling rate  : 5.64x
 
 Desired topic size : 512.8B
 Ratio of web       : 12.2%
+Final size         : 513.2B
+Off by             : 0.09%
 
 ---
 
@@ -789,6 +825,8 @@ Sampling rate  : 0.87x
 
 Desired topic size : 64.2B
 Ratio of web       : 1.5%
+Final size         : 64.1B
+Off by             : -0.22%
 
 ---
 
@@ -832,6 +870,8 @@ Sampling rate  : 3.92x
 
 Desired topic size : 165.9B
 Ratio of web       : 3.9%
+Final size         : 165.6B
+Off by             : -0.16%
 
 ---
 
@@ -875,6 +915,8 @@ Sampling rate  : 6.21x
 
 Desired topic size : 232.9B
 Ratio of web       : 5.5%
+Final size         : 233.0B
+Off by             : 0.05%
 
 ---
 
@@ -918,6 +960,8 @@ Sampling rate  : 1.31x
 
 Desired topic size : 140.4B
 Ratio of web       : 3.3%
+Final size         : 140.9B
+Off by             : 0.36%
 
 ---
 
@@ -961,6 +1005,8 @@ Sampling rate  : 1.76x
 
 Desired topic size : 75.6B
 Ratio of web       : 1.8%
+Final size         : 75.9B
+Off by             : 0.51%
 
 ---
 
@@ -1009,6 +1055,8 @@ Sampling rate  : 0.67x
 
 Desired topic size : 43.2B
 Ratio of web       : 1.0%
+Final size         : 43.6B
+Off by             : 0.74%
 
 ---
 

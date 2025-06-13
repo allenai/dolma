@@ -31,19 +31,36 @@ token_target = 6_000_000_000_000
 def get_size_of_prefix(prefix: str, ext: str = ".npy") -> int:
     bucket, prefix = (p := urlparse(prefix)).netloc, p.path.lstrip("/")
     s3 = boto3.client("s3")
-    response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+
     total_size = 0
-    for obj in response.get("Contents", []):
-        if "Key" not in obj:
-            continue
+    continuation_token = None
 
-        if not obj["Key"].endswith(ext):
-            continue
+    while True:
+        if continuation_token:
+            response = s3.list_objects_v2(
+                Bucket=bucket,
+                Prefix=prefix,
+                ContinuationToken=continuation_token
+            )
+        else:
+            response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
 
-        if "Size" not in obj:
-            continue
+        for obj in response.get("Contents", []):
+            if "Key" not in obj:
+                continue
 
-        total_size += int(obj["Size"])
+            if not obj["Key"].endswith(ext):
+                continue
+
+            if "Size" not in obj:
+                continue
+
+            total_size += int(obj["Size"])
+
+        if response.get("IsTruncated", False):
+            continuation_token = response.get("NextContinuationToken")
+        else:
+            break
 
     return total_size
 

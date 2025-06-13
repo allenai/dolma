@@ -1,4 +1,4 @@
-Found 752.2B tokens in 24 FoS
+Found 937.5B tokens in 24 FoS
 Desired s2pdf size: 750.6B tokens
 
 
@@ -138,9 +138,9 @@ Off by         : -0.21%
 
 
 Language       : science_math_and_technology
-Natural tokens : 200.4B
+Natural tokens : 385.8B
 Desired tokens : 447.1B
-Sampling rate  : 2.23x
+Sampling rate  : 1.16x
 Final size     : 858.6B
 Off by         : 92.06%
 

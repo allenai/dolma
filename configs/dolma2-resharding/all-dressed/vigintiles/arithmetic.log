@@ -40,49 +40,8 @@ Sampling rate  : 3.94x
 
 Desired topic size : 22.0B
 Ratio of web       : 0.5%
-
----
-
-Topic          : crime_and_law
-Natural tokens : 110.3B
-
-Vigintile     : vigintile_0013
-Natural tokens : 12.7B
-Desired tokens : 8.3B
-Sampling rate  : 0.65x
-
-Vigintile     : vigintile_0014
-Natural tokens : 13.7B
-Desired tokens : 10.5B
-Sampling rate  : 0.76x
-
-Vigintile     : vigintile_0015
-Natural tokens : 15.0B
-Desired tokens : 11.4B
-Sampling rate  : 0.76x
-
-Vigintile     : vigintile_0016
-Natural tokens : 16.5B
-Desired tokens : 12.6B
-Sampling rate  : 0.76x
-
-Vigintile     : vigintile_0017
-Natural tokens : 17.9B
-Desired tokens : 13.7B
-Sampling rate  : 0.76x
-
-Vigintile     : vigintile_0018
-Natural tokens : 19.0B
-Desired tokens : 22.3B
-Sampling rate  : 1.17x
-
-Vigintile     : vigintile_0020
-Natural tokens : 15.5B
-Desired tokens : 40.1B
-Sampling rate  : 2.59x
-
-Desired topic size : 118.8B
-Ratio of web       : 2.8%
+Final size         : 22.4B
+Off by             : 1.94%
 
 ---
 
@@ -126,6 +85,53 @@ Sampling rate  : 2.33x
 
 Desired topic size : 67.6B
 Ratio of web       : 1.6%
+Final size         : 67.8B
+Off by             : 0.26%
+
+---
+
+Topic          : crime_and_law
+Natural tokens : 110.3B
+
+Vigintile     : vigintile_0013
+Natural tokens : 12.7B
+Desired tokens : 8.3B
+Sampling rate  : 0.65x
+
+Vigintile     : vigintile_0014
+Natural tokens : 13.7B
+Desired tokens : 10.5B
+Sampling rate  : 0.76x
+
+Vigintile     : vigintile_0015
+Natural tokens : 15.0B
+Desired tokens : 11.4B
+Sampling rate  : 0.76x
+
+Vigintile     : vigintile_0016
+Natural tokens : 16.5B
+Desired tokens : 12.6B
+Sampling rate  : 0.76x
+
+Vigintile     : vigintile_0017
+Natural tokens : 17.9B
+Desired tokens : 13.7B
+Sampling rate  : 0.76x
+
+Vigintile     : vigintile_0018
+Natural tokens : 19.0B
+Desired tokens : 22.3B
+Sampling rate  : 1.17x
+
+Vigintile     : vigintile_0020
+Natural tokens : 15.5B
+Desired tokens : 40.1B
+Sampling rate  : 2.59x
+
+Desired topic size : 118.8B
+Ratio of web       : 2.8%
+Final size         : 118.8B
+Off by             : -0.02%
 
 ---
 
@@ -169,6 +175,8 @@ Sampling rate  : 2.69x
 
 Desired topic size : 186.7B
 Ratio of web       : 4.4%
+Final size         : 186.6B
+Off by             : -0.08%
 
 ---
 
@@ -212,6 +220,8 @@ Sampling rate  : 2.89x
 
 Desired topic size : 122.7B
 Ratio of web       : 2.9%
+Final size         : 122.7B
+Off by             : 0.04%
 
 ---
 
@@ -250,6 +260,8 @@ Sampling rate  : 2.51x
 
 Desired topic size : 350.6B
 Ratio of web       : 8.3%
+Final size         : 350.7B
+Off by             : 0.04%
 
 ---
 
@@ -293,6 +305,8 @@ Sampling rate  : 2.02x
 
 Desired topic size : 57.1B
 Ratio of web       : 1.4%
+Final size         : 57.1B
+Off by             : 0.13%
 
 ---
 
@@ -336,6 +350,8 @@ Sampling rate  : 2.53x
 
 Desired topic size : 292.8B
 Ratio of web       : 7.0%
+Final size         : 293.4B
+Off by             : 0.23%
 
 ---
 
@@ -379,6 +395,8 @@ Sampling rate  : 2.57x
 
 Desired topic size : 95.3B
 Ratio of web       : 2.3%
+Final size         : 95.0B
+Off by             : -0.37%
 
 ---
 
@@ -422,6 +440,8 @@ Sampling rate  : 2.78x
 
 Desired topic size : 225.0B
 Ratio of web       : 5.4%
+Final size         : 225.0B
+Off by             : -0.02%
 
 ---
 
@@ -465,6 +485,8 @@ Sampling rate  : 2.91x
 
 Desired topic size : 369.4B
 Ratio of web       : 8.8%
+Final size         : 369.6B
+Off by             : 0.05%
 
 ---
 
@@ -503,6 +525,8 @@ Sampling rate  : 2.62x
 
 Desired topic size : 101.5B
 Ratio of web       : 2.4%
+Final size         : 101.1B
+Off by             : -0.39%
 
 ---
 
@@ -546,6 +570,8 @@ Sampling rate  : 2.08x
 
 Desired topic size : 172.0B
 Ratio of web       : 4.1%
+Final size         : 171.6B
+Off by             : -0.25%
 
 ---
 
@@ -594,6 +620,8 @@ Sampling rate  : 2.70x
 
 Desired topic size : 65.3B
 Ratio of web       : 1.6%
+Final size         : 65.0B
+Off by             : -0.33%
 
 ---
 
@@ -627,6 +655,8 @@ Sampling rate  : 2.56x
 
 Desired topic size : 228.0B
 Ratio of web       : 5.4%
+Final size         : 228.1B
+Off by             : 0.04%
 
 ---
 
@@ -670,6 +700,8 @@ Sampling rate  : 2.30x
 
 Desired topic size : 212.9B
 Ratio of web       : 5.1%
+Final size         : 212.9B
+Off by             : 0.01%
 
 ---
 
@@ -708,6 +740,8 @@ Sampling rate  : 2.30x
 
 Desired topic size : 116.7B
 Ratio of web       : 2.8%
+Final size         : 116.6B
+Off by             : -0.10%
 
 ---
 
@@ -746,6 +780,8 @@ Sampling rate  : 4.30x
 
 Desired topic size : 554.2B
 Ratio of web       : 13.2%
+Final size         : 554.3B
+Off by             : 0.02%
 
 ---
 
@@ -789,6 +825,8 @@ Sampling rate  : 2.02x
 
 Desired topic size : 95.1B
 Ratio of web       : 2.3%
+Final size         : 94.3B
+Off by             : -0.76%
 
 ---
 
@@ -832,6 +870,8 @@ Sampling rate  : 3.26x
 
 Desired topic size : 152.2B
 Ratio of web       : 3.6%
+Final size         : 152.2B
+Off by             : -0.02%
 
 ---
 
@@ -875,6 +915,8 @@ Sampling rate  : 4.75x
 
 Desired topic size : 279.5B
 Ratio of web       : 6.7%
+Final size         : 279.6B
+Off by             : 0.04%
 
 ---
 
@@ -918,6 +960,8 @@ Sampling rate  : 2.36x
 
 Desired topic size : 161.0B
 Ratio of web       : 3.8%
+Final size         : 160.7B
+Off by             : -0.15%
 
 ---
 
@@ -961,6 +1005,8 @@ Sampling rate  : 2.30x
 
 Desired topic size : 72.2B
 Ratio of web       : 1.7%
+Final size         : 72.1B
+Off by             : -0.09%
 
 ---
 
@@ -1009,6 +1055,8 @@ Sampling rate  : 2.27x
 
 Desired topic size : 84.0B
 Ratio of web       : 2.0%
+Final size         : 84.3B
+Off by             : 0.33%
 
 ---
 

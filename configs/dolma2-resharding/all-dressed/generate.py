@@ -28,19 +28,36 @@ token_target = 6_000_000_000_000
 def get_size_of_prefix(prefix: str, ext: str = ".npy") -> int:
     bucket, prefix = (p := urlparse(prefix)).netloc, p.path.lstrip("/")
     s3 = boto3.client("s3")
-    response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+
     total_size = 0
-    for obj in response.get("Contents", []):
-        if "Key" not in obj:
-            continue
+    continuation_token = None
 
-        if not obj["Key"].endswith(ext):
-            continue
+    while True:
+        if continuation_token:
+            response = s3.list_objects_v2(
+                Bucket=bucket,
+                Prefix=prefix,
+                ContinuationToken=continuation_token
+            )
+        else:
+            response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
 
-        if "Size" not in obj:
-            continue
+        for obj in response.get("Contents", []):
+            if "Key" not in obj:
+                continue
 
-        total_size += int(obj["Size"])
+            if not obj["Key"].endswith(ext):
+                continue
+
+            if "Size" not in obj:
+                continue
+
+            total_size += int(obj["Size"])
+
+        if response.get("IsTruncated", False):
+            continuation_token = response.get("NextContinuationToken")
+        else:
+            break
 
     return total_size
 
@@ -117,6 +134,13 @@ def single_config(path: str | Path):
 
         print(f"Desired topic size : {total_topic_size / 1024 ** 3:.1f}B")
         print(f"Ratio of web       : {total_topic_size / desired_total_size:.1%}")
+
+        # if destination exists, then get the final size nad print how much we are off
+        dest_size = get_size_of_prefix(f"{topic_config['destination_prefix']}/") // 4
+        if dest_size > 0:
+            print(f"Final size         : {dest_size / 1024 ** 3:.1f}B")
+            print(f"Off by             : {(dest_size - total_topic_size) / total_topic_size:.2%}")
+
         print('\n---\n')
 
         dest = script_dir / f"config/{path.stem}/{topic}.yaml"
@@ -125,7 +149,12 @@ def single_config(path: str | Path):
         with open(dest, "w") as f:
             yaml.dump(topic_config, f)
 
-
+def main():
+    if len(sys.argv) > 1:
+        single_config(Path(sys.argv[1]))
+    else:
+        for path in Path(script_dir / "config").glob("*.yaml"):
+            single_config(path)
 
 if __name__ == "__main__":
-    single_config(Path(sys.argv[1]))
+    main()
