@@ -1,7 +1,10 @@
+import math
 import boto3
+import tqdm
 import yaml
 from urllib.parse import urlparse
 from pathlib import Path
+import json
 
 cross_source_pstar = {
     "finemath-3plus": 0.025340376929054265,
@@ -13,23 +16,8 @@ cross_source_pstar = {
     "stack-edu": 0.06816936506111054,
 }
 
-stack_edu_pstar = {
-    "C": 0.040545413474083136,
-    "Cpp": 0.11992423990590854,
-    "CSharp": 0.06145614902228962,
-    "Go": 0.013141668585880971,
-    "Java": 0.15971742894160593,
-    "JavaScript": 0.08711993898613768,
-    "Markdown": 0.16641522916681814,
-    "PHP": 0.060681232466575974,
-    "Python": 0.18292382056422074,
-    "Ruby": 0.01313841950835558,
-    "Rust": 0.014023586747942062,
-    "Shell": 0.025543226210598954,
-    "SQL": 0.018239409453020123,
-    "Swift": 0.014179755937669661,
-    "TypeScript": 0.02295048102888894,
-}
+with open(Path(__file__).parent / "full_pstar_7rep_dclm_stackedu_conditional.json", "r") as f:
+    full_pstar = json.load(f)
 
 code_base_tokenized_path = "s3://ai2-llm/preprocessed/olmo3-final/s2orc/allenai/dolma2-tokenizer"
 destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2orc"
@@ -62,23 +50,33 @@ script_dir = Path(__file__).parent
 
 
 def main():
+
+    s2orc_pstar = {
+        d['domain'].replace("pes2o:", ""): d['weight']
+        for d in full_pstar if d['domain'].startswith("pes2o:")
+    }
+
     sizes = {}
-    for lang in stack_edu_pstar:
+    for lang in tqdm.tqdm(s2orc_pstar, desc="Getting sizes"):
         sizes[lang] = get_size_of_prefix(f"{code_base_tokenized_path}/{lang}/") // 4 # 4 bytes per token
 
-    desired_code_size = token_target * cross_source_pstar["stack-edu"]
+    assert math.isclose(sum(s2orc_pstar.values()), cross_source_pstar["s2orc"], rel_tol=1e-6)
+    desired_code_size = token_target * sum(s2orc_pstar.values())
     natural_code_size = sum(sizes.values())
 
-    print(f"Found {natural_code_size / 1024 ** 3:.1f}B tokens in {len(sizes)} languages")
-    print(f"Desired code size: {desired_code_size / 1024 ** 3:.1f}B tokens")
+    print(f"Found {natural_code_size / 1024 ** 3:.1f}B tokens in {len(sizes)} FoS")
+    print(f"Desired s2orc size: {desired_code_size / 1024 ** 3:.1f}B tokens")
     print("\n")
+
+    total_size_computed = 0
 
     for lang, size in sizes.items():
         print(f"Language       : {lang}")
         print(f"Natural tokens : {size / 1024 ** 3:.1f}B")
-        desired_size = desired_code_size * stack_edu_pstar[lang]
+        desired_size = token_target * s2orc_pstar[lang]
         print(f"Desired tokens : {desired_size / 1024 ** 3:.1f}B")
         print(f"Sampling rate  : {desired_size / size:.2f}x")
+        total_size_computed += desired_size
 
         # if destination exists, then get the final size nad print how much we are off
         dest_size = get_size_of_prefix(f"{destination_path}/{lang}/") // 4
@@ -104,6 +102,8 @@ def main():
 
         with open(dest, "w") as f:
             yaml.dump(lang_config, f)
+
+    print(f"\n\nTotal size computed: {total_size_computed / 1024 ** 3:.1f}B")
 
 
 if __name__ == "__main__":

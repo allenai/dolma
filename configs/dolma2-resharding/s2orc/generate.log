@@ -1,0 +1,145 @@
+Found 132.8B tokens in 23 FoS
+Desired s2orc size: 63.7B tokens
+
+
+Language       : agricultural-and-food-sciences
+Natural tokens : 3.1B
+Desired tokens : 0.3B
+Sampling rate  : 0.08x
+
+
+Language       : art
+Natural tokens : 1.4B
+Desired tokens : 0.3B
+Sampling rate  : 0.19x
+
+
+Language       : biology
+Natural tokens : 21.4B
+Desired tokens : 13.5B
+Sampling rate  : 0.63x
+
+
+Language       : business
+Natural tokens : 2.5B
+Desired tokens : 0.3B
+Sampling rate  : 0.11x
+
+
+Language       : chemistry
+Natural tokens : 5.1B
+Desired tokens : 2.1B
+Sampling rate  : 0.42x
+
+
+Language       : computer-science
+Natural tokens : 19.7B
+Desired tokens : 12.5B
+Sampling rate  : 0.64x
+
+
+Language       : economics
+Natural tokens : 3.4B
+Desired tokens : 0.2B
+Sampling rate  : 0.06x
+
+
+Language       : education
+Natural tokens : 2.6B
+Desired tokens : 0.1B
+Sampling rate  : 0.03x
+
+
+Language       : engineering
+Natural tokens : 5.3B
+Desired tokens : 3.2B
+Sampling rate  : 0.61x
+
+
+Language       : environmental-science
+Natural tokens : 5.4B
+Desired tokens : 1.1B
+Sampling rate  : 0.19x
+
+
+Language       : geography
+Natural tokens : 0.2B
+Desired tokens : 0.0B
+Sampling rate  : 0.00x
+
+
+Language       : geology
+Natural tokens : 1.6B
+Desired tokens : 0.2B
+Sampling rate  : 0.14x
+
+
+Language       : history
+Natural tokens : 2.0B
+Desired tokens : 1.1B
+Sampling rate  : 0.55x
+
+
+Language       : law
+Natural tokens : 1.2B
+Desired tokens : 0.1B
+Sampling rate  : 0.09x
+
+
+Language       : linguistics
+Natural tokens : 0.7B
+Desired tokens : 0.0B
+Sampling rate  : 0.00x
+
+
+Language       : materials-science
+Natural tokens : 5.9B
+Desired tokens : 2.6B
+Sampling rate  : 0.44x
+
+
+Language       : mathematics
+Natural tokens : 16.0B
+Desired tokens : 10.4B
+Sampling rate  : 0.65x
+
+
+Language       : medicine
+Natural tokens : 10.4B
+Desired tokens : 6.0B
+Sampling rate  : 0.58x
+
+
+Language       : philosophy
+Natural tokens : 1.4B
+Desired tokens : 0.0B
+Sampling rate  : 0.01x
+
+
+Language       : physics
+Natural tokens : 14.1B
+Desired tokens : 9.0B
+Sampling rate  : 0.64x
+
+
+Language       : political-science
+Natural tokens : 3.0B
+Desired tokens : 0.2B
+Sampling rate  : 0.06x
+
+
+Language       : psychology
+Natural tokens : 5.7B
+Desired tokens : 0.6B
+Sampling rate  : 0.11x
+
+
+Language       : sociology
+Natural tokens : 1.0B
+Desired tokens : 0.0B
+Sampling rate  : 0.00x
+
+
+
+
+Total size computed: 63.7B
