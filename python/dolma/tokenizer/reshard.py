@@ -124,7 +124,7 @@ def group_paths_by_max_size(
     """
     Group paths by max size.
     """
-    counts = Counter(paths)
+    counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
     logger.info(
         "Found %s unique paths from %s files; max repetition is %s",
         len(counts),
@@ -366,7 +366,15 @@ class ReshardingConfig:
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingConfig":
         source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
-        return cls(**{**d, "source_prefixes": source_prefixes})
+        return cls(
+            source_prefixes=source_prefixes,
+            destination_prefix=str(d["destination_prefix"]),
+            local_tempdir=(Path(p) if (p := d.get("local_tempdir")) is not None else None),
+            max_size_bytes=(int(s) if (s := d.get("max_size_bytes")) is not None else None),
+            max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
+            max_workers=int(d.get("max_workers", 1)),
+            random_seed=int(d.get("random_seed", 42)),
+        )
 
     @classmethod
     def from_file(cls, file_path: str | Path) -> "ReshardingConfig":
