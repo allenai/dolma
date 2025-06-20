@@ -1,0 +1,18 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-mayee/sports_and_fitness
+local_tempdir: /mnt/raid0/resharding/all-dressed/sports_and_fitness
+max_num_files: 32
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0013
+  sample_rate: 0.22336771370541228
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0014
+  sample_rate: 0.2228505879558931
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0015
+  sample_rate: 0.2229844978605009
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0016
+  sample_rate: 0.22349908815794864
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0017
+  sample_rate: 0.22271182771557788
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0018
+  sample_rate: 0.22355845102386418
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0020
+  sample_rate: 0.22321027547461197

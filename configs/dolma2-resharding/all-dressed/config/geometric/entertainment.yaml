@@ -1,0 +1,16 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/all-dressed-geometric/entertainment
+local_tempdir: /mnt/raid0/resharding/all-dressed/entertainment
+max_num_files: 32
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0014
+  sample_rate: 0.9023577304141703
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0015
+  sample_rate: 1.0139342068547013
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0016
+  sample_rate: 1.0174621788555112
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0017
+  sample_rate: 1.020103670790703
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0018
+  sample_rate: 1.6187676857486886
+- prefix: s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0020
+  sample_rate: 2.98956671794511

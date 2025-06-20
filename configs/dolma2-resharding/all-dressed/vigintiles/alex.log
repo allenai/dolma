@@ -1,0 +1,1062 @@
+========================================
+Processing configs/dolma2-resharding/all-dressed/vigintiles/alex.json
+Found 4027.5B tokens in 24 topics
+Desired size: 4202.6B tokens
+
+---
+
+Topic          : adult_content
+Natural tokens : 38.1B
+
+Vigintile     : vigintile_0014
+Natural tokens : 5.6B
+Desired tokens : 1.2B
+Sampling rate  : 0.21x
+
+Vigintile     : vigintile_0015
+Natural tokens : 6.6B
+Desired tokens : 2.7B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 8.2B
+Desired tokens : 3.4B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 9.5B
+Desired tokens : 6.7B
+Sampling rate  : 0.71x
+
+Vigintile     : vigintile_0018
+Natural tokens : 7.8B
+Desired tokens : 21.7B
+Sampling rate  : 2.77x
+
+Vigintile     : vigintile_0020
+Natural tokens : 0.4B
+Desired tokens : 3.4B
+Sampling rate  : 7.75x
+
+Desired topic size : 39.1B
+Ratio of web       : 0.9%
+Final size         : 38.9B
+Off by             : -0.52%
+
+---
+
+Topic          : art_and_design
+Natural tokens : 83.6B
+
+Vigintile     : vigintile_0013
+Natural tokens : 9.3B
+Desired tokens : 0.2B
+Sampling rate  : 0.02x
+
+Vigintile     : vigintile_0014
+Natural tokens : 10.5B
+Desired tokens : 4.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 11.4B
+Desired tokens : 4.7B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 12.6B
+Desired tokens : 5.2B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 13.7B
+Desired tokens : 5.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 14.9B
+Desired tokens : 17.5B
+Sampling rate  : 1.17x
+
+Vigintile     : vigintile_0020
+Natural tokens : 11.2B
+Desired tokens : 45.2B
+Sampling rate  : 4.03x
+
+Desired topic size : 82.7B
+Ratio of web       : 2.0%
+Final size         : 82.5B
+Off by             : -0.34%
+
+---
+
+Topic          : crime_and_law
+Natural tokens : 110.3B
+
+Vigintile     : vigintile_0013
+Natural tokens : 12.7B
+Desired tokens : 2.4B
+Sampling rate  : 0.19x
+
+Vigintile     : vigintile_0014
+Natural tokens : 13.7B
+Desired tokens : 5.7B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 15.0B
+Desired tokens : 6.2B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 16.5B
+Desired tokens : 6.8B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 17.9B
+Desired tokens : 7.4B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 19.0B
+Desired tokens : 23.5B
+Sampling rate  : 1.24x
+
+Vigintile     : vigintile_0020
+Natural tokens : 15.5B
+Desired tokens : 62.9B
+Sampling rate  : 4.06x
+
+Desired topic size : 114.8B
+Ratio of web       : 2.7%
+Final size         : 115.0B
+Off by             : 0.14%
+
+---
+
+Topic          : education_and_jobs
+Natural tokens : 178.8B
+
+Vigintile     : vigintile_0013
+Natural tokens : 21.8B
+Desired tokens : 7.2B
+Sampling rate  : 0.33x
+
+Vigintile     : vigintile_0014
+Natural tokens : 23.7B
+Desired tokens : 9.8B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 25.9B
+Desired tokens : 10.7B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 27.4B
+Desired tokens : 11.2B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 28.1B
+Desired tokens : 16.0B
+Sampling rate  : 0.57x
+
+Vigintile     : vigintile_0018
+Natural tokens : 28.6B
+Desired tokens : 35.9B
+Sampling rate  : 1.26x
+
+Vigintile     : vigintile_0020
+Natural tokens : 23.4B
+Desired tokens : 102.4B
+Sampling rate  : 4.37x
+
+Desired topic size : 193.2B
+Ratio of web       : 4.6%
+Final size         : 193.1B
+Off by             : -0.04%
+
+---
+
+Topic          : electronics_and_hardware
+Natural tokens : 94.8B
+
+Vigintile     : vigintile_0013
+Natural tokens : 11.0B
+Desired tokens : 2.8B
+Sampling rate  : 0.26x
+
+Vigintile     : vigintile_0014
+Natural tokens : 12.2B
+Desired tokens : 5.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 13.4B
+Desired tokens : 5.5B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 14.8B
+Desired tokens : 6.1B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 15.4B
+Desired tokens : 7.9B
+Sampling rate  : 0.51x
+
+Vigintile     : vigintile_0018
+Natural tokens : 15.4B
+Desired tokens : 19.3B
+Sampling rate  : 1.25x
+
+Vigintile     : vigintile_0020
+Natural tokens : 12.6B
+Desired tokens : 53.7B
+Sampling rate  : 4.25x
+
+Desired topic size : 100.3B
+Ratio of web       : 2.4%
+Final size         : 99.9B
+Off by             : -0.38%
+
+---
+
+Topic          : entertainment
+Natural tokens : 276.9B
+
+Vigintile     : vigintile_0014
+Natural tokens : 37.5B
+Desired tokens : 12.2B
+Sampling rate  : 0.32x
+
+Vigintile     : vigintile_0015
+Natural tokens : 41.7B
+Desired tokens : 17.1B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 46.2B
+Desired tokens : 19.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 49.8B
+Desired tokens : 20.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 53.1B
+Desired tokens : 55.4B
+Sampling rate  : 1.04x
+
+Vigintile     : vigintile_0020
+Natural tokens : 48.7B
+Desired tokens : 173.4B
+Sampling rate  : 3.56x
+
+Desired topic size : 297.8B
+Ratio of web       : 7.1%
+Final size         : 298.1B
+Off by             : 0.10%
+
+---
+
+Topic          : fashion_and_beauty
+Natural tokens : 114.2B
+
+Vigintile     : vigintile_0013
+Natural tokens : 12.2B
+Desired tokens : 0.2B
+Sampling rate  : 0.02x
+
+Vigintile     : vigintile_0014
+Natural tokens : 13.5B
+Desired tokens : 5.5B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 15.3B
+Desired tokens : 6.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 17.8B
+Desired tokens : 7.4B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 20.8B
+Desired tokens : 8.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 19.2B
+Desired tokens : 23.4B
+Sampling rate  : 1.22x
+
+Vigintile     : vigintile_0020
+Natural tokens : 15.4B
+Desired tokens : 62.1B
+Sampling rate  : 4.04x
+
+Desired topic size : 113.6B
+Ratio of web       : 2.7%
+Final size         : 113.5B
+Off by             : -0.03%
+
+---
+
+Topic          : finance_and_business
+Natural tokens : 377.4B
+
+Vigintile     : vigintile_0013
+Natural tokens : 51.3B
+Desired tokens : 19.7B
+Sampling rate  : 0.38x
+
+Vigintile     : vigintile_0014
+Natural tokens : 53.4B
+Desired tokens : 22.1B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 56.5B
+Desired tokens : 23.4B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 58.1B
+Desired tokens : 24.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 57.1B
+Desired tokens : 42.1B
+Sampling rate  : 0.74x
+
+Vigintile     : vigintile_0018
+Natural tokens : 54.2B
+Desired tokens : 68.2B
+Sampling rate  : 1.26x
+
+Vigintile     : vigintile_0020
+Natural tokens : 46.7B
+Desired tokens : 215.2B
+Sampling rate  : 4.60x
+
+Desired topic size : 414.6B
+Ratio of web       : 9.9%
+Final size         : 415.2B
+Off by             : 0.13%
+
+---
+
+Topic          : food_and_dining
+Natural tokens : 121.3B
+
+Vigintile     : vigintile_0013
+Natural tokens : 15.1B
+Desired tokens : 5.1B
+Sampling rate  : 0.34x
+
+Vigintile     : vigintile_0014
+Natural tokens : 16.6B
+Desired tokens : 6.8B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 18.2B
+Desired tokens : 7.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 19.2B
+Desired tokens : 8.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 19.5B
+Desired tokens : 13.6B
+Sampling rate  : 0.69x
+
+Vigintile     : vigintile_0018
+Natural tokens : 17.9B
+Desired tokens : 22.4B
+Sampling rate  : 1.25x
+
+Vigintile     : vigintile_0020
+Natural tokens : 14.6B
+Desired tokens : 68.0B
+Sampling rate  : 4.64x
+
+Desired topic size : 131.5B
+Ratio of web       : 3.1%
+Final size         : 131.8B
+Off by             : 0.20%
+
+---
+
+Topic          : games
+Natural tokens : 161.7B
+
+Vigintile     : vigintile_0013
+Natural tokens : 19.4B
+Desired tokens : 0.9B
+Sampling rate  : 0.05x
+
+Vigintile     : vigintile_0014
+Natural tokens : 20.7B
+Desired tokens : 8.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 22.0B
+Desired tokens : 9.1B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 23.2B
+Desired tokens : 9.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 25.0B
+Desired tokens : 10.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 27.3B
+Desired tokens : 31.1B
+Sampling rate  : 1.14x
+
+Vigintile     : vigintile_0020
+Natural tokens : 24.1B
+Desired tokens : 90.8B
+Sampling rate  : 3.77x
+
+Desired topic size : 160.4B
+Ratio of web       : 3.8%
+Final size         : 160.0B
+Off by             : -0.27%
+
+---
+
+Topic          : health
+Natural tokens : 310.3B
+
+Vigintile     : vigintile_0013
+Natural tokens : 38.2B
+Desired tokens : 7.0B
+Sampling rate  : 0.18x
+
+Vigintile     : vigintile_0014
+Natural tokens : 41.8B
+Desired tokens : 17.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 44.4B
+Desired tokens : 18.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 47.5B
+Desired tokens : 19.7B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 50.1B
+Desired tokens : 26.5B
+Sampling rate  : 0.53x
+
+Vigintile     : vigintile_0018
+Natural tokens : 50.7B
+Desired tokens : 63.9B
+Sampling rate  : 1.26x
+
+Vigintile     : vigintile_0020
+Natural tokens : 37.7B
+Desired tokens : 168.4B
+Sampling rate  : 4.47x
+
+Desired topic size : 321.0B
+Ratio of web       : 7.6%
+Final size         : 321.3B
+Off by             : 0.10%
+
+---
+
+Topic          : history_and_geography
+Natural tokens : 91.1B
+
+Vigintile     : vigintile_0014
+Natural tokens : 12.2B
+Desired tokens : 0.5B
+Sampling rate  : 0.04x
+
+Vigintile     : vigintile_0015
+Natural tokens : 13.9B
+Desired tokens : 5.8B
+Sampling rate  : 0.42x
+
+Vigintile     : vigintile_0016
+Natural tokens : 15.8B
+Desired tokens : 6.6B
+Sampling rate  : 0.42x
+
+Vigintile     : vigintile_0017
+Natural tokens : 18.1B
+Desired tokens : 7.5B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 18.7B
+Desired tokens : 19.7B
+Sampling rate  : 1.05x
+
+Vigintile     : vigintile_0020
+Natural tokens : 12.3B
+Desired tokens : 49.0B
+Sampling rate  : 4.00x
+
+Desired topic size : 89.1B
+Ratio of web       : 2.1%
+Final size         : 89.3B
+Off by             : 0.22%
+
+---
+
+Topic          : home_and_hobbies
+Natural tokens : 302.6B
+
+Vigintile     : vigintile_0013
+Natural tokens : 32.6B
+Desired tokens : 2.1B
+Sampling rate  : 0.06x
+
+Vigintile     : vigintile_0014
+Natural tokens : 36.4B
+Desired tokens : 15.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 41.0B
+Desired tokens : 17.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 47.2B
+Desired tokens : 19.5B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 52.7B
+Desired tokens : 21.8B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 51.1B
+Desired tokens : 62.3B
+Sampling rate  : 1.22x
+
+Vigintile     : vigintile_0020
+Natural tokens : 41.6B
+Desired tokens : 167.5B
+Sampling rate  : 4.03x
+
+Desired topic size : 305.3B
+Ratio of web       : 7.3%
+Final size         : 305.7B
+Off by             : 0.15%
+
+---
+
+Topic          : industrial
+Natural tokens : 63.6B
+
+Vigintile     : vigintile_0012
+Natural tokens : 6.6B
+Desired tokens : 0.4B
+Sampling rate  : 0.06x
+
+Vigintile     : vigintile_0013
+Natural tokens : 7.0B
+Desired tokens : 2.9B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0014
+Natural tokens : 7.5B
+Desired tokens : 3.1B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 8.0B
+Desired tokens : 3.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 8.7B
+Desired tokens : 3.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 9.1B
+Desired tokens : 5.7B
+Sampling rate  : 0.63x
+
+Vigintile     : vigintile_0018
+Natural tokens : 8.9B
+Desired tokens : 11.3B
+Sampling rate  : 1.26x
+
+Vigintile     : vigintile_0020
+Natural tokens : 7.8B
+Desired tokens : 34.1B
+Sampling rate  : 4.36x
+
+Desired topic size : 64.3B
+Ratio of web       : 1.5%
+Final size         : 64.4B
+Off by             : 0.11%
+
+---
+
+Topic          : literature
+Natural tokens : 159.5B
+
+Vigintile     : vigintile_0015
+Natural tokens : 24.3B
+Desired tokens : 7.0B
+Sampling rate  : 0.29x
+
+Vigintile     : vigintile_0016
+Natural tokens : 28.0B
+Desired tokens : 11.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 34.6B
+Desired tokens : 14.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 41.8B
+Desired tokens : 33.6B
+Sampling rate  : 0.80x
+
+Vigintile     : vigintile_0020
+Natural tokens : 30.9B
+Desired tokens : 102.6B
+Sampling rate  : 3.33x
+
+Desired topic size : 169.2B
+Ratio of web       : 4.0%
+Final size         : 169.2B
+Off by             : -0.02%
+
+---
+
+Topic          : politics
+Natural tokens : 320.8B
+
+Vigintile     : vigintile_0013
+Natural tokens : 39.4B
+Desired tokens : 8.4B
+Sampling rate  : 0.21x
+
+Vigintile     : vigintile_0014
+Natural tokens : 43.1B
+Desired tokens : 17.8B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 46.2B
+Desired tokens : 19.1B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 48.5B
+Desired tokens : 20.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 51.2B
+Desired tokens : 27.1B
+Sampling rate  : 0.53x
+
+Vigintile     : vigintile_0018
+Natural tokens : 51.1B
+Desired tokens : 64.2B
+Sampling rate  : 1.25x
+
+Vigintile     : vigintile_0020
+Natural tokens : 41.3B
+Desired tokens : 177.9B
+Sampling rate  : 4.31x
+
+Desired topic size : 334.6B
+Ratio of web       : 8.0%
+Final size         : 333.7B
+Off by             : -0.26%
+
+---
+
+Topic          : religion
+Natural tokens : 145.6B
+
+Vigintile     : vigintile_0014
+Natural tokens : 20.5B
+Desired tokens : 4.2B
+Sampling rate  : 0.20x
+
+Vigintile     : vigintile_0015
+Natural tokens : 22.8B
+Desired tokens : 9.4B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 25.1B
+Desired tokens : 10.4B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 27.5B
+Desired tokens : 11.4B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 29.0B
+Desired tokens : 32.0B
+Sampling rate  : 1.10x
+
+Vigintile     : vigintile_0020
+Natural tokens : 20.6B
+Desired tokens : 82.9B
+Sampling rate  : 4.02x
+
+Desired topic size : 150.3B
+Ratio of web       : 3.6%
+Final size         : 150.1B
+Off by             : -0.10%
+
+---
+
+Topic          : science_math_and_technology
+Natural tokens : 212.0B
+
+Vigintile     : vigintile_0014
+Natural tokens : 29.7B
+Desired tokens : 8.4B
+Sampling rate  : 0.28x
+
+Vigintile     : vigintile_0015
+Natural tokens : 33.4B
+Desired tokens : 13.8B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 37.7B
+Desired tokens : 15.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 42.5B
+Desired tokens : 17.5B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 41.9B
+Desired tokens : 50.9B
+Sampling rate  : 1.21x
+
+Vigintile     : vigintile_0020
+Natural tokens : 26.8B
+Desired tokens : 118.6B
+Sampling rate  : 4.42x
+
+Desired topic size : 224.8B
+Ratio of web       : 5.3%
+Final size         : 224.8B
+Off by             : 0.00%
+
+---
+
+Topic          : social_life
+Natural tokens : 172.6B
+
+Vigintile     : vigintile_0013
+Natural tokens : 19.1B
+Desired tokens : 0.1B
+Sampling rate  : 0.01x
+
+Vigintile     : vigintile_0014
+Natural tokens : 21.2B
+Desired tokens : 8.7B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 23.5B
+Desired tokens : 9.7B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 26.6B
+Desired tokens : 11.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 28.9B
+Desired tokens : 12.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0018
+Natural tokens : 29.2B
+Desired tokens : 34.4B
+Sampling rate  : 1.18x
+
+Vigintile     : vigintile_0020
+Natural tokens : 24.2B
+Desired tokens : 94.7B
+Sampling rate  : 3.92x
+
+Desired topic size : 170.6B
+Ratio of web       : 4.1%
+Final size         : 170.7B
+Off by             : 0.05%
+
+---
+
+Topic          : software
+Natural tokens : 102.2B
+
+Vigintile     : vigintile_0013
+Natural tokens : 12.9B
+Desired tokens : 2.5B
+Sampling rate  : 0.19x
+
+Vigintile     : vigintile_0014
+Natural tokens : 14.6B
+Desired tokens : 6.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 15.3B
+Desired tokens : 6.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 15.9B
+Desired tokens : 6.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 16.0B
+Desired tokens : 9.9B
+Sampling rate  : 0.62x
+
+Vigintile     : vigintile_0018
+Natural tokens : 15.5B
+Desired tokens : 19.4B
+Sampling rate  : 1.25x
+
+Vigintile     : vigintile_0020
+Natural tokens : 11.9B
+Desired tokens : 54.8B
+Sampling rate  : 4.58x
+
+Desired topic size : 105.5B
+Ratio of web       : 2.5%
+Final size         : 105.3B
+Off by             : -0.13%
+
+---
+
+Topic          : software_development
+Natural tokens : 90.6B
+
+Vigintile     : vigintile_0013
+Natural tokens : 11.0B
+Desired tokens : 0.9B
+Sampling rate  : 0.09x
+
+Vigintile     : vigintile_0014
+Natural tokens : 11.8B
+Desired tokens : 4.9B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 12.8B
+Desired tokens : 5.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 13.8B
+Desired tokens : 5.7B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 14.9B
+Desired tokens : 6.7B
+Sampling rate  : 0.45x
+
+Vigintile     : vigintile_0018
+Natural tokens : 15.1B
+Desired tokens : 18.9B
+Sampling rate  : 1.25x
+
+Vigintile     : vigintile_0020
+Natural tokens : 11.2B
+Desired tokens : 48.4B
+Sampling rate  : 4.31x
+
+Desired topic size : 90.7B
+Ratio of web       : 2.2%
+Final size         : 90.8B
+Off by             : 0.14%
+
+---
+
+Topic          : sports_and_fitness
+Natural tokens : 246.2B
+
+Vigintile     : vigintile_0013
+Natural tokens : 31.7B
+Desired tokens : 10.8B
+Sampling rate  : 0.34x
+
+Vigintile     : vigintile_0014
+Natural tokens : 33.9B
+Desired tokens : 14.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 36.0B
+Desired tokens : 14.9B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 37.6B
+Desired tokens : 15.6B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 38.3B
+Desired tokens : 24.6B
+Sampling rate  : 0.64x
+
+Vigintile     : vigintile_0018
+Natural tokens : 37.5B
+Desired tokens : 47.2B
+Sampling rate  : 1.26x
+
+Vigintile     : vigintile_0020
+Natural tokens : 31.2B
+Desired tokens : 140.0B
+Sampling rate  : 4.49x
+
+Desired topic size : 267.0B
+Ratio of web       : 6.4%
+Final size         : 267.1B
+Off by             : 0.00%
+
+---
+
+Topic          : transportation
+Natural tokens : 95.8B
+
+Vigintile     : vigintile_0013
+Natural tokens : 11.3B
+Desired tokens : 3.6B
+Sampling rate  : 0.31x
+
+Vigintile     : vigintile_0014
+Natural tokens : 12.2B
+Desired tokens : 5.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 13.4B
+Desired tokens : 5.5B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 14.5B
+Desired tokens : 6.0B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 15.4B
+Desired tokens : 7.7B
+Sampling rate  : 0.50x
+
+Vigintile     : vigintile_0018
+Natural tokens : 15.6B
+Desired tokens : 19.6B
+Sampling rate  : 1.26x
+
+Vigintile     : vigintile_0020
+Natural tokens : 13.4B
+Desired tokens : 55.7B
+Sampling rate  : 4.17x
+
+Desired topic size : 103.2B
+Ratio of web       : 2.5%
+Final size         : 102.6B
+Off by             : -0.60%
+
+---
+
+Topic          : travel_and_tourism
+Natural tokens : 157.3B
+
+Vigintile     : vigintile_0012
+Natural tokens : 15.6B
+Desired tokens : 0.7B
+Sampling rate  : 0.04x
+
+Vigintile     : vigintile_0013
+Natural tokens : 16.7B
+Desired tokens : 6.9B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0014
+Natural tokens : 18.0B
+Desired tokens : 7.4B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0015
+Natural tokens : 20.1B
+Desired tokens : 8.3B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0016
+Natural tokens : 21.5B
+Desired tokens : 8.9B
+Sampling rate  : 0.41x
+
+Vigintile     : vigintile_0017
+Natural tokens : 23.5B
+Desired tokens : 14.1B
+Sampling rate  : 0.60x
+
+Vigintile     : vigintile_0018
+Natural tokens : 23.4B
+Desired tokens : 29.3B
+Sampling rate  : 1.25x
+
+Vigintile     : vigintile_0020
+Natural tokens : 18.6B
+Desired tokens : 83.2B
+Sampling rate  : 4.48x
+
+Desired topic size : 158.8B
+Ratio of web       : 3.8%
+Final size         : 158.6B
+Off by             : -0.17%
+
+---
+

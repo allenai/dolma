@@ -1,0 +1,24 @@
+Subset       : finemath-3plus
+Natural tokens : 31.7B
+Desired tokens : 141.6B
+Sampling rate  : 4.46x
+Final size     : 141.5B
+Off by         : -0.08%
+
+
+Subset       : wikipedia
+Natural tokens : 3.4B
+Desired tokens : 2.3B
+Sampling rate  : 0.68x
+Final size     : 2.3B
+Off by         : 0.57%
+
+
+Subset       : arxiv
+Natural tokens : 19.9B
+Desired tokens : 46.3B
+Sampling rate  : 2.33x
+Final size     : 47.3B
+Off by         : 2.21%
+
+
