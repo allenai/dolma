@@ -12,6 +12,7 @@ from . import (
     quality,
     repetitions,
     sampling,
+    taxonomy,
     tokenizers,
     url,
 )
