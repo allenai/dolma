@@ -8,7 +8,7 @@ It samples chunks from long documents and provides a classification result.
 """
 
 import random
-from typing import Iterable, List
+from typing import Iterable, List, Dict, Tuple
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
