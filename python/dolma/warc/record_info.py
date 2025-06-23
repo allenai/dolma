@@ -1,8 +1,11 @@
 import datetime
 from typing import TYPE_CHECKING, Optional
 
-from fastwarc.warc import WarcRecordType
 from necessary import necessary
+
+with necessary("fastwarc", soft=True) as FASTWARC_AVAILABLE:
+    if FASTWARC_AVAILABLE or TYPE_CHECKING:
+        from fastwarc.warc import WarcRecordType
 
 with necessary("dateparser", soft=True) as DATEPARSER_AVAILABLE:
     if DATEPARSER_AVAILABLE or TYPE_CHECKING:
@@ -14,6 +17,9 @@ DATE_FORMATS = ["%a, %d %b %Y %H:%M:%S %Z", "%Y-%m-%dT%H:%M:%SZ"]
 
 class WarcRecordInfo:
     def __init__(self, record):
+        if not FASTWARC_AVAILABLE:
+            raise ImportError("fastwarc is not installed; please install it with `pip install dolma[warc]`")
+
         self.record = record
 
         if not self.is_valid:

@@ -1,7 +1,11 @@
+import copy
 import csv
 import json
+import shutil
+from contextlib import ExitStack
 from pathlib import Path
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory, mkdtemp
+from typing import Optional
 from unittest import TestCase
 
 import numpy
@@ -329,9 +333,10 @@ class TestShufflingTokenizer(TestCase):
             tokenizer_id, bos_token_id=bos_token_id, eos_token_id=eos_token_id, pad_token_id=pad_token_id
         )
 
-        with TemporaryDirectory() as tmpdir:
-            (source := Path(tmpdir) / "src").mkdir(parents=True, exist_ok=True)
-            (destination := Path(tmpdir) / "dst").mkdir(parents=True, exist_ok=True)
+        tmpdir = Path(mkdtemp())
+        try:
+            (source := tmpdir / "src").mkdir(parents=True, exist_ok=True)
+            (destination := tmpdir / "dst").mkdir(parents=True, exist_ok=True)
 
             RING_SIZE = 4
             LOCAL_SHUFFLE = 8
@@ -387,6 +392,9 @@ class TestShufflingTokenizer(TestCase):
             # verify that there has bee shuffling
             self.assertNotEqual(list(all_tokens), sorted(all_tokens))
 
+        finally:
+            shutil.rmtree(tmpdir)
+
 
 class TestTokenizeSpecialTokens(TestCase):
     def test_tokenize_special_tokens(self):
@@ -415,3 +423,301 @@ class TestTokenizeSpecialTokens(TestCase):
         tokens_default = tokenizer_default.encode(text)
         tokens_split = tokenizer_split.encode(text)
         self.assertEqual(tokens_default, tokens_split)
+
+
+class TestBosEosTokenAddition(TestCase):
+    def setUp(self):
+        self.tokenizer_config = DOLMA2_TOKENIZER
+        self.documents = [
+            "I do not like living barely on the edge of legality.",
+            "Poor is the man who does not see the sun's rays.",
+            "Ishmishing is a word that is not in the dictionary, but in our hearts.",
+            "All must dress for the main event.",
+            "Coded springs are behind us.",
+        ]
+
+        self.tokenizer = Tokenizer.from_file(**self.tokenizer_config)
+
+        self.document_tokenized = [self.tokenizer.encode(doc, add_special_tokens=False) for doc in self.documents]
+
+        self.tmpdir = Path(mkdtemp())
+        self.input_dir = self.tmpdir / "input"
+        self.output_dir = self.tmpdir / "output"
+        self.input_dir.mkdir(parents=True, exist_ok=True)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        with smart_open.open(self.input_dir / "000.json.gz", "wt") as f:
+            for i, doc in enumerate(self.documents):
+                f.write(json.dumps({"text": doc, "id": f"doc-{i}"}) + "\n")
+
+        self.default_config = {
+            "destination": f"{self.output_dir}",
+            "documents": [f"{self.input_dir}/*.json.gz"],
+            "processes": 1,
+            "seed": 3920,
+            "dtype": "uint32",
+        }
+
+    def tearDown(self):
+        """Clean up any resources created in setUp."""
+        if hasattr(self, "tmpdir"):
+            shutil.rmtree(self.tmpdir)
+
+    def _get_config(self, add_bos: bool = False, add_eos: bool = False):
+        config = copy.deepcopy(self.default_config)
+        config["tokenizer"] = {
+            "name_or_path": self.tokenizer_config["filename"],
+            "pad_token_id": self.tokenizer_config["pad_token_id"],
+        }
+        if add_bos:
+            config["tokenizer"]["bos_token_id"] = self.tokenizer_config[
+                "eos_token_id"
+            ]  # using eos token as bos token
+        if add_eos:
+            config["tokenizer"]["eos_token_id"] = self.tokenizer_config["eos_token_id"]
+        return config
+
+    def _run_tokenizer_and_read_output(self, config: dict) -> tuple[list[MetadataDict], list[int]]:
+        with NamedTemporaryFile(mode="wt") as f:
+            json.dump(config, f)
+            f.flush()
+            main(argv=["-c", f.name, "tokens"])
+
+        with smart_open.open(Path(config["destination"]) / "part-0-00000.csv.gz", "rt", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            metadata = [
+                MetadataDict(start=int(row[0]), end=int(row[1]), id=row[2], src=row[3], pos=int(row[4]))
+                for row in reader
+            ]
+
+        with smart_open.open(Path(config["destination"]) / "part-0-00000.npy", "rb") as f:
+            contents = numpy.memmap(f, dtype=config["dtype"], mode="r").tolist()
+
+        return metadata, contents
+
+    def test_adding_bos_token(self):
+        config = self._get_config(add_bos=True)
+        _, contents = self._run_tokenizer_and_read_output(config)
+
+        # we should have as many bos tokens as documents
+        count_sep = sum(1 for t in contents if t == self.tokenizer_config["eos_token_id"])
+        self.assertEqual(count_sep, len(self.documents))
+
+        # the sequence should start with a bos token
+        self.assertEqual(contents[0], self.tokenizer_config["eos_token_id"])
+
+        # the sequence should NOT end with an eos token
+        self.assertNotEqual(contents[-1], self.tokenizer_config["eos_token_id"])
+
+        # partition sequences
+        extracted_sequences: list[list[int]] = []
+        for i, token in enumerate(contents):
+            if i == 0:
+                extracted_sequences.append([])
+            elif token != self.tokenizer_config["eos_token_id"]:
+                extracted_sequences[-1].append(token)
+            else:
+                extracted_sequences.append([])
+
+        # now check if partitioned sequences exist in the original document tokenized
+        # note that order can be different cuz we shuffle during tokenization
+        expected = self.document_tokenized[:]
+        for sequence in extracted_sequences:
+            pos = expected.index(sequence)
+            self.assertEqual(sequence, expected[pos])
+            expected.pop(pos)
+        self.assertEqual(expected, [])
+
+    def test_adding_eos_token(self):
+        config = self._get_config(add_eos=True)
+        _, contents = self._run_tokenizer_and_read_output(config)
+
+        # we should have as many eos tokens as documents
+        count_sep = sum(1 for t in contents if t == self.tokenizer_config["eos_token_id"])
+        self.assertEqual(count_sep, len(self.documents))
+
+        # the sequence should end with an eos token
+        self.assertEqual(contents[-1], self.tokenizer_config["eos_token_id"])
+
+        # the sequence should NOT start with a bos token
+        self.assertNotEqual(contents[0], self.tokenizer_config["eos_token_id"])
+
+        # partition sequences
+        extracted_sequences = [[]]
+        for i, token in enumerate(contents):
+            if i == len(contents) - 1:
+                # do nothing on last symbol (should be eos, but you checked that above)
+                continue
+            elif token != self.tokenizer_config["eos_token_id"]:
+                extracted_sequences[-1].append(token)
+            else:
+                extracted_sequences.append([])
+
+        # now check if partitioned sequences exist in the original document tokenized
+        # note that order can be different cuz we shuffle during tokenization
+        expected = self.document_tokenized[:]
+        for sequence in extracted_sequences:
+            pos = expected.index(sequence)
+            self.assertEqual(sequence, expected[pos])
+            expected.pop(pos)
+        self.assertEqual(expected, [])
+
+    def test_adding_bos_and_eos_tokens(self):
+        config = self._get_config(add_bos=True, add_eos=True)
+        _, contents = self._run_tokenizer_and_read_output(config)
+
+        # we should have as many bos/eos tokens as twice the documents (we use same symbol for bos and eos)
+        count_sep = sum(1 for t in contents if t == self.tokenizer_config["eos_token_id"])
+        self.assertEqual(count_sep, len(self.documents) * 2)
+
+        # the sequence should start with a bos token
+        self.assertEqual(contents[0], self.tokenizer_config["eos_token_id"])
+
+        # the sequence should end with an eos token
+        self.assertEqual(contents[-1], self.tokenizer_config["eos_token_id"])
+
+        # partition sequences
+        extracted_sequences = []
+        for i, token in enumerate(contents):
+            if i == 0:
+                # first bos
+                extracted_sequences.append([])
+            if i == len(contents) - 1:
+                # do nothing on last symbol (should be eos, but you checked that above)
+                continue
+            elif token != self.tokenizer_config["eos_token_id"]:
+                extracted_sequences[-1].append(token)
+            elif contents[i - 1] != self.tokenizer_config["eos_token_id"]:
+                # this is EOS, otherwise previous token wouldnt be EOS
+                extracted_sequences.append([])
+
+        # now check if partitioned sequences exist in the original document tokenized
+        # note that order can be different cuz we shuffle during tokenization
+        expected = self.document_tokenized[:]
+        for sequence in extracted_sequences:
+            pos = expected.index(sequence)
+            self.assertEqual(sequence, expected[pos])
+            expected.pop(pos)
+        self.assertEqual(expected, [])
+
+
+class TokenizeOnNonStandardFields(TestCase):
+    def setUp(self):
+        self.stack = ExitStack()
+        self.default_config = {
+            "tokenizer": {
+                "name_or_path": DOLMA2_TOKENIZER["filename"],
+                "bos_token_id": DOLMA2_TOKENIZER["eos_token_id"],
+                "eos_token_id": DOLMA2_TOKENIZER["eos_token_id"],
+                "pad_token_id": DOLMA2_TOKENIZER["pad_token_id"],
+            },
+            "processes": 1,
+            "seed": 3920,
+            "dtype": "uint32",
+            "debug": True,
+        }
+        self.texts = sorted(
+            [
+                "To be or not to be, that is the question.",
+                "I think, therefore I am.",
+                "The only way to do great work is to love what you do.",
+                "Be the change you wish to see in the world.",
+                "All that glitters is not gold.",
+                "The road not taken makes all the difference.",
+                "To thine own self be true.",
+                "Life is what happens while you're busy making other plans.",
+                "The early bird catches the worm.",
+                "Where there's a will, there's a way.",
+            ]
+        )
+        self.tokenizer = Tokenizer.from_file(**DOLMA2_TOKENIZER)
+
+    def tearDown(self):
+        """Clean up any resources created in setUp."""
+        self.stack.close()
+
+    def _make_documents(self, text_field: str, id_field: Optional[str]):
+        def make_text_doc(my_text_field: str, my_text_content: str):
+            if "." in my_text_field:
+                prefix, rest = my_text_field.split(".", 1)
+                return {prefix: make_text_doc(rest, my_text_content)}
+            else:
+                return {my_text_field: my_text_content}
+
+        def make_id_doc(my_id_field: Optional[str], my_id_content: str):
+            return {} if my_id_field is None else make_text_doc(my_id_field, my_id_content)
+
+        input_dir = self.stack.enter_context(TemporaryDirectory())
+        output_dir = self.stack.enter_context(TemporaryDirectory())
+
+        for i, text in enumerate(self.texts):
+            with smart_open.open(f"{input_dir}/{i:03d}.json.gz", "wt", encoding="utf-8") as f:
+                doc = {**make_text_doc(text_field, text), **make_id_doc(id_field, f"doc-{i}")}
+                f.write(json.dumps(doc) + "\n")
+
+        return input_dir, output_dir
+
+    def _run_tokenizer_and_read_output(self, config: dict) -> list[int]:
+        with NamedTemporaryFile(mode="wt") as f:
+            json.dump(config, f)
+            f.flush()
+            main(argv=["-c", f.name, "tokens"])
+
+        contents = []
+        for fn in Path(config["destination"]).glob("*.npy"):
+            with smart_open.open(fn, "rb") as f:
+                contents.extend(numpy.memmap(f, dtype=config["dtype"], mode="r").tolist())
+        return contents
+
+    def _decode_contents(self, contents: list[int]) -> list[str]:
+        # partition sequences
+        extracted_sequences: list[list[int]] = []
+        for i, token in enumerate(contents):
+            if i == 0:
+                # first bos
+                extracted_sequences.append([])
+            if i == len(contents) - 1:
+                # do nothing on last symbol (should be eos, but you checked that above)
+                continue
+            elif token != DOLMA2_TOKENIZER["eos_token_id"]:
+                extracted_sequences[-1].append(token)
+            elif contents[i - 1] != DOLMA2_TOKENIZER["eos_token_id"]:
+                # this is EOS, otherwise previous token wouldnt be EOS
+                extracted_sequences.append([])
+
+        return sorted([self.tokenizer.decode(seq) for seq in extracted_sequences])
+
+    def test_tokenize_with_no_id_field(self):
+        input_dir, output_dir = self._make_documents(text_field="text", id_field=None)
+        config = copy.deepcopy(self.default_config)
+        config["documents"] = [f"{input_dir}/*.json.gz"]
+        config["destination"] = output_dir
+        config.setdefault("fields", {})["id_field_name"] = None
+        contents = self._run_tokenizer_and_read_output(config)
+        decoded = self._decode_contents(contents)
+
+        for src, dst in zip(self.texts, decoded):
+            self.assertEqual(src, dst)
+
+    def test_with_nested_text_and_id_field(self):
+        input_dir, output_dir = self._make_documents(text_field="text.nested", id_field="id.nested.more")
+        config = copy.deepcopy(self.default_config)
+        config["documents"] = [f"{input_dir}/*.json.gz"]
+        config["destination"] = output_dir
+        config.setdefault("fields", {})["id_field_name"] = "id.nested.more"
+        config.setdefault("fields", {})["text_field_name"] = "text.nested"
+        contents = self._run_tokenizer_and_read_output(config)
+        decoded = self._decode_contents(contents)
+
+        for src, dst in zip(self.texts, decoded):
+            self.assertEqual(src, dst)
+
+
+class TestDtypeMismatch(TestCase):
+    def test_dtype_mismatch(self):
+        with self.assertRaises(TypeError), TemporaryDirectory() as tmpdir:
+            tokenize_in_parallel(
+                tokenizer_name_or_path=DOLMA2_TOKENIZER["filename"],
+                sources=[tmpdir],
+                destination=tmpdir,
+                dtype="uint16",
+            )

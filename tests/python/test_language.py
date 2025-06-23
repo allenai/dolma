@@ -156,11 +156,13 @@ class BaseMultilingualTaggerTest(BaseEnglishTaggerTest):
         return
 
 
+@unittest.skip("pycld2 is not installed")
 class TestCld2AllLanganuges(BaseMultilingualTaggerTest, unittest.TestCase):
     doc_tagger_cls = Cld2LanguageTagger
     par_tagger_cls = Cld2LanguageTaggerParagraph
 
 
+@unittest.skip("pycld2 is not installed")
 class TestPyCld2(BaseEnglishTaggerTest, unittest.TestCase):
     doc_tagger_cls = Cld2EnglishLanguageTagger
     par_tagger_cls = Cld2EnglishLanguageParagraphTagger
@@ -178,6 +180,7 @@ class TestFastTextAllLanguages(BaseMultilingualTaggerTest, unittest.TestCase):
     par_tagger_cls = FastTextAllLanguageParagraphTagger
 
 
+@unittest.skip("langdetect is not installed")
 class TestLangdetect(BaseEnglishTaggerTest, unittest.TestCase):
     doc_tagger_cls = LangdetectEnglishTagger
     par_tagger_cls = LangdetectEnglishTaggerParagraph

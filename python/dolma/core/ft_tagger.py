@@ -11,11 +11,11 @@ from tempfile import NamedTemporaryFile
 from typing import Iterable, Literal, NamedTuple, Optional
 
 import smart_open
-from cached_path import cached_path
 from fasttext import train_supervised
 from fasttext.FastText import _FastText
 
 from .data_types import DocResult, Document, Span, TextSlice
+from .paths import cached_path
 from .taggers import BaseTagger
 from .utils import split_paragraphs, split_sentences
 

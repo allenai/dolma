@@ -24,7 +24,6 @@ with necessary.necessary("pycld2", soft=True) as CLD2_AVAILABLE:
     if CLD2_AVAILABLE or TYPE_CHECKING:
         import pycld2 as cld2  # pyright:ignore pylint:disable=import-error
 
-
 with necessary.necessary("langdetect", soft=True) as LANGDETECT_AVAILABLE:
     if LANGDETECT_AVAILABLE or TYPE_CHECKING:
         from langdetect import PROFILES_DIRECTORY, DetectorFactory, LangDetectException
@@ -98,7 +97,10 @@ class Cld2LanguageTagger(BaseLanguageTagger):
     def __init__(self) -> None:
         super().__init__()
         if not CLD2_AVAILABLE:
-            raise ImportError("pycld2 is not installed, please run `pip install dolma[lang]`.")
+            raise ImportError(
+                "pycld2 is not available, please run `pip install pycld2` "
+                "or `pip install LTpycld2` (whichever works)."
+            )
 
     def _sanitize_input(self, text: str) -> str:
         return self.RE_BAD_CHARS.sub("", text)

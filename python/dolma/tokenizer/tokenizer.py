@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import hashlib
 import json
 import os
 import re
@@ -11,7 +12,19 @@ from itertools import chain
 from os import PathLike
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import TYPE_CHECKING, Generator, List, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Callable,
+    Generator,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeAlias,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import msgspec
 import numpy as np
@@ -22,11 +35,13 @@ from tokenizers import Tokenizer as BaseTokenizer
 
 from ..core.errors import DolmaConfigError
 from ..core.loggers import get_logger
-from .data_types import InputSpec, TokenizerOutput
+from .data_types import TokenizerOutput
 
 with necessary("transformers", soft=True) as TRANSFORMERS_AVAILABLE:
     if TYPE_CHECKING or TRANSFORMERS_AVAILABLE:
-        from transformers import AutoTokenizer  # pylint: disable=import-error
+        from transformers import (  # pylint: disable=import-error # pyright: ignore
+            AutoTokenizer,
+        )
 
 PathOrStr = Union[str, PathLike]
 
@@ -355,9 +370,70 @@ def make_tokenizer(
     return tokenizer
 
 
+# we need type: ignore because mypy cannot deal with recursive type aliases
+NestedDict: TypeAlias = dict[str, Union[type, "NestedDict"]]  # type: ignore
+
+
+def make_spec_from_fields(name: str, *fields: tuple[str, type] | None) -> type[msgspec.Struct]:
+    """This function builds a msgspec.Struct from a list of field names and types.
+    The field names can be nested, and the types can be nested dictionaries of types.
+    """
+    # first, we split the fields in components on the "." character;
+    # we ignore any fields that are None; we group them into nested dictionary for shared prefixes.
+    # we also need to keep track of the type of the field, so that we can use the correct decoder.
+
+    nested_dict: NestedDict = {}
+    for field_name, field_type in (f for f in fields if f is not None):
+        nd = nested_dict
+        *components, last_component = field_name.split(".")
+        for component in components:
+            nd = cast(NestedDict, nd.setdefault(component, {}))
+        nd[last_component] = field_type  # pyright: ignore
+
+    def recursively_make_struct(name: str, nested_dict: NestedDict) -> type[msgspec.Struct]:
+        """This function recursively builds a msgspec.Struct from a nested dictionary of field names and types."""
+        spec = []
+        for k, v in nested_dict.items():
+            if isinstance(v, type):
+                spec.append((k, v))
+            else:
+                spec.append((k, recursively_make_struct(k, v)))
+        return msgspec.defstruct(name, spec)
+
+    return recursively_make_struct(name, nested_dict)
+
+
+T = TypeVar("T")
+
+
+def make_retriever_for_field(field_name: str, field_type: Type[T]) -> Callable[[msgspec.Struct], T]:
+    if "." in field_name:
+        curr, rest = field_name.split(".", 1)
+        fn = make_retriever_for_field(rest, field_type)
+
+        def retriever(spec: msgspec.Struct) -> T:
+            if not hasattr(spec, curr):
+                raise AttributeError(f"Field {field_name} not found in {spec}")
+            return fn(getattr(spec, curr))
+
+        return retriever
+    else:
+
+        def retriever(spec: msgspec.Struct) -> T:
+            if not hasattr(spec, field_name):
+                raise AttributeError(f"Field {field_name} not found in {spec}")
+            return getattr(spec, field_name)
+
+        return retriever
+
+
 def tokenize_file(
     tokenizer_name_or_path: str,
     path: str,
+    text_field_name: str = "text",
+    text_field_type: type = str,
+    id_field_name: Optional[str] = "id",
+    id_field_type: type = str,
     refresh_tokenizer_every: int = 0,
     **tokenizer_kwargs,
 ) -> Generator[TokenizerOutput, None, None]:
@@ -366,40 +442,63 @@ def tokenize_file(
     """
     tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
     dtype = deepcopy(tokenizer.dtype)
-    decoder = msgspec.json.Decoder(InputSpec)
+
+    spec = make_spec_from_fields(
+        "TokenizerInputSpec",
+        (text_field_name, text_field_type),
+        ((id_field_name, id_field_type) if id_field_name else None),
+    )
+    text_retriever: Callable[[msgspec.Struct], str] = make_retriever_for_field(
+        field_name=text_field_name, field_type=text_field_type
+    )
+    id_retriever: Callable[[msgspec.Struct], str] | None = (
+        make_retriever_for_field(
+            field_name=id_field_name,
+            field_type=id_field_type,
+        )
+        if id_field_name
+        else None
+    )
+    decoder = msgspec.json.Decoder(spec)
     force_refresh = False
 
-    with smart_open.open(path, mode="rt") as input_stream:
-        for i, line in enumerate(input_stream, start=1):
-            try:
+    try:
+        with smart_open.open(path, mode="rt") as input_stream:
+            path_hash = hashlib.sha256(path.encode()).hexdigest()
+            for i, line in enumerate(input_stream, start=1):
                 try:
                     row = decoder.decode(line)
-                    if not (text := row.text.strip()):
+                    row_id = id_retriever(row) if id_retriever else f"{path_hash}-{i}"
+                    row_text = text_retriever(row)
+
+                    if not (text := row_text.strip()):
                         # skip empty docs
                         continue
 
                     # the actual tokenization happens here
                     tokens = tokenizer.encode(text, add_special_tokens=True)
-                except Exception:
+
+                    if refresh_tokenizer_every:
+                        # extra copy to prevent memory leaks
+                        tokens = np.array(tokens, dtype=dtype)
+
+                    yield TokenizerOutput.from_tokens(id=row_id, src=path, loc=i, tokens=tokens)  # pyright: ignore
+
+                    if (refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0) or force_refresh:
+                        # to prevent memory leaks, we refresh the tokenizer every so often
+                        del tokenizer
+                        gc.collect()
+                        tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
+
+                        # we reset the flag after refreshing the tokenizer
+                        force_refresh = False
+
+                except Exception as ex:
                     # in case of failure, we log the error and continue
                     # We refresh the tokenizer to prevent memory leaks from affecting the rest of the processing
-                    logger.warning("Error tokenizing %s:%d", path, i)
+                    logger.warning("Error processing line %s:%d: %s", path, i, ex)
                     force_refresh = True
                     continue
-
-                if refresh_tokenizer_every:
-                    # extra copy to prevent memory leaks
-                    tokens = np.array(tokens, dtype=dtype)
-                yield TokenizerOutput.from_tokens(id=row.id, src=path, loc=i, tokens=tokens)  # pyright: ignore
-
-                if (refresh_tokenizer_every > 0 and i % refresh_tokenizer_every == 0) or force_refresh:
-                    # to prevent memory leaks, we refresh the tokenizer every so often
-                    del tokenizer
-                    gc.collect()
-                    tokenizer = make_tokenizer(tokenizer_name_or_path, **tokenizer_kwargs)
-
-                    # we reset the flag after refreshing the tokenizer
-                    force_refresh = False
-
-            except Exception as ex:
-                logger.error("Error processing %s:%d", path, i, exc_info=ex)
+    except Exception as ex:
+        # more catastrophic error, so we log the error and re-raise
+        logger.error("Error processing file %s", path, exc_info=ex)
