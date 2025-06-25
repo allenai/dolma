@@ -51,6 +51,7 @@ def get_test_prefix() -> str:
 
     # check if the user has access to the test bucket using boto3
     s3 = boto3.client("s3")
+
     try:
         s3.head_bucket(Bucket=bucket)
     except Exception:
@@ -67,7 +68,7 @@ def get_test_prefix() -> str:
 def skip_aws_tests() -> bool:
     dolma_tests_skip = os.environ.get(DOLMA_TESTS_SKIP_AWS_ENV_VAR)
     LOGGER.info(f"{DOLMA_TESTS_SKIP_AWS_ENV_VAR}: {dolma_tests_skip}")
-    return (dolma_tests_skip or "false").lower() == "true"
+    return (dolma_tests_skip or "false").lower() in {"true", "1", "yes", "y"}
 
 
 def upload_test_documents(local_input: str, test_prefix: str) -> Tuple[str, str]:
