@@ -112,6 +112,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
         tokenizer_ring: List[Generator[TokenizerOutput, None, None]] = []
         tokenizer_sizes: List[int] = []
+
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
             tokenizer_ring.append(
@@ -136,7 +137,34 @@ class MemMapParallelWriter(BaseParallelProcessor):
             cls.increment_progressbar(queue, memmaps=1)
 
             while len(source_paths) > 0 or len(tokenizer_ring) > 0:
+
+                # recall that the local_shuffle here is how many rows we try to collect before shuffling them
+                # and writing them into a memmap. This ensures, plus the fact that we are reading from a ring
+                # ensures that the tokenized sequences are somewhat mixed.
+                #
+                # To ensure proper mixing, one should prioritize reading from more files in the buffer, rather
+                # than increasing the count of rows we read before shuffling.
                 for i in range(local_shuffle):
+                    if len(tokenizer_ring) == 0:
+                        # this can happen when the amount of content in the ring is not
+                        # enough to collect a local_shuffle amount of rows. This is normal
+                        # in cases where we are trying to tokenize very small files.
+                        # We try adding a new file to the ring, but if there are no more files, we break
+                        if len(source_paths) > 0:
+                            path = source_paths.pop()
+                            tokenizer_ring.append(
+                                tokenize_file(
+                                    tokenizer_name_or_path=tokenizer_name_or_path,
+                                    path=path,
+                                    refresh_tokenizer_every=refresh_tokenizer,
+                                    **tokenizer_kwargs,
+                                )
+                            )
+                            tokenizer_sizes.append(get_size(path))
+                        else:
+                            # no more files to add, we break out of the loop.
+                            break
+
                     if sample_ring_prop:
                         # you are sampling proportionally to the size of files in the ring
                         j = np.random.choice(len(tokenizer_ring), p=tokenizer_probs)
@@ -145,7 +173,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         j = i % len(tokenizer_ring)
 
                     try:
-                        # trying to read the next sequence of tokens (might fail if end of file)
+                        # trying to read the next sequence of tokens (will raise StopIteration if end of file)
                         content = next(tokenizer_ring[j])
 
                         # added to the accumulator, we will shuffle this later
@@ -192,11 +220,14 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
                 # try to write all the sequences, collect the ones that don't fit in remaining
                 remaining = memwriter.write_many(outputs=accumulator, flush=documents_cnt == 0)
-
-                if remaining:
+                # we need to pass over remaining multiple times cuz not all
+                # the remaining might fit onto a single memmap
+                while remaining:
                     # if we have remaining sequences, we need to close the current memwriter and open a new one
                     mm_cnt += 1
                     stack.pop_all().close()
+
+                    # create a new memwriter for the few remaining sequences
                     memwriter = stack.enter_context(
                         MemmapWriter(
                             path=destination_path + f"-{mm_cnt:05d}",
@@ -206,12 +237,15 @@ class MemMapParallelWriter(BaseParallelProcessor):
                     )
                     cls.increment_progressbar(queue, memmaps=1)
 
+                    # shuffle the remaining sequences
+                    random.shuffle(remaining)
+
                     # finally, write the remaining sequences
-                    memwriter.write_many(outputs=remaining, flush=True)
+                    remaining = memwriter.write_many(outputs=remaining, flush=True)
 
-                accumulator = []
-
+                # done writing, flush (triggers a write to disk)
                 memwriter.flush()
+                accumulator = []
 
         cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
 

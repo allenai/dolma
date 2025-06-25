@@ -1,0 +1,6 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/stack-edu/Ruby
+local_tempdir: /mnt/raid0/resharding/stack-edu/Ruby
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Ruby
+  sample_rate: 3.875050513119277
