@@ -21,7 +21,7 @@ def inspect_tokenized(tokenized_file: str, tokenizer_name_or_path: str, dtype: s
 
     path = cached_path(tokenized_file)
     size = os.path.getsize(path)
-    data = np.memmap(path, dtype=dtype, mode='r', shape=(size // 2,))
+    data = np.memmap(path, dtype=dtype, mode='r', shape=(size // 4,))
 
     collection = []
     i = 0
