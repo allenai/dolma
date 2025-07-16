@@ -8,7 +8,7 @@ Convert data to dolma format. For example, we reformat the [trafilatura](https:/
 
 
 ```bash
-python examples/c4-like/reformat_trafilatura.py \
+python examples/c4-replication/reformat_trafilatura.py \
     src='s3://ai2-llm/experimental/dcnlp_beta_ai2/raw/cc_trafilatura_beta/crawl-data/*/segments/*/warc/*.jsonl' \
     dst='s3://ai2-llm/experimental/dcnlp_beta_ai2/v0/documents' \
     proc=16 \
@@ -20,7 +20,7 @@ python examples/c4-like/reformat_trafilatura.py \
 Tag with fasttext language id and c4 rules.
 
 ```bash
-time dolma -c examples/c4-like/tagger.yaml tag
+time dolma -c examples/c4-replication/tagger.yaml tag
 ```
 
 Timing on a `c6a.4xlarge` instance (8 cores/16 threads, 32 GB memory, gp3 volume/16000 IOPS/125 MB/s throughput):
@@ -36,7 +36,7 @@ Timing on a `c6a.4xlarge` instance (8 cores/16 threads, 32 GB memory, gp3 volume
 Run mixer to generate the final dataset.
 
 ```bash
-time dolma -c examples/c4-like/mixer.yaml mix
+time dolma -c examples/c4-replication/mixer.yaml mix
 ```
 
 Timing on a `c6a.4xlarge` instance (8 cores/16 threads, 32 GB memory, gp3 volume/16000 IOPS/125 MB/s throughput):
