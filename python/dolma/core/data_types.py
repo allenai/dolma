@@ -11,9 +11,12 @@ from typing import Any, Dict, List, Optional, Tuple
 from msgspec import Struct
 from typing_extensions import TypeAlias
 
-TaggerOutputValueType: TypeAlias = Tuple[int, int, float]
+TaggerOutputValueType: TypeAlias = Tuple[int, int, float | str]
 TaggerOutputType: TypeAlias = List[TaggerOutputValueType]
 TaggerOutputDictType: TypeAlias = Dict[str, TaggerOutputType]
+
+# digits after the decimal point
+TAGGER_SCORE_PRECISION = 5
 
 
 class InputSpec(Struct):
@@ -171,21 +174,21 @@ class DocumentWithMetadataAndAttributes(DocumentWithMetadata):
 
 
 class Span:
-    __slots__ = "start", "end", "type", "score", "experiment", "tagger"
+    __slots__ = "start", "end", "type", "_score", "experiment", "tagger"
 
     def __init__(
         self,
         start: int,
         end: int,
         type: str,
-        score: float = 1.0,
+        score: float | str = 1.0,
         experiment: Optional[str] = None,
         tagger: Optional[str] = None,
     ):
         self.start = start
         self.end = end
         self.type = type
-        self.score = float(score)
+        self._score = float(score) if not isinstance(score, str) else score
         self.experiment = experiment
         self.tagger = tagger
 
@@ -194,6 +197,13 @@ class Span:
 
     def select(self, doc: Document) -> str:
         return doc.text[self.start : self.end]
+
+    @property
+    def score(self) -> float | str:
+        if isinstance(self._score, str):
+            return self._score
+        else:
+            return round(float(self._score), TAGGER_SCORE_PRECISION)
 
     @classmethod
     def from_spec(cls, attribute_name: str, attribute_value: TaggerOutputValueType) -> "Span":
