@@ -1,6 +1,7 @@
 #!/bin/bash
 
 uv add --dev pip
+uv pip install openai spacy regex
 uv run spacy download en_core_web_sm
 
 PYTHONPATH=contrib/wikiclean:$PYTHONPATH uv run dolma tag \
