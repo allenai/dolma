@@ -36,6 +36,12 @@ class WikicleanTagger(BaseTagger):
         # remove empty parentheses
         text = re.sub(r"\(\s*\)", "", text)
 
+        # remove references
+        text = re.sub(r"\[\d+\]", "", text)
+
+        # remove other style of references
+        text = re.sub(r"<ref.+?</ref>", "", text)
+
         # remove empty quotes
         text = text.replace('""', "").replace("''", "")
 
@@ -108,70 +114,34 @@ class WikicleanTagger(BaseTagger):
 
         processed_lines = filtered_lines
 
-        total_page_length = sum(len(section.text) for section in processed_lines if section.type == "text")
-
-        if total_page_length < 3000:
-            span = Span(
-                start=0,
-                end=len(doc.text),
-                type="wikiclean",
-                score="\n".join(section.text if section.type == "text" else "" for section in processed_lines if section.type != "title").strip()
-            )
-            return DocResult(doc=doc, spans=[span])
 
         # count the length of the text sections until first header
         summary_text = ""
         for section in processed_lines:
             if section.type == "header":
                 break
-            if section.type == "text":
-                summary_text += section.text + "\n"
+            summary_text += section.text + "\n"
+        summary_text = summary_text.strip()
 
-        # if length of text is at least 500, we return it as is.
-        if len(summary_text) >= 1000:
-            span = Span(
-                start=0,
-                end=len(doc.text),
-                type="wikiclean",
-                score="\n".join(section.text for section in processed_lines if section.type == "text").strip()
-            )
-            return DocResult(doc=doc, spans=[span])
+        full_text = "\n".join(
+            (section.text + "\n" if section.type == "title" else section.text if section.type == "text" else "")
+            for section in processed_lines
+        )
 
-        # last case: if summary is too short, we use openai 4.1 nano api to expand the summary
-        # and return the result
-
-        prompt = f"""
-        You are a helpful assistant that expands a summary of a Wikipedia page.
-
-        The content of the page is:
-        {doc.text}
-
-        The existing summary is:
-        {summary_text}...
-
-        Continue the summary to be around 1000 characters. Keep the beginning of the summary as is.
-
-        Return the expanded summary only, no other text.
-        """
-
-        try:
-            response = openai.chat.completions.create(
-                model="gpt-4.1-nano",
-                messages=[{"role": "user", "content": prompt.strip()}],
-                max_tokens=200,
-                temperature=0.8
-            )
-            content = response.choices[0].message.content
-            assert content is not None and len(content) > 0
-            span = Span(
-                start=0,
-                end=len(doc.text),
-                type="wikiclean",
-                score=content.strip()
-            )
-            # we return the span wrapped in a DocResult object
-            return DocResult(doc=doc, spans=[span])
-
-        except Exception as e:
-            print(f"WARNING: Failed to expand summary: {e}")
+        if len(summary_text) == 0:
             return DocResult(doc=doc, spans=[])
+
+        init_span = Span(
+            start=0,
+            end=len(doc.text),
+            type="summary",
+            score=summary_text
+        )
+        full_span = Span(
+            start=0,
+            end=len(doc.text),
+            type="full_text",
+            score=full_text
+        )
+
+        return DocResult(doc=doc, spans=[init_span, full_span])

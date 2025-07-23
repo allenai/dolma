@@ -8,6 +8,5 @@ PYTHONPATH=contrib/wikiclean:$PYTHONPATH uv run dolma tag \
     --taggers wikiclean \
     --tagger_modules wikiclean \
     --documents 's3://ai2-llm/pretraining-data/sources/wikipedia/v0/documents/lang=en/*.gz' \
-    --destination tmp/wikiclean \
-    --processes 10 \
-    --debug
+    --destination /mnt/raid0/wikiclean \
+    --processes 128
