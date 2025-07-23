@@ -87,8 +87,22 @@ The article is as follows:
 
     def postprocess(self, response: str) -> str:
         response = regex.sub(r"\n+", "\n", response)
-        sents = [regex.sub(r"^- ", "", sent).strip() for sent in response.split("\n")]
-        return "\n".join(sents).strip()
+        sentences = [s.strip() for s in response.split("\n") if len(s.strip()) > 0]
+
+        new_sentences = []
+        for sentence in sentences:
+            if regex.match(r"^(\*|-) ", sentence):
+                new_sentences.append(sentence[2:])
+            elif regex.match(r"^\d+\. ", sentence):
+                new_sentences.append(regex.sub(r"^\d+\. ", "", sentence))
+            elif sentence.startswith("Q: "):
+                new_sentences.append("Question: " + sentence[3:])
+            elif sentence.startswith("A: "):
+                new_sentences.append("Answer: " + sentence[3:] + "\n")
+            else:
+                new_sentences.append(sentence)
+
+        return "\n".join(new_sentences).strip()
 
 
 PROMPTS: dict[str, type[BasePrompt]] = {
@@ -147,8 +161,15 @@ def main(
                     if len(doc["attributes"]) == 0:
                         continue
 
-                    _, _, summary = doc["attributes"]["wikiclean__wikiclean__summary"][0]
-                    _, _, full_text = doc["attributes"]["wikiclean__wikiclean__full_text"][0]
+                    if "text" in doc:
+                        full_text = doc["text"]
+                        summary = ""
+                    elif "attributes" in doc:
+                        try:
+                            _, _, summary = doc["attributes"]["wikiclean__wikiclean__summary"][0]
+                            _, _, full_text = doc["attributes"]["wikiclean__wikiclean__full_text"][0]
+                        except Exception as e:
+                            raise ValueError(f"Missing attributes: {doc}") from e
 
                     formatted_prompt = prompt_obj.format(
                         full_text=full_text,
