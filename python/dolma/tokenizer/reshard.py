@@ -105,11 +105,14 @@ def merge_group(
             target_memmap.flush()
 
             row_count = 0
+
+            full_src = str(path.npy_path) + str(src)
             with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
                 rd = csv.reader(g)
                 for row in rd:
                     start, end, id_, src, idx = row
-                    rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
+                    rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, full_src, int(idx)]) # use full path
+                    #rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
                     row_count += 1
 
             bytes_offset += source_memmap.shape[0]
@@ -416,10 +419,22 @@ def reshard(config: ReshardingConfig):
         )
 
         # download the files
-        source_prefixes = [
-            source_prefix.download(local_tempdir / f"input/{i:06d}")
-            for i, source_prefix in enumerate(config.source_prefixes)
-        ]
+        # source_prefixes = [
+        #     source_prefix.download(local_tempdir / f"input/{i:06d}")
+        #     for i, source_prefix in enumerate(config.source_prefixes)
+        # ]
+
+        # change this to maintain same vigintile structure
+        # download the files, preserving the “adult_content/…/vigintile_XXXX” structure
+        source_prefixes = []
+        for source_prefix in config.source_prefixes:
+            parsed = urlparse(str(source_prefix.prefix))
+            parts = Path(parsed.path).parts
+            start = parts.index("adult_content")
+            subpath = Path(*parts[start:])          # e.g. Path("adult_content", "vigintile_0014")
+            dest_dir = local_tempdir / "input" / subpath
+            source_prefixes.append(source_prefix.download(dest_dir))
+
 
         # get repetition aware samples
         source_paths = [path for source_prefix in source_prefixes for path in source_prefix.take()]
