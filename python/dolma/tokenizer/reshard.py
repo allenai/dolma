@@ -105,14 +105,18 @@ def merge_group(
             target_memmap.flush()
 
             row_count = 0
-
-            full_src = str(path.npy_path) + str(src)
             with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
                 rd = csv.reader(g)
-                for row in rd:
-                    start, end, id_, src, idx = row
-                    rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, full_src, int(idx)]) # use full path
-                    #rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
+                dir_of_npy = Path(path.npy_path).parent
+                for start, end, id_, src, idx in rd:
+                    full_src = str(dir_of_npy / src)
+                    rw.writerow([
+                        int(start) + bytes_offset,
+                        int(end)   + bytes_offset,
+                        id_,
+                        full_src,
+                        int(idx),
+                    ])
                     row_count += 1
 
             bytes_offset += source_memmap.shape[0]
