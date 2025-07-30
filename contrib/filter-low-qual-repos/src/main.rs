@@ -1,18 +1,18 @@
 use anyhow::{Context, Result};
-use arrow::array::{Float64Array, StringArray, UInt64Array, RecordBatch};
+use arrow::array::{Float64Array, RecordBatch, StringArray, UInt64Array};
 use arrow::datatypes::{DataType, Field, Schema};
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
-use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
+use parquet::arrow::{arrow_reader::ParquetRecordBatchReaderBuilder, ArrowWriter};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::fs::{File, create_dir_all};
-use std::io::{BufRead, BufReader, Write, Seek};
+use std::fs::{create_dir_all, File};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex, Arc};
+use std::sync::{atomic::AtomicUsize, atomic::Ordering, Arc, Mutex};
 use std::time::Instant;
 use walkdir::WalkDir;
 
@@ -31,7 +31,7 @@ enum Commands {
         /// Source directory containing programming language subdirectories
         #[arg(short, long)]
         source_dir: PathBuf,
-        
+
         /// Output report file path
         #[arg(short, long, default_value = "repo_scores_report.json")]
         output: PathBuf,
@@ -41,23 +41,23 @@ enum Commands {
         /// Source directory containing programming language subdirectories (only used if --build-report is specified)
         #[arg(short, long)]
         source_dir: Option<PathBuf>,
-        
+
         /// Path to existing score report file
         #[arg(short, long, default_value = "repo_scores_report.json")]
         report_path: PathBuf,
-        
+
         /// Force rebuild the score report from source directory
         #[arg(long)]
         build_report: bool,
-        
+
         /// Number of bins to create
         #[arg(short, long, default_value = "10")]
         num_bins: usize,
-        
+
         /// Sample size per bin using reservoir sampling
         #[arg(long, default_value = "100")]
         sample_size: usize,
-        
+
         /// Output report file path
         #[arg(short, long, default_value = "repo_bins_report.json")]
         output: PathBuf,
@@ -67,27 +67,27 @@ enum Commands {
         /// Source directory containing programming language subdirectories with *.jsonl.zst files
         #[arg(short, long)]
         source_dir: PathBuf,
-        
+
         /// Path to score report file
         #[arg(short, long)]
         report_path: PathBuf,
-        
+
         /// Path to bin report file
         #[arg(short, long)]
         bin_path: PathBuf,
-        
+
         /// Target bin numbers to include (comma-separated, 1-indexed)
         #[arg(short, long, value_delimiter = ',')]
         target_bins: Vec<usize>,
-        
+
         /// Specific language to filter (optional, filters all languages if not specified)
         #[arg(short, long)]
         language: Option<String>,
-        
+
         /// Output directory for filtered *.jsonl.zst files
         #[arg(short, long)]
         output_dir: PathBuf,
-        
+
         /// Maximum file size in MB before splitting
         #[arg(long, default_value = "50")]
         max_file_size_mb: usize,
@@ -97,31 +97,31 @@ enum Commands {
         /// Source directory containing programming language subdirectories with *.jsonl.zst files
         #[arg(short, long)]
         source_dir: PathBuf,
-        
+
         /// Target bin numbers to include (comma-separated, 1-indexed)
         #[arg(short, long, value_delimiter = ',')]
         target_bins: Vec<usize>,
-        
+
         /// Specific language to filter (optional, filters all languages if not specified)
         #[arg(short, long)]
         language: Option<String>,
-        
+
         /// Output directory for filtered *.jsonl.zst files
         #[arg(short, long)]
         output_dir: PathBuf,
-        
+
         /// Number of bins to create
         #[arg(short, long, default_value = "10")]
         num_bins: usize,
-        
+
         /// Sample size per bin using reservoir sampling
         #[arg(long, default_value = "100")]
         sample_size: usize,
-        
+
         /// Maximum file size in MB before splitting
         #[arg(long, default_value = "50")]
         max_file_size_mb: usize,
-        
+
         /// Working directory for intermediate reports
         #[arg(short, long, default_value = ".")]
         work_dir: PathBuf,
@@ -183,7 +183,7 @@ struct RepoRecord {
     repo_name: String,
     document_count: u64,
     total_score: f64,
-    average_score: f64, 
+    average_score: f64,
     min_score: f64,
     max_score: f64,
 }
@@ -216,72 +216,97 @@ fn create_repo_schema() -> Arc<Schema> {
 
 fn write_arrow_partitioned_report(report: &Report, output_path: &PathBuf) -> Result<()> {
     println!("Writing partitioned Arrow/Parquet report...");
-    
+
     // Create output directory structure
     let base_dir = if output_path.extension().is_some() {
         output_path.with_extension("")
     } else {
         output_path.clone()
     };
-    
+
     create_dir_all(&base_dir)
         .with_context(|| format!("Failed to create output directory: {}", base_dir.display()))?;
-    
+
     // Write summary metadata
     let summary_path = base_dir.join("_summary.json");
     let summary_json = serde_json::to_string_pretty(&report.summary)?;
     std::fs::write(&summary_path, summary_json)?;
-    
+
     let schema = create_repo_schema();
-    
+
     // Process languages in parallel and write partitioned files
-    report.languages.par_iter().try_for_each(|(language, lang_report)| -> Result<()> {
-        let lang_dir = base_dir.join("language").join(language);
-        create_dir_all(&lang_dir)
-            .with_context(|| format!("Failed to create language directory: {}", lang_dir.display()))?;
-        
-        // Convert language data to RepoRecord format
-        let mut records: Vec<RepoRecord> = lang_report.repo_stats.iter()
-            .map(|(repo_name, stats)| RepoRecord::from_repo_stats(language, repo_name, stats))
-            .collect();
-        
-        // Sort by average_score for better compression and query performance
-        records.sort_by(|a, b| a.average_score.partial_cmp(&b.average_score).unwrap_or(std::cmp::Ordering::Equal));
-        
-        // Partition by score ranges for parallel processing
-        let chunk_size = (records.len() / rayon::current_num_threads()).max(1000);
-        let chunks: Vec<_> = records.chunks(chunk_size).enumerate().collect();
-        
-        chunks.par_iter().try_for_each(|(chunk_idx, chunk)| -> Result<()> {
-            let partition_file = lang_dir.join(format!("part_{:04}.parquet", chunk_idx));
-            write_records_to_parquet(chunk, &schema, &partition_file)?;
+    report
+        .languages
+        .par_iter()
+        .try_for_each(|(language, lang_report)| -> Result<()> {
+            let lang_dir = base_dir.join("language").join(language);
+            create_dir_all(&lang_dir).with_context(|| {
+                format!(
+                    "Failed to create language directory: {}",
+                    lang_dir.display()
+                )
+            })?;
+
+            // Convert language data to RepoRecord format
+            let mut records: Vec<RepoRecord> = lang_report
+                .repo_stats
+                .iter()
+                .map(|(repo_name, stats)| RepoRecord::from_repo_stats(language, repo_name, stats))
+                .collect();
+
+            // Sort by average_score for better compression and query performance
+            records.sort_by(|a, b| {
+                a.average_score
+                    .partial_cmp(&b.average_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // Partition by score ranges for parallel processing
+            let chunk_size = (records.len() / rayon::current_num_threads()).max(1000);
+            let chunks: Vec<_> = records.chunks(chunk_size).enumerate().collect();
+
+            chunks
+                .par_iter()
+                .try_for_each(|(chunk_idx, chunk)| -> Result<()> {
+                    let partition_file = lang_dir.join(format!("part_{:04}.parquet", chunk_idx));
+                    write_records_to_parquet(chunk, &schema, &partition_file)?;
+                    Ok(())
+                })?;
+
+            println!(
+                "  ✓ Written {} - {} repos in {} partitions",
+                language,
+                records.len(),
+                chunks.len()
+            );
+
             Ok(())
         })?;
-        
-        println!("  ✓ Written {} - {} repos in {} partitions", 
-                 language, records.len(), chunks.len());
-        
-        Ok(())
-    })?;
-    
+
     println!("Arrow/Parquet report written to: {}", base_dir.display());
     Ok(())
 }
 
-fn write_records_to_parquet(records: &[RepoRecord], schema: &Arc<Schema>, file_path: &PathBuf) -> Result<()> {
+fn write_records_to_parquet(
+    records: &[RepoRecord],
+    schema: &Arc<Schema>,
+    file_path: &PathBuf,
+) -> Result<()> {
     if records.is_empty() {
         return Ok(());
     }
-    
+
     // Create Arrow arrays from records
     let language_array = StringArray::from_iter_values(records.iter().map(|r| &r.language));
     let repo_name_array = StringArray::from_iter_values(records.iter().map(|r| &r.repo_name));
-    let document_count_array = UInt64Array::from_iter_values(records.iter().map(|r| r.document_count));
+    let document_count_array =
+        UInt64Array::from_iter_values(records.iter().map(|r| r.document_count));
     let total_score_array = Float64Array::from_iter_values(records.iter().map(|r| r.total_score));
-    let average_score_array = Float64Array::from_iter_values(records.iter().map(|r| r.average_score));
+    let average_score_array =
+        Float64Array::from_iter_values(records.iter().map(|r| r.average_score));
     let min_score_array = Float64Array::from_iter_values(records.iter().map(|r| r.min_score));
     let max_score_array = Float64Array::from_iter_values(records.iter().map(|r| r.max_score));
-    
+
     // Create record batch
     let batch = RecordBatch::try_new(
         schema.clone(),
@@ -295,15 +320,15 @@ fn write_records_to_parquet(records: &[RepoRecord], schema: &Arc<Schema>, file_p
             Arc::new(max_score_array),
         ],
     )?;
-    
+
     // Write to Parquet file
     let file = File::create(file_path)
         .with_context(|| format!("Failed to create parquet file: {}", file_path.display()))?;
-    
+
     let mut writer = ArrowWriter::try_new(file, schema.clone(), None)?;
     writer.write(&batch)?;
     writer.close()?;
-    
+
     Ok(())
 }
 
@@ -313,14 +338,14 @@ fn load_arrow_summary(report_path: &PathBuf) -> Result<Summary> {
     } else {
         report_path.clone()
     };
-    
+
     let summary_path = base_dir.join("_summary.json");
     let summary_json = std::fs::read_to_string(&summary_path)
         .with_context(|| format!("Failed to read summary file: {}", summary_path.display()))?;
-    
-    let summary: Summary = serde_json::from_str(&summary_json)
-        .with_context(|| "Failed to parse summary JSON")?;
-    
+
+    let summary: Summary =
+        serde_json::from_str(&summary_json).with_context(|| "Failed to parse summary JSON")?;
+
     Ok(summary)
 }
 
@@ -330,12 +355,12 @@ fn get_available_arrow_languages(report_path: &PathBuf) -> Result<Vec<String>> {
     } else {
         report_path.clone()
     };
-    
+
     let language_dir = base_dir.join("language");
     if !language_dir.exists() {
         return Ok(Vec::new());
     }
-    
+
     let mut languages = Vec::new();
     for entry in std::fs::read_dir(&language_dir)? {
         let entry = entry?;
@@ -345,23 +370,26 @@ fn get_available_arrow_languages(report_path: &PathBuf) -> Result<Vec<String>> {
             }
         }
     }
-    
+
     languages.sort();
     Ok(languages)
 }
 
-fn load_language_records_parallel(report_path: &PathBuf, language: &str) -> Result<Vec<RepoRecord>> {
+fn load_language_records_parallel(
+    report_path: &PathBuf,
+    language: &str,
+) -> Result<Vec<RepoRecord>> {
     let base_dir = if report_path.extension().is_some() {
         report_path.with_extension("")
     } else {
         report_path.clone()
     };
-    
+
     let lang_dir = base_dir.join("language").join(language);
     if !lang_dir.exists() {
         return Ok(Vec::new());
     }
-    
+
     // Collect all parquet files for this language
     let mut parquet_files = Vec::new();
     for entry in std::fs::read_dir(&lang_dir)? {
@@ -371,64 +399,91 @@ fn load_language_records_parallel(report_path: &PathBuf, language: &str) -> Resu
             parquet_files.push(path);
         }
     }
-    
+
     if parquet_files.is_empty() {
         return Ok(Vec::new());
     }
-    
-    println!("  Loading {} partition files for {} in parallel", parquet_files.len(), language);
-    
+
+    println!(
+        "  Loading {} partition files for {} in parallel",
+        parquet_files.len(),
+        language
+    );
+
     // Load partitions in parallel
     let all_records: Vec<Vec<RepoRecord>> = parquet_files
         .par_iter()
-        .filter_map(|file_path| {
-            match load_parquet_records(file_path) {
-                Ok(records) => Some(records),
-                Err(e) => {
-                    eprintln!("  Warning: Failed to load {}: {}", file_path.display(), e);
-                    None
-                }
+        .filter_map(|file_path| match load_parquet_records(file_path) {
+            Ok(records) => Some(records),
+            Err(e) => {
+                eprintln!("  Warning: Failed to load {}: {}", file_path.display(), e);
+                None
             }
         })
         .collect();
-    
+
     // Flatten all records
     let mut records: Vec<RepoRecord> = all_records.into_iter().flatten().collect();
-    
+
     // Sort by average score for consistent ordering
-    records.sort_by(|a, b| a.average_score.partial_cmp(&b.average_score).unwrap_or(std::cmp::Ordering::Equal));
-    
+    records.sort_by(|a, b| {
+        a.average_score
+            .partial_cmp(&b.average_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
     Ok(records)
 }
 
 fn load_parquet_records(file_path: &PathBuf) -> Result<Vec<RepoRecord>> {
     let file = File::open(file_path)
         .with_context(|| format!("Failed to open parquet file: {}", file_path.display()))?;
-    
+
     let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
     let record_batch_reader = builder.build()?;
-    
+
     let mut records = Vec::new();
-    
+
     for batch_result in record_batch_reader {
         let batch = batch_result?;
-        
+
         // Extract arrays from the batch
-        let language_array = batch.column(0).as_any().downcast_ref::<StringArray>()
+        let language_array = batch
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
             .ok_or_else(|| anyhow::anyhow!("Failed to downcast language column"))?;
-        let repo_name_array = batch.column(1).as_any().downcast_ref::<StringArray>()
+        let repo_name_array = batch
+            .column(1)
+            .as_any()
+            .downcast_ref::<StringArray>()
             .ok_or_else(|| anyhow::anyhow!("Failed to downcast repo_name column"))?;
-        let document_count_array = batch.column(2).as_any().downcast_ref::<UInt64Array>()
+        let document_count_array = batch
+            .column(2)
+            .as_any()
+            .downcast_ref::<UInt64Array>()
             .ok_or_else(|| anyhow::anyhow!("Failed to downcast document_count column"))?;
-        let total_score_array = batch.column(3).as_any().downcast_ref::<Float64Array>()
+        let total_score_array = batch
+            .column(3)
+            .as_any()
+            .downcast_ref::<Float64Array>()
             .ok_or_else(|| anyhow::anyhow!("Failed to downcast total_score column"))?;
-        let average_score_array = batch.column(4).as_any().downcast_ref::<Float64Array>()
+        let average_score_array = batch
+            .column(4)
+            .as_any()
+            .downcast_ref::<Float64Array>()
             .ok_or_else(|| anyhow::anyhow!("Failed to downcast average_score column"))?;
-        let min_score_array = batch.column(5).as_any().downcast_ref::<Float64Array>()
+        let min_score_array = batch
+            .column(5)
+            .as_any()
+            .downcast_ref::<Float64Array>()
             .ok_or_else(|| anyhow::anyhow!("Failed to downcast min_score column"))?;
-        let max_score_array = batch.column(6).as_any().downcast_ref::<Float64Array>()
+        let max_score_array = batch
+            .column(6)
+            .as_any()
+            .downcast_ref::<Float64Array>()
             .ok_or_else(|| anyhow::anyhow!("Failed to downcast max_score column"))?;
-        
+
         // Convert to RepoRecord structs
         for i in 0..batch.num_rows() {
             let record = RepoRecord {
@@ -443,7 +498,7 @@ fn load_parquet_records(file_path: &PathBuf) -> Result<Vec<RepoRecord>> {
             records.push(record);
         }
     }
-    
+
     Ok(records)
 }
 
@@ -453,42 +508,60 @@ fn check_if_arrow_format(report_path: &PathBuf) -> bool {
     } else {
         report_path.clone()
     };
-    
+
     // Check if Arrow format directory structure exists
     base_dir.join("_summary.json").exists() && base_dir.join("language").exists()
 }
 
 fn process_language_arrow(
-    report_path: &PathBuf, 
-    language: &str, 
-    num_bins: usize, 
-    sample_size: usize
+    report_path: &PathBuf,
+    language: &str,
+    num_bins: usize,
+    sample_size: usize,
 ) -> Result<Option<LanguageBinReport>> {
     let records = load_language_records_parallel(report_path, language)?;
-    
+
     if records.is_empty() {
         return Ok(None);
     }
-    
+
     println!("  {} repositories loaded from Arrow format", records.len());
-    
+
     // Convert RepoRecord to the tuple format expected by create_language_bins_optimized
-    let language_repos: Vec<(String, f64, usize)> = records.iter()
-        .map(|r| (r.repo_name.clone(), r.average_score, r.document_count as usize))
+    let language_repos: Vec<(String, f64, usize)> = records
+        .iter()
+        .map(|r| {
+            (
+                r.repo_name.clone(),
+                r.average_score,
+                r.document_count as usize,
+            )
+        })
         .collect();
-    
+
     let min_score = records.first().unwrap().average_score;
     let max_score = records.last().unwrap().average_score;
-    
-    println!("  {} repositories, score range: {:.6} to {:.6}", 
-             language_repos.len(), min_score, max_score);
-    
+
+    println!(
+        "  {} repositories, score range: {:.6} to {:.6}",
+        language_repos.len(),
+        min_score,
+        max_score
+    );
+
     // Create bins for this language
-    let lang_bins = create_language_bins_optimized(&language_repos, num_bins, sample_size, min_score, max_score)?;
-    
+    let lang_bins = create_language_bins_optimized(
+        &language_repos,
+        num_bins,
+        sample_size,
+        min_score,
+        max_score,
+        language,
+    )?;
+
     // Calculate total documents from records
     let total_documents: u64 = records.iter().map(|r| r.document_count).sum();
-    
+
     let lang_bin_report = LanguageBinReport {
         language: language.to_string(),
         bins: lang_bins,
@@ -500,7 +573,7 @@ fn process_language_arrow(
             sample_size_per_bin: sample_size,
         },
     };
-    
+
     Ok(Some(lang_bin_report))
 }
 
@@ -553,20 +626,60 @@ struct LanguageBinSummary {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    
+
     match args.command {
-        Commands::Aggregate { source_dir, output } => {
-            aggregate_scores(source_dir, output)
-        }
-        Commands::Bin { source_dir, report_path, build_report, num_bins, sample_size, output } => {
-            bin_repositories(source_dir, report_path, build_report, num_bins, sample_size, output)
-        }
-        Commands::Filter { source_dir, report_path, bin_path, target_bins, language, output_dir, max_file_size_mb } => {
-            filter_documents(source_dir, report_path, bin_path, target_bins, language, output_dir, max_file_size_mb)
-        }
-        Commands::Pipeline { source_dir, target_bins, language, output_dir, num_bins, sample_size, max_file_size_mb, work_dir } => {
-            run_pipeline(source_dir, target_bins, language, output_dir, num_bins, sample_size, max_file_size_mb, work_dir)
-        }
+        Commands::Aggregate { source_dir, output } => aggregate_scores(source_dir, output),
+        Commands::Bin {
+            source_dir,
+            report_path,
+            build_report,
+            num_bins,
+            sample_size,
+            output,
+        } => bin_repositories(
+            source_dir,
+            report_path,
+            build_report,
+            num_bins,
+            sample_size,
+            output,
+        ),
+        Commands::Filter {
+            source_dir,
+            report_path,
+            bin_path,
+            target_bins,
+            language,
+            output_dir,
+            max_file_size_mb,
+        } => filter_documents(
+            source_dir,
+            report_path,
+            bin_path,
+            target_bins,
+            language,
+            output_dir,
+            max_file_size_mb,
+        ),
+        Commands::Pipeline {
+            source_dir,
+            target_bins,
+            language,
+            output_dir,
+            num_bins,
+            sample_size,
+            max_file_size_mb,
+            work_dir,
+        } => run_pipeline(
+            source_dir,
+            target_bins,
+            language,
+            output_dir,
+            num_bins,
+            sample_size,
+            max_file_size_mb,
+            work_dir,
+        ),
     }
 }
 
@@ -585,29 +698,29 @@ fn run_pipeline(
     println!("Source: {}", source_dir.display());
     println!("Output: {}", output_dir.display());
     println!("Work dir: {}", work_dir.display());
-    
+
     // Create work directory if it doesn't exist
     std::fs::create_dir_all(&work_dir)
         .with_context(|| format!("Failed to create work directory: {}", work_dir.display()))?;
-    
+
     // Define report paths with intelligent naming
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
+
     let score_report_path = work_dir.join(format!("repo_scores_{}.json", timestamp));
     let bin_report_path = work_dir.join(format!("repo_bins_{}.json", timestamp));
-    
+
     println!("\n📊 Step 1/3: Aggregating repository scores...");
     println!("Report will be saved to: {}", score_report_path.display());
-    
+
     // Step 1: Run aggregate
     aggregate_scores(source_dir.clone(), score_report_path.clone())?;
-    
+
     println!("\n🗂️  Step 2/3: Creating score-based bins...");
     println!("Bin report will be saved to: {}", bin_report_path.display());
-    
+
     // Step 2: Run bin
     bin_repositories(
         None, // Don't rebuild - use existing report
@@ -615,9 +728,9 @@ fn run_pipeline(
         false, // Don't force rebuild
         num_bins,
         sample_size,
-        bin_report_path.clone()
+        bin_report_path.clone(),
     )?;
-    
+
     println!("\n🔍 Step 3/3: Filtering documents...");
     if let Some(ref lang) = language {
         println!("Filtering language: {}", lang);
@@ -625,7 +738,7 @@ fn run_pipeline(
         println!("Filtering all languages");
     }
     println!("Target bins: {:?}", target_bins);
-    
+
     // Step 3: Run filter
     filter_documents(
         source_dir,
@@ -634,16 +747,16 @@ fn run_pipeline(
         target_bins,
         language,
         output_dir.clone(),
-        max_file_size_mb
+        max_file_size_mb,
     )?;
-    
+
     let elapsed = start_time.elapsed();
     println!("\n✅ Pipeline completed in {:.2}s", elapsed.as_secs_f64());
     println!("📁 Intermediate reports:");
     println!("  Score report: {}", score_report_path.display());
     println!("  Bin report: {}", bin_report_path.display());
     println!("📁 Filtered output: {}", output_dir.display());
-    
+
     // Optionally clean up intermediate reports
     println!("\n💡 Tip: You can reuse the reports for additional filtering:");
     println!("  cargo run -- filter \\");
@@ -651,18 +764,18 @@ fn run_pipeline(
     println!("    --bin-path {} \\", bin_report_path.display());
     println!("    --target-bins <BINS> \\");
     println!("    --output-dir <OUTPUT>");
-    
+
     Ok(())
 }
 
 fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
     let start_time = Instant::now();
     println!("Starting aggregation process...");
-    
+
     if !source_dir.exists() {
         anyhow::bail!("Source directory does not exist: {}", source_dir.display());
     }
-    
+
     let mut report = Report {
         languages: HashMap::new(),
         summary: Summary {
@@ -671,33 +784,42 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
             total_documents: 0,
         },
     };
-    
+
     // Check if source_dir contains *.jsonl.zst files directly (single language mode)
     let has_jsonl_files = std::fs::read_dir(&source_dir)?
         .filter_map(|entry| entry.ok())
         .any(|entry| {
             let path = entry.path();
-            path.is_file() && 
-            path.extension().and_then(|s| s.to_str()) == Some("zst") &&
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .map(|s| s.ends_with(".jsonl"))
-                .unwrap_or(false)
+            path.is_file()
+                && path.extension().and_then(|s| s.to_str()) == Some("zst")
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.ends_with(".jsonl"))
+                    .unwrap_or(false)
         });
-    
+
     if has_jsonl_files {
         // Single language directory mode
-        let language_name = source_dir.file_name()
+        let language_name = source_dir
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
-        println!("[1/1] Processing single language directory: {}", language_name);
-        
+
+        println!(
+            "[1/1] Processing single language directory: {}",
+            language_name
+        );
+
         match process_language_directory(&source_dir) {
             Ok(language_report) => {
-                println!("  ✓ Completed {} - {} repos, {} docs", 
-                         language_name, language_report.total_repositories, language_report.total_documents);
+                println!(
+                    "  ✓ Completed {} - {} repos, {} docs",
+                    language_name,
+                    language_report.total_repositories,
+                    language_report.total_documents
+                );
                 report.languages.insert(language_name, language_report);
             }
             Err(e) => {
@@ -710,23 +832,33 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
             .filter_map(|entry| entry.ok())
             .filter(|entry| entry.path().is_dir())
             .collect();
-        
+
         let total_langs = language_dirs.len();
         println!("Found {} language directories to process", total_langs);
-        
+
         for (idx, entry) in language_dirs.into_iter().enumerate() {
             let path = entry.path();
-            let language_name = path.file_name()
+            let language_name = path
+                .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown")
                 .to_string();
-            
-            println!("[{}/{}] Processing language directory: {}", idx + 1, total_langs, language_name);
-            
+
+            println!(
+                "[{}/{}] Processing language directory: {}",
+                idx + 1,
+                total_langs,
+                language_name
+            );
+
             match process_language_directory(&path) {
                 Ok(language_report) => {
-                    println!("  ✓ Completed {} - {} repos, {} docs", 
-                             language_name, language_report.total_repositories, language_report.total_documents);
+                    println!(
+                        "  ✓ Completed {} - {} repos, {} docs",
+                        language_name,
+                        language_report.total_repositories,
+                        language_report.total_documents
+                    );
                     report.languages.insert(language_name, language_report);
                 }
                 Err(e) => {
@@ -735,19 +867,23 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
             }
         }
     }
-    
+
     // Calculate summary statistics
     report.summary.total_languages = report.languages.len();
-    report.summary.total_repositories = report.languages.values()
+    report.summary.total_repositories = report
+        .languages
+        .values()
         .map(|lang| lang.total_repositories)
         .sum();
-    report.summary.total_documents = report.languages.values()
+    report.summary.total_documents = report
+        .languages
+        .values()
         .map(|lang| lang.total_documents)
         .sum();
-    
+
     // Write report in Arrow/Parquet format with partitioning
     write_arrow_partitioned_report(&report, &output)?;
-    
+
     let elapsed = start_time.elapsed();
     println!("Report written to: {}", output.display());
     println!("Summary:");
@@ -755,49 +891,54 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
     println!("  Repositories: {}", report.summary.total_repositories);
     println!("  Documents: {}", report.summary.total_documents);
     println!("  Completed in: {:.2}s", elapsed.as_secs_f64());
-    
+
     Ok(())
 }
 
 fn bin_repositories(
-    source_dir: Option<PathBuf>, 
-    report_path: PathBuf, 
-    build_report: bool, 
-    num_bins: usize, 
-    sample_size: usize, 
-    output: PathBuf
+    source_dir: Option<PathBuf>,
+    report_path: PathBuf,
+    build_report: bool,
+    num_bins: usize,
+    sample_size: usize,
+    output: PathBuf,
 ) -> Result<()> {
     let start_time = Instant::now();
     println!("Starting repository binning process...");
-    
+
     // Handle report building or loading
     if build_report {
-        let source_dir = source_dir.ok_or_else(|| {
-            anyhow::anyhow!("--source-dir is required when using --build-report")
-        })?;
-        
+        let source_dir = source_dir
+            .ok_or_else(|| anyhow::anyhow!("--source-dir is required when using --build-report"))?;
+
         if !source_dir.exists() {
             anyhow::bail!("Source directory does not exist: {}", source_dir.display());
         }
-        
+
         println!("Building new score report from source directory...");
         build_score_report(source_dir, report_path.clone())?;
     }
-    
+
     // Check if this is an Arrow-format report or legacy JSON
     let is_arrow_format = check_if_arrow_format(&report_path);
-    
+
     if !is_arrow_format && !report_path.exists() {
         anyhow::bail!(
             "Score report file does not exist: {}. Use --build-report flag to create it from source data.",
             report_path.display()
         );
     }
-    
-    println!("Using {} score report: {}", 
-             if is_arrow_format { "Arrow/Parquet" } else { "JSON" }, 
-             report_path.display());
-    
+
+    println!(
+        "Using {} score report: {}",
+        if is_arrow_format {
+            "Arrow/Parquet"
+        } else {
+            "JSON"
+        },
+        report_path.display()
+    );
+
     // Load summary based on format
     let summary = if is_arrow_format {
         load_arrow_summary(&report_path)?
@@ -806,9 +947,15 @@ fn bin_repositories(
     };
 
     // Create bins per language using appropriate approach
-    println!("Creating language-specific bins with {} processing...", 
-             if is_arrow_format { "parallel Arrow" } else { "streaming JSON" });
-    
+    println!(
+        "Creating language-specific bins with {} processing...",
+        if is_arrow_format {
+            "parallel Arrow"
+        } else {
+            "streaming JSON"
+        }
+    );
+
     // Get available languages based on format
     let available_languages = if is_arrow_format {
         get_available_arrow_languages(&report_path)?
@@ -817,23 +964,27 @@ fn bin_repositories(
     };
     let total_languages = available_languages.len();
     println!("Processing {} languages in parallel", total_languages);
-    
+
     // Process languages in parallel using appropriate method
     let language_bins: HashMap<String, LanguageBinReport> = available_languages
         .par_iter()
         .filter_map(|language| {
             println!("Processing language: {}", language);
-            
+
             let result = if is_arrow_format {
                 process_language_arrow(&report_path, language, num_bins, sample_size)
             } else {
                 process_language_streaming(&report_path, language, num_bins, sample_size)
             };
-            
+
             match result {
                 Ok(Some(lang_bin_report)) => {
-                    println!("  ✓ Completed {} - {} repos, {} bins", 
-                             language, lang_bin_report.summary.total_repositories, lang_bin_report.bins.len());
+                    println!(
+                        "  ✓ Completed {} - {} repos, {} bins",
+                        language,
+                        lang_bin_report.summary.total_repositories,
+                        lang_bin_report.bins.len()
+                    );
                     Some((language.clone(), lang_bin_report))
                 }
                 Ok(None) => {
@@ -847,10 +998,16 @@ fn bin_repositories(
             }
         })
         .collect();
-    
+
     // Calculate totals
-    let total_repos: usize = language_bins.values().map(|lb| lb.summary.total_repositories).sum();
-    let total_docs: usize = language_bins.values().map(|lb| lb.summary.total_documents).sum();
+    let total_repos: usize = language_bins
+        .values()
+        .map(|lb| lb.summary.total_repositories)
+        .sum();
+    let total_docs: usize = language_bins
+        .values()
+        .map(|lb| lb.summary.total_documents)
+        .sum();
 
     let bin_report = BinReport {
         language_bins,
@@ -866,10 +1023,10 @@ fn bin_repositories(
     // Write report to file
     let mut output_file = File::create(&output)
         .with_context(|| format!("Failed to create output file: {}", output.display()))?;
-    
+
     let json = serde_json::to_string_pretty(&bin_report)?;
     output_file.write_all(json.as_bytes())?;
-    
+
     let elapsed = start_time.elapsed();
     println!("Bin report written to: {}", output.display());
     println!("Summary:");
@@ -877,9 +1034,12 @@ fn bin_repositories(
     println!("  Repositories: {}", bin_report.summary.total_repositories);
     println!("  Documents: {}", bin_report.summary.total_documents);
     println!("  Bins: {}", bin_report.summary.num_bins);
-    println!("  Sample size per bin: {}", bin_report.summary.sample_size_per_bin);
+    println!(
+        "  Sample size per bin: {}",
+        bin_report.summary.sample_size_per_bin
+    );
     println!("  Completed in: {:.2}s", elapsed.as_secs_f64());
-    
+
     Ok(())
 }
 
@@ -894,7 +1054,7 @@ fn filter_documents(
 ) -> Result<()> {
     let start_time = Instant::now();
     println!("Starting document filtering process...");
-    
+
     // Validate inputs
     if !source_dir.exists() {
         anyhow::bail!("Source directory does not exist: {}", source_dir.display());
@@ -905,71 +1065,116 @@ fn filter_documents(
     if !bin_path.exists() {
         anyhow::bail!("Bin file does not exist: {}", bin_path.display());
     }
-    
+
     // Create output directory
-    std::fs::create_dir_all(&output_dir)
-        .with_context(|| format!("Failed to create output directory: {}", output_dir.display()))?;
-    
+    std::fs::create_dir_all(&output_dir).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            output_dir.display()
+        )
+    })?;
+
     // Load bin report to get target repositories
     println!("Loading bin report...");
     let bin_report = load_bin_report(&bin_path)?;
-    
-    // Extract target repositories from specified bins using score ranges (streaming)
-    let target_repos = extract_target_repos_streaming_by_language(&bin_report, &report_path, &target_bins, &target_language)?;
-    println!("Found {} target repositories across {} bins", target_repos.len(), target_bins.len());
-    
+
+    // Extract target repositories using appropriate method based on format
+    let is_arrow_format = check_if_arrow_format(&report_path);
+    println!(
+        "Using {} format for repository extraction",
+        if is_arrow_format {
+            "Arrow/Parquet"
+        } else {
+            "JSON streaming"
+        }
+    );
+
+    let target_repos = if is_arrow_format {
+        extract_target_repos_arrow(&bin_report, &report_path, &target_bins, &target_language)?
+    } else {
+        extract_target_repos_streaming_by_language(
+            &bin_report,
+            &report_path,
+            &target_bins,
+            &target_language,
+        )?
+    };
+    println!(
+        "Found {} target repositories across {} bins",
+        target_repos.len(),
+        target_bins.len()
+    );
+
     // Get all source files with their language directories
     println!("Scanning source files...");
     let source_files = collect_source_files_with_language(&source_dir)?;
-    println!("Found {} source files across {} languages to process", 
-             source_files.len(), 
-             source_files.iter().map(|(lang, _)| lang).collect::<std::collections::HashSet<_>>().len());
-    
+    println!(
+        "Found {} source files across {} languages to process",
+        source_files.len(),
+        source_files
+            .iter()
+            .map(|(lang, _)| lang)
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+    );
+
     // Setup progress bar
     let pb = ProgressBar::new(source_files.len() as u64);
     pb.set_style(ProgressStyle::default_bar()
         .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} files ({percent}%) {msg}")
         .unwrap()
         .progress_chars("#>-"));
-    
+
     // Process files and collect matching documents
     let max_file_size_bytes = max_file_size_mb * 1024 * 1024;
     let output_manager = Mutex::new(OutputManager::new(output_dir.clone(), max_file_size_bytes)?);
     let processed_docs = AtomicUsize::new(0);
     let filtered_docs = AtomicUsize::new(0);
-    
+
     source_files.par_iter().for_each(|(language, file_path)| {
-        match process_source_file_with_language(file_path, language, &target_repos, &output_manager, &processed_docs, &filtered_docs) {
-            Ok(_) => {},
+        match process_source_file_with_language(
+            file_path,
+            language,
+            &target_repos,
+            &output_manager,
+            &processed_docs,
+            &filtered_docs,
+        ) {
+            Ok(_) => {}
             Err(e) => {
                 eprintln!("Error processing {}: {}", file_path.display(), e);
             }
         }
         pb.inc(1);
     });
-    
+
     pb.finish_with_message("Processing complete");
-    
+
     // Finalize output files
     let mut output_mgr = output_manager.into_inner().unwrap();
     output_mgr.finalize()?;
-    
+
     let elapsed = start_time.elapsed();
     let total_processed = processed_docs.load(Ordering::Relaxed);
     let total_retained = filtered_docs.load(Ordering::Relaxed);
     let total_excluded = total_processed - total_retained;
-    
+
     println!("Filter completed in {:.2}s", elapsed.as_secs_f64());
     println!("Summary:");
     println!("  Documents processed: {}", total_processed);
     println!("  Documents retained: {}", total_retained);
     println!("  Documents excluded: {}", total_excluded);
-    println!("  Retention rate: {:.2}%", if total_processed > 0 { 
-        (total_retained as f64 / total_processed as f64) * 100.0 
-    } else { 0.0 });
+    println!(
+        "  Retention rate: {:.2}%",
+        if total_processed > 0 {
+            (total_retained as f64 / total_processed as f64) * 100.0
+        } else {
+            0.0
+        }
+    );
     println!("  Output files: {}", output_mgr.file_count());
     println!("  Output directory: {}", output_dir.display());
-    
+
     Ok(())
 }
 
@@ -979,105 +1184,137 @@ fn create_language_bins_optimized(
     sample_size: usize,
     min_score: f64,
     max_score: f64,
+    language: &str, // Add language parameter
 ) -> Result<Vec<ScoreBin>> {
     if language_repos.is_empty() {
         return Ok(Vec::new());
     }
-    
+
     let bin_width = (max_score - min_score) / num_bins as f64;
-    
+
     // Pre-allocate bins vector
     let mut bins = Vec::with_capacity(num_bins);
-    
+
     // Since repos are sorted by score, we can partition them efficiently
     let mut repo_index = 0;
-    
+
     for i in 0..num_bins {
         let bin_min = min_score + i as f64 * bin_width;
-        let bin_max = if i == num_bins - 1 { max_score } else { min_score + (i + 1) as f64 * bin_width };
-        
+        let bin_max = if i == num_bins - 1 {
+            max_score
+        } else {
+            min_score + (i + 1) as f64 * bin_width
+        };
+
         // Find start of bin using binary search (repos are sorted)
         let start_idx = if repo_index < language_repos.len() {
-            repo_index + language_repos[repo_index..]
-                .binary_search_by(|(_, score, _)| {
-                    if *score < bin_min { std::cmp::Ordering::Less }
-                    else { std::cmp::Ordering::Greater }
-                })
-                .unwrap_or_else(|idx| idx)
+            repo_index
+                + language_repos[repo_index..]
+                    .binary_search_by(|(_, score, _)| {
+                        if *score < bin_min {
+                            std::cmp::Ordering::Less
+                        } else {
+                            std::cmp::Ordering::Greater
+                        }
+                    })
+                    .unwrap_or_else(|idx| idx)
         } else {
             language_repos.len()
         };
-        
+
         // Find end of bin
         let end_idx = language_repos[start_idx..]
             .binary_search_by(|(_, score, _)| {
-                if *score <= bin_max { std::cmp::Ordering::Less }
-                else { std::cmp::Ordering::Greater }
+                if *score <= bin_max {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
             })
-            .unwrap_or_else(|idx| idx) + start_idx;
-        
+            .unwrap_or_else(|idx| idx)
+            + start_idx;
+
         let repos_in_bin = &language_repos[start_idx..end_idx];
         let total_repos_in_range = repos_in_bin.len();
-        
+
         // Apply reservoir sampling with optimized allocation
         let sample_repos: Vec<BinRepo> = if repos_in_bin.len() <= sample_size {
             // Take all repos if fewer than sample size
-            repos_in_bin.iter().map(|(repo_name, avg_score, doc_count)| {
-                BinRepo {
-                    repo_name: repo_name.clone(),
-                    language: "".to_string(), // Will be set by caller
-                    average_score: *avg_score,
-                    document_count: *doc_count,
-                }
-            }).collect()
+            repos_in_bin
+                .iter()
+                .map(|(repo_name, avg_score, doc_count)| {
+                    BinRepo {
+                        repo_name: repo_name.clone(),
+                        language: language.to_string(),
+                        average_score: *avg_score,
+                        document_count: *doc_count,
+                    }
+                })
+                .collect()
         } else {
             // Reservoir sampling with pre-allocated vector
             let mut rng = thread_rng();
-            let sampled: Vec<_> = repos_in_bin.choose_multiple(&mut rng, sample_size).collect();
+            let sampled: Vec<_> = repos_in_bin
+                .choose_multiple(&mut rng, sample_size)
+                .collect();
             let mut sample_repos = Vec::with_capacity(sample_size);
             for (repo_name, avg_score, doc_count) in sampled {
                 sample_repos.push(BinRepo {
                     repo_name: repo_name.clone(),
-                    language: "".to_string(), // Will be set by caller
+                    language: language.to_string(),
                     average_score: *avg_score,
                     document_count: *doc_count,
                 });
             }
             sample_repos
         };
-        
-        println!("    Bin {}: [{:.6}, {:.6}] - {} repos total, {} sampled", 
-                 i + 1, bin_min, bin_max, total_repos_in_range, sample_repos.len());
-        
+
+        println!(
+            "    Bin {}: [{:.6}, {:.6}] - {} repos total, {} sampled",
+            i + 1,
+            bin_min,
+            bin_max,
+            total_repos_in_range,
+            sample_repos.len()
+        );
+
         bins.push(ScoreBin {
             min_score: bin_min,
             max_score: bin_max,
             sample_repos,
             total_repos_in_range,
         });
-        
+
         // Update repo_index for next iteration
         repo_index = end_idx;
         if repo_index >= language_repos.len() {
             // No more repos, fill remaining bins with empty bins
             for j in (i + 1)..num_bins {
                 let empty_bin_min = min_score + j as f64 * bin_width;
-                let empty_bin_max = if j == num_bins - 1 { max_score } else { min_score + (j + 1) as f64 * bin_width };
-                
+                let empty_bin_max = if j == num_bins - 1 {
+                    max_score
+                } else {
+                    min_score + (j + 1) as f64 * bin_width
+                };
+
                 bins.push(ScoreBin {
                     min_score: empty_bin_min,
                     max_score: empty_bin_max,
                     sample_repos: Vec::new(),
                     total_repos_in_range: 0,
                 });
-                
-                println!("    Bin {}: [{:.6}, {:.6}] - 0 repos total, 0 sampled", 
-                         j + 1, empty_bin_min, empty_bin_max);
+
+                println!(
+                    "    Bin {}: [{:.6}, {:.6}] - 0 repos total, 0 sampled",
+                    j + 1,
+                    empty_bin_min,
+                    empty_bin_max
+                );
             }
             break;
         }
     }
-    
+
     Ok(bins)
 }
 
@@ -1088,32 +1325,39 @@ fn process_language_directory(dir_path: &Path) -> Result<LanguageReport> {
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let path = entry.path();
-            
-            if path.is_file() && 
-               path.extension().and_then(|s| s.to_str()) == Some("zst") &&
-               path.file_stem()
-                   .and_then(|s| s.to_str())
-                   .map(|s| s.ends_with(".jsonl"))
-                   .unwrap_or(false) {
+
+            if path.is_file()
+                && path.extension().and_then(|s| s.to_str()) == Some("zst")
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.ends_with(".jsonl"))
+                    .unwrap_or(false)
+            {
                 Some(path.to_path_buf())
             } else {
                 None
             }
         })
         .collect();
-    
+
     println!("  Found {} files to process", files.len());
-    
+
     // Use Mutex to safely collect results from parallel processing
     let repo_scores = Mutex::new(HashMap::<String, Vec<f64>>::new());
     let total_documents = Mutex::new(0usize);
     let processed_files = AtomicUsize::new(0);
-    
+
     // Process files in parallel
     files.par_iter().for_each(|file_path| {
         let current = processed_files.fetch_add(1, Ordering::Relaxed) + 1;
-        println!("  [{}/{}] Processing file: {}", current, files.len(), file_path.display());
-        
+        println!(
+            "  [{}/{}] Processing file: {}",
+            current,
+            files.len(),
+            file_path.display()
+        );
+
         match process_jsonl_zst_file(file_path) {
             Ok((docs, repo_data)) => {
                 // Update total documents count
@@ -1121,27 +1365,32 @@ fn process_language_directory(dir_path: &Path) -> Result<LanguageReport> {
                     let mut total_docs = total_documents.lock().unwrap();
                     *total_docs += docs;
                 }
-                
+
                 // Update repository scores
                 {
                     let mut repo_scores_map = repo_scores.lock().unwrap();
                     for (repo_name, scores) in repo_data {
-                        repo_scores_map.entry(repo_name)
+                        repo_scores_map
+                            .entry(repo_name)
                             .or_insert_with(Vec::new)
                             .extend(scores);
                     }
                 }
             }
             Err(e) => {
-                eprintln!("    Warning: Failed to process {}: {}", file_path.display(), e);
+                eprintln!(
+                    "    Warning: Failed to process {}: {}",
+                    file_path.display(),
+                    e
+                );
             }
         }
     });
-    
+
     // Extract results from Mutex
     let repo_scores = repo_scores.into_inner().unwrap();
     let total_documents = total_documents.into_inner().unwrap();
-    
+
     // Calculate statistics for each repository
     let mut repo_stats = HashMap::new();
     for (repo_name, scores) in repo_scores {
@@ -1150,17 +1399,20 @@ fn process_language_directory(dir_path: &Path) -> Result<LanguageReport> {
             let min_score = scores.iter().fold(f64::INFINITY, |a, &b| a.min(b));
             let max_score = scores.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
             let average_score = total_score / scores.len() as f64;
-            
-            repo_stats.insert(repo_name, RepoStats {
-                document_count: scores.len(),
-                total_score,
-                average_score,
-                min_score,
-                max_score,
-            });
+
+            repo_stats.insert(
+                repo_name,
+                RepoStats {
+                    document_count: scores.len(),
+                    total_score,
+                    average_score,
+                    min_score,
+                    max_score,
+                },
+            );
         }
     }
-    
+
     Ok(LanguageReport {
         total_repositories: repo_stats.len(),
         total_documents,
@@ -1171,39 +1423,49 @@ fn process_language_directory(dir_path: &Path) -> Result<LanguageReport> {
 fn process_jsonl_zst_file(file_path: &Path) -> Result<(usize, HashMap<String, Vec<f64>>)> {
     let file = File::open(file_path)
         .with_context(|| format!("Failed to open file: {}", file_path.display()))?;
-    
+
     let decoder = zstd::Decoder::new(file)
         .with_context(|| format!("Failed to create zstd decoder for: {}", file_path.display()))?;
-    
+
     let reader = BufReader::new(decoder);
     let mut repo_scores: HashMap<String, Vec<f64>> = HashMap::new();
     let mut document_count = 0;
-    
+
     for (line_num, line) in reader.lines().enumerate() {
         let line = line.with_context(|| {
-            format!("Failed to read line {} from: {}", line_num + 1, file_path.display())
+            format!(
+                "Failed to read line {} from: {}",
+                line_num + 1,
+                file_path.display()
+            )
         })?;
-        
+
         if line.trim().is_empty() {
             continue;
         }
-        
+
         match serde_json::from_str::<Document>(&line) {
             Ok(doc) => {
                 document_count += 1;
-                
-                if let (Some(repo_name), Some(score)) = (doc.metadata.repo_name, doc.metadata.score) {
-                    repo_scores.entry(repo_name)
+
+                if let (Some(repo_name), Some(score)) = (doc.metadata.repo_name, doc.metadata.score)
+                {
+                    repo_scores
+                        .entry(repo_name)
                         .or_insert_with(Vec::new)
                         .push(score);
                 }
             }
             Err(e) => {
-                eprintln!("    Warning: Failed to parse JSON on line {}: {}", line_num + 1, e);
+                eprintln!(
+                    "    Warning: Failed to parse JSON on line {}: {}",
+                    line_num + 1,
+                    e
+                );
             }
         }
     }
-    
+
     Ok((document_count, repo_scores))
 }
 
@@ -1211,96 +1473,59 @@ fn build_score_report(source_dir: PathBuf, output_path: PathBuf) -> Result<()> {
     aggregate_scores(source_dir, output_path)
 }
 
-fn create_streaming_report(report: &Report, output_file: &mut File) -> Result<StreamingScoreReport> {
-    println!("Creating streaming index for faster loading...");
-    
-    let mut language_offsets = HashMap::new();
-    
-    // Write the full report and track language positions
-    output_file.write_all(b"{\n  \"summary\": ")?;
-    let summary_json = serde_json::to_string(&report.summary)?;
-    output_file.write_all(summary_json.as_bytes())?;
-    output_file.write_all(b",\n  \"languages\": {\n")?;
-    
-    let mut first_lang = true;
-    for (language, lang_report) in &report.languages {
-        if !first_lang {
-            output_file.write_all(b",\n")?;
-        }
-        first_lang = false;
-        
-        let start_pos = output_file.stream_position()?;
-        
-        output_file.write_all(format!("    \"{}\": ", language).as_bytes())?;
-        let lang_json = serde_json::to_string_pretty(lang_report)?;
-        output_file.write_all(lang_json.as_bytes())?;
-        
-        let end_pos = output_file.stream_position()?;
-        language_offsets.insert(language.clone(), (start_pos, end_pos));
-    }
-    
-    output_file.write_all(b"\n  }\n}")?;
-    
-    let streaming_report = StreamingScoreReport {
-        summary: report.summary.clone(),
-        language_offsets,
-    };
-    
-    println!("Created streaming index with {} language offsets", streaming_report.language_offsets.len());
-    
-    Ok(streaming_report)
-}
-
 fn load_score_report_summary(report_path: &Path) -> Result<Summary> {
     let file = File::open(report_path)
         .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
-    
+
     let mut reader = BufReader::new(file);
     let mut line = String::new();
-    
+
     // Skip to summary section
     while reader.read_line(&mut line)? > 0 {
         if line.trim().starts_with("\"summary\":") {
             // Parse just the summary
             let summary_start = line.find('{').unwrap();
             let mut summary_json = line[summary_start..].to_string();
-            
+
             // Read until we find the closing brace
             let mut brace_count = 1;
             line.clear();
             while brace_count > 0 && reader.read_line(&mut line)? > 0 {
                 for ch in line.chars() {
-                    if ch == '{' { brace_count += 1; }
-                    else if ch == '}' { brace_count -= 1; }
+                    if ch == '{' {
+                        brace_count += 1;
+                    } else if ch == '}' {
+                        brace_count -= 1;
+                    }
                 }
                 summary_json.push_str(&line);
                 line.clear();
             }
-            
+
             // Extract just the summary object
             let end_pos = summary_json.rfind('}').unwrap() + 1;
             let summary_json = &summary_json[..end_pos];
-            
+
             let summary: Summary = serde_json::from_str(summary_json)
                 .with_context(|| "Failed to parse summary from score report")?;
-            
+
             return Ok(summary);
         }
         line.clear();
     }
-    
+
     anyhow::bail!("Could not find summary in score report")
 }
 
 fn get_available_languages(report_path: &Path) -> Result<Vec<String>> {
     let file = File::open(report_path)
         .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
-    
+
     let mut reader = BufReader::new(file);
     let mut languages = Vec::new();
     let mut line = String::new();
     let mut in_languages_section = false;
-    
+
     while reader.read_line(&mut line)? > 0 {
         if line.trim().starts_with("\"languages\":") {
             in_languages_section = true;
@@ -1315,26 +1540,26 @@ fn get_available_languages(report_path: &Path) -> Result<Vec<String>> {
         }
         line.clear();
     }
-    
+
     Ok(languages)
 }
 
 fn process_language_streaming(
-    report_path: &Path, 
-    language: &str, 
-    num_bins: usize, 
-    sample_size: usize
+    report_path: &Path,
+    language: &str,
+    num_bins: usize,
+    sample_size: usize,
 ) -> Result<Option<LanguageBinReport>> {
     let file = File::open(report_path)
         .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
-    
+
     let mut reader = BufReader::new(file);
     let mut line = String::new();
     let mut found_language = false;
     let mut language_json = String::new();
     let mut brace_count = 0;
     let mut in_language_section = false;
-    
+
     // Find the target language
     while reader.read_line(&mut line)? > 0 {
         if line.contains(&format!("\"{}\": {{", language)) {
@@ -1345,55 +1570,70 @@ fn process_language_streaming(
         } else if in_language_section {
             language_json.push_str(&line);
             for ch in line.chars() {
-                if ch == '{' { brace_count += 1; }
-                else if ch == '}' { brace_count -= 1; }
+                if ch == '{' {
+                    brace_count += 1;
+                } else if ch == '}' {
+                    brace_count -= 1;
+                }
             }
         }
-        
+
         if in_language_section && brace_count == 0 {
             break;
         }
-        
+
         line.clear();
     }
-    
+
     if !found_language {
         return Ok(None);
     }
-    
+
     // Extract the JSON value for this language
     let start_pos = language_json.find('{').unwrap();
     let json_str = &language_json[start_pos..language_json.rfind('}').unwrap() + 1];
-    
+
     let language_report: LanguageReport = serde_json::from_str(json_str)
         .with_context(|| format!("Failed to parse language report for {}", language))?;
-    
+
     if language_report.repo_stats.is_empty() {
         return Ok(None);
     }
-    
+
     // Extract repositories for this language
     let mut language_repos = Vec::with_capacity(language_report.repo_stats.len());
     for (repo_name, repo_stats) in &language_report.repo_stats {
         language_repos.push((
             repo_name.clone(),
             repo_stats.average_score,
-            repo_stats.document_count
+            repo_stats.document_count,
         ));
     }
-    
+
     // Sort repositories by average score
-    language_repos.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-    
+    language_repos
+        .sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
     let min_score = language_repos[0].1;
     let max_score = language_repos[language_repos.len() - 1].1;
-    
-    println!("  {} repositories, score range: {:.6} to {:.6}", 
-             language_repos.len(), min_score, max_score);
-    
+
+    println!(
+        "  {} repositories, score range: {:.6} to {:.6}",
+        language_repos.len(),
+        min_score,
+        max_score
+    );
+
     // Create bins for this language
-    let lang_bins = create_language_bins_optimized(&language_repos, num_bins, sample_size, min_score, max_score)?;
-    
+    let lang_bins = create_language_bins_optimized(
+        &language_repos,
+        num_bins,
+        sample_size,
+        min_score,
+        max_score,
+        language,
+    )?;
+
     let lang_bin_report = LanguageBinReport {
         language: language.to_string(),
         bins: lang_bins,
@@ -1405,99 +1645,211 @@ fn process_language_streaming(
             sample_size_per_bin: sample_size,
         },
     };
-    
+
     Ok(Some(lang_bin_report))
 }
 
 fn load_bin_report(bin_path: &Path) -> Result<BinReport> {
     let file = File::open(bin_path)
         .with_context(|| format!("Failed to open bin report: {}", bin_path.display()))?;
-    
+
     let report: BinReport = serde_json::from_reader(file)
         .with_context(|| format!("Failed to parse bin report: {}", bin_path.display()))?;
-    
+
     Ok(report)
+}
+
+fn extract_target_repos_arrow(
+    bin_report: &BinReport,
+    report_path: &PathBuf,
+    target_bins: &[usize],
+    target_language: &Option<String>,
+) -> Result<HashSet<String>> {
+    println!("Extracting target repositories from Arrow/Parquet report...");
+
+    // Get score ranges for target bins across all languages (or specific language)
+    let mut language_score_ranges: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
+
+    let languages_to_process: Vec<String> = if let Some(lang) = target_language {
+        vec![lang.clone()]
+    } else {
+        bin_report.language_bins.keys().cloned().collect()
+    };
+
+    for language in &languages_to_process {
+        if let Some(lang_bin_report) = bin_report.language_bins.get(language) {
+            let mut score_ranges = Vec::new();
+
+            for &bin_idx in target_bins {
+                if bin_idx == 0 || bin_idx > lang_bin_report.bins.len() {
+                    anyhow::bail!(
+                        "Invalid bin number: {} for language {}. Valid range: 1-{}",
+                        bin_idx,
+                        language,
+                        lang_bin_report.bins.len()
+                    );
+                }
+
+                let bin = &lang_bin_report.bins[bin_idx - 1]; // Convert to 0-indexed
+                score_ranges.push((bin.min_score, bin.max_score));
+                println!(
+                    "Target bin {} for {}: score range [{:.6}, {:.6}]",
+                    bin_idx, language, bin.min_score, bin.max_score
+                );
+            }
+
+            language_score_ranges.insert(language.clone(), score_ranges);
+        } else {
+            if target_language.is_some() {
+                anyhow::bail!("Language '{}' not found in bin report", language);
+            }
+            println!(
+                "Warning: Language '{}' not found in bin report, skipping",
+                language
+            );
+        }
+    }
+
+    // Load repositories from Arrow format and filter by score ranges in parallel
+    let lang_results: Result<Vec<HashSet<String>>> = language_score_ranges
+        .par_iter()
+        .map(|(language, score_ranges)| -> Result<HashSet<String>> {
+            println!(
+                "  Processing language: {} with {} score ranges",
+                language,
+                score_ranges.len()
+            );
+
+            let records = load_language_records_parallel(report_path, language)?;
+            let mut lang_target_repos = HashSet::new();
+
+            for record in records {
+                // Check if repository falls within any target score range for this language
+                for &(min_score, max_score) in score_ranges {
+                    if record.average_score >= min_score && record.average_score <= max_score {
+                        lang_target_repos.insert(record.repo_name.clone());
+                        break;
+                    }
+                }
+            }
+
+            println!(
+                "  Completed {} - found {} matching repos",
+                language,
+                lang_target_repos.len()
+            );
+            Ok(lang_target_repos)
+        })
+        .collect();
+
+    // Combine all language results
+    let mut target_repos = HashSet::new();
+    for lang_repos in lang_results? {
+        target_repos.extend(lang_repos);
+    }
+
+    println!(
+        "  Arrow extraction completed - found {} unique repositories total",
+        target_repos.len()
+    );
+    Ok(target_repos)
 }
 
 fn extract_target_repos_streaming_by_language(
     bin_report: &BinReport,
     report_path: &Path,
     target_bins: &[usize],
-    target_language: &Option<String>
+    target_language: &Option<String>,
 ) -> Result<HashSet<String>> {
     println!("Extracting target repositories from score report (streaming)...");
-    
+
     // Get score ranges for target bins across all languages (or specific language)
     let mut language_score_ranges: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
-    
+
     let languages_to_process: Vec<String> = if let Some(lang) = target_language {
         vec![lang.clone()]
     } else {
         bin_report.language_bins.keys().cloned().collect()
     };
-    
+
     for language in &languages_to_process {
         if let Some(lang_bin_report) = bin_report.language_bins.get(language) {
             let mut score_ranges = Vec::new();
-            
+
             for &bin_idx in target_bins {
                 if bin_idx == 0 || bin_idx > lang_bin_report.bins.len() {
-                    anyhow::bail!("Invalid bin number: {} for language {}. Valid range: 1-{}", 
-                                 bin_idx, language, lang_bin_report.bins.len());
+                    anyhow::bail!(
+                        "Invalid bin number: {} for language {}. Valid range: 1-{}",
+                        bin_idx,
+                        language,
+                        lang_bin_report.bins.len()
+                    );
                 }
-                
+
                 let bin = &lang_bin_report.bins[bin_idx - 1]; // Convert to 0-indexed
                 score_ranges.push((bin.min_score, bin.max_score));
-                println!("Target bin {} for {}: score range [{:.6}, {:.6}]", 
-                         bin_idx, language, bin.min_score, bin.max_score);
+                println!(
+                    "Target bin {} for {}: score range [{:.6}, {:.6}]",
+                    bin_idx, language, bin.min_score, bin.max_score
+                );
             }
-            
+
             language_score_ranges.insert(language.clone(), score_ranges);
         } else {
             if target_language.is_some() {
                 anyhow::bail!("Language '{}' not found in bin report", language);
             }
-            println!("Warning: Language '{}' not found in bin report, skipping", language);
+            println!(
+                "Warning: Language '{}' not found in bin report, skipping",
+                language
+            );
         }
     }
-    
+
     let file = File::open(report_path)
         .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
-    
+
     parse_score_report_for_language_ranges(file, &language_score_ranges)
 }
 
 fn parse_score_report_for_language_ranges(
     file: File,
-    language_score_ranges: &HashMap<String, Vec<(f64, f64)>>
+    language_score_ranges: &HashMap<String, Vec<(f64, f64)>>,
 ) -> Result<HashSet<String>> {
-    
     let mut target_repos = HashSet::new();
     let reader = BufReader::new(file);
-    
+
     // Use serde_json's streaming API to parse the structure
     let mut deserializer = serde_json::Deserializer::from_reader(reader);
-    
+
     // Parse the JSON structure piece by piece
     let value: serde_json::Value = serde_json::Value::deserialize(&mut deserializer)?;
-    
+
     if let Some(languages) = value.get("languages").and_then(|v| v.as_object()) {
         let mut processed_repos = 0;
         let total_languages = languages.len();
-        
+
         for (lang_idx, (language_name, language_data)) in languages.iter().enumerate() {
             if lang_idx % 10 == 0 {
-                println!("  Processing language {}/{} - found {} repos so far", 
-                         lang_idx + 1, total_languages, target_repos.len());
+                println!(
+                    "  Processing language {}/{} - found {} repos so far",
+                    lang_idx + 1,
+                    total_languages,
+                    target_repos.len()
+                );
             }
-            
+
             // Check if this language has target score ranges
             if let Some(score_ranges) = language_score_ranges.get(language_name) {
-                if let Some(repo_stats) = language_data.get("repo_stats").and_then(|v| v.as_object()) {
+                if let Some(repo_stats) =
+                    language_data.get("repo_stats").and_then(|v| v.as_object())
+                {
                     for (repo_name, repo_data) in repo_stats {
                         processed_repos += 1;
-                        
-                        if let Some(avg_score) = repo_data.get("average_score").and_then(|v| v.as_f64()) {
+
+                        if let Some(avg_score) =
+                            repo_data.get("average_score").and_then(|v| v.as_f64())
+                        {
                             // Check if repository falls within any target score range for this language
                             for &(min_score, max_score) in score_ranges {
                                 if avg_score >= min_score && avg_score <= max_score {
@@ -1506,56 +1858,66 @@ fn parse_score_report_for_language_ranges(
                                 }
                             }
                         }
-                        
+
                         // Progress update every 100k repos
                         if processed_repos % 100000 == 0 {
-                            println!("  Processed {} repositories, found {} matches", 
-                                     processed_repos, target_repos.len());
+                            println!(
+                                "  Processed {} repositories, found {} matches",
+                                processed_repos,
+                                target_repos.len()
+                            );
                         }
                     }
                 }
             }
         }
-        
-        println!("  Completed processing {} repositories total", processed_repos);
+
+        println!(
+            "  Completed processing {} repositories total",
+            processed_repos
+        );
     }
-    
+
     Ok(target_repos)
 }
 
 fn collect_source_files_with_language(source_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
     let mut source_files = Vec::new();
-    
+
     // Check if source_dir contains *.jsonl.zst files directly (single language mode)
     let has_jsonl_files = std::fs::read_dir(source_dir)?
         .filter_map(|entry| entry.ok())
         .any(|entry| {
             let path = entry.path();
-            path.is_file() && 
-            path.extension().and_then(|s| s.to_str()) == Some("zst") &&
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .map(|s| s.ends_with(".jsonl"))
-                .unwrap_or(false)
+            path.is_file()
+                && path.extension().and_then(|s| s.to_str()) == Some("zst")
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.ends_with(".jsonl"))
+                    .unwrap_or(false)
         });
-    
+
     if has_jsonl_files {
         // Single language directory mode
-        let language_name = source_dir.file_name()
+        let language_name = source_dir
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         for entry in WalkDir::new(source_dir) {
             let entry = entry?;
             let path = entry.path();
-            
-            if path.is_file() && 
-               path.extension().and_then(|s| s.to_str()) == Some("zst") &&
-               path.file_stem()
-                   .and_then(|s| s.to_str())
-                   .map(|s| s.ends_with(".jsonl"))
-                   .unwrap_or(false) {
+
+            if path.is_file()
+                && path.extension().and_then(|s| s.to_str()) == Some("zst")
+                && path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.ends_with(".jsonl"))
+                    .unwrap_or(false)
+            {
                 source_files.push((language_name.clone(), path.to_path_buf()));
             }
         }
@@ -1564,31 +1926,34 @@ fn collect_source_files_with_language(source_dir: &Path) -> Result<Vec<(String, 
         for entry in std::fs::read_dir(source_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if path.is_dir() {
-                let language_name = path.file_name()
+                let language_name = path
+                    .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("unknown")
                     .to_string();
-                
+
                 // Collect files from this language directory
                 for file_entry in WalkDir::new(&path) {
                     let file_entry = file_entry?;
                     let file_path = file_entry.path();
-                    
-                    if file_path.is_file() && 
-                       file_path.extension().and_then(|s| s.to_str()) == Some("zst") &&
-                       file_path.file_stem()
-                           .and_then(|s| s.to_str())
-                           .map(|s| s.ends_with(".jsonl"))
-                           .unwrap_or(false) {
+
+                    if file_path.is_file()
+                        && file_path.extension().and_then(|s| s.to_str()) == Some("zst")
+                        && file_path
+                            .file_stem()
+                            .and_then(|s| s.to_str())
+                            .map(|s| s.ends_with(".jsonl"))
+                            .unwrap_or(false)
+                    {
                         source_files.push((language_name.clone(), file_path.to_path_buf()));
                     }
                 }
             }
         }
     }
-    
+
     Ok(source_files)
 }
 
@@ -1602,27 +1967,28 @@ fn process_source_file_with_language(
 ) -> Result<()> {
     let file = File::open(file_path)
         .with_context(|| format!("Failed to open file: {}", file_path.display()))?;
-    
+
     let decoder = zstd::Decoder::new(file)
         .with_context(|| format!("Failed to create zstd decoder for: {}", file_path.display()))?;
-    
+
     let reader = BufReader::new(decoder);
     let mut repo_docs: HashMap<String, Vec<String>> = HashMap::new();
-    
+
     // Group documents by repository
     for line in reader.lines() {
         let line = line?;
         processed_docs.fetch_add(1, Ordering::Relaxed);
-        
+
         if line.trim().is_empty() {
             continue;
         }
-        
+
         // Parse just enough to get repo_name
         if let Ok(doc) = serde_json::from_str::<Document>(&line) {
             if let Some(repo_name) = doc.metadata.repo_name {
                 if target_repos.contains(&repo_name) {
-                    repo_docs.entry(repo_name)
+                    repo_docs
+                        .entry(repo_name)
                         .or_insert_with(Vec::new)
                         .push(line);
                     filtered_docs.fetch_add(1, Ordering::Relaxed);
@@ -1630,13 +1996,13 @@ fn process_source_file_with_language(
             }
         }
     }
-    
+
     // Write documents to output, grouped by repository
     if !repo_docs.is_empty() {
         let mut output_mgr = output_manager.lock().unwrap();
         output_mgr.write_repo_documents_for_language(language, repo_docs)?;
     }
-    
+
     Ok(())
 }
 
@@ -1664,14 +2030,22 @@ impl OutputManager {
             total_file_count: 0,
         })
     }
-    
-    fn write_repo_documents_for_language(&mut self, language: &str, repo_docs: HashMap<String, Vec<String>>) -> Result<()> {
+
+    fn write_repo_documents_for_language(
+        &mut self,
+        language: &str,
+        repo_docs: HashMap<String, Vec<String>>,
+    ) -> Result<()> {
         // Get or create language manager
         if !self.language_managers.contains_key(language) {
             let language_dir = self.output_dir.join(language);
-            std::fs::create_dir_all(&language_dir)
-                .with_context(|| format!("Failed to create language directory: {}", language_dir.display()))?;
-            
+            std::fs::create_dir_all(&language_dir).with_context(|| {
+                format!(
+                    "Failed to create language directory: {}",
+                    language_dir.display()
+                )
+            })?;
+
             self.language_managers.insert(
                 language.to_string(),
                 LanguageOutputManager {
@@ -1680,16 +2054,16 @@ impl OutputManager {
                     current_writer: None,
                     current_size: 0,
                     file_count: 0,
-                }
+                },
             );
         }
-        
+
         let lang_manager = self.language_managers.get_mut(language).unwrap();
         lang_manager.write_repo_documents(repo_docs, self.max_file_size)?;
-        
+
         Ok(())
     }
-    
+
     fn finalize(&mut self) -> Result<()> {
         for lang_manager in self.language_managers.values_mut() {
             lang_manager.finalize()?;
@@ -1697,28 +2071,33 @@ impl OutputManager {
         }
         Ok(())
     }
-    
+
     fn file_count(&self) -> usize {
         self.total_file_count
     }
 }
 
 impl LanguageOutputManager {
-    fn write_repo_documents(&mut self, repo_docs: HashMap<String, Vec<String>>, max_file_size: usize) -> Result<()> {
+    fn write_repo_documents(
+        &mut self,
+        repo_docs: HashMap<String, Vec<String>>,
+        max_file_size: usize,
+    ) -> Result<()> {
         // Sort repositories for consistent output
         let mut sorted_repos: Vec<_> = repo_docs.into_iter().collect();
         sorted_repos.sort_by(|a, b| a.0.cmp(&b.0));
-        
+
         for (_repo_name, docs) in sorted_repos {
             // Calculate size needed for this repository
             let repo_size: usize = docs.iter().map(|doc| doc.len() + 1).sum(); // +1 for newline
-            
+
             // Check if we need a new file
-            if self.current_writer.is_none() || 
-               (self.current_size + repo_size > max_file_size && self.current_size > 0) {
+            if self.current_writer.is_none()
+                || (self.current_size + repo_size > max_file_size && self.current_size > 0)
+            {
                 self.rotate_file()?;
             }
-            
+
             // Write all documents for this repository
             let writer = self.current_writer.as_mut().unwrap();
             for doc in docs {
@@ -1727,30 +2106,32 @@ impl LanguageOutputManager {
                 self.current_size += doc.len() + 1;
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn rotate_file(&mut self) -> Result<()> {
         // Close current file
         if let Some(writer) = self.current_writer.take() {
             writer.finish()?;
         }
-        
+
         // Create new file
-        let file_path = self.language_dir.join(format!("{:06}.jsonl.zst", self.current_file_idx));
+        let file_path = self
+            .language_dir
+            .join(format!("{:06}.jsonl.zst", self.current_file_idx));
         let file = File::create(&file_path)
             .with_context(|| format!("Failed to create output file: {}", file_path.display()))?;
-        
+
         let encoder = zstd::Encoder::new(file, 3)?; // Compression level 3
         self.current_writer = Some(encoder);
         self.current_size = 0;
         self.current_file_idx += 1;
         self.file_count += 1;
-        
+
         Ok(())
     }
-    
+
     fn finalize(&mut self) -> Result<()> {
         if let Some(writer) = self.current_writer.take() {
             writer.finish()?;
