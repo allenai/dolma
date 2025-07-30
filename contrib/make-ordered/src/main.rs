@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use log::{info, warn};
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -37,27 +37,31 @@ struct DocumentMetadata {
 #[derive(Debug, Deserialize)]
 struct Document {
     metadata: DocumentMetadata,
-    #[serde(flatten)]
-    other: serde_json::Value,
 }
 
 #[derive(Debug)]
 struct RepoGroup {
-    repo_name: String,
     documents: Vec<serde_json::Value>,
     total_size: u64,
 }
 
-#[derive(Debug)]
-struct SubdirectoryData {
-    relative_path: PathBuf,
-    repo_groups: HashMap<String, RepoGroup>,
+#[derive(Debug, Clone)]
+struct ProcessedDocument {
+    json_value: serde_json::Value,
+    repo_name: String,
+    size: u64,
 }
 
+#[derive(Debug)]
+struct OutputBatch {
+    output_path: PathBuf,
+    documents: Vec<serde_json::Value>,
+}
+
+
 impl RepoGroup {
-    fn new(repo_name: String) -> Self {
+    fn new(_repo_name: String) -> Self {
         Self {
-            repo_name,
             documents: Vec::new(),
             total_size: 0,
         }
@@ -73,7 +77,7 @@ impl RepoGroup {
     }
 }
 
-fn load_documents_from_file(file_path: &Path) -> Result<Vec<(serde_json::Value, String, u64)>> {
+fn load_documents_from_file(file_path: &Path) -> Result<Vec<ProcessedDocument>> {
     let file = File::open(file_path)
         .with_context(|| format!("Failed to open file: {}", file_path.display()))?;
     
@@ -95,7 +99,11 @@ fn load_documents_from_file(file_path: &Path) -> Result<Vec<(serde_json::Value, 
             let doc: Document = serde_json::from_value(json_value.clone())?;
             let repo_name = doc.metadata.repo_name.unwrap_or_else(|| "unknown".to_string());
             
-            documents.push((json_value, repo_name, doc_size));
+            documents.push(ProcessedDocument {
+                json_value,
+                repo_name,
+                size: doc_size,
+            });
         }
     } else {
         let reader = std::io::BufReader::new(file);
@@ -112,7 +120,11 @@ fn load_documents_from_file(file_path: &Path) -> Result<Vec<(serde_json::Value, 
             let doc: Document = serde_json::from_value(json_value.clone())?;
             let repo_name = doc.metadata.repo_name.unwrap_or_else(|| "unknown".to_string());
             
-            documents.push((json_value, repo_name, doc_size));
+            documents.push(ProcessedDocument {
+                json_value,
+                repo_name,
+                size: doc_size,
+            });
         }
     }
     
@@ -145,15 +157,34 @@ fn collect_input_files_by_subdir(input_dir: &Path) -> Result<HashMap<PathBuf, Ve
     Ok(subdirs)
 }
 
-fn group_documents_by_repo(documents: Vec<(serde_json::Value, String, u64)>) -> HashMap<String, RepoGroup> {
-    let mut repo_groups: HashMap<String, RepoGroup> = HashMap::new();
-    
-    for (doc_json, repo_name, doc_size) in documents {
-        let group = repo_groups.entry(repo_name.clone()).or_insert_with(|| RepoGroup::new(repo_name));
-        group.add_document(doc_json, doc_size);
-    }
-    
-    repo_groups
+fn group_documents_by_repo(documents: Vec<ProcessedDocument>) -> HashMap<String, RepoGroup> {
+    documents
+        .into_par_iter()
+        .fold(
+            HashMap::new,
+            |mut acc: HashMap<String, Vec<ProcessedDocument>>, doc| {
+                acc.entry(doc.repo_name.clone()).or_insert_with(Vec::new).push(doc);
+                acc
+            },
+        )
+        .reduce(
+            HashMap::new,
+            |mut acc, mut map| {
+                for (repo_name, docs) in map.drain() {
+                    acc.entry(repo_name).or_insert_with(Vec::new).extend(docs);
+                }
+                acc
+            },
+        )
+        .into_iter()
+        .map(|(repo_name, docs)| {
+            let mut group = RepoGroup::new(repo_name.clone());
+            for doc in docs {
+                group.add_document(doc.json_value, doc.size);
+            }
+            (repo_name, group)
+        })
+        .collect()
 }
 
 fn write_output_file(
@@ -175,22 +206,20 @@ fn write_output_file(
     Ok(())
 }
 
-fn write_grouped_files_for_subdir(
+fn prepare_output_batches(
     repo_groups: HashMap<String, RepoGroup>,
     subdir_output_path: &Path,
     target_size: u64,
-) -> Result<()> {
-    std::fs::create_dir_all(subdir_output_path)?;
-    
+) -> Vec<OutputBatch> {
+    let mut batches = Vec::new();
     let mut file_counter = 0;
     let mut current_file_docs = Vec::new();
     let mut current_file_size = 0u64;
-    let mut current_repos = Vec::new();
     
     let mut sorted_repos: Vec<_> = repo_groups.into_iter().collect();
     sorted_repos.sort_by(|a, b| a.0.cmp(&b.0));
     
-    for (repo_name, repo_group) in sorted_repos {
+    for (_repo_name, repo_group) in sorted_repos {
         if repo_group.is_empty() {
             continue;
         }
@@ -200,39 +229,45 @@ fn write_grouped_files_for_subdir(
         
         if repo_would_exceed && file_not_empty {
             let output_path = subdir_output_path.join(format!("grouped_{:04}.jsonl.zst", file_counter));
-            info!(
-                "Writing file {} with {} documents from repos: {:?}",
-                output_path.display(),
-                current_file_docs.len(),
-                current_repos
-            );
+            batches.push(OutputBatch {
+                output_path,
+                documents: std::mem::take(&mut current_file_docs),
+            });
             
-            write_output_file(&output_path, &current_file_docs)?;
-            
-            current_file_docs.clear();
             current_file_size = 0;
-            current_repos.clear();
             file_counter += 1;
         }
         
         current_file_docs.extend(repo_group.documents);
         current_file_size += repo_group.total_size;
-        current_repos.push(repo_name);
     }
     
     if !current_file_docs.is_empty() {
         let output_path = subdir_output_path.join(format!("grouped_{:04}.jsonl.zst", file_counter));
-        info!(
-            "Writing final file {} with {} documents from repos: {:?}",
-            output_path.display(),
-            current_file_docs.len(),
-            current_repos
-        );
-        
-        write_output_file(&output_path, &current_file_docs)?;
+        batches.push(OutputBatch {
+            output_path,
+            documents: current_file_docs,
+        });
     }
     
-    Ok(())
+    batches
+}
+
+fn write_output_batches_parallel(batches: Vec<OutputBatch>) -> Result<()> {
+    let results: Result<Vec<_>> = batches
+        .into_par_iter()
+        .map(|batch| {
+            std::fs::create_dir_all(batch.output_path.parent().unwrap())?;
+            info!(
+                "Writing file {} with {} documents",
+                batch.output_path.display(),
+                batch.documents.len()
+            );
+            write_output_file(&batch.output_path, &batch.documents)
+        })
+        .collect();
+    
+    results.map(|_| ())
 }
 
 fn main() -> Result<()> {
@@ -253,38 +288,53 @@ fn main() -> Result<()> {
         return Ok(());
     }
     
-    for (subdir_path, input_files) in subdirs_with_files {
-        info!(
-            "Processing subdirectory: {} with {} files", 
-            subdir_path.display(), 
-            input_files.len()
-        );
-        
-        let subdir_documents: Vec<(serde_json::Value, String, u64)> = input_files
-            .par_iter()
-            .map(|file_path| {
-                info!("Processing file: {}", file_path.display());
-                load_documents_from_file(file_path)
-            })
-            .collect::<Result<Vec<_>>>()?
-            .into_iter()
-            .flatten()
-            .collect();
-        
-        info!("Loaded {} documents from subdirectory {}", subdir_documents.len(), subdir_path.display());
-        
-        if subdir_documents.is_empty() {
-            continue;
-        }
-        
-        let repo_groups = group_documents_by_repo(subdir_documents);
-        info!("Grouped documents into {} repositories for {}", repo_groups.len(), subdir_path.display());
-        
-        let subdir_output_path = args.output_dir.join(&subdir_path);
-        write_grouped_files_for_subdir(repo_groups, &subdir_output_path, args.target_size)?;
-        
-        info!("Completed processing subdirectory: {}", subdir_path.display());
-    }
+    // Process subdirectories in parallel
+    let all_batches: Result<Vec<Vec<OutputBatch>>> = subdirs_with_files
+        .into_par_iter()
+        .map(|(subdir_path, input_files)| -> Result<Vec<OutputBatch>> {
+            info!(
+                "Processing subdirectory: {} with {} files", 
+                subdir_path.display(), 
+                input_files.len()
+            );
+            
+            // Parallel file loading
+            let subdir_documents: Vec<ProcessedDocument> = input_files
+                .par_iter()
+                .map(|file_path| {
+                    info!("Processing file: {}", file_path.display());
+                    load_documents_from_file(file_path)
+                })
+                .collect::<Result<Vec<_>>>()?
+                .into_iter()
+                .flatten()
+                .collect();
+            
+            info!("Loaded {} documents from subdirectory {}", subdir_documents.len(), subdir_path.display());
+            
+            if subdir_documents.is_empty() {
+                return Ok(Vec::new());
+            }
+            
+            // Parallel grouping
+            let repo_groups = group_documents_by_repo(subdir_documents);
+            info!("Grouped documents into {} repositories for {}", repo_groups.len(), subdir_path.display());
+            
+            let subdir_output_path = args.output_dir.join(&subdir_path);
+            let batches = prepare_output_batches(repo_groups, &subdir_output_path, args.target_size);
+            
+            info!("Prepared {} output batches for subdirectory: {}", batches.len(), subdir_path.display());
+            Ok(batches)
+        })
+        .collect::<Result<Vec<_>>>();
+    
+    let all_batches = all_batches?;
+    
+    // Flatten all batches and write in parallel
+    let all_batches: Vec<OutputBatch> = all_batches.into_iter().flatten().collect();
+    info!("Writing {} total output files in parallel", all_batches.len());
+    
+    write_output_batches_parallel(all_batches)?;
     
     info!("Document grouping completed successfully");
     Ok(())
