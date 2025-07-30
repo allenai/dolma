@@ -437,14 +437,6 @@ fn print_analytics_report(stats: &ProcessingStats) {
         );
     }
 
-    // Add subdirectory distribution plot
-    let subdir_doc_counts: Vec<u64> = stats
-        .subdirectory_stats
-        .values()
-        .map(|s| s.document_count)
-        .filter(|&count| count > 0)
-        .collect();
-
     // Performance Metrics
     println!("\n⚡ PERFORMANCE METRICS:");
     let docs_per_second = stats.total_documents as f64 / stats.processing_duration.as_secs_f64();
