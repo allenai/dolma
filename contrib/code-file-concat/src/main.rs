@@ -72,7 +72,12 @@ fn compute_common_prefix(paths: &[PathBuf]) -> PathBuf {
 /// returns a vector where each file is the destination prefix plus
 /// the input file's path relative to the shared prefix.
 /// If keep_dirs is false, only the filename is preserved (flattened structure).
-fn map_paths_to_destination(inputs: &Vec<PathBuf>, dest_prefix: PathBuf, keep_dirs: bool) -> Vec<PathBuf> {
+fn map_paths_to_destination(
+    inputs: &Vec<PathBuf>, 
+    dest_prefix: PathBuf, 
+    keep_dirs: bool, 
+    common_prefix: &PathBuf
+) -> Vec<PathBuf> {
     if inputs.is_empty() {
         return Vec::new();
     }
@@ -89,20 +94,20 @@ fn map_paths_to_destination(inputs: &Vec<PathBuf>, dest_prefix: PathBuf, keep_di
     }
 
     if inputs.len() == 1 {
-        // get filename from single input path
-        let src_filename = inputs[0].file_name().unwrap();
-        let dst_filename = dest_prefix.join(src_filename);
-        return vec![dst_filename];
+        // For single input, preserve relative path from common prefix
+        let relative = inputs[0]
+            .strip_prefix(common_prefix)
+            .unwrap_or_else(|_| inputs[0].file_name().unwrap().as_ref());
+        return vec![dest_prefix.join(relative)];
     }
 
-    let common_prefix = compute_common_prefix(&inputs);
     inputs
         .into_iter()
         .map(|input| {
-            // Calculate the relative path from the common prefix.
+            // Calculate the relative path from the provided common prefix.
             let relative = input
-                .strip_prefix(&common_prefix)
-                .expect("All inputs should share the common prefix");
+                .strip_prefix(common_prefix)
+                .unwrap_or_else(|_| input.file_name().unwrap().as_ref());
             // Build the new destination path.
             let mut new_path = dest_prefix.clone();
             new_path.push(relative);
@@ -111,7 +116,38 @@ fn map_paths_to_destination(inputs: &Vec<PathBuf>, dest_prefix: PathBuf, keep_di
         .collect()
 }
 
-fn find_all_paths(inputs: Vec<PathBuf>) -> Vec<PathBuf> {
+fn find_all_paths(inputs: Vec<PathBuf>) -> (Vec<PathBuf>, PathBuf) {
+    // Find the common prefix of all input patterns before expansion
+    let common_input_prefix = if inputs.len() > 1 {
+        compute_common_prefix(&inputs)
+    } else if let Some(input) = inputs.first() {
+        // For a single input with glob pattern, find the directory part before any glob
+        if input.to_string_lossy().contains('*') {
+            let input_str = input.to_string_lossy();
+            let components: Vec<&str> = input_str.split('/').collect();
+            
+            // Find the first component that contains a glob pattern
+            let mut non_glob_components = Vec::new();
+            for component in components {
+                if component.contains('*') || component.contains('?') || component.contains('[') {
+                    break;
+                }
+                non_glob_components.push(component);
+            }
+            
+            // Reconstruct the path from non-glob components
+            if non_glob_components.is_empty() {
+                PathBuf::from("/")
+            } else {
+                PathBuf::from(non_glob_components.join("/"))
+            }
+        } else {
+            input.parent().unwrap_or(input).to_path_buf()
+        }
+    } else {
+        PathBuf::new()
+    };
+
     let all_paths: Vec<PathBuf> = inputs
         .into_iter()
         .map(|path| {
@@ -140,7 +176,7 @@ fn find_all_paths(inputs: Vec<PathBuf>) -> Vec<PathBuf> {
         })
         .flatten()
         .collect();
-    return all_paths;
+    (all_paths, common_input_prefix)
 }
 
 fn mk_serde_doc_reader<R: BufRead>(reader: R) -> impl Iterator<Item = serde_json::Value> {
@@ -187,11 +223,11 @@ fn main() {
     let args: Args = Args::parse();
 
     // for each prefix, we derive both
-    let all_src: Vec<PathBuf> = find_all_paths(args.inputs);
+    let (all_src, common_prefix) = find_all_paths(args.inputs);
 
     println!("Found {} paths to process", all_src.len());
 
-    let all_dst = map_paths_to_destination(&all_src, args.output.clone(), args.keep_dirs);
+    let all_dst = map_paths_to_destination(&all_src, args.output.clone(), args.keep_dirs, &common_prefix);
 
     let pbar = build_pbar(all_src.len(), "Processing files");
 
