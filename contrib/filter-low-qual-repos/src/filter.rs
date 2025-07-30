@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{atomic::AtomicUsize, atomic::Ordering, mpsc};
+use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex};
 use std::time::Instant;
 use walkdir::WalkDir;
 
@@ -94,35 +94,19 @@ pub fn filter_documents(
         .unwrap()
         .progress_chars("#>-"));
 
-    // Process files and collect matching documents with parallel output writing
+    // Process files and collect matching documents
     let max_file_size_bytes = max_file_size_mb * 1024 * 1024;
     let processed_docs = AtomicUsize::new(0);
     let filtered_docs = AtomicUsize::new(0);
+    let collected_docs = Mutex::new(HashMap::<String, HashMap<String, Vec<String>>>::new());
 
-    // Create channel for batched output communication
-    let (tx, rx) = mpsc::channel::<(String, HashMap<String, Vec<String>>)>();
-    
-    // Spawn dedicated output writer thread
-    let output_dir_clone = output_dir.clone();
-    let writer_handle = std::thread::spawn(move || -> Result<OutputManager> {
-        let mut output_manager = OutputManager::new(output_dir_clone, max_file_size_bytes)?;
-        
-        while let Ok((language, repo_docs)) = rx.recv() {
-            if let Err(e) = output_manager.write_repo_documents_for_language(&language, repo_docs) {
-                eprintln!("Error writing output for language {}: {}", language, e);
-            }
-        }
-        
-        output_manager.finalize()?;
-        Ok(output_manager)
-    });
-
+    // Parallel processing phase
     source_files.par_iter().for_each(|(language, file_path)| {
-        match process_source_file_with_language_buffered(
+        match process_source_file_collect(
             file_path,
             language,
             &target_repos,
-            &tx,
+            &collected_docs,
             &processed_docs,
             &filtered_docs,
         ) {
@@ -136,9 +120,27 @@ pub fn filter_documents(
 
     pb.finish_with_message("Processing complete");
 
-    // Close the channel and wait for output writer to finish
-    drop(tx);
-    let output_mgr = writer_handle.join().expect("Output writer thread panicked")?;
+    // Parallel output writing phase
+    println!("Writing output files...");
+    let docs_by_language = collected_docs.into_inner().unwrap();
+    
+    // Process each language in parallel for output writing
+    let language_results: Result<Vec<usize>> = docs_by_language
+        .par_iter()
+        .map(|(language, repo_docs)| -> Result<usize> {
+            let language_output_dir = output_dir.join(language);
+            std::fs::create_dir_all(&language_output_dir)?;
+            
+            let mut lang_output_manager = LanguageOutputManager::new(language_output_dir, max_file_size_bytes)?;
+            lang_output_manager.write_repo_documents(repo_docs.clone(), max_file_size_bytes)?;
+            lang_output_manager.finalize()?;
+            
+            Ok(lang_output_manager.file_count())
+        })
+        .collect();
+
+    let file_counts = language_results?;
+    let total_output_files: usize = file_counts.iter().sum();
 
     let elapsed = start_time.elapsed();
     let total_processed = processed_docs.load(Ordering::Relaxed);
@@ -158,7 +160,7 @@ pub fn filter_documents(
             0.0
         }
     );
-    println!("  Output files: {}", output_mgr.file_count());
+    println!("  Output files: {}", total_output_files);
     println!("  Output directory: {}", output_dir.display());
 
     Ok(())
@@ -393,11 +395,11 @@ fn collect_source_files_with_language(source_dir: &Path) -> Result<Vec<(String, 
     Ok(source_files)
 }
 
-fn process_source_file_with_language_buffered(
+fn process_source_file_collect(
     file_path: &Path,
     language: &str,
     target_repos: &HashSet<String>,
-    tx: &mpsc::Sender<(String, HashMap<String, Vec<String>>)>,
+    collected_docs: &Mutex<HashMap<String, HashMap<String, Vec<String>>>>,
     processed_docs: &AtomicUsize,
     filtered_docs: &AtomicUsize,
 ) -> Result<()> {
@@ -433,21 +435,17 @@ fn process_source_file_with_language_buffered(
         }
     }
 
-    // Send documents to output writer thread if we have any
+    // Merge documents into the global collection if we have any
     if !repo_docs.is_empty() {
-        if let Err(e) = tx.send((language.to_string(), repo_docs)) {
-            eprintln!("Failed to send output data for {}: {}", language, e);
+        let mut collected = collected_docs.lock().unwrap();
+        let language_docs = collected.entry(language.to_string()).or_insert_with(HashMap::new);
+        
+        for (repo_name, docs) in repo_docs {
+            language_docs.entry(repo_name).or_insert_with(Vec::new).extend(docs);
         }
     }
 
     Ok(())
-}
-
-struct OutputManager {
-    output_dir: PathBuf,
-    max_file_size: usize,
-    language_managers: HashMap<String, LanguageOutputManager>,
-    total_file_count: usize,
 }
 
 struct LanguageOutputManager {
@@ -458,63 +456,21 @@ struct LanguageOutputManager {
     file_count: usize,
 }
 
-impl OutputManager {
-    fn new(output_dir: PathBuf, max_file_size: usize) -> Result<Self> {
+impl LanguageOutputManager {
+    fn new(language_dir: PathBuf, _max_file_size: usize) -> Result<Self> {
+        std::fs::create_dir_all(&language_dir)?;
         Ok(Self {
-            output_dir,
-            max_file_size,
-            language_managers: HashMap::new(),
-            total_file_count: 0,
+            language_dir,
+            current_file_idx: 0,
+            current_writer: None,
+            current_size: 0,
+            file_count: 0,
         })
     }
 
-    fn write_repo_documents_for_language(
-        &mut self,
-        language: &str,
-        repo_docs: HashMap<String, Vec<String>>,
-    ) -> Result<()> {
-        // Get or create language manager
-        if !self.language_managers.contains_key(language) {
-            let language_dir = self.output_dir.join(language);
-            std::fs::create_dir_all(&language_dir).with_context(|| {
-                format!(
-                    "Failed to create language directory: {}",
-                    language_dir.display()
-                )
-            })?;
-
-            self.language_managers.insert(
-                language.to_string(),
-                LanguageOutputManager {
-                    language_dir,
-                    current_file_idx: 0,
-                    current_writer: None,
-                    current_size: 0,
-                    file_count: 0,
-                },
-            );
-        }
-
-        let lang_manager = self.language_managers.get_mut(language).unwrap();
-        lang_manager.write_repo_documents(repo_docs, self.max_file_size)?;
-
-        Ok(())
-    }
-
-    fn finalize(&mut self) -> Result<()> {
-        for lang_manager in self.language_managers.values_mut() {
-            lang_manager.finalize()?;
-            self.total_file_count += lang_manager.file_count;
-        }
-        Ok(())
-    }
-
     fn file_count(&self) -> usize {
-        self.total_file_count
+        self.file_count
     }
-}
-
-impl LanguageOutputManager {
     fn write_repo_documents(
         &mut self,
         repo_docs: HashMap<String, Vec<String>>,
