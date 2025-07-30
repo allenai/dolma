@@ -48,6 +48,12 @@ struct RepoGroup {
     total_size: u64,
 }
 
+#[derive(Debug)]
+struct SubdirectoryData {
+    relative_path: PathBuf,
+    repo_groups: HashMap<String, RepoGroup>,
+}
+
 impl RepoGroup {
     fn new(repo_name: String) -> Self {
         Self {
@@ -113,8 +119,8 @@ fn load_documents_from_file(file_path: &Path) -> Result<Vec<(serde_json::Value, 
     Ok(documents)
 }
 
-fn collect_input_files(input_dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
+fn collect_input_files_by_subdir(input_dir: &Path) -> Result<HashMap<PathBuf, Vec<PathBuf>>> {
+    let mut subdirs: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
     
     for entry in WalkDir::new(input_dir) {
         let entry = entry?;
@@ -123,12 +129,20 @@ fn collect_input_files(input_dir: &Path) -> Result<Vec<PathBuf>> {
         if path.is_file() {
             let ext = path.extension().and_then(|s| s.to_str());
             if matches!(ext, Some("jsonl") | Some("zst")) {
-                files.push(path.to_path_buf());
+                let relative_path = path.strip_prefix(input_dir)?;
+                
+                let subdir = if let Some(parent) = relative_path.parent() {
+                    parent.to_path_buf()
+                } else {
+                    PathBuf::from(".")
+                };
+                
+                subdirs.entry(subdir).or_insert_with(Vec::new).push(path.to_path_buf());
             }
         }
     }
     
-    Ok(files)
+    Ok(subdirs)
 }
 
 fn group_documents_by_repo(documents: Vec<(serde_json::Value, String, u64)>) -> HashMap<String, RepoGroup> {
@@ -161,12 +175,12 @@ fn write_output_file(
     Ok(())
 }
 
-fn write_grouped_files(
+fn write_grouped_files_for_subdir(
     repo_groups: HashMap<String, RepoGroup>,
-    output_dir: &Path,
+    subdir_output_path: &Path,
     target_size: u64,
 ) -> Result<()> {
-    std::fs::create_dir_all(output_dir)?;
+    std::fs::create_dir_all(subdir_output_path)?;
     
     let mut file_counter = 0;
     let mut current_file_docs = Vec::new();
@@ -185,7 +199,7 @@ fn write_grouped_files(
         let file_not_empty = !current_file_docs.is_empty();
         
         if repo_would_exceed && file_not_empty {
-            let output_path = output_dir.join(format!("grouped_{:04}.jsonl.zst", file_counter));
+            let output_path = subdir_output_path.join(format!("grouped_{:04}.jsonl.zst", file_counter));
             info!(
                 "Writing file {} with {} documents from repos: {:?}",
                 output_path.display(),
@@ -207,7 +221,7 @@ fn write_grouped_files(
     }
     
     if !current_file_docs.is_empty() {
-        let output_path = output_dir.join(format!("grouped_{:04}.jsonl.zst", file_counter));
+        let output_path = subdir_output_path.join(format!("grouped_{:04}.jsonl.zst", file_counter));
         info!(
             "Writing final file {} with {} documents from repos: {:?}",
             output_path.display(),
@@ -231,31 +245,46 @@ fn main() -> Result<()> {
     info!("Output directory: {}", args.output_dir.display());
     info!("Target file size: {} bytes", args.target_size);
     
-    let input_files = collect_input_files(&args.input_dir)?;
-    info!("Found {} input files", input_files.len());
+    let subdirs_with_files = collect_input_files_by_subdir(&args.input_dir)?;
+    info!("Found {} subdirectories with files", subdirs_with_files.len());
     
-    if input_files.is_empty() {
+    if subdirs_with_files.is_empty() {
         warn!("No input files found");
         return Ok(());
     }
     
-    let all_documents: Vec<(serde_json::Value, String, u64)> = input_files
-        .par_iter()
-        .map(|file_path| {
-            info!("Processing file: {}", file_path.display());
-            load_documents_from_file(file_path)
-        })
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect();
-    
-    info!("Loaded {} total documents", all_documents.len());
-    
-    let repo_groups = group_documents_by_repo(all_documents);
-    info!("Grouped documents into {} repositories", repo_groups.len());
-    
-    write_grouped_files(repo_groups, &args.output_dir, args.target_size)?;
+    for (subdir_path, input_files) in subdirs_with_files {
+        info!(
+            "Processing subdirectory: {} with {} files", 
+            subdir_path.display(), 
+            input_files.len()
+        );
+        
+        let subdir_documents: Vec<(serde_json::Value, String, u64)> = input_files
+            .par_iter()
+            .map(|file_path| {
+                info!("Processing file: {}", file_path.display());
+                load_documents_from_file(file_path)
+            })
+            .collect::<Result<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
+        
+        info!("Loaded {} documents from subdirectory {}", subdir_documents.len(), subdir_path.display());
+        
+        if subdir_documents.is_empty() {
+            continue;
+        }
+        
+        let repo_groups = group_documents_by_repo(subdir_documents);
+        info!("Grouped documents into {} repositories for {}", repo_groups.len(), subdir_path.display());
+        
+        let subdir_output_path = args.output_dir.join(&subdir_path);
+        write_grouped_files_for_subdir(repo_groups, &subdir_output_path, args.target_size)?;
+        
+        info!("Completed processing subdirectory: {}", subdir_path.display());
+    }
     
     info!("Document grouping completed successfully");
     Ok(())
