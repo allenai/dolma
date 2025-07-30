@@ -32,7 +32,7 @@ struct Args {
     psm_spm_split: f32,
 
     /// Value of the file separator token
-    #[arg(long, required = true, default_value = "<|file_sep|>")]
+    #[arg(long, default_value = "<|file_sep|>")]
     file_separator_token: String,
 
     /// Value of the fill-in-middle prefix sentinel token
@@ -46,6 +46,10 @@ struct Args {
     /// Value of the fill-in-middle suffix sentinel token
     #[arg(long, required = true, default_value = "<|fim_suffix|>")]
     fim_suffix_token: String,
+
+    /// Optional replacement string for file separator token in output documents
+    #[arg(long)]
+    file_separator_replacement: Option<String>,
 }
 
 /// Compute the longest common prefix of a non-empty slice of paths.
@@ -192,6 +196,7 @@ fn process_single(
     fim_prefix_token: &str,
     fim_middle_token: &str,
     fim_suffix_token: &str,
+    file_separator_replacement: Option<&str>,
 ) -> Result<(), Error> {
     let mut fim = fim::FillInMiddle {
         fim_rate,
@@ -212,7 +217,13 @@ fn process_single(
         let mut json_obj: serde_json::Value = serde_json::from_str(&line).unwrap();
 
         let src_text = json_obj.get("text").unwrap().as_str().unwrap();
-        let new_text = fim.perform_on_document_text(src_text);
+        let mut new_text = fim.perform_on_document_text(src_text);
+        
+        // Replace file separator token if replacement is specified
+        if let Some(replacement) = file_separator_replacement {
+            new_text = new_text.replace(file_separator_token, replacement);
+        }
+        
         json_obj["text"] = serde_json::Value::String(new_text);
 
         out_bytes.extend_from_slice(&serde_json::to_vec(&json_obj)?);
@@ -252,6 +263,7 @@ fn main() {
                 &args.fim_prefix_token,
                 &args.fim_middle_token,
                 &args.fim_suffix_token,
+                args.file_separator_replacement.as_deref(),
             )
             .unwrap();
             pbar.inc(1);
