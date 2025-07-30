@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{info, warn};
 use rayon::prelude::*;
 use serde::Deserialize;
@@ -7,6 +8,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use walkdir::WalkDir;
 use zstd::stream::write::Encoder as ZstdEncoder;
 
@@ -77,7 +79,7 @@ impl RepoGroup {
     }
 }
 
-fn load_documents_from_file(file_path: &Path) -> Result<Vec<ProcessedDocument>> {
+fn load_documents_from_file(file_path: &Path, progress_bar: Option<&ProgressBar>) -> Result<Vec<ProcessedDocument>> {
     let file = File::open(file_path)
         .with_context(|| format!("Failed to open file: {}", file_path.display()))?;
     
@@ -104,6 +106,10 @@ fn load_documents_from_file(file_path: &Path) -> Result<Vec<ProcessedDocument>> 
                 repo_name,
                 size: doc_size,
             });
+            
+            if let Some(pb) = progress_bar {
+                pb.inc(1);
+            }
         }
     } else {
         let reader = std::io::BufReader::new(file);
@@ -125,13 +131,17 @@ fn load_documents_from_file(file_path: &Path) -> Result<Vec<ProcessedDocument>> 
                 repo_name,
                 size: doc_size,
             });
+            
+            if let Some(pb) = progress_bar {
+                pb.inc(1);
+            }
         }
     }
     
     Ok(documents)
 }
 
-fn collect_input_files_by_subdir(input_dir: &Path) -> Result<HashMap<PathBuf, Vec<PathBuf>>> {
+fn collect_input_files_by_subdir(input_dir: &Path, progress_bar: &ProgressBar) -> Result<HashMap<PathBuf, Vec<PathBuf>>> {
     let mut subdirs: HashMap<PathBuf, Vec<PathBuf>> = HashMap::new();
     
     for entry in WalkDir::new(input_dir) {
@@ -150,6 +160,7 @@ fn collect_input_files_by_subdir(input_dir: &Path) -> Result<HashMap<PathBuf, Ve
                 };
                 
                 subdirs.entry(subdir).or_insert_with(Vec::new).push(path.to_path_buf());
+                progress_bar.inc(1);
             }
         }
     }
@@ -253,7 +264,7 @@ fn prepare_output_batches(
     batches
 }
 
-fn write_output_batches_parallel(batches: Vec<OutputBatch>) -> Result<()> {
+fn write_output_batches_parallel(batches: Vec<OutputBatch>, progress_bar: &ProgressBar) -> Result<()> {
     let results: Result<Vec<_>> = batches
         .into_par_iter()
         .map(|batch| {
@@ -263,7 +274,9 @@ fn write_output_batches_parallel(batches: Vec<OutputBatch>) -> Result<()> {
                 batch.output_path.display(),
                 batch.documents.len()
             );
-            write_output_file(&batch.output_path, &batch.documents)
+            let result = write_output_file(&batch.output_path, &batch.documents);
+            progress_bar.inc(1);
+            result
         })
         .collect();
     
@@ -280,13 +293,55 @@ fn main() -> Result<()> {
     info!("Output directory: {}", args.output_dir.display());
     info!("Target file size: {} bytes", args.target_size);
     
-    let subdirs_with_files = collect_input_files_by_subdir(&args.input_dir)?;
-    info!("Found {} subdirectories with files", subdirs_with_files.len());
+    // Setup progress tracking
+    let multi_progress = Arc::new(MultiProgress::new());
+    
+    // Phase 1: File discovery
+    let discovery_pb = multi_progress.add(ProgressBar::new_spinner());
+    discovery_pb.set_style(
+        ProgressStyle::default_spinner()
+            .template("{spinner:.green} [{elapsed_precise}] {msg}")
+            .unwrap()
+    );
+    discovery_pb.set_message("Discovering input files...");
+    
+    let subdirs_with_files = collect_input_files_by_subdir(&args.input_dir, &discovery_pb)?;
+    let total_files: usize = subdirs_with_files.values().map(|files| files.len()).sum();
+    
+    discovery_pb.finish_with_message(format!(
+        "Found {} files across {} subdirectories", 
+        total_files, 
+        subdirs_with_files.len()
+    ));
     
     if subdirs_with_files.is_empty() {
         warn!("No input files found");
         return Ok(());
     }
+    
+    // Phase 2: Overall progress tracking
+    let overall_pb = multi_progress.add(ProgressBar::new(subdirs_with_files.len() as u64));
+    overall_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} subdirs ({percent}%) {msg}")
+            .unwrap()
+            .progress_chars("█▉▊▋▌▍▎▏  ")
+    );
+    overall_pb.set_message("Processing subdirectories...");
+    
+    // Phase 3: Document processing progress
+    let doc_processing_pb = multi_progress.add(ProgressBar::new(0));
+    doc_processing_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.blue} [{elapsed_precise}] [{bar:40.yellow/red}] {pos} documents processed {msg}")
+            .unwrap()
+            .progress_chars("█▉▊▋▌▍▎▏  ")
+    );
+    
+    // Count total estimated documents (rough estimate based on files)
+    let estimated_docs = total_files * 1000; // rough estimate
+    doc_processing_pb.set_length(estimated_docs as u64);
+    doc_processing_pb.set_message("Loading and processing documents...");
     
     // Process subdirectories in parallel
     let all_batches: Result<Vec<Vec<OutputBatch>>> = subdirs_with_files
@@ -298,12 +353,12 @@ fn main() -> Result<()> {
                 input_files.len()
             );
             
-            // Parallel file loading
+            // Parallel file loading with document progress
             let subdir_documents: Vec<ProcessedDocument> = input_files
                 .par_iter()
                 .map(|file_path| {
                     info!("Processing file: {}", file_path.display());
-                    load_documents_from_file(file_path)
+                    load_documents_from_file(file_path, Some(&doc_processing_pb))
                 })
                 .collect::<Result<Vec<_>>>()?
                 .into_iter()
@@ -313,6 +368,7 @@ fn main() -> Result<()> {
             info!("Loaded {} documents from subdirectory {}", subdir_documents.len(), subdir_path.display());
             
             if subdir_documents.is_empty() {
+                overall_pb.inc(1);
                 return Ok(Vec::new());
             }
             
@@ -324,17 +380,42 @@ fn main() -> Result<()> {
             let batches = prepare_output_batches(repo_groups, &subdir_output_path, args.target_size);
             
             info!("Prepared {} output batches for subdirectory: {}", batches.len(), subdir_path.display());
+            overall_pb.inc(1);
             Ok(batches)
         })
         .collect::<Result<Vec<_>>>();
     
     let all_batches = all_batches?;
     
-    // Flatten all batches and write in parallel
+    overall_pb.finish_with_message("All subdirectories processed");
+    doc_processing_pb.finish_with_message("All documents loaded and grouped");
+    
+    // Phase 4: File writing progress
     let all_batches: Vec<OutputBatch> = all_batches.into_iter().flatten().collect();
+    let write_pb = multi_progress.add(ProgressBar::new(all_batches.len() as u64));
+    write_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.green/blue}] {pos}/{len} files written ({percent}%) {msg}")
+            .unwrap()
+            .progress_chars("█▉▊▋▌▍▎▏  ")
+    );
+    write_pb.set_message("Writing output files...");
+    
     info!("Writing {} total output files in parallel", all_batches.len());
     
-    write_output_batches_parallel(all_batches)?;
+    write_output_batches_parallel(all_batches, &write_pb)?;
+    
+    write_pb.finish_with_message("All output files written");
+    
+    // Final completion message
+    let completion_pb = multi_progress.add(ProgressBar::new(1));
+    completion_pb.set_style(
+        ProgressStyle::default_bar()
+            .template("✅ {msg}")
+            .unwrap()
+    );
+    completion_pb.inc(1);
+    completion_pb.finish_with_message("Document grouping completed successfully!");
     
     info!("Document grouping completed successfully");
     Ok(())

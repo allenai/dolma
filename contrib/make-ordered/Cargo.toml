@@ -14,3 +14,4 @@ walkdir = "2.4"
 ahash = { version = "0.8.1", features = ["runtime-rng"] }
 log = "0.4.17"
 env_logger = "0.10.0"
+indicatif = { version = "0.17", features = ["rayon"] }
