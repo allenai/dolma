@@ -519,14 +519,16 @@ fn filter_documents(
     
     let elapsed = start_time.elapsed();
     let total_processed = processed_docs.load(Ordering::Relaxed);
-    let total_filtered = filtered_docs.load(Ordering::Relaxed);
+    let total_retained = filtered_docs.load(Ordering::Relaxed);
+    let total_excluded = total_processed - total_retained;
     
     println!("Filter completed in {:.2}s", elapsed.as_secs_f64());
     println!("Summary:");
     println!("  Documents processed: {}", total_processed);
-    println!("  Documents filtered: {}", total_filtered);
-    println!("  Filter rate: {:.2}%", if total_processed > 0 { 
-        (total_filtered as f64 / total_processed as f64) * 100.0 
+    println!("  Documents retained: {}", total_retained);
+    println!("  Documents excluded: {}", total_excluded);
+    println!("  Retention rate: {:.2}%", if total_processed > 0 { 
+        (total_retained as f64 / total_processed as f64) * 100.0 
     } else { 0.0 });
     println!("  Output files: {}", output_mgr.file_count());
     println!("  Output directory: {}", output_dir.display());
