@@ -411,43 +411,6 @@ fn print_analytics_report(stats: &ProcessingStats) {
     println!("      Max:      {:>10} docs", doc_count_stats.max);
     println!("      Std Dev:  {:>10.1} docs", doc_count_stats.std_dev);
 
-    // Repository count by size buckets
-    println!("\n   📊 Repository Count by Size Buckets:");
-    let mut small_repos = 0u64; // 1-10 docs
-    let mut medium_repos = 0u64; // 11-100 docs
-    let mut large_repos = 0u64; // 101-1000 docs
-    let mut huge_repos = 0u64; // 1000+ docs
-
-    for &count in &doc_counts {
-        match count {
-            1..=10 => small_repos += 1,
-            11..=100 => medium_repos += 1,
-            101..=1000 => large_repos += 1,
-            _ => huge_repos += 1,
-        }
-    }
-
-    println!(
-        "      Small (1-10 docs):      {:>8} repos ({:>5.1}%)",
-        small_repos,
-        (small_repos as f64 / stats.total_repositories as f64) * 100.0
-    );
-    println!(
-        "      Medium (11-100 docs):   {:>8} repos ({:>5.1}%)",
-        medium_repos,
-        (medium_repos as f64 / stats.total_repositories as f64) * 100.0
-    );
-    println!(
-        "      Large (101-1000 docs):  {:>8} repos ({:>5.1}%)",
-        large_repos,
-        (large_repos as f64 / stats.total_repositories as f64) * 100.0
-    );
-    println!(
-        "      Huge (1000+ docs):      {:>8} repos ({:>5.1}%)",
-        huge_repos,
-        (huge_repos as f64 / stats.total_repositories as f64) * 100.0
-    );
-
     // Add distribution histogram
     println!(
         "\n{}",
@@ -481,13 +444,6 @@ fn print_analytics_report(stats: &ProcessingStats) {
         .map(|s| s.document_count)
         .filter(|&count| count > 0)
         .collect();
-
-    if !subdir_doc_counts.is_empty() {
-        println!(
-            "\n{}",
-            create_histogram_plot(&subdir_doc_counts, "Documents per Subdirectory", 40)
-        );
-    }
 
     // Performance Metrics
     println!("\n⚡ PERFORMANCE METRICS:");
