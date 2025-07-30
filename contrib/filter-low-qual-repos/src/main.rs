@@ -89,6 +89,40 @@ enum Commands {
         #[arg(long, default_value = "50")]
         max_file_size_mb: usize,
     },
+    /// Run the complete pipeline: aggregate -> bin -> filter
+    Pipeline {
+        /// Source directory containing programming language subdirectories with *.jsonl.zst files
+        #[arg(short, long)]
+        source_dir: PathBuf,
+        
+        /// Target bin numbers to include (comma-separated, 1-indexed)
+        #[arg(short, long, value_delimiter = ',')]
+        target_bins: Vec<usize>,
+        
+        /// Specific language to filter (optional, filters all languages if not specified)
+        #[arg(short, long)]
+        language: Option<String>,
+        
+        /// Output directory for filtered *.jsonl.zst files
+        #[arg(short, long)]
+        output_dir: PathBuf,
+        
+        /// Number of bins to create
+        #[arg(short, long, default_value = "10")]
+        num_bins: usize,
+        
+        /// Sample size per bin using reservoir sampling
+        #[arg(long, default_value = "100")]
+        sample_size: usize,
+        
+        /// Maximum file size in MB before splitting
+        #[arg(long, default_value = "50")]
+        max_file_size_mb: usize,
+        
+        /// Working directory for intermediate reports
+        #[arg(short, long, default_value = ".")]
+        work_dir: PathBuf,
+    },
 }
 
 #[derive(Deserialize)]
@@ -194,7 +228,95 @@ fn main() -> Result<()> {
         Commands::Filter { source_dir, report_path, bin_path, target_bins, language, output_dir, max_file_size_mb } => {
             filter_documents(source_dir, report_path, bin_path, target_bins, language, output_dir, max_file_size_mb)
         }
+        Commands::Pipeline { source_dir, target_bins, language, output_dir, num_bins, sample_size, max_file_size_mb, work_dir } => {
+            run_pipeline(source_dir, target_bins, language, output_dir, num_bins, sample_size, max_file_size_mb, work_dir)
+        }
     }
+}
+
+fn run_pipeline(
+    source_dir: PathBuf,
+    target_bins: Vec<usize>,
+    language: Option<String>,
+    output_dir: PathBuf,
+    num_bins: usize,
+    sample_size: usize,
+    max_file_size_mb: usize,
+    work_dir: PathBuf,
+) -> Result<()> {
+    let start_time = Instant::now();
+    println!("🚀 Starting complete pipeline: aggregate -> bin -> filter");
+    println!("Source: {}", source_dir.display());
+    println!("Output: {}", output_dir.display());
+    println!("Work dir: {}", work_dir.display());
+    
+    // Create work directory if it doesn't exist
+    std::fs::create_dir_all(&work_dir)
+        .with_context(|| format!("Failed to create work directory: {}", work_dir.display()))?;
+    
+    // Define report paths with intelligent naming
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    
+    let score_report_path = work_dir.join(format!("repo_scores_{}.json", timestamp));
+    let bin_report_path = work_dir.join(format!("repo_bins_{}.json", timestamp));
+    
+    println!("\n📊 Step 1/3: Aggregating repository scores...");
+    println!("Report will be saved to: {}", score_report_path.display());
+    
+    // Step 1: Run aggregate
+    aggregate_scores(source_dir.clone(), score_report_path.clone())?;
+    
+    println!("\n🗂️  Step 2/3: Creating score-based bins...");
+    println!("Bin report will be saved to: {}", bin_report_path.display());
+    
+    // Step 2: Run bin
+    bin_repositories(
+        None, // Don't rebuild - use existing report
+        score_report_path.clone(),
+        false, // Don't force rebuild
+        num_bins,
+        sample_size,
+        bin_report_path.clone()
+    )?;
+    
+    println!("\n🔍 Step 3/3: Filtering documents...");
+    if let Some(ref lang) = language {
+        println!("Filtering language: {}", lang);
+    } else {
+        println!("Filtering all languages");
+    }
+    println!("Target bins: {:?}", target_bins);
+    
+    // Step 3: Run filter
+    filter_documents(
+        source_dir,
+        score_report_path.clone(),
+        bin_report_path.clone(),
+        target_bins,
+        language,
+        output_dir.clone(),
+        max_file_size_mb
+    )?;
+    
+    let elapsed = start_time.elapsed();
+    println!("\n✅ Pipeline completed in {:.2}s", elapsed.as_secs_f64());
+    println!("📁 Intermediate reports:");
+    println!("  Score report: {}", score_report_path.display());
+    println!("  Bin report: {}", bin_report_path.display());
+    println!("📁 Filtered output: {}", output_dir.display());
+    
+    // Optionally clean up intermediate reports
+    println!("\n💡 Tip: You can reuse the reports for additional filtering:");
+    println!("  cargo run -- filter \\");
+    println!("    --report-path {} \\", score_report_path.display());
+    println!("    --bin-path {} \\", bin_report_path.display());
+    println!("    --target-bins <BINS> \\");
+    println!("    --output-dir <OUTPUT>");
+    
+    Ok(())
 }
 
 fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
