@@ -1,7 +1,7 @@
 use clap::Parser;
 use std::io::{BufRead, Error};
 use std::path::PathBuf;
-use std::fs::File;
+use std::fs::{File, create_dir_all};
 use std::io::Read;
 
 use glob::glob;
@@ -115,19 +115,28 @@ fn find_all_paths(inputs: Vec<PathBuf>) -> Vec<PathBuf> {
     let all_paths: Vec<PathBuf> = inputs
         .into_iter()
         .flat_map(|path| {
-            // Check if the path string contains wildcards
             let path_str = path.to_string_lossy();
+            
+            // Check if the path string contains wildcards (including recursive **)
             if path_str.contains('*') || path_str.contains('?') || path_str.contains('[') {
                 // Handle wildcard patterns directly with glob
                 match glob(&path_str) {
-                    Ok(entries) => entries.filter_map(Result::ok).collect(),
-                    Err(_) => Vec::new(),
+                    Ok(entries) => {
+                        let mut found_paths: Vec<PathBuf> = entries.filter_map(Result::ok).collect();
+                        // Sort to ensure consistent ordering
+                        found_paths.sort();
+                        found_paths
+                    },
+                    Err(e) => {
+                        eprintln!("Glob pattern error for '{}': {}", path_str, e);
+                        Vec::new()
+                    }
                 }
             } else if path.is_file() {
                 // For a single file, just return it
                 vec![path]
-            } else {
-                // Handle regular paths 
+            } else if path.is_dir() {
+                // Handle directory paths - expand recursively
                 let manual_ext: Option<Vec<String>>;
                 let input_paths: Vec<PathBuf>;
 
@@ -150,6 +159,19 @@ fn find_all_paths(inputs: Vec<PathBuf>) -> Vec<PathBuf> {
                     .map(|v| v.iter().map(|s| s.as_str()).collect());
                 
                 expand_dirs(input_paths, manual_ext_refs.as_deref()).unwrap_or_default()
+            } else {
+                // Path doesn't exist - try as glob pattern anyway
+                match glob(&path_str) {
+                    Ok(entries) => {
+                        let mut found_paths: Vec<PathBuf> = entries.filter_map(Result::ok).collect();
+                        found_paths.sort();
+                        found_paths
+                    },
+                    Err(_) => {
+                        eprintln!("Warning: Path '{}' does not exist and is not a valid glob pattern", path_str);
+                        Vec::new()
+                    }
+                }
             }
         })
         .collect();
@@ -208,6 +230,12 @@ fn process_single(
     };
 
     println!("Processing {:?} -> {:?}", src_path, dst_path);
+    
+    // Ensure the output directory exists
+    if let Some(parent_dir) = dst_path.parent() {
+        create_dir_all(parent_dir)?;
+    }
+    
     let src_buf = read_file_with_zstd_support(src_path)?;
     let mut out_bytes: Vec<u8> = Vec::new();
     let newline: u8 = b'\n';
