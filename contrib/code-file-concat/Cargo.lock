@@ -144,6 +144,7 @@ name = "code-file-concat"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "glob",
  "mj_io",
  "rand",
  "rayon",

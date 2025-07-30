@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.5.29", features = ["derive"] }
+glob = "0.3"
 mj_io = "0.1.2"
 rand = "0.9.0"
 rayon = "1.10.0"

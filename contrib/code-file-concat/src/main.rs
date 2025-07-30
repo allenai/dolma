@@ -2,6 +2,7 @@ use clap::Parser;
 use std::io::{BufRead, Error};
 use std::path::PathBuf;
 
+use glob::glob;
 use mj_io::{build_pbar, expand_dirs, read_pathbuf_to_mem, write_mem_to_pathbuf};
 use rayon::prelude::*;
 use serde_json;
@@ -151,10 +152,13 @@ fn find_all_paths(inputs: Vec<PathBuf>) -> (Vec<PathBuf>, PathBuf) {
     let all_paths: Vec<PathBuf> = inputs
         .into_iter()
         .map(|path| {
-            // Use the original path directly for glob expansion instead of modifying it
             if path.to_string_lossy().contains('*') {
-                // For glob patterns, don't extract extension manually - let expand_dirs handle it
-                expand_dirs(vec![path], None).unwrap_or_default()
+                // For glob patterns, use glob crate directly
+                let path_str = path.to_string_lossy();
+                match glob(&path_str) {
+                    Ok(entries) => entries.filter_map(Result::ok).collect(),
+                    Err(_) => Vec::new(),
+                }
             } else {
                 let manual_ext: Option<Vec<String>>;
                 // For non-glob paths, use the original logic
