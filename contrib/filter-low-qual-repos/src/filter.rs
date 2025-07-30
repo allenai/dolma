@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex};
+use std::sync::{atomic::AtomicUsize, atomic::Ordering, mpsc};
 use std::time::Instant;
 use walkdir::WalkDir;
 
@@ -94,18 +94,35 @@ pub fn filter_documents(
         .unwrap()
         .progress_chars("#>-"));
 
-    // Process files and collect matching documents
+    // Process files and collect matching documents with parallel output writing
     let max_file_size_bytes = max_file_size_mb * 1024 * 1024;
-    let output_manager = Mutex::new(OutputManager::new(output_dir.clone(), max_file_size_bytes)?);
     let processed_docs = AtomicUsize::new(0);
     let filtered_docs = AtomicUsize::new(0);
 
+    // Create channel for batched output communication
+    let (tx, rx) = mpsc::channel::<(String, HashMap<String, Vec<String>>)>();
+    
+    // Spawn dedicated output writer thread
+    let output_dir_clone = output_dir.clone();
+    let writer_handle = std::thread::spawn(move || -> Result<OutputManager> {
+        let mut output_manager = OutputManager::new(output_dir_clone, max_file_size_bytes)?;
+        
+        while let Ok((language, repo_docs)) = rx.recv() {
+            if let Err(e) = output_manager.write_repo_documents_for_language(&language, repo_docs) {
+                eprintln!("Error writing output for language {}: {}", language, e);
+            }
+        }
+        
+        output_manager.finalize()?;
+        Ok(output_manager)
+    });
+
     source_files.par_iter().for_each(|(language, file_path)| {
-        match process_source_file_with_language(
+        match process_source_file_with_language_buffered(
             file_path,
             language,
             &target_repos,
-            &output_manager,
+            &tx,
             &processed_docs,
             &filtered_docs,
         ) {
@@ -119,9 +136,9 @@ pub fn filter_documents(
 
     pb.finish_with_message("Processing complete");
 
-    // Finalize output files
-    let mut output_mgr = output_manager.into_inner().unwrap();
-    output_mgr.finalize()?;
+    // Close the channel and wait for output writer to finish
+    drop(tx);
+    let output_mgr = writer_handle.join().expect("Output writer thread panicked")?;
 
     let elapsed = start_time.elapsed();
     let total_processed = processed_docs.load(Ordering::Relaxed);
@@ -376,11 +393,11 @@ fn collect_source_files_with_language(source_dir: &Path) -> Result<Vec<(String, 
     Ok(source_files)
 }
 
-fn process_source_file_with_language(
+fn process_source_file_with_language_buffered(
     file_path: &Path,
     language: &str,
     target_repos: &HashSet<String>,
-    output_manager: &Mutex<OutputManager>,
+    tx: &mpsc::Sender<(String, HashMap<String, Vec<String>>)>,
     processed_docs: &AtomicUsize,
     filtered_docs: &AtomicUsize,
 ) -> Result<()> {
@@ -416,10 +433,11 @@ fn process_source_file_with_language(
         }
     }
 
-    // Write documents to output, grouped by repository
+    // Send documents to output writer thread if we have any
     if !repo_docs.is_empty() {
-        let mut output_mgr = output_manager.lock().unwrap();
-        output_mgr.write_repo_documents_for_language(language, repo_docs)?;
+        if let Err(e) = tx.send((language.to_string(), repo_docs)) {
+            eprintln!("Failed to send output data for {}: {}", language, e);
+        }
     }
 
     Ok(())
