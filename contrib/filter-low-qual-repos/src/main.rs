@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Write, Seek};
 use std::path::{Path, PathBuf};
 use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex};
 use std::time::Instant;
@@ -161,11 +161,17 @@ struct Report {
     summary: Summary,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Summary {
     total_languages: usize,
     total_repositories: usize,
     total_documents: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+struct StreamingScoreReport {
+    summary: Summary,
+    language_offsets: HashMap<String, (u64, u64)>, // language -> (start_offset, end_offset)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -409,12 +415,12 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
         .map(|lang| lang.total_documents)
         .sum();
     
-    // Write report to file
+    // Write report to file with streaming index
     let mut output_file = File::create(&output)
         .with_context(|| format!("Failed to create output file: {}", output.display()))?;
     
-    let json = serde_json::to_string_pretty(&report)?;
-    output_file.write_all(json.as_bytes())?;
+    // Create streaming index
+    let _streaming_report = create_streaming_report(&report, &mut output_file)?;
     
     let elapsed = start_time.elapsed();
     println!("Report written to: {}", output.display());
@@ -438,8 +444,8 @@ fn bin_repositories(
     let start_time = Instant::now();
     println!("Starting repository binning process...");
     
-    let report = if build_report {
-        // Force rebuild the report
+    // Handle report building or loading
+    if build_report {
         let source_dir = source_dir.ok_or_else(|| {
             anyhow::anyhow!("--source-dir is required when using --build-report")
         })?;
@@ -450,78 +456,44 @@ fn bin_repositories(
         
         println!("Building new score report from source directory...");
         build_score_report(source_dir, report_path.clone())?;
-        
-        // Read the newly created report
-        load_score_report(&report_path)?
-    } else {
-        // Try to load existing report
-        if report_path.exists() {
-            println!("Using existing score report: {}", report_path.display());
-            load_score_report(&report_path)?
-        } else {
-            anyhow::bail!(
-                "Score report file does not exist: {}. Use --build-report flag to create it from source data.",
-                report_path.display()
-            );
-        }
-    };
+    } else if !report_path.exists() {
+        anyhow::bail!(
+            "Score report file does not exist: {}. Use --build-report flag to create it from source data.",
+            report_path.display()
+        );
+    }
+    
+    println!("Using existing score report: {}", report_path.display());
+    
+    // Load only the summary for progress reporting
+    let summary = load_score_report_summary(&report_path)?;
 
-    // Create bins per language in parallel
-    println!("Creating language-specific bins in parallel...");
+    // Create bins per language using streaming approach
+    println!("Creating language-specific bins with streaming processing...");
     
-    // Collect languages and prepare for parallel processing
-    let languages: Vec<_> = report.languages.iter().collect();
-    let total_languages = languages.len();
-    println!("Processing {} languages in parallel", total_languages);
+    // Get available languages from the report file
+    let available_languages = get_available_languages(&report_path)?;
+    let total_languages = available_languages.len();
+    println!("Processing {} languages with streaming approach", total_languages);
     
-    // Process languages in parallel
-    let language_bins: HashMap<String, LanguageBinReport> = languages
+    // Process languages in parallel using streaming
+    let language_bins: HashMap<String, LanguageBinReport> = available_languages
         .par_iter()
-        .filter_map(|(language, language_report)| {
+        .filter_map(|language| {
             println!("Processing language: {}", language);
             
-            // Extract repositories for this language (optimized allocation)
-            let mut language_repos = Vec::with_capacity(language_report.repo_stats.len());
-            for (repo_name, repo_stats) in &language_report.repo_stats {
-                language_repos.push((
-                    repo_name.clone(),
-                    repo_stats.average_score,
-                    repo_stats.document_count
-                ));
-            }
-            
-            if language_repos.is_empty() {
-                println!("  No repositories found for {}, skipping", language);
-                return None;
-            }
-            
-            // Sort repositories by average score for this language
-            language_repos.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-            
-            let min_score = language_repos[0].1;
-            let max_score = language_repos[language_repos.len() - 1].1;
-            
-            println!("  {} repositories, score range: {:.6} to {:.6}", 
-                     language_repos.len(), min_score, max_score);
-            
-            // Create bins for this language
-            match create_language_bins_optimized(&language_repos, num_bins, sample_size, min_score, max_score) {
-                Ok(lang_bins) => {
-                    let lang_bin_report = LanguageBinReport {
-                        language: language.to_string(),
-                        bins: lang_bins,
-                        summary: LanguageBinSummary {
-                            language: language.to_string(),
-                            total_repositories: language_repos.len(),
-                            total_documents: language_report.total_documents,
-                            num_bins,
-                            sample_size_per_bin: sample_size,
-                        },
-                    };
-                    Some((language.to_string(), lang_bin_report))
+            match process_language_streaming(&report_path, language, num_bins, sample_size) {
+                Ok(Some(lang_bin_report)) => {
+                    println!("  ✓ Completed {} - {} repos, {} bins", 
+                             language, lang_bin_report.summary.total_repositories, lang_bin_report.bins.len());
+                    Some((language.clone(), lang_bin_report))
+                }
+                Ok(None) => {
+                    println!("  No repositories found for {}, skipping", language);
+                    None
                 }
                 Err(e) => {
-                    eprintln!("Error processing {}: {}", language, e);
+                    eprintln!("  ✗ Error processing {}: {}", language, e);
                     None
                 }
             }
@@ -535,7 +507,7 @@ fn bin_repositories(
     let bin_report = BinReport {
         language_bins,
         summary: BinSummary {
-            total_languages: report.summary.total_languages,
+            total_languages: summary.total_languages,
             total_repositories: total_repos,
             total_documents: total_docs,
             num_bins,
@@ -891,14 +863,202 @@ fn build_score_report(source_dir: PathBuf, output_path: PathBuf) -> Result<()> {
     aggregate_scores(source_dir, output_path)
 }
 
-fn load_score_report(report_path: &Path) -> Result<Report> {
+fn create_streaming_report(report: &Report, output_file: &mut File) -> Result<StreamingScoreReport> {
+    println!("Creating streaming index for faster loading...");
+    
+    let mut language_offsets = HashMap::new();
+    
+    // Write the full report and track language positions
+    output_file.write_all(b"{\n  \"summary\": ")?;
+    let summary_json = serde_json::to_string(&report.summary)?;
+    output_file.write_all(summary_json.as_bytes())?;
+    output_file.write_all(b",\n  \"languages\": {\n")?;
+    
+    let mut first_lang = true;
+    for (language, lang_report) in &report.languages {
+        if !first_lang {
+            output_file.write_all(b",\n")?;
+        }
+        first_lang = false;
+        
+        let start_pos = output_file.stream_position()?;
+        
+        output_file.write_all(format!("    \"{}\": ", language).as_bytes())?;
+        let lang_json = serde_json::to_string_pretty(lang_report)?;
+        output_file.write_all(lang_json.as_bytes())?;
+        
+        let end_pos = output_file.stream_position()?;
+        language_offsets.insert(language.clone(), (start_pos, end_pos));
+    }
+    
+    output_file.write_all(b"\n  }\n}")?;
+    
+    let streaming_report = StreamingScoreReport {
+        summary: report.summary.clone(),
+        language_offsets,
+    };
+    
+    println!("Created streaming index with {} language offsets", streaming_report.language_offsets.len());
+    
+    Ok(streaming_report)
+}
+
+fn load_score_report_summary(report_path: &Path) -> Result<Summary> {
     let file = File::open(report_path)
         .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
     
-    let report: Report = serde_json::from_reader(file)
-        .with_context(|| format!("Failed to parse score report: {}", report_path.display()))?;
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
     
-    Ok(report)
+    // Skip to summary section
+    while reader.read_line(&mut line)? > 0 {
+        if line.trim().starts_with("\"summary\":") {
+            // Parse just the summary
+            let summary_start = line.find('{').unwrap();
+            let mut summary_json = line[summary_start..].to_string();
+            
+            // Read until we find the closing brace
+            let mut brace_count = 1;
+            line.clear();
+            while brace_count > 0 && reader.read_line(&mut line)? > 0 {
+                for ch in line.chars() {
+                    if ch == '{' { brace_count += 1; }
+                    else if ch == '}' { brace_count -= 1; }
+                }
+                summary_json.push_str(&line);
+                line.clear();
+            }
+            
+            // Extract just the summary object
+            let end_pos = summary_json.rfind('}').unwrap() + 1;
+            let summary_json = &summary_json[..end_pos];
+            
+            let summary: Summary = serde_json::from_str(summary_json)
+                .with_context(|| "Failed to parse summary from score report")?;
+            
+            return Ok(summary);
+        }
+        line.clear();
+    }
+    
+    anyhow::bail!("Could not find summary in score report")
+}
+
+fn get_available_languages(report_path: &Path) -> Result<Vec<String>> {
+    let file = File::open(report_path)
+        .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
+    
+    let mut reader = BufReader::new(file);
+    let mut languages = Vec::new();
+    let mut line = String::new();
+    let mut in_languages_section = false;
+    
+    while reader.read_line(&mut line)? > 0 {
+        if line.trim().starts_with("\"languages\":") {
+            in_languages_section = true;
+        } else if in_languages_section && line.trim().starts_with('"') && line.contains(":") {
+            // Extract language name from line like "  "language_name": {"
+            let start = line.find('"').unwrap() + 1;
+            let end = line[start..].find('"').unwrap();
+            let language = line[start..start + end].to_string();
+            languages.push(language);
+        } else if in_languages_section && line.trim() == "}" {
+            break;
+        }
+        line.clear();
+    }
+    
+    Ok(languages)
+}
+
+fn process_language_streaming(
+    report_path: &Path, 
+    language: &str, 
+    num_bins: usize, 
+    sample_size: usize
+) -> Result<Option<LanguageBinReport>> {
+    let file = File::open(report_path)
+        .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
+    
+    let mut reader = BufReader::new(file);
+    let mut line = String::new();
+    let mut found_language = false;
+    let mut language_json = String::new();
+    let mut brace_count = 0;
+    let mut in_language_section = false;
+    
+    // Find the target language
+    while reader.read_line(&mut line)? > 0 {
+        if line.contains(&format!("\"{}\": {{", language)) {
+            found_language = true;
+            in_language_section = true;
+            language_json = line.clone();
+            brace_count = 1;
+        } else if in_language_section {
+            language_json.push_str(&line);
+            for ch in line.chars() {
+                if ch == '{' { brace_count += 1; }
+                else if ch == '}' { brace_count -= 1; }
+            }
+        }
+        
+        if in_language_section && brace_count == 0 {
+            break;
+        }
+        
+        line.clear();
+    }
+    
+    if !found_language {
+        return Ok(None);
+    }
+    
+    // Extract the JSON value for this language
+    let start_pos = language_json.find('{').unwrap();
+    let json_str = &language_json[start_pos..language_json.rfind('}').unwrap() + 1];
+    
+    let language_report: LanguageReport = serde_json::from_str(json_str)
+        .with_context(|| format!("Failed to parse language report for {}", language))?;
+    
+    if language_report.repo_stats.is_empty() {
+        return Ok(None);
+    }
+    
+    // Extract repositories for this language
+    let mut language_repos = Vec::with_capacity(language_report.repo_stats.len());
+    for (repo_name, repo_stats) in &language_report.repo_stats {
+        language_repos.push((
+            repo_name.clone(),
+            repo_stats.average_score,
+            repo_stats.document_count
+        ));
+    }
+    
+    // Sort repositories by average score
+    language_repos.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    
+    let min_score = language_repos[0].1;
+    let max_score = language_repos[language_repos.len() - 1].1;
+    
+    println!("  {} repositories, score range: {:.6} to {:.6}", 
+             language_repos.len(), min_score, max_score);
+    
+    // Create bins for this language
+    let lang_bins = create_language_bins_optimized(&language_repos, num_bins, sample_size, min_score, max_score)?;
+    
+    let lang_bin_report = LanguageBinReport {
+        language: language.to_string(),
+        bins: lang_bins,
+        summary: LanguageBinSummary {
+            language: language.to_string(),
+            total_repositories: language_repos.len(),
+            total_documents: language_report.total_documents,
+            num_bins,
+            sample_size_per_bin: sample_size,
+        },
+    };
+    
+    Ok(Some(lang_bin_report))
 }
 
 fn load_bin_report(bin_path: &Path) -> Result<BinReport> {
