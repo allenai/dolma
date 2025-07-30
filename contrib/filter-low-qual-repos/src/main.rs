@@ -477,14 +477,20 @@ fn filter_documents(
     println!("Loading bin report...");
     let bin_report = load_bin_report(&bin_path)?;
     
-    // Extract target repositories from specified bins
-    let target_repos = extract_target_repos(&bin_report, &target_bins)?;
+    // Load full score report to get all repositories
+    println!("Loading full score report...");
+    let score_report = load_score_report(&report_path)?;
+    
+    // Extract target repositories from specified bins using score ranges
+    let target_repos = extract_target_repos_by_score_range(&bin_report, &score_report, &target_bins)?;
     println!("Found {} target repositories across {} bins", target_repos.len(), target_bins.len());
     
-    // Get all source files
+    // Get all source files with their language directories
     println!("Scanning source files...");
-    let source_files = collect_source_files(&source_dir)?;
-    println!("Found {} source files to process", source_files.len());
+    let source_files = collect_source_files_with_language(&source_dir)?;
+    println!("Found {} source files across {} languages to process", 
+             source_files.len(), 
+             source_files.iter().map(|(lang, _)| lang).collect::<std::collections::HashSet<_>>().len());
     
     // Setup progress bar
     let pb = ProgressBar::new(source_files.len() as u64);
@@ -499,8 +505,8 @@ fn filter_documents(
     let processed_docs = AtomicUsize::new(0);
     let filtered_docs = AtomicUsize::new(0);
     
-    source_files.par_iter().for_each(|file_path| {
-        match process_source_file(file_path, &target_repos, &output_manager, &processed_docs, &filtered_docs) {
+    source_files.par_iter().for_each(|(language, file_path)| {
+        match process_source_file_with_language(file_path, language, &target_repos, &output_manager, &processed_docs, &filtered_docs) {
             Ok(_) => {},
             Err(e) => {
                 eprintln!("Error processing {}: {}", file_path.display(), e);
@@ -682,45 +688,115 @@ fn load_bin_report(bin_path: &Path) -> Result<BinReport> {
     Ok(report)
 }
 
-fn extract_target_repos(bin_report: &BinReport, target_bins: &[usize]) -> Result<HashSet<String>> {
+fn extract_target_repos_by_score_range(
+    bin_report: &BinReport, 
+    score_report: &Report, 
+    target_bins: &[usize]
+) -> Result<HashSet<String>> {
     let mut target_repos = HashSet::new();
     
+    // Get score ranges for target bins
+    let mut score_ranges = Vec::new();
     for &bin_idx in target_bins {
         if bin_idx == 0 || bin_idx > bin_report.bins.len() {
             anyhow::bail!("Invalid bin number: {}. Valid range: 1-{}", bin_idx, bin_report.bins.len());
         }
         
         let bin = &bin_report.bins[bin_idx - 1]; // Convert to 0-indexed
-        for repo in &bin.sample_repos {
-            target_repos.insert(repo.repo_name.clone());
+        score_ranges.push((bin.min_score, bin.max_score));
+        println!("Target bin {}: score range [{:.6}, {:.6}]", bin_idx, bin.min_score, bin.max_score);
+    }
+    
+    // Find all repositories that fall within target score ranges
+    for (_language, language_report) in &score_report.languages {
+        for (repo_name, repo_stats) in &language_report.repo_stats {
+            let avg_score = repo_stats.average_score;
+            
+            // Check if repository falls within any target score range
+            for &(min_score, max_score) in &score_ranges {
+                if avg_score >= min_score && avg_score <= max_score {
+                    target_repos.insert(repo_name.clone());
+                    break; // Repository matches, no need to check other ranges
+                }
+            }
         }
     }
     
     Ok(target_repos)
 }
 
-fn collect_source_files(source_dir: &Path) -> Result<Vec<PathBuf>> {
+fn collect_source_files_with_language(source_dir: &Path) -> Result<Vec<(String, PathBuf)>> {
     let mut source_files = Vec::new();
     
-    for entry in WalkDir::new(source_dir) {
-        let entry = entry?;
-        let path = entry.path();
+    // Check if source_dir contains *.jsonl.zst files directly (single language mode)
+    let has_jsonl_files = std::fs::read_dir(source_dir)?
+        .filter_map(|entry| entry.ok())
+        .any(|entry| {
+            let path = entry.path();
+            path.is_file() && 
+            path.extension().and_then(|s| s.to_str()) == Some("zst") &&
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.ends_with(".jsonl"))
+                .unwrap_or(false)
+        });
+    
+    if has_jsonl_files {
+        // Single language directory mode
+        let language_name = source_dir.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
         
-        if path.is_file() && 
-           path.extension().and_then(|s| s.to_str()) == Some("zst") &&
-           path.file_stem()
-               .and_then(|s| s.to_str())
-               .map(|s| s.ends_with(".jsonl"))
-               .unwrap_or(false) {
-            source_files.push(path.to_path_buf());
+        for entry in WalkDir::new(source_dir) {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.is_file() && 
+               path.extension().and_then(|s| s.to_str()) == Some("zst") &&
+               path.file_stem()
+                   .and_then(|s| s.to_str())
+                   .map(|s| s.ends_with(".jsonl"))
+                   .unwrap_or(false) {
+                source_files.push((language_name.clone(), path.to_path_buf()));
+            }
+        }
+    } else {
+        // Multi-language directory mode
+        for entry in std::fs::read_dir(source_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            
+            if path.is_dir() {
+                let language_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                
+                // Collect files from this language directory
+                for file_entry in WalkDir::new(&path) {
+                    let file_entry = file_entry?;
+                    let file_path = file_entry.path();
+                    
+                    if file_path.is_file() && 
+                       file_path.extension().and_then(|s| s.to_str()) == Some("zst") &&
+                       file_path.file_stem()
+                           .and_then(|s| s.to_str())
+                           .map(|s| s.ends_with(".jsonl"))
+                           .unwrap_or(false) {
+                        source_files.push((language_name.clone(), file_path.to_path_buf()));
+                    }
+                }
+            }
         }
     }
     
     Ok(source_files)
 }
 
-fn process_source_file(
+fn process_source_file_with_language(
     file_path: &Path,
+    language: &str,
     target_repos: &HashSet<String>,
     output_manager: &Mutex<OutputManager>,
     processed_docs: &AtomicUsize,
@@ -760,7 +836,7 @@ fn process_source_file(
     // Write documents to output, grouped by repository
     if !repo_docs.is_empty() {
         let mut output_mgr = output_manager.lock().unwrap();
-        output_mgr.write_repo_documents(repo_docs)?;
+        output_mgr.write_repo_documents_for_language(language, repo_docs)?;
     }
     
     Ok(())
@@ -769,6 +845,12 @@ fn process_source_file(
 struct OutputManager {
     output_dir: PathBuf,
     max_file_size: usize,
+    language_managers: HashMap<String, LanguageOutputManager>,
+    total_file_count: usize,
+}
+
+struct LanguageOutputManager {
+    language_dir: PathBuf,
     current_file_idx: usize,
     current_writer: Option<zstd::Encoder<'static, File>>,
     current_size: usize,
@@ -780,14 +862,51 @@ impl OutputManager {
         Ok(Self {
             output_dir,
             max_file_size,
-            current_file_idx: 0,
-            current_writer: None,
-            current_size: 0,
-            file_count: 0,
+            language_managers: HashMap::new(),
+            total_file_count: 0,
         })
     }
     
-    fn write_repo_documents(&mut self, repo_docs: HashMap<String, Vec<String>>) -> Result<()> {
+    fn write_repo_documents_for_language(&mut self, language: &str, repo_docs: HashMap<String, Vec<String>>) -> Result<()> {
+        // Get or create language manager
+        if !self.language_managers.contains_key(language) {
+            let language_dir = self.output_dir.join(language);
+            std::fs::create_dir_all(&language_dir)
+                .with_context(|| format!("Failed to create language directory: {}", language_dir.display()))?;
+            
+            self.language_managers.insert(
+                language.to_string(),
+                LanguageOutputManager {
+                    language_dir,
+                    current_file_idx: 0,
+                    current_writer: None,
+                    current_size: 0,
+                    file_count: 0,
+                }
+            );
+        }
+        
+        let lang_manager = self.language_managers.get_mut(language).unwrap();
+        lang_manager.write_repo_documents(repo_docs, self.max_file_size)?;
+        
+        Ok(())
+    }
+    
+    fn finalize(&mut self) -> Result<()> {
+        for lang_manager in self.language_managers.values_mut() {
+            lang_manager.finalize()?;
+            self.total_file_count += lang_manager.file_count;
+        }
+        Ok(())
+    }
+    
+    fn file_count(&self) -> usize {
+        self.total_file_count
+    }
+}
+
+impl LanguageOutputManager {
+    fn write_repo_documents(&mut self, repo_docs: HashMap<String, Vec<String>>, max_file_size: usize) -> Result<()> {
         // Sort repositories for consistent output
         let mut sorted_repos: Vec<_> = repo_docs.into_iter().collect();
         sorted_repos.sort_by(|a, b| a.0.cmp(&b.0));
@@ -798,7 +917,7 @@ impl OutputManager {
             
             // Check if we need a new file
             if self.current_writer.is_none() || 
-               (self.current_size + repo_size > self.max_file_size && self.current_size > 0) {
+               (self.current_size + repo_size > max_file_size && self.current_size > 0) {
                 self.rotate_file()?;
             }
             
@@ -821,7 +940,7 @@ impl OutputManager {
         }
         
         // Create new file
-        let file_path = self.output_dir.join(format!("{:06}.jsonl.zst", self.current_file_idx));
+        let file_path = self.language_dir.join(format!("{:06}.jsonl.zst", self.current_file_idx));
         let file = File::create(&file_path)
             .with_context(|| format!("Failed to create output file: {}", file_path.display()))?;
         
@@ -839,9 +958,5 @@ impl OutputManager {
             writer.finish()?;
         }
         Ok(())
-    }
-    
-    fn file_count(&self) -> usize {
-        self.file_count
     }
 }
