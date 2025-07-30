@@ -477,12 +477,8 @@ fn filter_documents(
     println!("Loading bin report...");
     let bin_report = load_bin_report(&bin_path)?;
     
-    // Load full score report to get all repositories
-    println!("Loading full score report...");
-    let score_report = load_score_report(&report_path)?;
-    
-    // Extract target repositories from specified bins using score ranges
-    let target_repos = extract_target_repos_by_score_range(&bin_report, &score_report, &target_bins)?;
+    // Extract target repositories from specified bins using score ranges (streaming)
+    let target_repos = extract_target_repos_streaming(&bin_report, &report_path, &target_bins)?;
     println!("Found {} target repositories across {} bins", target_repos.len(), target_bins.len());
     
     // Get all source files with their language directories
@@ -688,12 +684,12 @@ fn load_bin_report(bin_path: &Path) -> Result<BinReport> {
     Ok(report)
 }
 
-fn extract_target_repos_by_score_range(
-    bin_report: &BinReport, 
-    score_report: &Report, 
+fn extract_target_repos_streaming(
+    bin_report: &BinReport,
+    report_path: &Path,
     target_bins: &[usize]
 ) -> Result<HashSet<String>> {
-    let mut target_repos = HashSet::new();
+    println!("Extracting target repositories from score report (streaming)...");
     
     // Get score ranges for target bins
     let mut score_ranges = Vec::new();
@@ -707,19 +703,60 @@ fn extract_target_repos_by_score_range(
         println!("Target bin {}: score range [{:.6}, {:.6}]", bin_idx, bin.min_score, bin.max_score);
     }
     
-    // Find all repositories that fall within target score ranges
-    for (_language, language_report) in &score_report.languages {
-        for (repo_name, repo_stats) in &language_report.repo_stats {
-            let avg_score = repo_stats.average_score;
+    let file = File::open(report_path)
+        .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
+    
+    parse_score_report_for_ranges(file, &score_ranges)
+}
+
+fn parse_score_report_for_ranges(
+    file: File,
+    score_ranges: &[(f64, f64)]
+) -> Result<HashSet<String>> {
+    
+    let mut target_repos = HashSet::new();
+    let reader = BufReader::new(file);
+    
+    // Use serde_json's streaming API to parse the structure
+    let mut deserializer = serde_json::Deserializer::from_reader(reader);
+    
+    // Parse the JSON structure piece by piece
+    let value: serde_json::Value = serde_json::Value::deserialize(&mut deserializer)?;
+    
+    if let Some(languages) = value.get("languages").and_then(|v| v.as_object()) {
+        let mut processed_repos = 0;
+        let total_languages = languages.len();
+        
+        for (lang_idx, (_language_name, language_data)) in languages.iter().enumerate() {
+            if lang_idx % 10 == 0 {
+                println!("  Processing language {}/{} - found {} repos so far", 
+                         lang_idx + 1, total_languages, target_repos.len());
+            }
             
-            // Check if repository falls within any target score range
-            for &(min_score, max_score) in &score_ranges {
-                if avg_score >= min_score && avg_score <= max_score {
-                    target_repos.insert(repo_name.clone());
-                    break; // Repository matches, no need to check other ranges
+            if let Some(repo_stats) = language_data.get("repo_stats").and_then(|v| v.as_object()) {
+                for (repo_name, repo_data) in repo_stats {
+                    processed_repos += 1;
+                    
+                    if let Some(avg_score) = repo_data.get("average_score").and_then(|v| v.as_f64()) {
+                        // Check if repository falls within any target score range
+                        for &(min_score, max_score) in score_ranges {
+                            if avg_score >= min_score && avg_score <= max_score {
+                                target_repos.insert(repo_name.clone());
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Progress update every 100k repos
+                    if processed_repos % 100000 == 0 {
+                        println!("  Processed {} repositories, found {} matches", 
+                                 processed_repos, target_repos.len());
+                    }
                 }
             }
         }
+        
+        println!("  Completed processing {} repositories total", processed_repos);
     }
     
     Ok(target_repos)
