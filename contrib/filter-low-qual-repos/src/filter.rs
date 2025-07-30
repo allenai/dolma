@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex};
+use std::sync::{atomic::AtomicUsize, atomic::Ordering};
 use std::time::Instant;
 use walkdir::WalkDir;
 
@@ -19,7 +19,7 @@ pub fn filter_documents(
     target_bins: Vec<usize>,
     target_language: Option<String>,
     output_dir: PathBuf,
-    max_file_size_mb: usize,
+    _max_file_size_mb: usize,
 ) -> Result<()> {
     let start_time = Instant::now();
     println!("Starting document filtering process...");
@@ -94,21 +94,21 @@ pub fn filter_documents(
         .unwrap()
         .progress_chars("#>-"));
 
-    // Process files and collect matching documents
-    let max_file_size_bytes = max_file_size_mb * 1024 * 1024;
+    // Process files individually to maintain 1:1 or 1:0 input:output relationship
     let processed_docs = AtomicUsize::new(0);
     let filtered_docs = AtomicUsize::new(0);
-    let collected_docs = Mutex::new(HashMap::<String, HashMap<String, Vec<String>>>::new());
+    let output_files_created = AtomicUsize::new(0);
 
-    // Parallel processing phase
+    // Process each file individually in parallel
     source_files.par_iter().for_each(|(language, file_path)| {
-        match process_source_file_collect(
+        match process_and_write_source_file(
             file_path,
             language,
             &target_repos,
-            &collected_docs,
+            &output_dir,
             &processed_docs,
             &filtered_docs,
+            &output_files_created,
         ) {
             Ok(_) => {}
             Err(e) => {
@@ -120,27 +120,7 @@ pub fn filter_documents(
 
     pb.finish_with_message("Processing complete");
 
-    // Parallel output writing phase
-    println!("Writing output files...");
-    let docs_by_language = collected_docs.into_inner().unwrap();
-    
-    // Process each language in parallel for output writing
-    let language_results: Result<Vec<usize>> = docs_by_language
-        .par_iter()
-        .map(|(language, repo_docs)| -> Result<usize> {
-            let language_output_dir = output_dir.join(language);
-            std::fs::create_dir_all(&language_output_dir)?;
-            
-            let mut lang_output_manager = LanguageOutputManager::new(language_output_dir, max_file_size_bytes)?;
-            lang_output_manager.write_repo_documents(repo_docs.clone(), max_file_size_bytes)?;
-            lang_output_manager.finalize()?;
-            
-            Ok(lang_output_manager.file_count())
-        })
-        .collect();
-
-    let file_counts = language_results?;
-    let total_output_files: usize = file_counts.iter().sum();
+    let total_output_files = output_files_created.load(Ordering::Relaxed);
 
     let elapsed = start_time.elapsed();
     let total_processed = processed_docs.load(Ordering::Relaxed);
@@ -395,13 +375,14 @@ fn collect_source_files_with_language(source_dir: &Path) -> Result<Vec<(String, 
     Ok(source_files)
 }
 
-fn process_source_file_collect(
+fn process_and_write_source_file(
     file_path: &Path,
     language: &str,
     target_repos: &HashSet<String>,
-    collected_docs: &Mutex<HashMap<String, HashMap<String, Vec<String>>>>,
+    output_dir: &Path,
     processed_docs: &AtomicUsize,
     filtered_docs: &AtomicUsize,
+    output_files_created: &AtomicUsize,
 ) -> Result<()> {
     let file = File::open(file_path)
         .with_context(|| format!("Failed to open file: {}", file_path.display()))?;
@@ -410,9 +391,9 @@ fn process_source_file_collect(
         .with_context(|| format!("Failed to create zstd decoder for: {}", file_path.display()))?;
 
     let reader = BufReader::new(decoder);
-    let mut repo_docs: HashMap<String, Vec<String>> = HashMap::new();
+    let mut filtered_lines = Vec::new();
 
-    // Group documents by repository
+    // Filter documents from this file
     for line in reader.lines() {
         let line = line?;
         processed_docs.fetch_add(1, Ordering::Relaxed);
@@ -425,110 +406,40 @@ fn process_source_file_collect(
         if let Ok(doc) = serde_json::from_str::<Document>(&line) {
             if let Some(repo_name) = doc.metadata.repo_name {
                 if target_repos.contains(&repo_name) {
-                    repo_docs
-                        .entry(repo_name)
-                        .or_insert_with(Vec::new)
-                        .push(line);
+                    filtered_lines.push(line);
                     filtered_docs.fetch_add(1, Ordering::Relaxed);
                 }
             }
         }
     }
 
-    // Merge documents into the global collection if we have any
-    if !repo_docs.is_empty() {
-        let mut collected = collected_docs.lock().unwrap();
-        let language_docs = collected.entry(language.to_string()).or_insert_with(HashMap::new);
+    // Only create output file if we have filtered content
+    if !filtered_lines.is_empty() {
+        let language_output_dir = output_dir.join(language);
+        std::fs::create_dir_all(&language_output_dir)
+            .with_context(|| format!("Failed to create language directory: {}", language_output_dir.display()))?;
+
+        // Generate output filename based on input filename
+        let input_filename = file_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown.jsonl.zst");
         
-        for (repo_name, docs) in repo_docs {
-            language_docs.entry(repo_name).or_insert_with(Vec::new).extend(docs);
+        let output_file_path = language_output_dir.join(input_filename);
+        
+        let output_file = File::create(&output_file_path)
+            .with_context(|| format!("Failed to create output file: {}", output_file_path.display()))?;
+
+        let mut encoder = zstd::Encoder::new(output_file, 3)?;
+        
+        for line in filtered_lines {
+            encoder.write_all(line.as_bytes())?;
+            encoder.write_all(b"\n")?;
         }
+        
+        encoder.finish()?;
+        output_files_created.fetch_add(1, Ordering::Relaxed);
     }
 
     Ok(())
 }
 
-struct LanguageOutputManager {
-    language_dir: PathBuf,
-    current_file_idx: usize,
-    current_writer: Option<zstd::Encoder<'static, File>>,
-    current_size: usize,
-    file_count: usize,
-}
-
-impl LanguageOutputManager {
-    fn new(language_dir: PathBuf, _max_file_size: usize) -> Result<Self> {
-        std::fs::create_dir_all(&language_dir)?;
-        Ok(Self {
-            language_dir,
-            current_file_idx: 0,
-            current_writer: None,
-            current_size: 0,
-            file_count: 0,
-        })
-    }
-
-    fn file_count(&self) -> usize {
-        self.file_count
-    }
-    fn write_repo_documents(
-        &mut self,
-        repo_docs: HashMap<String, Vec<String>>,
-        max_file_size: usize,
-    ) -> Result<()> {
-        // Sort repositories for consistent output
-        let mut sorted_repos: Vec<_> = repo_docs.into_iter().collect();
-        sorted_repos.sort_by(|a, b| a.0.cmp(&b.0));
-
-        for (_repo_name, docs) in sorted_repos {
-            // Calculate size needed for this repository
-            let repo_size: usize = docs.iter().map(|doc| doc.len() + 1).sum(); // +1 for newline
-
-            // Check if we need a new file
-            if self.current_writer.is_none()
-                || (self.current_size + repo_size > max_file_size && self.current_size > 0)
-            {
-                self.rotate_file()?;
-            }
-
-            // Write all documents for this repository
-            let writer = self.current_writer.as_mut().unwrap();
-            for doc in docs {
-                writer.write_all(doc.as_bytes())?;
-                writer.write_all(b"\n")?;
-                self.current_size += doc.len() + 1;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn rotate_file(&mut self) -> Result<()> {
-        // Close current file
-        if let Some(writer) = self.current_writer.take() {
-            writer.finish()?;
-        }
-
-        // Create new file
-        let file_path = self
-            .language_dir
-            .join(format!("{:06}.jsonl.zst", self.current_file_idx));
-        let file = File::create(&file_path)
-            .with_context(|| format!("Failed to create output file: {}", file_path.display()))?;
-
-        let encoder = zstd::Encoder::new(file, 3)?; // Compression level 3
-        self.current_writer = Some(encoder);
-        self.current_size = 0;
-        self.current_file_idx += 1;
-        self.file_count += 1;
-
-        Ok(())
-    }
-
-    fn finalize(&mut self) -> Result<()> {
-        if let Some(writer) = self.current_writer.take() {
-            writer.finish()?;
-        }
-        Ok(())
-    }
-}
