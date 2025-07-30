@@ -143,7 +143,7 @@ fn process_file(input_path: &Path, output_path: &Path) -> Result<(usize, usize)>
     }
 
     writer.flush()?;
-    let encoder = writer.into_inner()?;
+    let encoder = writer.into_inner().map_err(|e| anyhow::anyhow!("Failed to get encoder: {}", e))?;
     encoder.finish()?;
 
     Ok((processed, errors))
