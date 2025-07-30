@@ -33,9 +33,17 @@ enum Commands {
     },
     /// Bin repositories by average score using reservoir sampling
     Bin {
-        /// Source directory containing programming language subdirectories
+        /// Source directory containing programming language subdirectories (only used if --build-report is specified)
         #[arg(short, long)]
-        source_dir: PathBuf,
+        source_dir: Option<PathBuf>,
+        
+        /// Path to existing score report file
+        #[arg(short, long, default_value = "repo_scores_report.json")]
+        report_path: PathBuf,
+        
+        /// Force rebuild the score report from source directory
+        #[arg(long)]
+        build_report: bool,
         
         /// Number of bins to create
         #[arg(short, long, default_value = "10")]
@@ -65,7 +73,7 @@ struct Metadata {
     score: Option<f64>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct RepoStats {
     document_count: usize,
     total_score: f64,
@@ -74,20 +82,20 @@ struct RepoStats {
     max_score: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct LanguageReport {
     repo_stats: HashMap<String, RepoStats>,
     total_documents: usize,
     total_repositories: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Report {
     languages: HashMap<String, LanguageReport>,
     summary: Summary,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Summary {
     total_languages: usize,
     total_repositories: usize,
@@ -132,8 +140,8 @@ fn main() -> Result<()> {
         Commands::Aggregate { source_dir, output } => {
             aggregate_scores(source_dir, output)
         }
-        Commands::Bin { source_dir, num_bins, sample_size, output } => {
-            bin_repositories(source_dir, num_bins, sample_size, output)
+        Commands::Bin { source_dir, report_path, build_report, num_bins, sample_size, output } => {
+            bin_repositories(source_dir, report_path, build_report, num_bins, sample_size, output)
         }
     }
 }
@@ -234,84 +242,58 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn bin_repositories(source_dir: PathBuf, num_bins: usize, sample_size: usize, output: PathBuf) -> Result<()> {
-    if !source_dir.exists() {
-        anyhow::bail!("Source directory does not exist: {}", source_dir.display());
-    }
-
-    // First, collect all repositories and their scores
-    let mut all_repos: Vec<(String, String, f64, usize)> = Vec::new(); // (repo_name, language, avg_score, doc_count)
-    let mut total_documents = 0;
-    let mut total_languages = 0;
-
-    // Check if source_dir contains *.jsonl.zst files directly (single language mode)
-    let has_jsonl_files = std::fs::read_dir(&source_dir)?
-        .filter_map(|entry| entry.ok())
-        .any(|entry| {
-            let path = entry.path();
-            path.is_file() && 
-            path.extension().and_then(|s| s.to_str()) == Some("zst") &&
-            path.file_stem()
-                .and_then(|s| s.to_str())
-                .map(|s| s.ends_with(".jsonl"))
-                .unwrap_or(false)
-        });
-
-    if has_jsonl_files {
-        // Single language directory mode
-        let language_name = source_dir.file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string();
+fn bin_repositories(
+    source_dir: Option<PathBuf>, 
+    report_path: PathBuf, 
+    build_report: bool, 
+    num_bins: usize, 
+    sample_size: usize, 
+    output: PathBuf
+) -> Result<()> {
+    let report = if build_report {
+        // Force rebuild the report
+        let source_dir = source_dir.ok_or_else(|| {
+            anyhow::anyhow!("--source-dir is required when using --build-report")
+        })?;
         
-        println!("Processing single language directory: {}", language_name);
-        
-        match process_language_directory(&source_dir) {
-            Ok(language_report) => {
-                total_documents += language_report.total_documents;
-                total_languages = 1;
-                
-                for (repo_name, repo_stats) in language_report.repo_stats {
-                    all_repos.push((repo_name, language_name.clone(), repo_stats.average_score, repo_stats.document_count));
-                }
-            }
-            Err(e) => {
-                eprintln!("Error processing {}: {}", language_name, e);
-            }
+        if !source_dir.exists() {
+            anyhow::bail!("Source directory does not exist: {}", source_dir.display());
         }
+        
+        println!("Building new score report from source directory...");
+        build_score_report(source_dir, report_path.clone())?;
+        
+        // Read the newly created report
+        load_score_report(&report_path)?
     } else {
-        // Multi-language directory mode
-        for entry in std::fs::read_dir(&source_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            
-            if path.is_dir() {
-                let language_name = path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                
-                println!("Processing language directory: {}", language_name);
-                
-                match process_language_directory(&path) {
-                    Ok(language_report) => {
-                        total_documents += language_report.total_documents;
-                        total_languages += 1;
-                        
-                        for (repo_name, repo_stats) in language_report.repo_stats {
-                            all_repos.push((repo_name, language_name.clone(), repo_stats.average_score, repo_stats.document_count));
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("Error processing {}: {}", language_name, e);
-                    }
-                }
-            }
+        // Try to load existing report
+        if report_path.exists() {
+            println!("Using existing score report: {}", report_path.display());
+            load_score_report(&report_path)?
+        } else {
+            anyhow::bail!(
+                "Score report file does not exist: {}. Use --build-report flag to create it from source data.",
+                report_path.display()
+            );
+        }
+    };
+
+    // Extract repository data from the report
+    let mut all_repos: Vec<(String, String, f64, usize)> = Vec::new(); // (repo_name, language, avg_score, doc_count)
+    
+    for (language, language_report) in &report.languages {
+        for (repo_name, repo_stats) in &language_report.repo_stats {
+            all_repos.push((
+                repo_name.clone(),
+                language.clone(),
+                repo_stats.average_score,
+                repo_stats.document_count
+            ));
         }
     }
 
     if all_repos.is_empty() {
-        anyhow::bail!("No repositories found to bin");
+        anyhow::bail!("No repositories found in the score report");
     }
 
     // Sort repositories by average score
@@ -378,9 +360,9 @@ fn bin_repositories(source_dir: PathBuf, num_bins: usize, sample_size: usize, ou
     let bin_report = BinReport {
         bins,
         summary: BinSummary {
-            total_languages,
+            total_languages: report.summary.total_languages,
             total_repositories: all_repos.len(),
-            total_documents,
+            total_documents: report.summary.total_documents,
             num_bins,
             sample_size_per_bin: sample_size,
         },
@@ -526,4 +508,18 @@ fn process_jsonl_zst_file(file_path: &Path) -> Result<(usize, HashMap<String, Ve
     }
     
     Ok((document_count, repo_scores))
+}
+
+fn build_score_report(source_dir: PathBuf, output_path: PathBuf) -> Result<()> {
+    aggregate_scores(source_dir, output_path)
+}
+
+fn load_score_report(report_path: &Path) -> Result<Report> {
+    let file = File::open(report_path)
+        .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
+    
+    let report: Report = serde_json::from_reader(file)
+        .with_context(|| format!("Failed to parse score report: {}", report_path.display()))?;
+    
+    Ok(report)
 }
