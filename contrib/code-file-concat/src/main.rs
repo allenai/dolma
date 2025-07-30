@@ -151,28 +151,33 @@ fn find_all_paths(inputs: Vec<PathBuf>) -> (Vec<PathBuf>, PathBuf) {
     let all_paths: Vec<PathBuf> = inputs
         .into_iter()
         .map(|path| {
-            let manual_ext: Option<Vec<String>>; // Store Vec<String> instead of &[&str]
-            let input_paths: Vec<PathBuf>;
+            // Use the original path directly for glob expansion instead of modifying it
+            if path.to_string_lossy().contains('*') {
+                // For glob patterns, don't extract extension manually - let expand_dirs handle it
+                expand_dirs(vec![path], None).unwrap_or_default()
+            } else {
+                let manual_ext: Option<Vec<String>>;
+                // For non-glob paths, use the original logic
+                let input_paths: Vec<PathBuf>;
+                match path.extension() {
+                    Some(ext) => {
+                        let ext_str = ext.to_string_lossy().into_owned();
+                        manual_ext = Some(vec![ext_str]);
+                        let mut trunk_path = path.clone();
+                        trunk_path.pop();
+                        input_paths = vec![trunk_path];
+                    }
+                    None => {
+                        manual_ext = None;
+                        input_paths = vec![path];
+                    }
+                }
 
-            match path.extension() {
-                Some(ext) => {
-                    let ext_str = ext.to_string_lossy().into_owned(); // Convert to owned String
-                    manual_ext = Some(vec![ext_str]); // Store as Vec<String>
-                    let mut trunk_path = path.clone();
-                    trunk_path.pop();
-                    input_paths = vec![trunk_path];
-                }
-                None => {
-                    manual_ext = None;
-                    input_paths = vec![path];
-                }
+                let manual_ext_refs: Option<Vec<&str>> = manual_ext
+                    .as_ref()
+                    .map(|v| v.iter().map(|s| s.as_str()).collect());
+                expand_dirs(input_paths, manual_ext_refs.as_deref()).unwrap_or_default()
             }
-
-            // Convert Vec<String> to Vec<&str> before passing it to expand_dirs
-            let manual_ext_refs: Option<Vec<&str>> = manual_ext
-                .as_ref()
-                .map(|v| v.iter().map(|s| s.as_str()).collect());
-            expand_dirs(input_paths, manual_ext_refs.as_deref()).unwrap_or_default()
         })
         .flatten()
         .collect();
