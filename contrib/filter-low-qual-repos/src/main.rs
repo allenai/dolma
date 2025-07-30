@@ -1,14 +1,16 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use indicatif::{ProgressBar, ProgressStyle};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex};
+use std::time::Instant;
 use walkdir::WalkDir;
 
 #[derive(Parser)]
@@ -57,6 +59,32 @@ enum Commands {
         #[arg(short, long, default_value = "repo_bins_report.json")]
         output: PathBuf,
     },
+    /// Filter documents based on repository bin criteria
+    Filter {
+        /// Source directory containing programming language subdirectories with *.jsonl.zst files
+        #[arg(short, long)]
+        source_dir: PathBuf,
+        
+        /// Path to score report file
+        #[arg(short, long)]
+        report_path: PathBuf,
+        
+        /// Path to bin report file
+        #[arg(short, long)]
+        bin_path: PathBuf,
+        
+        /// Target bin numbers to include (comma-separated, 1-indexed)
+        #[arg(short, long, value_delimiter = ',')]
+        target_bins: Vec<usize>,
+        
+        /// Output directory for filtered *.jsonl.zst files
+        #[arg(short, long)]
+        output_dir: PathBuf,
+        
+        /// Maximum file size in MB before splitting
+        #[arg(long, default_value = "50")]
+        max_file_size_mb: usize,
+    },
 }
 
 #[derive(Deserialize)]
@@ -102,13 +130,13 @@ struct Summary {
     total_documents: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct BinReport {
     bins: Vec<ScoreBin>,
     summary: BinSummary,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ScoreBin {
     min_score: f64,
     max_score: f64,
@@ -116,7 +144,7 @@ struct ScoreBin {
     total_repos_in_range: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct BinRepo {
     repo_name: String,
     language: String,
@@ -124,7 +152,7 @@ struct BinRepo {
     document_count: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct BinSummary {
     total_languages: usize,
     total_repositories: usize,
@@ -143,10 +171,15 @@ fn main() -> Result<()> {
         Commands::Bin { source_dir, report_path, build_report, num_bins, sample_size, output } => {
             bin_repositories(source_dir, report_path, build_report, num_bins, sample_size, output)
         }
+        Commands::Filter { source_dir, report_path, bin_path, target_bins, output_dir, max_file_size_mb } => {
+            filter_documents(source_dir, report_path, bin_path, target_bins, output_dir, max_file_size_mb)
+        }
     }
 }
 
 fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
+    let start_time = Instant::now();
+    println!("Starting aggregation process...");
     
     if !source_dir.exists() {
         anyhow::bail!("Source directory does not exist: {}", source_dir.display());
@@ -181,37 +214,45 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
             .unwrap_or("unknown")
             .to_string();
         
-        println!("Processing single language directory: {}", language_name);
+        println!("[1/1] Processing single language directory: {}", language_name);
         
         match process_language_directory(&source_dir) {
             Ok(language_report) => {
+                println!("  ✓ Completed {} - {} repos, {} docs", 
+                         language_name, language_report.total_repositories, language_report.total_documents);
                 report.languages.insert(language_name, language_report);
             }
             Err(e) => {
-                eprintln!("Error processing {}: {}", language_name, e);
+                eprintln!("  ✗ Error processing {}: {}", language_name, e);
             }
         }
     } else {
-        // Multi-language directory mode (original behavior)
-        for entry in std::fs::read_dir(&source_dir)? {
-            let entry = entry?;
+        // Multi-language directory mode - count directories first for progress
+        let language_dirs: Vec<_> = std::fs::read_dir(&source_dir)?
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().is_dir())
+            .collect();
+        
+        let total_langs = language_dirs.len();
+        println!("Found {} language directories to process", total_langs);
+        
+        for (idx, entry) in language_dirs.into_iter().enumerate() {
             let path = entry.path();
+            let language_name = path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
             
-            if path.is_dir() {
-                let language_name = path.file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown")
-                    .to_string();
-                
-                println!("Processing language directory: {}", language_name);
-                
-                match process_language_directory(&path) {
-                    Ok(language_report) => {
-                        report.languages.insert(language_name, language_report);
-                    }
-                    Err(e) => {
-                        eprintln!("Error processing {}: {}", language_name, e);
-                    }
+            println!("[{}/{}] Processing language directory: {}", idx + 1, total_langs, language_name);
+            
+            match process_language_directory(&path) {
+                Ok(language_report) => {
+                    println!("  ✓ Completed {} - {} repos, {} docs", 
+                             language_name, language_report.total_repositories, language_report.total_documents);
+                    report.languages.insert(language_name, language_report);
+                }
+                Err(e) => {
+                    eprintln!("  ✗ Error processing {}: {}", language_name, e);
                 }
             }
         }
@@ -233,11 +274,13 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
     let json = serde_json::to_string_pretty(&report)?;
     output_file.write_all(json.as_bytes())?;
     
+    let elapsed = start_time.elapsed();
     println!("Report written to: {}", output.display());
     println!("Summary:");
     println!("  Languages: {}", report.summary.total_languages);
     println!("  Repositories: {}", report.summary.total_repositories);
     println!("  Documents: {}", report.summary.total_documents);
+    println!("  Completed in: {:.2}s", elapsed.as_secs_f64());
     
     Ok(())
 }
@@ -250,6 +293,9 @@ fn bin_repositories(
     sample_size: usize, 
     output: PathBuf
 ) -> Result<()> {
+    let start_time = Instant::now();
+    println!("Starting repository binning process...");
+    
     let report = if build_report {
         // Force rebuild the report
         let source_dir = source_dir.ok_or_else(|| {
@@ -279,6 +325,7 @@ fn bin_repositories(
     };
 
     // Extract repository data from the report
+    println!("Extracting repository data from score report...");
     let mut all_repos: Vec<(String, String, f64, usize)> = Vec::new(); // (repo_name, language, avg_score, doc_count)
     
     for (language, language_report) in &report.languages {
@@ -296,6 +343,7 @@ fn bin_repositories(
         anyhow::bail!("No repositories found in the score report");
     }
 
+    println!("Sorting {} repositories by average score...", all_repos.len());
     // Sort repositories by average score
     all_repos.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
     
@@ -303,59 +351,70 @@ fn bin_repositories(
     let max_score = all_repos.last().map(|r| r.2).unwrap_or(1.0);
     
     println!("Score range: {:.6} to {:.6}", min_score, max_score);
-    println!("Total repositories: {}", all_repos.len());
+    println!("Creating {} bins with sample size {}", num_bins, sample_size);
 
-    // Create bins and apply reservoir sampling
-    let mut bins = Vec::new();
+    // Create bins and apply reservoir sampling in parallel
     let bin_width = (max_score - min_score) / num_bins as f64;
     
-    for i in 0..num_bins {
-        let bin_min = min_score + i as f64 * bin_width;
-        let bin_max = if i == num_bins - 1 { max_score } else { min_score + (i + 1) as f64 * bin_width };
-        
-        // Find all repos in this bin
-        let repos_in_bin: Vec<_> = all_repos
-            .iter()
-            .filter(|(_, _, score, _)| *score >= bin_min && *score <= bin_max)
-            .collect();
-        
-        let total_repos_in_range = repos_in_bin.len();
-        
-        // Apply reservoir sampling
-        let sample_repos: Vec<BinRepo> = if repos_in_bin.len() <= sample_size {
-            // If we have fewer repos than sample size, take all
-            repos_in_bin.into_iter().map(|(repo_name, language, avg_score, doc_count)| {
-                BinRepo {
-                    repo_name: repo_name.clone(),
-                    language: language.clone(),
-                    average_score: *avg_score,
-                    document_count: *doc_count,
-                }
-            }).collect()
-        } else {
-            // Reservoir sampling
-            let mut rng = thread_rng();
-            let sampled: Vec<_> = repos_in_bin.choose_multiple(&mut rng, sample_size).collect();
-            sampled.into_iter().map(|(repo_name, language, avg_score, doc_count)| {
-                BinRepo {
-                    repo_name: repo_name.clone(),
-                    language: language.clone(),
-                    average_score: *avg_score,
-                    document_count: *doc_count,
-                }
-            }).collect()
-        };
-        
-        println!("Bin {}: [{:.6}, {:.6}] - {} repos total, {} sampled", 
-                 i + 1, bin_min, bin_max, total_repos_in_range, sample_repos.len());
-        
-        bins.push(ScoreBin {
-            min_score: bin_min,
-            max_score: bin_max,
-            sample_repos,
-            total_repos_in_range,
-        });
-    }
+    // Pre-calculate bin ranges
+    let bin_ranges: Vec<(usize, f64, f64)> = (0..num_bins)
+        .map(|i| {
+            let bin_min = min_score + i as f64 * bin_width;
+            let bin_max = if i == num_bins - 1 { max_score } else { min_score + (i + 1) as f64 * bin_width };
+            (i, bin_min, bin_max)
+        })
+        .collect();
+    
+    // Process bins in parallel
+    let processed_bins = AtomicUsize::new(0);
+    let bins: Vec<ScoreBin> = bin_ranges
+        .par_iter()
+        .map(|(i, bin_min, bin_max)| {
+            // Find all repos in this bin
+            let repos_in_bin: Vec<_> = all_repos
+                .iter()
+                .filter(|(_, _, score, _)| *score >= *bin_min && *score <= *bin_max)
+                .collect();
+            
+            let total_repos_in_range = repos_in_bin.len();
+            
+            // Apply reservoir sampling with thread-local RNG
+            let sample_repos: Vec<BinRepo> = if repos_in_bin.len() <= sample_size {
+                // If we have fewer repos than sample size, take all
+                repos_in_bin.into_iter().map(|(repo_name, language, avg_score, doc_count)| {
+                    BinRepo {
+                        repo_name: repo_name.clone(),
+                        language: language.clone(),
+                        average_score: *avg_score,
+                        document_count: *doc_count,
+                    }
+                }).collect()
+            } else {
+                // Reservoir sampling with thread-local RNG
+                let mut rng = thread_rng();
+                let sampled: Vec<_> = repos_in_bin.choose_multiple(&mut rng, sample_size).collect();
+                sampled.into_iter().map(|(repo_name, language, avg_score, doc_count)| {
+                    BinRepo {
+                        repo_name: repo_name.clone(),
+                        language: language.clone(),
+                        average_score: *avg_score,
+                        document_count: *doc_count,
+                    }
+                }).collect()
+            };
+            
+            let current = processed_bins.fetch_add(1, Ordering::Relaxed) + 1;
+            println!("[{}/{}] Bin {}: [{:.6}, {:.6}] - {} repos total, {} sampled", 
+                     current, num_bins, i + 1, bin_min, bin_max, total_repos_in_range, sample_repos.len());
+            
+            ScoreBin {
+                min_score: *bin_min,
+                max_score: *bin_max,
+                sample_repos,
+                total_repos_in_range,
+            }
+        })
+        .collect();
 
     let bin_report = BinReport {
         bins,
@@ -375,6 +434,7 @@ fn bin_repositories(
     let json = serde_json::to_string_pretty(&bin_report)?;
     output_file.write_all(json.as_bytes())?;
     
+    let elapsed = start_time.elapsed();
     println!("Bin report written to: {}", output.display());
     println!("Summary:");
     println!("  Languages: {}", bin_report.summary.total_languages);
@@ -382,6 +442,92 @@ fn bin_repositories(
     println!("  Documents: {}", bin_report.summary.total_documents);
     println!("  Bins: {}", bin_report.summary.num_bins);
     println!("  Sample size per bin: {}", bin_report.summary.sample_size_per_bin);
+    println!("  Completed in: {:.2}s", elapsed.as_secs_f64());
+    
+    Ok(())
+}
+
+fn filter_documents(
+    source_dir: PathBuf,
+    report_path: PathBuf,
+    bin_path: PathBuf,
+    target_bins: Vec<usize>,
+    output_dir: PathBuf,
+    max_file_size_mb: usize,
+) -> Result<()> {
+    let start_time = Instant::now();
+    println!("Starting document filtering process...");
+    
+    // Validate inputs
+    if !source_dir.exists() {
+        anyhow::bail!("Source directory does not exist: {}", source_dir.display());
+    }
+    if !report_path.exists() {
+        anyhow::bail!("Report file does not exist: {}", report_path.display());
+    }
+    if !bin_path.exists() {
+        anyhow::bail!("Bin file does not exist: {}", bin_path.display());
+    }
+    
+    // Create output directory
+    std::fs::create_dir_all(&output_dir)
+        .with_context(|| format!("Failed to create output directory: {}", output_dir.display()))?;
+    
+    // Load bin report to get target repositories
+    println!("Loading bin report...");
+    let bin_report = load_bin_report(&bin_path)?;
+    
+    // Extract target repositories from specified bins
+    let target_repos = extract_target_repos(&bin_report, &target_bins)?;
+    println!("Found {} target repositories across {} bins", target_repos.len(), target_bins.len());
+    
+    // Get all source files
+    println!("Scanning source files...");
+    let source_files = collect_source_files(&source_dir)?;
+    println!("Found {} source files to process", source_files.len());
+    
+    // Setup progress bar
+    let pb = ProgressBar::new(source_files.len() as u64);
+    pb.set_style(ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} files ({percent}%) {msg}")
+        .unwrap()
+        .progress_chars("#>-"));
+    
+    // Process files and collect matching documents
+    let max_file_size_bytes = max_file_size_mb * 1024 * 1024;
+    let output_manager = Mutex::new(OutputManager::new(output_dir.clone(), max_file_size_bytes)?);
+    let processed_docs = AtomicUsize::new(0);
+    let filtered_docs = AtomicUsize::new(0);
+    
+    source_files.par_iter().for_each(|file_path| {
+        match process_source_file(file_path, &target_repos, &output_manager, &processed_docs, &filtered_docs) {
+            Ok(_) => {},
+            Err(e) => {
+                eprintln!("Error processing {}: {}", file_path.display(), e);
+            }
+        }
+        pb.inc(1);
+    });
+    
+    pb.finish_with_message("Processing complete");
+    
+    // Finalize output files
+    let mut output_mgr = output_manager.into_inner().unwrap();
+    output_mgr.finalize()?;
+    
+    let elapsed = start_time.elapsed();
+    let total_processed = processed_docs.load(Ordering::Relaxed);
+    let total_filtered = filtered_docs.load(Ordering::Relaxed);
+    
+    println!("Filter completed in {:.2}s", elapsed.as_secs_f64());
+    println!("Summary:");
+    println!("  Documents processed: {}", total_processed);
+    println!("  Documents filtered: {}", total_filtered);
+    println!("  Filter rate: {:.2}%", if total_processed > 0 { 
+        (total_filtered as f64 / total_processed as f64) * 100.0 
+    } else { 0.0 });
+    println!("  Output files: {}", output_mgr.file_count());
+    println!("  Output directory: {}", output_dir.display());
     
     Ok(())
 }
@@ -412,10 +558,12 @@ fn process_language_directory(dir_path: &Path) -> Result<LanguageReport> {
     // Use Mutex to safely collect results from parallel processing
     let repo_scores = Mutex::new(HashMap::<String, Vec<f64>>::new());
     let total_documents = Mutex::new(0usize);
+    let processed_files = AtomicUsize::new(0);
     
     // Process files in parallel
     files.par_iter().for_each(|file_path| {
-        println!("  Processing file: {}", file_path.display());
+        let current = processed_files.fetch_add(1, Ordering::Relaxed) + 1;
+        println!("  [{}/{}] Processing file: {}", current, files.len(), file_path.display());
         
         match process_jsonl_zst_file(file_path) {
             Ok((docs, repo_data)) => {
@@ -522,4 +670,178 @@ fn load_score_report(report_path: &Path) -> Result<Report> {
         .with_context(|| format!("Failed to parse score report: {}", report_path.display()))?;
     
     Ok(report)
+}
+
+fn load_bin_report(bin_path: &Path) -> Result<BinReport> {
+    let file = File::open(bin_path)
+        .with_context(|| format!("Failed to open bin report: {}", bin_path.display()))?;
+    
+    let report: BinReport = serde_json::from_reader(file)
+        .with_context(|| format!("Failed to parse bin report: {}", bin_path.display()))?;
+    
+    Ok(report)
+}
+
+fn extract_target_repos(bin_report: &BinReport, target_bins: &[usize]) -> Result<HashSet<String>> {
+    let mut target_repos = HashSet::new();
+    
+    for &bin_idx in target_bins {
+        if bin_idx == 0 || bin_idx > bin_report.bins.len() {
+            anyhow::bail!("Invalid bin number: {}. Valid range: 1-{}", bin_idx, bin_report.bins.len());
+        }
+        
+        let bin = &bin_report.bins[bin_idx - 1]; // Convert to 0-indexed
+        for repo in &bin.sample_repos {
+            target_repos.insert(repo.repo_name.clone());
+        }
+    }
+    
+    Ok(target_repos)
+}
+
+fn collect_source_files(source_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut source_files = Vec::new();
+    
+    for entry in WalkDir::new(source_dir) {
+        let entry = entry?;
+        let path = entry.path();
+        
+        if path.is_file() && 
+           path.extension().and_then(|s| s.to_str()) == Some("zst") &&
+           path.file_stem()
+               .and_then(|s| s.to_str())
+               .map(|s| s.ends_with(".jsonl"))
+               .unwrap_or(false) {
+            source_files.push(path.to_path_buf());
+        }
+    }
+    
+    Ok(source_files)
+}
+
+fn process_source_file(
+    file_path: &Path,
+    target_repos: &HashSet<String>,
+    output_manager: &Mutex<OutputManager>,
+    processed_docs: &AtomicUsize,
+    filtered_docs: &AtomicUsize,
+) -> Result<()> {
+    let file = File::open(file_path)
+        .with_context(|| format!("Failed to open file: {}", file_path.display()))?;
+    
+    let decoder = zstd::Decoder::new(file)
+        .with_context(|| format!("Failed to create zstd decoder for: {}", file_path.display()))?;
+    
+    let reader = BufReader::new(decoder);
+    let mut repo_docs: HashMap<String, Vec<String>> = HashMap::new();
+    
+    // Group documents by repository
+    for line in reader.lines() {
+        let line = line?;
+        processed_docs.fetch_add(1, Ordering::Relaxed);
+        
+        if line.trim().is_empty() {
+            continue;
+        }
+        
+        // Parse just enough to get repo_name
+        if let Ok(doc) = serde_json::from_str::<Document>(&line) {
+            if let Some(repo_name) = doc.metadata.repo_name {
+                if target_repos.contains(&repo_name) {
+                    repo_docs.entry(repo_name)
+                        .or_insert_with(Vec::new)
+                        .push(line);
+                    filtered_docs.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+    }
+    
+    // Write documents to output, grouped by repository
+    if !repo_docs.is_empty() {
+        let mut output_mgr = output_manager.lock().unwrap();
+        output_mgr.write_repo_documents(repo_docs)?;
+    }
+    
+    Ok(())
+}
+
+struct OutputManager {
+    output_dir: PathBuf,
+    max_file_size: usize,
+    current_file_idx: usize,
+    current_writer: Option<zstd::Encoder<'static, File>>,
+    current_size: usize,
+    file_count: usize,
+}
+
+impl OutputManager {
+    fn new(output_dir: PathBuf, max_file_size: usize) -> Result<Self> {
+        Ok(Self {
+            output_dir,
+            max_file_size,
+            current_file_idx: 0,
+            current_writer: None,
+            current_size: 0,
+            file_count: 0,
+        })
+    }
+    
+    fn write_repo_documents(&mut self, repo_docs: HashMap<String, Vec<String>>) -> Result<()> {
+        // Sort repositories for consistent output
+        let mut sorted_repos: Vec<_> = repo_docs.into_iter().collect();
+        sorted_repos.sort_by(|a, b| a.0.cmp(&b.0));
+        
+        for (_repo_name, docs) in sorted_repos {
+            // Calculate size needed for this repository
+            let repo_size: usize = docs.iter().map(|doc| doc.len() + 1).sum(); // +1 for newline
+            
+            // Check if we need a new file
+            if self.current_writer.is_none() || 
+               (self.current_size + repo_size > self.max_file_size && self.current_size > 0) {
+                self.rotate_file()?;
+            }
+            
+            // Write all documents for this repository
+            let writer = self.current_writer.as_mut().unwrap();
+            for doc in docs {
+                writer.write_all(doc.as_bytes())?;
+                writer.write_all(b"\n")?;
+                self.current_size += doc.len() + 1;
+            }
+        }
+        
+        Ok(())
+    }
+    
+    fn rotate_file(&mut self) -> Result<()> {
+        // Close current file
+        if let Some(writer) = self.current_writer.take() {
+            writer.finish()?;
+        }
+        
+        // Create new file
+        let file_path = self.output_dir.join(format!("{:06}.jsonl.zst", self.current_file_idx));
+        let file = File::create(&file_path)
+            .with_context(|| format!("Failed to create output file: {}", file_path.display()))?;
+        
+        let encoder = zstd::Encoder::new(file, 3)?; // Compression level 3
+        self.current_writer = Some(encoder);
+        self.current_size = 0;
+        self.current_file_idx += 1;
+        self.file_count += 1;
+        
+        Ok(())
+    }
+    
+    fn finalize(&mut self) -> Result<()> {
+        if let Some(writer) = self.current_writer.take() {
+            writer.finish()?;
+        }
+        Ok(())
+    }
+    
+    fn file_count(&self) -> usize {
+        self.file_count
+    }
 }

@@ -12,3 +12,4 @@ zstd = "0.13.3"
 walkdir = "2.5"
 rayon = "1.10"
 rand = "0.8"
+indicatif = { version = "0.17", features = ["rayon"] }
