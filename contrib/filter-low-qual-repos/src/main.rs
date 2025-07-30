@@ -77,6 +77,10 @@ enum Commands {
         #[arg(short, long, value_delimiter = ',')]
         target_bins: Vec<usize>,
         
+        /// Specific language to filter (optional, filters all languages if not specified)
+        #[arg(short, long)]
+        language: Option<String>,
+        
         /// Output directory for filtered *.jsonl.zst files
         #[arg(short, long)]
         output_dir: PathBuf,
@@ -132,8 +136,15 @@ struct Summary {
 
 #[derive(Serialize, Deserialize)]
 struct BinReport {
-    bins: Vec<ScoreBin>,
+    language_bins: HashMap<String, LanguageBinReport>,
     summary: BinSummary,
+}
+
+#[derive(Serialize, Deserialize)]
+struct LanguageBinReport {
+    language: String,
+    bins: Vec<ScoreBin>,
+    summary: LanguageBinSummary,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -161,6 +172,15 @@ struct BinSummary {
     sample_size_per_bin: usize,
 }
 
+#[derive(Serialize, Deserialize)]
+struct LanguageBinSummary {
+    language: String,
+    total_repositories: usize,
+    total_documents: usize,
+    num_bins: usize,
+    sample_size_per_bin: usize,
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     
@@ -171,8 +191,8 @@ fn main() -> Result<()> {
         Commands::Bin { source_dir, report_path, build_report, num_bins, sample_size, output } => {
             bin_repositories(source_dir, report_path, build_report, num_bins, sample_size, output)
         }
-        Commands::Filter { source_dir, report_path, bin_path, target_bins, output_dir, max_file_size_mb } => {
-            filter_documents(source_dir, report_path, bin_path, target_bins, output_dir, max_file_size_mb)
+        Commands::Filter { source_dir, report_path, bin_path, target_bins, language, output_dir, max_file_size_mb } => {
+            filter_documents(source_dir, report_path, bin_path, target_bins, language, output_dir, max_file_size_mb)
         }
     }
 }
@@ -324,104 +344,66 @@ fn bin_repositories(
         }
     };
 
-    // Extract repository data from the report
-    println!("Extracting repository data from score report...");
-    let mut all_repos: Vec<(String, String, f64, usize)> = Vec::new(); // (repo_name, language, avg_score, doc_count)
+    // Create bins per language
+    println!("Creating language-specific bins...");
+    let mut language_bins = HashMap::new();
+    let mut total_repos = 0;
+    let mut total_docs = 0;
     
     for (language, language_report) in &report.languages {
+        println!("Processing language: {}", language);
+        
+        // Extract repositories for this language
+        let mut language_repos: Vec<(String, f64, usize)> = Vec::new(); // (repo_name, avg_score, doc_count)
         for (repo_name, repo_stats) in &language_report.repo_stats {
-            all_repos.push((
+            language_repos.push((
                 repo_name.clone(),
-                language.clone(),
                 repo_stats.average_score,
                 repo_stats.document_count
             ));
+            total_docs += repo_stats.document_count;
         }
+        
+        if language_repos.is_empty() {
+            println!("  No repositories found for {}, skipping", language);
+            continue;
+        }
+        
+        total_repos += language_repos.len();
+        
+        // Sort repositories by average score for this language
+        language_repos.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+        
+        let min_score = language_repos.first().map(|r| r.1).unwrap_or(0.0);
+        let max_score = language_repos.last().map(|r| r.1).unwrap_or(1.0);
+        
+        println!("  {} repositories, score range: {:.6} to {:.6}", 
+                 language_repos.len(), min_score, max_score);
+        
+        // Create bins for this language
+        let lang_bins = create_language_bins(&language_repos, num_bins, sample_size, min_score, max_score)?;
+        
+        let lang_bin_report = LanguageBinReport {
+            language: language.clone(),
+            bins: lang_bins,
+            summary: LanguageBinSummary {
+                language: language.clone(),
+                total_repositories: language_repos.len(),
+                total_documents: language_report.total_documents,
+                num_bins,
+                sample_size_per_bin: sample_size,
+            },
+        };
+        
+        language_bins.insert(language.clone(), lang_bin_report);
     }
-
-    if all_repos.is_empty() {
-        anyhow::bail!("No repositories found in the score report");
-    }
-
-    println!("Sorting {} repositories by average score...", all_repos.len());
-    // Sort repositories by average score
-    all_repos.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-    
-    let min_score = all_repos.first().map(|r| r.2).unwrap_or(0.0);
-    let max_score = all_repos.last().map(|r| r.2).unwrap_or(1.0);
-    
-    println!("Score range: {:.6} to {:.6}", min_score, max_score);
-    println!("Creating {} bins with sample size {}", num_bins, sample_size);
-
-    // Create bins and apply reservoir sampling in parallel
-    let bin_width = (max_score - min_score) / num_bins as f64;
-    
-    // Pre-calculate bin ranges
-    let bin_ranges: Vec<(usize, f64, f64)> = (0..num_bins)
-        .map(|i| {
-            let bin_min = min_score + i as f64 * bin_width;
-            let bin_max = if i == num_bins - 1 { max_score } else { min_score + (i + 1) as f64 * bin_width };
-            (i, bin_min, bin_max)
-        })
-        .collect();
-    
-    // Process bins in parallel
-    let processed_bins = AtomicUsize::new(0);
-    let bins: Vec<ScoreBin> = bin_ranges
-        .par_iter()
-        .map(|(i, bin_min, bin_max)| {
-            // Find all repos in this bin
-            let repos_in_bin: Vec<_> = all_repos
-                .iter()
-                .filter(|(_, _, score, _)| *score >= *bin_min && *score <= *bin_max)
-                .collect();
-            
-            let total_repos_in_range = repos_in_bin.len();
-            
-            // Apply reservoir sampling with thread-local RNG
-            let sample_repos: Vec<BinRepo> = if repos_in_bin.len() <= sample_size {
-                // If we have fewer repos than sample size, take all
-                repos_in_bin.into_iter().map(|(repo_name, language, avg_score, doc_count)| {
-                    BinRepo {
-                        repo_name: repo_name.clone(),
-                        language: language.clone(),
-                        average_score: *avg_score,
-                        document_count: *doc_count,
-                    }
-                }).collect()
-            } else {
-                // Reservoir sampling with thread-local RNG
-                let mut rng = thread_rng();
-                let sampled: Vec<_> = repos_in_bin.choose_multiple(&mut rng, sample_size).collect();
-                sampled.into_iter().map(|(repo_name, language, avg_score, doc_count)| {
-                    BinRepo {
-                        repo_name: repo_name.clone(),
-                        language: language.clone(),
-                        average_score: *avg_score,
-                        document_count: *doc_count,
-                    }
-                }).collect()
-            };
-            
-            let current = processed_bins.fetch_add(1, Ordering::Relaxed) + 1;
-            println!("[{}/{}] Bin {}: [{:.6}, {:.6}] - {} repos total, {} sampled", 
-                     current, num_bins, i + 1, bin_min, bin_max, total_repos_in_range, sample_repos.len());
-            
-            ScoreBin {
-                min_score: *bin_min,
-                max_score: *bin_max,
-                sample_repos,
-                total_repos_in_range,
-            }
-        })
-        .collect();
 
     let bin_report = BinReport {
-        bins,
+        language_bins,
         summary: BinSummary {
             total_languages: report.summary.total_languages,
-            total_repositories: all_repos.len(),
-            total_documents: report.summary.total_documents,
+            total_repositories: total_repos,
+            total_documents: total_docs,
             num_bins,
             sample_size_per_bin: sample_size,
         },
@@ -452,6 +434,7 @@ fn filter_documents(
     report_path: PathBuf,
     bin_path: PathBuf,
     target_bins: Vec<usize>,
+    target_language: Option<String>,
     output_dir: PathBuf,
     max_file_size_mb: usize,
 ) -> Result<()> {
@@ -478,7 +461,7 @@ fn filter_documents(
     let bin_report = load_bin_report(&bin_path)?;
     
     // Extract target repositories from specified bins using score ranges (streaming)
-    let target_repos = extract_target_repos_streaming(&bin_report, &report_path, &target_bins)?;
+    let target_repos = extract_target_repos_streaming_by_language(&bin_report, &report_path, &target_bins, &target_language)?;
     println!("Found {} target repositories across {} bins", target_repos.len(), target_bins.len());
     
     // Get all source files with their language directories
@@ -534,6 +517,76 @@ fn filter_documents(
     println!("  Output directory: {}", output_dir.display());
     
     Ok(())
+}
+
+fn create_language_bins(
+    language_repos: &[(String, f64, usize)], // (repo_name, avg_score, doc_count)
+    num_bins: usize,
+    sample_size: usize,
+    min_score: f64,
+    max_score: f64,
+) -> Result<Vec<ScoreBin>> {
+    let bin_width = (max_score - min_score) / num_bins as f64;
+    
+    // Pre-calculate bin ranges
+    let bin_ranges: Vec<(usize, f64, f64)> = (0..num_bins)
+        .map(|i| {
+            let bin_min = min_score + i as f64 * bin_width;
+            let bin_max = if i == num_bins - 1 { max_score } else { min_score + (i + 1) as f64 * bin_width };
+            (i, bin_min, bin_max)
+        })
+        .collect();
+    
+    // Process bins in parallel
+    let bins: Vec<ScoreBin> = bin_ranges
+        .par_iter()
+        .map(|(i, bin_min, bin_max)| {
+            // Find all repos in this bin
+            let repos_in_bin: Vec<_> = language_repos
+                .iter()
+                .filter(|(_, score, _)| *score >= *bin_min && *score <= *bin_max)
+                .collect();
+            
+            let total_repos_in_range = repos_in_bin.len();
+            
+            // Apply reservoir sampling with thread-local RNG
+            let sample_repos: Vec<BinRepo> = if repos_in_bin.len() <= sample_size {
+                // If we have fewer repos than sample size, take all
+                repos_in_bin.into_iter().map(|(repo_name, avg_score, doc_count)| {
+                    BinRepo {
+                        repo_name: repo_name.clone(),
+                        language: "".to_string(), // Will be set by caller
+                        average_score: *avg_score,
+                        document_count: *doc_count,
+                    }
+                }).collect()
+            } else {
+                // Reservoir sampling with thread-local RNG
+                let mut rng = thread_rng();
+                let sampled: Vec<_> = repos_in_bin.choose_multiple(&mut rng, sample_size).collect();
+                sampled.into_iter().map(|(repo_name, avg_score, doc_count)| {
+                    BinRepo {
+                        repo_name: repo_name.clone(),
+                        language: "".to_string(), // Will be set by caller
+                        average_score: *avg_score,
+                        document_count: *doc_count,
+                    }
+                }).collect()
+            };
+            
+            println!("    Bin {}: [{:.6}, {:.6}] - {} repos total, {} sampled", 
+                     i + 1, bin_min, bin_max, total_repos_in_range, sample_repos.len());
+            
+            ScoreBin {
+                min_score: *bin_min,
+                max_score: *bin_max,
+                sample_repos,
+                total_repos_in_range,
+            }
+        })
+        .collect();
+    
+    Ok(bins)
 }
 
 fn process_language_directory(dir_path: &Path) -> Result<LanguageReport> {
@@ -686,34 +739,57 @@ fn load_bin_report(bin_path: &Path) -> Result<BinReport> {
     Ok(report)
 }
 
-fn extract_target_repos_streaming(
+fn extract_target_repos_streaming_by_language(
     bin_report: &BinReport,
     report_path: &Path,
-    target_bins: &[usize]
+    target_bins: &[usize],
+    target_language: &Option<String>
 ) -> Result<HashSet<String>> {
     println!("Extracting target repositories from score report (streaming)...");
     
-    // Get score ranges for target bins
-    let mut score_ranges = Vec::new();
-    for &bin_idx in target_bins {
-        if bin_idx == 0 || bin_idx > bin_report.bins.len() {
-            anyhow::bail!("Invalid bin number: {}. Valid range: 1-{}", bin_idx, bin_report.bins.len());
+    // Get score ranges for target bins across all languages (or specific language)
+    let mut language_score_ranges: HashMap<String, Vec<(f64, f64)>> = HashMap::new();
+    
+    let languages_to_process: Vec<String> = if let Some(lang) = target_language {
+        vec![lang.clone()]
+    } else {
+        bin_report.language_bins.keys().cloned().collect()
+    };
+    
+    for language in &languages_to_process {
+        if let Some(lang_bin_report) = bin_report.language_bins.get(language) {
+            let mut score_ranges = Vec::new();
+            
+            for &bin_idx in target_bins {
+                if bin_idx == 0 || bin_idx > lang_bin_report.bins.len() {
+                    anyhow::bail!("Invalid bin number: {} for language {}. Valid range: 1-{}", 
+                                 bin_idx, language, lang_bin_report.bins.len());
+                }
+                
+                let bin = &lang_bin_report.bins[bin_idx - 1]; // Convert to 0-indexed
+                score_ranges.push((bin.min_score, bin.max_score));
+                println!("Target bin {} for {}: score range [{:.6}, {:.6}]", 
+                         bin_idx, language, bin.min_score, bin.max_score);
+            }
+            
+            language_score_ranges.insert(language.clone(), score_ranges);
+        } else {
+            if target_language.is_some() {
+                anyhow::bail!("Language '{}' not found in bin report", language);
+            }
+            println!("Warning: Language '{}' not found in bin report, skipping", language);
         }
-        
-        let bin = &bin_report.bins[bin_idx - 1]; // Convert to 0-indexed
-        score_ranges.push((bin.min_score, bin.max_score));
-        println!("Target bin {}: score range [{:.6}, {:.6}]", bin_idx, bin.min_score, bin.max_score);
     }
     
     let file = File::open(report_path)
         .with_context(|| format!("Failed to open score report: {}", report_path.display()))?;
     
-    parse_score_report_for_ranges(file, &score_ranges)
+    parse_score_report_for_language_ranges(file, &language_score_ranges)
 }
 
-fn parse_score_report_for_ranges(
+fn parse_score_report_for_language_ranges(
     file: File,
-    score_ranges: &[(f64, f64)]
+    language_score_ranges: &HashMap<String, Vec<(f64, f64)>>
 ) -> Result<HashSet<String>> {
     
     let mut target_repos = HashSet::new();
@@ -729,30 +805,33 @@ fn parse_score_report_for_ranges(
         let mut processed_repos = 0;
         let total_languages = languages.len();
         
-        for (lang_idx, (_language_name, language_data)) in languages.iter().enumerate() {
+        for (lang_idx, (language_name, language_data)) in languages.iter().enumerate() {
             if lang_idx % 10 == 0 {
                 println!("  Processing language {}/{} - found {} repos so far", 
                          lang_idx + 1, total_languages, target_repos.len());
             }
             
-            if let Some(repo_stats) = language_data.get("repo_stats").and_then(|v| v.as_object()) {
-                for (repo_name, repo_data) in repo_stats {
-                    processed_repos += 1;
-                    
-                    if let Some(avg_score) = repo_data.get("average_score").and_then(|v| v.as_f64()) {
-                        // Check if repository falls within any target score range
-                        for &(min_score, max_score) in score_ranges {
-                            if avg_score >= min_score && avg_score <= max_score {
-                                target_repos.insert(repo_name.clone());
-                                break;
+            // Check if this language has target score ranges
+            if let Some(score_ranges) = language_score_ranges.get(language_name) {
+                if let Some(repo_stats) = language_data.get("repo_stats").and_then(|v| v.as_object()) {
+                    for (repo_name, repo_data) in repo_stats {
+                        processed_repos += 1;
+                        
+                        if let Some(avg_score) = repo_data.get("average_score").and_then(|v| v.as_f64()) {
+                            // Check if repository falls within any target score range for this language
+                            for &(min_score, max_score) in score_ranges {
+                                if avg_score >= min_score && avg_score <= max_score {
+                                    target_repos.insert(repo_name.clone());
+                                    break;
+                                }
                             }
                         }
-                    }
-                    
-                    // Progress update every 100k repos
-                    if processed_repos % 100000 == 0 {
-                        println!("  Processed {} repositories, found {} matches", 
-                                 processed_repos, target_repos.len());
+                        
+                        // Progress update every 100k repos
+                        if processed_repos % 100000 == 0 {
+                            println!("  Processed {} repositories, found {} matches", 
+                                     processed_repos, target_repos.len());
+                        }
                     }
                 }
             }
