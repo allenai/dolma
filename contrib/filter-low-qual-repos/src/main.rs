@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
 use clap::Parser;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use walkdir::WalkDir;
 
 #[derive(Parser)]
@@ -79,25 +81,57 @@ fn main() -> Result<()> {
         },
     };
     
-    // Process each language directory
-    for entry in std::fs::read_dir(&args.source_dir)? {
-        let entry = entry?;
-        let path = entry.path();
+    // Check if source_dir contains *.jsonl.zst files directly (single language mode)
+    let has_jsonl_files = std::fs::read_dir(&args.source_dir)?
+        .filter_map(|entry| entry.ok())
+        .any(|entry| {
+            let path = entry.path();
+            path.is_file() && 
+            path.extension().and_then(|s| s.to_str()) == Some("zst") &&
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .map(|s| s.ends_with(".jsonl"))
+                .unwrap_or(false)
+        });
+    
+    if has_jsonl_files {
+        // Single language directory mode
+        let language_name = args.source_dir.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
         
-        if path.is_dir() {
-            let language_name = path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown")
-                .to_string();
+        println!("Processing single language directory: {}", language_name);
+        
+        match process_language_directory(&args.source_dir) {
+            Ok(language_report) => {
+                report.languages.insert(language_name, language_report);
+            }
+            Err(e) => {
+                eprintln!("Error processing {}: {}", language_name, e);
+            }
+        }
+    } else {
+        // Multi-language directory mode (original behavior)
+        for entry in std::fs::read_dir(&args.source_dir)? {
+            let entry = entry?;
+            let path = entry.path();
             
-            println!("Processing language directory: {}", language_name);
-            
-            match process_language_directory(&path) {
-                Ok(language_report) => {
-                    report.languages.insert(language_name, language_report);
-                }
-                Err(e) => {
-                    eprintln!("Error processing {}: {}", language_name, e);
+            if path.is_dir() {
+                let language_name = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                
+                println!("Processing language directory: {}", language_name);
+                
+                match process_language_directory(&path) {
+                    Ok(language_report) => {
+                        report.languages.insert(language_name, language_report);
+                    }
+                    Err(e) => {
+                        eprintln!("Error processing {}: {}", language_name, e);
+                    }
                 }
             }
         }
@@ -129,38 +163,63 @@ fn main() -> Result<()> {
 }
 
 fn process_language_directory(dir_path: &Path) -> Result<LanguageReport> {
-    let mut repo_scores: HashMap<String, Vec<f64>> = HashMap::new();
-    let mut total_documents = 0;
+    // Collect all *.jsonl.zst files first
+    let files: Vec<PathBuf> = WalkDir::new(dir_path)
+        .into_iter()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            
+            if path.is_file() && 
+               path.extension().and_then(|s| s.to_str()) == Some("zst") &&
+               path.file_stem()
+                   .and_then(|s| s.to_str())
+                   .map(|s| s.ends_with(".jsonl"))
+                   .unwrap_or(false) {
+                Some(path.to_path_buf())
+            } else {
+                None
+            }
+        })
+        .collect();
     
-    // Find all *.jsonl.zst files in the directory
-    for entry in WalkDir::new(dir_path) {
-        let entry = entry?;
-        let path = entry.path();
+    println!("  Found {} files to process", files.len());
+    
+    // Use Mutex to safely collect results from parallel processing
+    let repo_scores = Mutex::new(HashMap::<String, Vec<f64>>::new());
+    let total_documents = Mutex::new(0usize);
+    
+    // Process files in parallel
+    files.par_iter().for_each(|file_path| {
+        println!("  Processing file: {}", file_path.display());
         
-        if path.is_file() && 
-           path.extension().and_then(|s| s.to_str()) == Some("zst") &&
-           path.file_stem()
-               .and_then(|s| s.to_str())
-               .map(|s| s.ends_with(".jsonl"))
-               .unwrap_or(false) {
-            
-            println!("  Processing file: {}", path.display());
-            
-            match process_jsonl_zst_file(path) {
-                Ok((docs, repo_data)) => {
-                    total_documents += docs;
+        match process_jsonl_zst_file(file_path) {
+            Ok((docs, repo_data)) => {
+                // Update total documents count
+                {
+                    let mut total_docs = total_documents.lock().unwrap();
+                    *total_docs += docs;
+                }
+                
+                // Update repository scores
+                {
+                    let mut repo_scores_map = repo_scores.lock().unwrap();
                     for (repo_name, scores) in repo_data {
-                        repo_scores.entry(repo_name)
+                        repo_scores_map.entry(repo_name)
                             .or_insert_with(Vec::new)
                             .extend(scores);
                     }
                 }
-                Err(e) => {
-                    eprintln!("    Warning: Failed to process {}: {}", path.display(), e);
-                }
+            }
+            Err(e) => {
+                eprintln!("    Warning: Failed to process {}: {}", file_path.display(), e);
             }
         }
-    }
+    });
+    
+    // Extract results from Mutex
+    let repo_scores = repo_scores.into_inner().unwrap();
+    let total_documents = total_documents.into_inner().unwrap();
     
     // Calculate statistics for each repository
     let mut repo_stats = HashMap::new();
