@@ -20,8 +20,8 @@ cargo run --release -- \
     --inputs 'data/input/*jsonl' \
     --output data/output \
     --randomize-order \
-    --file-separator-token '<|file_sep|>'
-    --repo-field-name repo_name
+    --file-separator-token '<|file_sep|>' \
+    --repo-field-name repo_name \
     --pl-field-name language
 ```
 

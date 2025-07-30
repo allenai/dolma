@@ -34,6 +34,10 @@ struct Args {
     /// Which metadata field to find the programming language
     #[arg(long, required = true, default_value = "language")]
     pl_field_name: String,
+
+    /// Keep subdirectory structure in output files
+    #[arg(long, default_value_t = false)]
+    keep_dirs: bool,
 }
 
 /// Compute the longest common prefix of a non-empty slice of paths.
@@ -66,10 +70,22 @@ fn compute_common_prefix(paths: &[PathBuf]) -> PathBuf {
 
 /// Given a list of input paths and a destination prefix,
 /// returns a vector where each file is the destination prefix plus
-/// the input file’s path relative to the shared prefix.
-fn map_paths_to_destination(inputs: &Vec<PathBuf>, dest_prefix: PathBuf) -> Vec<PathBuf> {
+/// the input file's path relative to the shared prefix.
+/// If keep_dirs is false, only the filename is preserved (flattened structure).
+fn map_paths_to_destination(inputs: &Vec<PathBuf>, dest_prefix: PathBuf, keep_dirs: bool) -> Vec<PathBuf> {
     if inputs.is_empty() {
         return Vec::new();
+    }
+
+    if !keep_dirs {
+        // Flatten directory structure - use only filenames
+        return inputs
+            .into_iter()
+            .map(|input| {
+                let src_filename = input.file_name().unwrap();
+                dest_prefix.join(src_filename)
+            })
+            .collect();
     }
 
     if inputs.len() == 1 {
@@ -175,7 +191,7 @@ fn main() {
 
     println!("Found {} paths to process", all_src.len());
 
-    let all_dst = map_paths_to_destination(&all_src, args.output.clone());
+    let all_dst = map_paths_to_destination(&all_src, args.output.clone(), args.keep_dirs);
 
     let pbar = build_pbar(all_src.len(), "Processing files");
 

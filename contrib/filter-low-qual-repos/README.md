@@ -215,7 +215,7 @@ Creates language-specific bins:
           "sample_repos": [
             {
               "repo_name": "numpy/numpy",
-              "language": "python", 
+              "language": "python",
               "average_score": 0.95,
               "document_count": 1500
             }
@@ -442,7 +442,7 @@ The tool **automatically detects** whether to use Arrow/Parquet or JSON format b
 
 #### Format Detection Rules
 - **Directory path** (e.g., `./my_report`) → Arrow/Parquet format
-- **File path with .json** (e.g., `./my_report.json`) → JSON format  
+- **File path with .json** (e.g., `./my_report.json`) → JSON format
 - **File path without extension** (e.g., `./my_report.txt`) → JSON format
 
 #### Arrow/Parquet Format (Recommended)
@@ -467,7 +467,7 @@ Older reports use streaming JSON processing:
 - **Bin**: ~100K repositories/second (parallel) → **~10x faster with Arrow**
 - **Filter**: ~500K documents/minute per core
 
-#### With Legacy JSON Format  
+#### With Legacy JSON Format
 - **Aggregate**: ~1M documents/minute per core → **~6.8GB JSON output**
 - **Bin**: ~100K repositories/second (streaming) → **Memory limited by JSON size**
 - **Filter**: ~500K documents/minute per core
@@ -475,26 +475,8 @@ Older reports use streaming JSON processing:
 ### Memory Requirements
 - **Aggregate**: ~500MB per million documents (both formats)
 - **Bin (Arrow)**: ~100MB base + parallel partition loading
-- **Bin (JSON)**: ~50MB for streaming JSON processing  
+- **Bin (JSON)**: ~50MB for streaming JSON processing
 - **Filter**: ~200MB base + file buffers
-
----
-
-## Understanding Quality Bins
-
-Quality bins are created per programming language to ensure fair representation:
-
-- **Bin 1**: Bottom 10% (lowest quality repositories)
-- **Bin 5**: Median quality repositories  
-- **Bin 10**: Top 10% (highest quality repositories)
-
-Each language has its own quality distribution, so Python bin 10 contains the top 10% of Python repositories, not the global top 10%.
-
-### Choosing Target Bins
-- **Bins 9,10**: Top 20% - High quality, good size
-- **Bins 8,9,10**: Top 30% - Balanced quality/quantity
-- **Bin 10**: Top 10% - Premium quality, smaller dataset
-- **Bins 6,7,8,9,10**: Top 50% - Large, above-average quality
 
 ---
 
@@ -595,7 +577,7 @@ If you have existing JSON reports and want to benefit from Arrow performance:
 cargo run --release -- aggregate --source-dir ./dataset --output ./scores.json
 cargo run --release -- bin --report-path ./scores.json --output ./bins.json
 
-# New high-performance workflow  
+# New high-performance workflow
 cargo run --release -- aggregate --source-dir ./dataset --output ./scores_arrow
 cargo run --release -- bin --report-path ./scores_arrow --output ./bins.json  # 10x faster!
 cargo run --release -- filter \
@@ -618,7 +600,7 @@ cargo run --release -- pipeline \
 
 ### Performance Benefits
 - **Aggregate**: Same speed, but creates ~3x smaller output
-- **Bin**: ~10x faster with parallel Arrow loading  
+- **Bin**: ~10x faster with parallel Arrow loading
 - **Filter**: ~10x faster repository extraction
 - **Storage**: ~70% less disk space used
 
