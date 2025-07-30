@@ -1,15 +1,18 @@
 use anyhow::{Context, Result};
+use arrow::array::{Float64Array, StringArray, UInt64Array, RecordBatch};
+use arrow::datatypes::{DataType, Field, Schema};
 use clap::{Parser, Subcommand};
 use indicatif::{ProgressBar, ProgressStyle};
+use parquet::arrow::{ArrowWriter, arrow_reader::ParquetRecordBatchReaderBuilder};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
+use std::fs::{File, create_dir_all};
 use std::io::{BufRead, BufReader, Write, Seek};
 use std::path::{Path, PathBuf};
-use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex};
+use std::sync::{atomic::AtomicUsize, atomic::Ordering, Mutex, Arc};
 use std::time::Instant;
 use walkdir::WalkDir;
 
@@ -172,6 +175,333 @@ struct Summary {
 struct StreamingScoreReport {
     summary: Summary,
     language_offsets: HashMap<String, (u64, u64)>, // language -> (start_offset, end_offset)
+}
+
+#[derive(Debug, Clone)]
+struct RepoRecord {
+    language: String,
+    repo_name: String,
+    document_count: u64,
+    total_score: f64,
+    average_score: f64, 
+    min_score: f64,
+    max_score: f64,
+}
+
+impl RepoRecord {
+    fn from_repo_stats(language: &str, repo_name: &str, stats: &RepoStats) -> Self {
+        Self {
+            language: language.to_string(),
+            repo_name: repo_name.to_string(),
+            document_count: stats.document_count as u64,
+            total_score: stats.total_score,
+            average_score: stats.average_score,
+            min_score: stats.min_score,
+            max_score: stats.max_score,
+        }
+    }
+}
+
+fn create_repo_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new("language", DataType::Utf8, false),
+        Field::new("repo_name", DataType::Utf8, false),
+        Field::new("document_count", DataType::UInt64, false),
+        Field::new("total_score", DataType::Float64, false),
+        Field::new("average_score", DataType::Float64, false),
+        Field::new("min_score", DataType::Float64, false),
+        Field::new("max_score", DataType::Float64, false),
+    ]))
+}
+
+fn write_arrow_partitioned_report(report: &Report, output_path: &PathBuf) -> Result<()> {
+    println!("Writing partitioned Arrow/Parquet report...");
+    
+    // Create output directory structure
+    let base_dir = if output_path.extension().is_some() {
+        output_path.with_extension("")
+    } else {
+        output_path.clone()
+    };
+    
+    create_dir_all(&base_dir)
+        .with_context(|| format!("Failed to create output directory: {}", base_dir.display()))?;
+    
+    // Write summary metadata
+    let summary_path = base_dir.join("_summary.json");
+    let summary_json = serde_json::to_string_pretty(&report.summary)?;
+    std::fs::write(&summary_path, summary_json)?;
+    
+    let schema = create_repo_schema();
+    
+    // Process languages in parallel and write partitioned files
+    report.languages.par_iter().try_for_each(|(language, lang_report)| -> Result<()> {
+        let lang_dir = base_dir.join("language").join(language);
+        create_dir_all(&lang_dir)
+            .with_context(|| format!("Failed to create language directory: {}", lang_dir.display()))?;
+        
+        // Convert language data to RepoRecord format
+        let mut records: Vec<RepoRecord> = lang_report.repo_stats.iter()
+            .map(|(repo_name, stats)| RepoRecord::from_repo_stats(language, repo_name, stats))
+            .collect();
+        
+        // Sort by average_score for better compression and query performance
+        records.sort_by(|a, b| a.average_score.partial_cmp(&b.average_score).unwrap_or(std::cmp::Ordering::Equal));
+        
+        // Partition by score ranges for parallel processing
+        let chunk_size = (records.len() / rayon::current_num_threads()).max(1000);
+        let chunks: Vec<_> = records.chunks(chunk_size).enumerate().collect();
+        
+        chunks.par_iter().try_for_each(|(chunk_idx, chunk)| -> Result<()> {
+            let partition_file = lang_dir.join(format!("part_{:04}.parquet", chunk_idx));
+            write_records_to_parquet(chunk, &schema, &partition_file)?;
+            Ok(())
+        })?;
+        
+        println!("  ✓ Written {} - {} repos in {} partitions", 
+                 language, records.len(), chunks.len());
+        
+        Ok(())
+    })?;
+    
+    println!("Arrow/Parquet report written to: {}", base_dir.display());
+    Ok(())
+}
+
+fn write_records_to_parquet(records: &[RepoRecord], schema: &Arc<Schema>, file_path: &PathBuf) -> Result<()> {
+    if records.is_empty() {
+        return Ok(());
+    }
+    
+    // Create Arrow arrays from records
+    let language_array = StringArray::from_iter_values(records.iter().map(|r| &r.language));
+    let repo_name_array = StringArray::from_iter_values(records.iter().map(|r| &r.repo_name));
+    let document_count_array = UInt64Array::from_iter_values(records.iter().map(|r| r.document_count));
+    let total_score_array = Float64Array::from_iter_values(records.iter().map(|r| r.total_score));
+    let average_score_array = Float64Array::from_iter_values(records.iter().map(|r| r.average_score));
+    let min_score_array = Float64Array::from_iter_values(records.iter().map(|r| r.min_score));
+    let max_score_array = Float64Array::from_iter_values(records.iter().map(|r| r.max_score));
+    
+    // Create record batch
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(language_array),
+            Arc::new(repo_name_array),
+            Arc::new(document_count_array),
+            Arc::new(total_score_array),
+            Arc::new(average_score_array),
+            Arc::new(min_score_array),
+            Arc::new(max_score_array),
+        ],
+    )?;
+    
+    // Write to Parquet file
+    let file = File::create(file_path)
+        .with_context(|| format!("Failed to create parquet file: {}", file_path.display()))?;
+    
+    let mut writer = ArrowWriter::try_new(file, schema.clone(), None)?;
+    writer.write(&batch)?;
+    writer.close()?;
+    
+    Ok(())
+}
+
+fn load_arrow_summary(report_path: &PathBuf) -> Result<Summary> {
+    let base_dir = if report_path.extension().is_some() {
+        report_path.with_extension("")
+    } else {
+        report_path.clone()
+    };
+    
+    let summary_path = base_dir.join("_summary.json");
+    let summary_json = std::fs::read_to_string(&summary_path)
+        .with_context(|| format!("Failed to read summary file: {}", summary_path.display()))?;
+    
+    let summary: Summary = serde_json::from_str(&summary_json)
+        .with_context(|| "Failed to parse summary JSON")?;
+    
+    Ok(summary)
+}
+
+fn get_available_arrow_languages(report_path: &PathBuf) -> Result<Vec<String>> {
+    let base_dir = if report_path.extension().is_some() {
+        report_path.with_extension("")
+    } else {
+        report_path.clone()
+    };
+    
+    let language_dir = base_dir.join("language");
+    if !language_dir.exists() {
+        return Ok(Vec::new());
+    }
+    
+    let mut languages = Vec::new();
+    for entry in std::fs::read_dir(&language_dir)? {
+        let entry = entry?;
+        if entry.path().is_dir() {
+            if let Some(lang_name) = entry.file_name().to_str() {
+                languages.push(lang_name.to_string());
+            }
+        }
+    }
+    
+    languages.sort();
+    Ok(languages)
+}
+
+fn load_language_records_parallel(report_path: &PathBuf, language: &str) -> Result<Vec<RepoRecord>> {
+    let base_dir = if report_path.extension().is_some() {
+        report_path.with_extension("")
+    } else {
+        report_path.clone()
+    };
+    
+    let lang_dir = base_dir.join("language").join(language);
+    if !lang_dir.exists() {
+        return Ok(Vec::new());
+    }
+    
+    // Collect all parquet files for this language
+    let mut parquet_files = Vec::new();
+    for entry in std::fs::read_dir(&lang_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) == Some("parquet") {
+            parquet_files.push(path);
+        }
+    }
+    
+    if parquet_files.is_empty() {
+        return Ok(Vec::new());
+    }
+    
+    println!("  Loading {} partition files for {} in parallel", parquet_files.len(), language);
+    
+    // Load partitions in parallel
+    let all_records: Vec<Vec<RepoRecord>> = parquet_files
+        .par_iter()
+        .filter_map(|file_path| {
+            match load_parquet_records(file_path) {
+                Ok(records) => Some(records),
+                Err(e) => {
+                    eprintln!("  Warning: Failed to load {}: {}", file_path.display(), e);
+                    None
+                }
+            }
+        })
+        .collect();
+    
+    // Flatten all records
+    let mut records: Vec<RepoRecord> = all_records.into_iter().flatten().collect();
+    
+    // Sort by average score for consistent ordering
+    records.sort_by(|a, b| a.average_score.partial_cmp(&b.average_score).unwrap_or(std::cmp::Ordering::Equal));
+    
+    Ok(records)
+}
+
+fn load_parquet_records(file_path: &PathBuf) -> Result<Vec<RepoRecord>> {
+    let file = File::open(file_path)
+        .with_context(|| format!("Failed to open parquet file: {}", file_path.display()))?;
+    
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
+    let record_batch_reader = builder.build()?;
+    
+    let mut records = Vec::new();
+    
+    for batch_result in record_batch_reader {
+        let batch = batch_result?;
+        
+        // Extract arrays from the batch
+        let language_array = batch.column(0).as_any().downcast_ref::<StringArray>()
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast language column"))?;
+        let repo_name_array = batch.column(1).as_any().downcast_ref::<StringArray>()
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast repo_name column"))?;
+        let document_count_array = batch.column(2).as_any().downcast_ref::<UInt64Array>()
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast document_count column"))?;
+        let total_score_array = batch.column(3).as_any().downcast_ref::<Float64Array>()
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast total_score column"))?;
+        let average_score_array = batch.column(4).as_any().downcast_ref::<Float64Array>()
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast average_score column"))?;
+        let min_score_array = batch.column(5).as_any().downcast_ref::<Float64Array>()
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast min_score column"))?;
+        let max_score_array = batch.column(6).as_any().downcast_ref::<Float64Array>()
+            .ok_or_else(|| anyhow::anyhow!("Failed to downcast max_score column"))?;
+        
+        // Convert to RepoRecord structs
+        for i in 0..batch.num_rows() {
+            let record = RepoRecord {
+                language: language_array.value(i).to_string(),
+                repo_name: repo_name_array.value(i).to_string(),
+                document_count: document_count_array.value(i),
+                total_score: total_score_array.value(i),
+                average_score: average_score_array.value(i),
+                min_score: min_score_array.value(i),
+                max_score: max_score_array.value(i),
+            };
+            records.push(record);
+        }
+    }
+    
+    Ok(records)
+}
+
+fn check_if_arrow_format(report_path: &PathBuf) -> bool {
+    let base_dir = if report_path.extension().is_some() {
+        report_path.with_extension("")
+    } else {
+        report_path.clone()
+    };
+    
+    // Check if Arrow format directory structure exists
+    base_dir.join("_summary.json").exists() && base_dir.join("language").exists()
+}
+
+fn process_language_arrow(
+    report_path: &PathBuf, 
+    language: &str, 
+    num_bins: usize, 
+    sample_size: usize
+) -> Result<Option<LanguageBinReport>> {
+    let records = load_language_records_parallel(report_path, language)?;
+    
+    if records.is_empty() {
+        return Ok(None);
+    }
+    
+    println!("  {} repositories loaded from Arrow format", records.len());
+    
+    // Convert RepoRecord to the tuple format expected by create_language_bins_optimized
+    let language_repos: Vec<(String, f64, usize)> = records.iter()
+        .map(|r| (r.repo_name.clone(), r.average_score, r.document_count as usize))
+        .collect();
+    
+    let min_score = records.first().unwrap().average_score;
+    let max_score = records.last().unwrap().average_score;
+    
+    println!("  {} repositories, score range: {:.6} to {:.6}", 
+             language_repos.len(), min_score, max_score);
+    
+    // Create bins for this language
+    let lang_bins = create_language_bins_optimized(&language_repos, num_bins, sample_size, min_score, max_score)?;
+    
+    // Calculate total documents from records
+    let total_documents: u64 = records.iter().map(|r| r.document_count).sum();
+    
+    let lang_bin_report = LanguageBinReport {
+        language: language.to_string(),
+        bins: lang_bins,
+        summary: LanguageBinSummary {
+            language: language.to_string(),
+            total_repositories: language_repos.len(),
+            total_documents: total_documents as usize,
+            num_bins,
+            sample_size_per_bin: sample_size,
+        },
+    };
+    
+    Ok(Some(lang_bin_report))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -415,12 +745,8 @@ fn aggregate_scores(source_dir: PathBuf, output: PathBuf) -> Result<()> {
         .map(|lang| lang.total_documents)
         .sum();
     
-    // Write report to file with streaming index
-    let mut output_file = File::create(&output)
-        .with_context(|| format!("Failed to create output file: {}", output.display()))?;
-    
-    // Create streaming index
-    let _streaming_report = create_streaming_report(&report, &mut output_file)?;
+    // Write report in Arrow/Parquet format with partitioning
+    write_arrow_partitioned_report(&report, &output)?;
     
     let elapsed = start_time.elapsed();
     println!("Report written to: {}", output.display());
@@ -456,33 +782,55 @@ fn bin_repositories(
         
         println!("Building new score report from source directory...");
         build_score_report(source_dir, report_path.clone())?;
-    } else if !report_path.exists() {
+    }
+    
+    // Check if this is an Arrow-format report or legacy JSON
+    let is_arrow_format = check_if_arrow_format(&report_path);
+    
+    if !is_arrow_format && !report_path.exists() {
         anyhow::bail!(
             "Score report file does not exist: {}. Use --build-report flag to create it from source data.",
             report_path.display()
         );
     }
     
-    println!("Using existing score report: {}", report_path.display());
+    println!("Using {} score report: {}", 
+             if is_arrow_format { "Arrow/Parquet" } else { "JSON" }, 
+             report_path.display());
     
-    // Load only the summary for progress reporting
-    let summary = load_score_report_summary(&report_path)?;
+    // Load summary based on format
+    let summary = if is_arrow_format {
+        load_arrow_summary(&report_path)?
+    } else {
+        load_score_report_summary(&report_path)?
+    };
 
-    // Create bins per language using streaming approach
-    println!("Creating language-specific bins with streaming processing...");
+    // Create bins per language using appropriate approach
+    println!("Creating language-specific bins with {} processing...", 
+             if is_arrow_format { "parallel Arrow" } else { "streaming JSON" });
     
-    // Get available languages from the report file
-    let available_languages = get_available_languages(&report_path)?;
+    // Get available languages based on format
+    let available_languages = if is_arrow_format {
+        get_available_arrow_languages(&report_path)?
+    } else {
+        get_available_languages(&report_path)?
+    };
     let total_languages = available_languages.len();
-    println!("Processing {} languages with streaming approach", total_languages);
+    println!("Processing {} languages in parallel", total_languages);
     
-    // Process languages in parallel using streaming
+    // Process languages in parallel using appropriate method
     let language_bins: HashMap<String, LanguageBinReport> = available_languages
         .par_iter()
         .filter_map(|language| {
             println!("Processing language: {}", language);
             
-            match process_language_streaming(&report_path, language, num_bins, sample_size) {
+            let result = if is_arrow_format {
+                process_language_arrow(&report_path, language, num_bins, sample_size)
+            } else {
+                process_language_streaming(&report_path, language, num_bins, sample_size)
+            };
+            
+            match result {
                 Ok(Some(lang_bin_report)) => {
                     println!("  ✓ Completed {} - {} repos, {} bins", 
                              language, lang_bin_report.summary.total_repositories, lang_bin_report.bins.len());

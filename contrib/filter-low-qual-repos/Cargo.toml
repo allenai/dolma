@@ -13,3 +13,8 @@ walkdir = "2.5"
 rayon = "1.10"
 rand = "0.8"
 indicatif = { version = "0.17", features = ["rayon"] }
+arrow = "53.0"
+arrow-array = "53.0"
+arrow-schema = "53.0"
+parquet = "53.0"
+tokio = { version = "1.0", features = ["rt-multi-thread"] }
