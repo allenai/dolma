@@ -1,16 +1,11 @@
 use clap::Parser;
 use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use rayon::prelude::*;
-use petgraph::{Graph, Directed};
-use petgraph::algo::toposort;
-use tree_sitter::{Language, Parser, Tree, Node};
-use dashmap::DashMap;
+use tree_sitter::{Language, Parser as TreeParser};
 use walkdir::WalkDir;
-use regex::Regex;
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -26,6 +21,10 @@ struct Args {
     /// Include external dependencies in resolution
     #[arg(long, default_value_t = false)]
     include_external: bool,
+    
+    /// Value of the file separator token
+    #[arg(long, default_value = "<|file_sep|>")]
+    file_separator_token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,14 +101,14 @@ impl ProcessingStats {
 }
 
 struct LanguageProcessor {
-    parser: Parser,
+    parser: TreeParser,
     language: Language,
     import_query: String,
 }
 
 impl LanguageProcessor {
     fn new(lang: &str) -> Result<Self> {
-        let mut parser = Parser::new();
+        let mut parser = TreeParser::new();
         let (language, import_query) = match lang.to_lowercase().as_str() {
             "python" => (tree_sitter_python::language(), PYTHON_IMPORT_QUERY),
             "rust" => (tree_sitter_rust::language(), RUST_IMPORT_QUERY),
@@ -117,13 +116,13 @@ impl LanguageProcessor {
             "typescript" => (tree_sitter_typescript::language_typescript(), TS_IMPORT_QUERY),
             "javascript" => (tree_sitter_javascript::language(), JS_IMPORT_QUERY),
             "java" => (tree_sitter_java::language(), JAVA_IMPORT_QUERY),
-            "sql" => (tree_sitter_sql::language(), SQL_IMPORT_QUERY),
+            "sql" => return Err(anyhow::anyhow!("SQL import resolution not supported")),  // SQL doesn't have imports
             "c#" | "csharp" => (tree_sitter_c_sharp::language(), CSHARP_IMPORT_QUERY),
             "go" => (tree_sitter_go::language(), GO_IMPORT_QUERY),
             _ => return Err(anyhow::anyhow!("Unsupported language: {}", lang)),
         };
         
-        parser.set_language(language)
+        parser.set_language(&language)
             .map_err(|e| anyhow::anyhow!("Failed to set language: {}", e))?;
         
         Ok(Self {
@@ -139,7 +138,7 @@ impl LanguageProcessor {
         
         let mut imports = Vec::new();
         let mut cursor = tree_sitter::QueryCursor::new();
-        let query = tree_sitter::Query::new(self.language, &self.import_query)
+        let query = tree_sitter::Query::new(&self.language, &self.import_query)
             .map_err(|e| anyhow::anyhow!("Failed to create query: {}", e))?;
         
         let matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
@@ -273,6 +272,7 @@ fn resolve_dependencies(
     documents: &[Document],
     language: &str,
     include_external: bool,
+    file_separator_token: &str,
 ) -> Result<(Vec<Document>, ProcessingStats)> {
     let mut processor = LanguageProcessor::new(language)?;
     let mut stats = ProcessingStats::new();
@@ -296,9 +296,7 @@ fn resolve_dependencies(
             match import.import_type {
                 ImportType::Local => {
                     if let Some(dep_doc) = find_local_dependency(&import.module_path, &doc_map, &doc.metadata.path) {
-                        resolved_text.push_str("\n\n");
-                        resolved_text.push_str(&format!("# Injected from: {}", dep_doc.metadata.path));
-                        resolved_text.push_str("\n");
+                        resolved_text.push_str(file_separator_token);
                         resolved_text.push_str(&dep_doc.text);
                         stats.imports_resolved += 1;
                     }
@@ -321,11 +319,11 @@ fn resolve_dependencies(
     Ok((resolved_docs, stats))
 }
 
-fn find_local_dependency(
+fn find_local_dependency<'a>(
     import_path: &str,
-    doc_map: &HashMap<String, &Document>,
+    doc_map: &'a HashMap<String, &'a Document>,
     current_path: &str,
-) -> Option<&Document> {
+) -> Option<&'a Document> {
     // Simplified local dependency resolution
     // In a real implementation, this would need language-specific path resolution logic
     
@@ -347,24 +345,15 @@ fn find_local_dependency(
     None
 }
 
-fn concatenate_repo_files(documents: Vec<Document>) -> Document {
+fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) -> Document {
     if documents.is_empty() {
         panic!("Cannot concatenate empty document list");
     }
     
     let first_doc = &documents[0];
-    let mut concatenated_text = String::new();
-    let mut total_length = 0u64;
-    
-    for (i, doc) in documents.iter().enumerate() {
-        if i > 0 {
-            concatenated_text.push_str("\n\n");
-            concatenated_text.push_str(&format!("# File: {}", doc.metadata.path));
-            concatenated_text.push_str("\n");
-        }
-        concatenated_text.push_str(&doc.text);
-        total_length += doc.metadata.length_bytes;
-    }
+    let document_texts: Vec<String> = documents.iter().map(|doc| doc.text.clone()).collect();
+    let concatenated_text = document_texts.join(file_separator_token);
+    let total_length: u64 = documents.iter().map(|doc| doc.metadata.length_bytes).sum();
     
     let mut result = first_doc.clone();
     result.text = concatenated_text;
@@ -379,7 +368,8 @@ fn process_language_directory(
     input_dir: &Path, 
     output_dir: &Path, 
     language: &str, 
-    include_external: bool
+    include_external: bool,
+    file_separator_token: &str,
 ) -> Result<ProcessingStats> {
     let lang_dir = input_dir.join(language);
     if !lang_dir.exists() {
@@ -405,11 +395,11 @@ fn process_language_directory(
             let mut file_stats = ProcessingStats::new();
             let mut output_docs = Vec::new();
             
-            for (repo_key, repo_docs) in grouped {
-                let (resolved_docs, stats) = resolve_dependencies(&repo_docs, language, include_external)?;
+            for (_repo_key, repo_docs) in grouped {
+                let (resolved_docs, stats) = resolve_dependencies(&repo_docs, language, include_external, file_separator_token)?;
                 file_stats.add(&stats);
                 
-                let concatenated = concatenate_repo_files(resolved_docs);
+                let concatenated = concatenate_repo_files(resolved_docs, file_separator_token);
                 output_docs.push(concatenated);
             }
             
@@ -447,7 +437,7 @@ fn main() -> Result<()> {
         .par_iter()
         .map(|&language| {
             println!("Processing language: {}", language);
-            process_language_directory(&args.input_dir, &args.output_dir, language, args.include_external)
+            process_language_directory(&args.input_dir, &args.output_dir, language, args.include_external, &args.file_separator_token)
         })
         .collect();
     
