@@ -1,14 +1,14 @@
+use anyhow::{Context, Result};
 use clap::Parser;
-use anyhow::{Result, Context};
+use indicatif::{ProgressBar, ProgressStyle};
+use log::{debug, info, warn};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use rayon::prelude::*;
 use tree_sitter::{Language, Parser as TreeParser};
 use walkdir::WalkDir;
-use indicatif::{ProgressBar, ProgressStyle};
-use log::{info, debug, warn, error};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -16,15 +16,15 @@ struct Args {
     /// Input directory containing JSONL.zst files organized by language
     #[arg(short, long)]
     input_dir: PathBuf,
-    
+
     /// Output directory for processed files
     #[arg(short, long)]
     output_dir: PathBuf,
-    
+
     /// Include external dependencies in resolution
     #[arg(long, default_value_t = false)]
     include_external: bool,
-    
+
     /// Value of the file separator token
     #[arg(long, default_value = "<|file_sep|>")]
     file_separator_token: String,
@@ -94,19 +94,20 @@ impl ProcessingStats {
             imports_resolved: 0,
         }
     }
-    
+
     fn add(&mut self, other: &ProcessingStats) {
         self.original_length += other.original_length;
         self.processed_length += other.processed_length;
         self.files_processed += other.files_processed;
         self.imports_resolved += other.imports_resolved;
     }
-    
+
     fn average_change(&self) -> f64 {
         if self.files_processed == 0 {
             0.0
         } else {
-            (self.processed_length as f64 - self.original_length as f64) / self.files_processed as f64
+            (self.processed_length as f64 - self.original_length as f64)
+                / self.files_processed as f64
         }
     }
 }
@@ -124,52 +125,64 @@ impl LanguageProcessor {
             "python" => (tree_sitter_python::language(), PYTHON_IMPORT_QUERY),
             "rust" => (tree_sitter_rust::language(), RUST_IMPORT_QUERY),
             "cpp" | "c++" => (tree_sitter_cpp::language(), CPP_IMPORT_QUERY),
-            "typescript" => (tree_sitter_typescript::language_typescript(), TS_IMPORT_QUERY),
+            "typescript" => (
+                tree_sitter_typescript::language_typescript(),
+                TS_IMPORT_QUERY,
+            ),
             "javascript" => (tree_sitter_javascript::language(), JS_IMPORT_QUERY),
             "java" => (tree_sitter_java::language(), JAVA_IMPORT_QUERY),
-            "sql" => return Err(anyhow::anyhow!("SQL import resolution not supported")),  // SQL doesn't have imports
+            "sql" => return Err(anyhow::anyhow!("SQL import resolution not supported")), // SQL doesn't have imports
             "c#" | "csharp" => (tree_sitter_c_sharp::language(), CSHARP_IMPORT_QUERY),
             "go" => (tree_sitter_go::language(), GO_IMPORT_QUERY),
             _ => return Err(anyhow::anyhow!("Unsupported language: {}", lang)),
         };
-        
-        parser.set_language(&language)
+
+        parser
+            .set_language(&language)
             .map_err(|e| anyhow::anyhow!("Failed to set language: {}", e))?;
-        
+
         Ok(Self {
             parser,
             language,
             import_query: import_query.to_string(),
         })
     }
-    
+
     fn extract_imports(&mut self, source: &str) -> Result<Vec<ImportInfo>> {
-        debug!("Extracting imports from source code ({} bytes)", source.len());
-        let tree = self.parser.parse(source, None)
+        debug!(
+            "Extracting imports from source code ({} bytes)",
+            source.len()
+        );
+        let tree = self
+            .parser
+            .parse(source, None)
             .context("Failed to parse source code")?;
-        
+
         let mut imports = Vec::new();
         let mut cursor = tree_sitter::QueryCursor::new();
         let query = tree_sitter::Query::new(&self.language, &self.import_query)
             .map_err(|e| anyhow::anyhow!("Failed to create query: {}", e))?;
-        
+
         let matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
-        
+
         for match_ in matches {
             for capture in match_.captures {
                 let node = capture.node;
                 if let Ok(import_text) = node.utf8_text(source.as_bytes()) {
                     let import_info = self.parse_import(import_text)?;
-                    debug!("Found import: {} (type: {:?})", import_info.module_path, import_info.import_type);
+                    debug!(
+                        "Found import: {} (type: {:?})",
+                        import_info.module_path, import_info.import_type
+                    );
                     imports.push(import_info);
                 }
             }
         }
-        
+
         debug!("Extracted {} imports from source", imports.len());
         Ok(imports)
     }
-    
+
     fn parse_import(&self, import_text: &str) -> Result<ImportInfo> {
         // This is a simplified import parsing - would need language-specific logic
         let import_type = if import_text.contains("std") || import_text.contains("os") {
@@ -179,7 +192,7 @@ impl LanguageProcessor {
         } else {
             ImportType::External
         };
-        
+
         Ok(ImportInfo {
             module_path: import_text.to_string(),
             import_type,
@@ -224,7 +237,6 @@ const JAVA_IMPORT_QUERY: &str = r#"
   (scoped_identifier) @import)
 "#;
 
-
 const CSHARP_IMPORT_QUERY: &str = r#"
 (using_directive
   name: (identifier) @import)
@@ -242,60 +254,78 @@ fn read_jsonl_zst_file(file_path: &Path) -> Result<Vec<Document>> {
     let file = std::fs::File::open(file_path)?;
     let decoder = zstd::Decoder::new(file)?;
     let reader = std::io::BufReader::new(decoder);
-    
+
     let mut documents = Vec::new();
     let mut line_count = 0;
     for line in std::io::BufRead::lines(reader) {
         let line = line?;
         line_count += 1;
         if !line.trim().is_empty() {
-            let doc: Document = serde_json::from_str(&line)
-                .with_context(|| format!("Failed to parse JSON on line {} in file {}", line_count, file_path.display()))?;
+            let doc: Document = serde_json::from_str(&line).with_context(|| {
+                format!(
+                    "Failed to parse JSON on line {} in file {}",
+                    line_count,
+                    file_path.display()
+                )
+            })?;
             documents.push(doc);
         }
     }
-    
-    info!("Loaded {} documents from {} ({} lines processed)", documents.len(), file_path.display(), line_count);
+
+    info!(
+        "Loaded {} documents from {} ({} lines processed)",
+        documents.len(),
+        file_path.display(),
+        line_count
+    );
     Ok(documents)
 }
 
 fn write_jsonl_zst_file(documents: &[Document], output_path: &Path) -> Result<()> {
-    debug!("Writing {} documents to {}", documents.len(), output_path.display());
+    debug!(
+        "Writing {} documents to {}",
+        documents.len(),
+        output_path.display()
+    );
     std::fs::create_dir_all(output_path.parent().unwrap())?;
     let file = std::fs::File::create(output_path)?;
     let encoder = zstd::Encoder::new(file, 0)?;
     let mut writer = std::io::BufWriter::new(encoder.auto_finish());
-    
+
     let total_size_before: usize = documents.iter().map(|doc| doc.text.len()).sum();
-    
+
     for doc in documents {
         let json = serde_json::to_string(doc)?;
         std::io::Write::write_all(&mut writer, json.as_bytes())?;
         std::io::Write::write_all(&mut writer, b"\n")?;
     }
-    
-    info!("Successfully wrote {} documents ({} bytes total content) to {}", 
-          documents.len(), total_size_before, output_path.display());
-    
+
+    info!(
+        "Successfully wrote {} documents ({} bytes total content) to {}",
+        documents.len(),
+        total_size_before,
+        output_path.display()
+    );
+
     Ok(())
 }
 
 fn group_documents_by_repo(documents: Vec<Document>) -> HashMap<String, Vec<Document>> {
     debug!("Grouping {} documents by repository", documents.len());
     let mut grouped = HashMap::new();
-    
+
     for doc in documents {
         let repo_name = doc.metadata.repo_name.as_deref().unwrap_or("unknown");
         let language = doc.metadata.language.as_deref().unwrap_or("unknown");
         let key = format!("{}_{}", repo_name, language);
         grouped.entry(key).or_insert_with(Vec::new).push(doc);
     }
-    
+
     info!("Grouped documents into {} repositories", grouped.len());
     for (repo_key, docs) in &grouped {
         debug!("Repository '{}': {} documents", repo_key, docs.len());
     }
-    
+
     grouped
 }
 
@@ -305,85 +335,126 @@ fn resolve_dependencies(
     include_external: bool,
     file_separator_token: &str,
 ) -> Result<(Vec<Document>, ProcessingStats)> {
-    info!("Starting dependency resolution for {} documents in {}", documents.len(), language);
+    info!(
+        "Starting dependency resolution for {} documents in {}",
+        documents.len(),
+        language
+    );
     let mut processor = LanguageProcessor::new(language)?;
     let mut stats = ProcessingStats::new();
-    
+
     // Create a map of file paths to documents for quick lookup
     let doc_map: HashMap<String, &Document> = documents
         .iter()
         .filter_map(|doc| doc.metadata.path.as_ref().map(|path| (path.clone(), doc)))
         .collect();
-    
-    info!("Created document map with {} entries for dependency lookup", doc_map.len());
-    
+
+    info!(
+        "Created document map with {} entries for dependency lookup",
+        doc_map.len()
+    );
+
     let mut resolved_docs = Vec::new();
-    
+
     for (idx, doc) in documents.iter().enumerate() {
-        debug!("Processing document {}/{}: {}", idx + 1, documents.len(), 
-               doc.metadata.path.as_deref().unwrap_or("<unknown path>"));
-        
+        debug!(
+            "Processing document {}/{}: {}",
+            idx + 1,
+            documents.len(),
+            doc.metadata.path.as_deref().unwrap_or("<unknown path>")
+        );
+
         stats.original_length += doc.text.len() as u64;
         stats.files_processed += 1;
-        
+
         let imports = processor.extract_imports(&doc.text)?;
         let mut resolved_text = doc.text.clone();
         let original_size = resolved_text.len();
-        
+
         if !imports.is_empty() {
             debug!("Found {} imports to resolve", imports.len());
         }
-        
+
         for import in imports {
-            debug!("Resolving import: {} (type: {:?})", import.module_path, import.import_type);
+            debug!(
+                "Resolving import: {} (type: {:?})",
+                import.module_path, import.import_type
+            );
             match import.import_type {
                 ImportType::Local => {
                     if let Some(current_path) = &doc.metadata.path {
-                        if let Some(dep_doc) = find_local_dependency(&import.module_path, &doc_map, current_path) {
-                            info!("Successfully resolved local dependency: {} -> {}", 
-                                 import.module_path, dep_doc.metadata.path.as_deref().unwrap_or("<unknown>"));
+                        if let Some(dep_doc) =
+                            find_local_dependency(&import.module_path, &doc_map, current_path)
+                        {
+                            info!(
+                                "Successfully resolved local dependency: {} -> {}",
+                                import.module_path,
+                                dep_doc.metadata.path.as_deref().unwrap_or("<unknown>")
+                            );
                             resolved_text.push_str("\n");
                             resolved_text.push_str(file_separator_token);
                             resolved_text.push_str("\n");
                             resolved_text.push_str(&dep_doc.text);
                             stats.imports_resolved += 1;
                         } else {
-                            warn!("Could not resolve local dependency: {} from {}", 
-                                 import.module_path, current_path);
+                            warn!(
+                                "Could not resolve local dependency: {} from {}",
+                                import.module_path, current_path
+                            );
                         }
                     } else {
-                        warn!("Document has no path, cannot resolve local import: {}", import.module_path);
+                        warn!(
+                            "Document has no path, cannot resolve local import: {}",
+                            import.module_path
+                        );
                     }
                 }
                 ImportType::External if include_external => {
-                    debug!("External dependency resolution not implemented: {}", import.module_path);
+                    debug!(
+                        "External dependency resolution not implemented: {}",
+                        import.module_path
+                    );
                 }
                 ImportType::Standard => {
                     debug!("Skipping standard library import: {}", import.module_path);
                 }
                 _ => {
-                    debug!("Skipping import: {} (type: {:?})", import.module_path, import.import_type);
+                    debug!(
+                        "Skipping import: {} (type: {:?})",
+                        import.module_path, import.import_type
+                    );
                 }
             }
         }
-        
+
         let size_change = resolved_text.len() as i64 - original_size as i64;
         if size_change > 0 {
-            debug!("Document size increased by {} bytes after dependency injection", size_change);
+            debug!(
+                "Document size increased by {} bytes after dependency injection",
+                size_change
+            );
         }
-        
+
         stats.processed_length += resolved_text.len() as u64;
-        
+
         let mut new_doc = doc.clone();
         new_doc.text = resolved_text;
         resolved_docs.push(new_doc);
     }
-    
-    info!("Dependency resolution complete: {}/{} imports resolved, {} documents processed", 
-          stats.imports_resolved, 
-          documents.iter().map(|doc| processor.extract_imports(&doc.text).unwrap_or_default().len()).sum::<usize>(),
-          stats.files_processed);
-    
+
+    info!(
+        "Dependency resolution complete: {}/{} imports resolved, {} documents processed",
+        stats.imports_resolved,
+        documents
+            .iter()
+            .map(|doc| processor
+                .extract_imports(&doc.text)
+                .unwrap_or_default()
+                .len())
+            .sum::<usize>(),
+        stats.files_processed
+    );
+
     Ok((resolved_docs, stats))
 }
 
@@ -392,8 +463,11 @@ fn find_local_dependency<'a>(
     doc_map: &'a HashMap<String, &'a Document>,
     current_path: &str,
 ) -> Option<&'a Document> {
-    debug!("Looking for local dependency '{}' from '{}'", import_path, current_path);
-    
+    debug!(
+        "Looking for local dependency '{}' from '{}'",
+        import_path, current_path
+    );
+
     let current_dir = Path::new(current_path).parent()?;
     let potential_paths = vec![
         format!("{}/{}.py", current_dir.display(), import_path),
@@ -402,9 +476,12 @@ fn find_local_dependency<'a>(
         format!("{}/{}.js", current_dir.display(), import_path),
         format!("{}/{}.ts", current_dir.display(), import_path),
     ];
-    
-    debug!("Checking {} potential paths for dependency", potential_paths.len());
-    
+
+    debug!(
+        "Checking {} potential paths for dependency",
+        potential_paths.len()
+    );
+
     for path in &potential_paths {
         debug!("Checking path: {}", path);
         if let Some(doc) = doc_map.get(path) {
@@ -412,8 +489,11 @@ fn find_local_dependency<'a>(
             return Some(doc);
         }
     }
-    
-    debug!("No dependency found for '{}' in any of the checked paths", import_path);
+
+    debug!(
+        "No dependency found for '{}' in any of the checked paths",
+        import_path
+    );
     None
 }
 
@@ -421,35 +501,43 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
     if documents.is_empty() {
         panic!("Cannot concatenate empty document list");
     }
-    
-    info!("Concatenating {} documents into single repository file", documents.len());
-    
+
+    info!(
+        "Concatenating {} documents into single repository file",
+        documents.len()
+    );
+
     let first_doc = &documents[0];
     let document_texts: Vec<String> = documents.iter().map(|doc| doc.text.clone()).collect();
     let original_total_size: usize = document_texts.iter().map(|text| text.len()).sum();
-    
+
     let concatenated_text = document_texts.join(&format!("\n{}\n", file_separator_token));
     let final_size = concatenated_text.len();
     let separator_overhead = final_size - original_total_size;
-    
-    let total_length: u64 = documents.iter().filter_map(|doc| doc.metadata.length_bytes).sum();
-    
+
+    let total_length: u64 = documents
+        .iter()
+        .filter_map(|doc| doc.metadata.length_bytes)
+        .sum();
+
     let mut result = first_doc.clone();
     result.text = concatenated_text;
     result.metadata.length_bytes = Some(total_length);
     let repo_name = first_doc.metadata.repo_name.as_deref().unwrap_or("unknown");
     result.metadata.path = Some(format!("{}_concatenated", repo_name));
-    
-    info!("Concatenation complete: {} bytes total ({} original + {} separator overhead)", 
-          final_size, original_total_size, separator_overhead);
-    
+
+    info!(
+        "Concatenation complete: {} bytes total ({} original + {} separator overhead)",
+        final_size, original_total_size, separator_overhead
+    );
+
     result
 }
 
 fn process_language_directory(
-    input_dir: &Path, 
-    output_dir: &Path, 
-    language: &str, 
+    input_dir: &Path,
+    output_dir: &Path,
+    language: &str,
     include_external: bool,
     file_separator_token: &str,
 ) -> Result<ProcessingStats> {
@@ -457,161 +545,187 @@ fn process_language_directory(
     if !lang_dir.exists() {
         return Ok(ProcessingStats::new());
     }
-    
+
     let mut total_stats = ProcessingStats::new();
     let files: Vec<_> = WalkDir::new(&lang_dir)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "zst"))
         .collect();
-    
+
     if files.is_empty() {
         println!("No .zst files found in {}", lang_dir.display());
         return Ok(ProcessingStats::new());
     }
-    
+
     // Create progress bar for this language
     let pb = ProgressBar::new(files.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
             .unwrap()
-            .progress_chars("##-")
+            .progress_chars("##-"),
     );
     pb.set_message(format!("Processing {} files", language));
-    
+
     let pb = Arc::new(Mutex::new(pb));
-    
+
     let results: Vec<Result<ProcessingStats>> = files
         .par_iter()
         .map(|entry| {
             let file_path = entry.path();
-            
+
             debug!("Processing file: {}", file_path.display());
             let documents = read_jsonl_zst_file(file_path)?;
             let grouped = group_documents_by_repo(documents);
-            
+
             let mut file_stats = ProcessingStats::new();
             let mut output_docs = Vec::new();
-            
+
             for (repo_key, repo_docs) in grouped {
-                info!("Processing repository: {} ({} documents)", repo_key, repo_docs.len());
-                let (resolved_docs, stats) = resolve_dependencies(&repo_docs, language, include_external, file_separator_token)?;
+                info!(
+                    "Processing repository: {} ({} documents)",
+                    repo_key,
+                    repo_docs.len()
+                );
+                let (resolved_docs, stats) = resolve_dependencies(
+                    &repo_docs,
+                    language,
+                    include_external,
+                    file_separator_token,
+                )?;
                 file_stats.add(&stats);
-                
+
                 let concatenated = concatenate_repo_files(resolved_docs, file_separator_token);
                 output_docs.push(concatenated);
                 info!("Completed processing repository: {}", repo_key);
             }
-            
+
             let output_file = output_dir
                 .join(language)
                 .join(file_path.file_name().unwrap());
             write_jsonl_zst_file(&output_docs, &output_file)?;
-            
+
             // Update progress bar
             if let Ok(pb) = pb.lock() {
                 pb.inc(1);
-                pb.set_message(format!("Processing {} - {}", language, file_path.file_name().unwrap().to_string_lossy()));
+                pb.set_message(format!(
+                    "Processing {} - {}",
+                    language,
+                    file_path.file_name().unwrap().to_string_lossy()
+                ));
             }
-            
+
             Ok(file_stats)
         })
         .collect();
-    
+
     // Finish progress bar
     if let Ok(pb) = pb.lock() {
         pb.finish_with_message(format!("Completed {} ({} files)", language, files.len()));
     }
-    
+
     for result in results {
         total_stats.add(&result?);
     }
-    
+
     Ok(total_stats)
 }
 
 fn process_language_directory_direct(
-    input_dir: &Path, 
-    output_dir: &Path, 
-    language: &str, 
+    input_dir: &Path,
+    output_dir: &Path,
+    language: &str,
     include_external: bool,
     file_separator_token: &str,
 ) -> Result<ProcessingStats> {
     if !input_dir.exists() {
         return Ok(ProcessingStats::new());
     }
-    
+
     let mut total_stats = ProcessingStats::new();
     let files: Vec<_> = WalkDir::new(input_dir)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "zst"))
         .collect();
-    
+
     if files.is_empty() {
         println!("No .zst files found in {}", input_dir.display());
         return Ok(ProcessingStats::new());
     }
-    
+
     // Create progress bar for this language directory
     let pb = ProgressBar::new(files.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
             .unwrap()
-            .progress_chars("##-")
+            .progress_chars("##-"),
     );
     pb.set_message(format!("Processing {} files", language));
-    
+
     let pb = Arc::new(Mutex::new(pb));
-    
+
     let results: Vec<Result<ProcessingStats>> = files
         .par_iter()
         .map(|entry| {
             let file_path = entry.path();
-            
+
             debug!("Processing file: {}", file_path.display());
             let documents = read_jsonl_zst_file(file_path)?;
             let grouped = group_documents_by_repo(documents);
-            
+
             let mut file_stats = ProcessingStats::new();
             let mut output_docs = Vec::new();
-            
+
             for (repo_key, repo_docs) in grouped {
-                info!("Processing repository: {} ({} documents)", repo_key, repo_docs.len());
-                let (resolved_docs, stats) = resolve_dependencies(&repo_docs, language, include_external, file_separator_token)?;
+                info!(
+                    "Processing repository: {} ({} documents)",
+                    repo_key,
+                    repo_docs.len()
+                );
+                let (resolved_docs, stats) = resolve_dependencies(
+                    &repo_docs,
+                    language,
+                    include_external,
+                    file_separator_token,
+                )?;
                 file_stats.add(&stats);
-                
+
                 let concatenated = concatenate_repo_files(resolved_docs, file_separator_token);
                 output_docs.push(concatenated);
                 info!("Completed processing repository: {}", repo_key);
             }
-            
+
             // Calculate relative path from input_dir to maintain directory structure
             let relative_path = file_path.strip_prefix(input_dir)?;
             let output_file = output_dir.join(relative_path);
             write_jsonl_zst_file(&output_docs, &output_file)?;
-            
+
             // Update progress bar
             if let Ok(pb) = pb.lock() {
                 pb.inc(1);
-                pb.set_message(format!("Processing {} - {}", language, file_path.file_name().unwrap().to_string_lossy()));
+                pb.set_message(format!(
+                    "Processing {} - {}",
+                    language,
+                    file_path.file_name().unwrap().to_string_lossy()
+                ));
             }
-            
+
             Ok(file_stats)
         })
         .collect();
-    
+
     // Finish progress bar
     if let Ok(pb) = pb.lock() {
         pb.finish_with_message(format!("Completed {} ({} files)", language, files.len()));
     }
-    
+
     for result in results {
         total_stats.add(&result?);
     }
-    
+
     Ok(total_stats)
 }
 
@@ -640,34 +754,53 @@ fn main() -> Result<()> {
         .filter_level(log::LevelFilter::Info)
         .init();
     let args = Args::parse();
-    
+
     info!("Starting tree-fitter processing");
     info!("Input directory: {}", args.input_dir.display());
     info!("Output directory: {}", args.output_dir.display());
     info!("Include external dependencies: {}", args.include_external);
     info!("File separator token: '{}'", args.file_separator_token);
-    
+
     std::fs::create_dir_all(&args.output_dir)?;
-    
+
     let mut overall_stats = ProcessingStats::new();
-    
+
     // Try to detect language from input directory path
     if let Some(detected_language) = detect_language_from_path(&args.input_dir) {
-        info!("Detected language from input directory: {}", detected_language);
+        info!(
+            "Detected language from input directory: {}",
+            detected_language
+        );
         info!("Processing language: {}", detected_language);
-        
-        let stats = process_language_directory_direct(&args.input_dir, &args.output_dir, &detected_language, args.include_external, &args.file_separator_token)?;
+
+        let stats = process_language_directory_direct(
+            &args.input_dir,
+            &args.output_dir,
+            &detected_language,
+            args.include_external,
+            &args.file_separator_token,
+        )?;
         overall_stats.add(&stats);
-        info!("Completed processing for detected language: {}", detected_language);
+        info!(
+            "Completed processing for detected language: {}",
+            detected_language
+        );
     } else {
         // Fallback to processing all languages in subdirectories
         let languages = vec![
-            "Python", "Rust", "C++", "TypeScript", "JavaScript", 
-            "Java", "SQL", "C#", "Go"
+            "Python",
+            "Rust",
+            "C++",
+            "TypeScript",
+            "JavaScript",
+            "Java",
+            "SQL",
+            "C#",
+            "Go",
         ];
-        
+
         info!("Starting parallel processing of language directories...");
-        
+
         // Filter languages that actually exist in the input directory
         let existing_languages: Vec<&str> = languages
             .iter()
@@ -683,48 +816,74 @@ fn main() -> Result<()> {
             })
             .copied()
             .collect();
-        
+
         if existing_languages.is_empty() {
-            warn!("No language directories found in {}", args.input_dir.display());
+            warn!(
+                "No language directories found in {}",
+                args.input_dir.display()
+            );
             return Ok(());
         }
-        
-        info!("Found {} language directories to process: {:?}", existing_languages.len(), existing_languages);
-        
+
+        info!(
+            "Found {} language directories to process: {:?}",
+            existing_languages.len(),
+            existing_languages
+        );
+
         let results: Vec<Result<ProcessingStats>> = existing_languages
             .par_iter()
             .map(|&language| {
-                process_language_directory(&args.input_dir, &args.output_dir, language, args.include_external, &args.file_separator_token)
+                process_language_directory(
+                    &args.input_dir,
+                    &args.output_dir,
+                    language,
+                    args.include_external,
+                    &args.file_separator_token,
+                )
             })
             .collect();
-        
+
         for result in results {
             overall_stats.add(&result?);
         }
         info!("Completed parallel processing of all language directories");
     }
-    
+
     info!("\n=== Processing Statistics ===");
     info!("Files processed: {}", overall_stats.files_processed);
     info!("Imports resolved: {}", overall_stats.imports_resolved);
-    info!("Original total length: {} bytes", overall_stats.original_length);
-    info!("Processed total length: {} bytes", overall_stats.processed_length);
-    info!("Average change per document: {:.2} bytes", overall_stats.average_change());
+    info!(
+        "Original total length: {} bytes",
+        overall_stats.original_length
+    );
+    info!(
+        "Processed total length: {} bytes",
+        overall_stats.processed_length
+    );
+    info!(
+        "Average change per document: {:.2} bytes",
+        overall_stats.average_change()
+    );
     let size_change_percent = if overall_stats.original_length > 0 {
-        ((overall_stats.processed_length as f64 - overall_stats.original_length as f64) / overall_stats.original_length as f64) * 100.0
+        ((overall_stats.processed_length as f64 - overall_stats.original_length as f64)
+            / overall_stats.original_length as f64)
+            * 100.0
     } else {
         0.0
     };
     info!("Total size change: {:.2}%", size_change_percent);
-    
+
     if overall_stats.imports_resolved > 0 {
-        info!("Successfully injected {} dependencies across {} files", 
-             overall_stats.imports_resolved, overall_stats.files_processed);
+        info!(
+            "Successfully injected {} dependencies across {} files",
+            overall_stats.imports_resolved, overall_stats.files_processed
+        );
     } else {
         info!("No dependencies were resolved and injected");
     }
-    
+
     info!("Tree-fitter processing completed successfully");
-    
+
     Ok(())
 }
