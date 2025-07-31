@@ -4,7 +4,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use log::{debug, info, warn};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tree_sitter::{Language, Parser as TreeParser};
@@ -70,7 +70,7 @@ struct ImportInfo {
     import_type: ImportType,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 enum ImportType {
     Standard,
     Local,
@@ -83,6 +83,76 @@ struct ProcessingStats {
     processed_length: u64,
     files_processed: usize,
     imports_resolved: usize,
+}
+
+#[derive(Debug, Clone)]
+struct DependencyGraph {
+    nodes: HashSet<String>,
+    edges: HashMap<String, HashSet<String>>,
+    in_degree: HashMap<String, usize>,
+}
+
+impl DependencyGraph {
+    fn new() -> Self {
+        Self {
+            nodes: HashSet::new(),
+            edges: HashMap::new(),
+            in_degree: HashMap::new(),
+        }
+    }
+
+    fn add_node(&mut self, node: String) {
+        if self.nodes.insert(node.clone()) {
+            self.edges.insert(node.clone(), HashSet::new());
+            self.in_degree.insert(node, 0);
+        }
+    }
+
+    fn add_edge(&mut self, from: String, to: String) {
+        self.add_node(from.clone());
+        self.add_node(to.clone());
+        
+        if self.edges.get_mut(&from).unwrap().insert(to.clone()) {
+            *self.in_degree.get_mut(&to).unwrap() += 1;
+        }
+    }
+
+    fn topological_sort(&self) -> Result<Vec<String>> {
+        let mut in_degree = self.in_degree.clone();
+        let mut queue = VecDeque::new();
+        let mut result = Vec::new();
+
+        for (node, &degree) in &in_degree {
+            if degree == 0 {
+                queue.push_back(node.clone());
+            }
+        }
+
+        while let Some(node) = queue.pop_front() {
+            result.push(node.clone());
+
+            if let Some(neighbors) = self.edges.get(&node) {
+                for neighbor in neighbors {
+                    let degree = in_degree.get_mut(neighbor).unwrap();
+                    *degree -= 1;
+                    if *degree == 0 {
+                        queue.push_back(neighbor.clone());
+                    }
+                }
+            }
+        }
+
+        if result.len() != self.nodes.len() {
+            let result_set: HashSet<String> = result.iter().cloned().collect();
+            let remaining: Vec<_> = self.nodes.difference(&result_set).collect();
+            return Err(anyhow::anyhow!(
+                "Circular dependency detected among: {:?}",
+                remaining
+            ));
+        }
+
+        Ok(result)
+    }
 }
 
 impl ProcessingStats {
@@ -198,6 +268,57 @@ impl LanguageProcessor {
             import_type,
         })
     }
+
+    fn extract_python_dependencies(&mut self, source: &str, current_path: &str) -> Result<Vec<ImportInfo>> {
+        debug!("Extracting Python dependencies from {}", current_path);
+        let tree = self
+            .parser
+            .parse(source, None)
+            .context("Failed to parse Python source code")?;
+
+        let mut imports = Vec::new();
+        let mut cursor = tree_sitter::QueryCursor::new();
+        let query = tree_sitter::Query::new(&self.language, &self.import_query)
+            .map_err(|e| anyhow::anyhow!("Failed to create Python import query: {}", e))?;
+
+        let matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
+
+        for match_ in matches {
+            for capture in match_.captures {
+                let node = capture.node;
+                if let Ok(import_text) = node.utf8_text(source.as_bytes()) {
+                    let cleaned_import = import_text.trim_matches('"').trim_matches('\'');
+                    
+                    let import_type = if cleaned_import.starts_with('.') {
+                        ImportType::Local
+                    } else if is_python_standard_library(cleaned_import) {
+                        ImportType::Standard
+                    } else {
+                        ImportType::External
+                    };
+
+                    let resolved_path = if import_type == ImportType::Local {
+                        resolve_python_relative_import(cleaned_import, current_path)
+                    } else {
+                        cleaned_import.to_string()
+                    };
+
+                    debug!(
+                        "Found Python import: {} -> {} (type: {:?})",
+                        cleaned_import, resolved_path, import_type
+                    );
+
+                    imports.push(ImportInfo {
+                        module_path: resolved_path,
+                        import_type,
+                    });
+                }
+            }
+        }
+
+        debug!("Extracted {} Python imports from {}", imports.len(), current_path);
+        Ok(imports)
+    }
 }
 
 // Tree-sitter query strings for different languages
@@ -248,6 +369,99 @@ const GO_IMPORT_QUERY: &str = r#"
 (import_spec
   path: (interpreted_string_literal) @import)
 "#;
+
+fn is_python_standard_library(module_name: &str) -> bool {
+    let stdlib_modules = [
+        "os", "sys", "json", "re", "math", "random", "datetime", "collections",
+        "itertools", "functools", "pathlib", "typing", "ast", "copy", "pickle",
+        "subprocess", "threading", "multiprocessing", "asyncio", "urllib", "http",
+        "email", "html", "xml", "csv", "sqlite3", "logging", "unittest", "argparse",
+        "configparser", "io", "tempfile", "shutil", "glob", "fnmatch", "linecache",
+        "platform", "getpass", "time", "calendar", "hashlib", "hmac", "secrets",
+        "uuid", "base64", "binascii", "struct", "codecs", "locale", "gettext",
+        "decimal", "fractions", "statistics", "array", "weakref", "types", "gc",
+        "inspect", "site", "importlib", "pkgutil", "modulefinder", "runpy",
+        "warnings", "contextlib", "abc", "atexit", "traceback", "signal",
+        "socket", "ssl", "select", "selectors", "queue", "sched", "heapq",
+        "bisect", "pprint", "reprlib", "enum", "graphlib", "dataclasses",
+    ];
+    
+    let root_module = module_name.split('.').next().unwrap_or(module_name);
+    stdlib_modules.contains(&root_module)
+}
+
+fn resolve_python_relative_import(import_path: &str, current_file_path: &str) -> String {
+    let current_dir = Path::new(current_file_path).parent().unwrap_or(Path::new(""));
+    
+    if import_path.starts_with('.') {
+        let level = import_path.chars().take_while(|&c| c == '.').count();
+        let module_part = &import_path[level..];
+        
+        let mut target_dir = current_dir;
+        for _ in 1..level {
+            target_dir = target_dir.parent().unwrap_or(Path::new(""));
+        }
+        
+        if module_part.is_empty() {
+            format!("{}", target_dir.display())
+        } else {
+            format!("{}/{}", target_dir.display(), module_part.replace('.', "/"))
+        }
+    } else {
+        import_path.replace('.', "/")
+    }
+}
+
+fn build_dependency_graph(
+    documents: &[Document],
+    language: &str,
+    doc_map: &HashMap<String, &Document>,
+) -> Result<DependencyGraph> {
+    info!("Building dependency graph for {} documents in {}", documents.len(), language);
+    let mut graph = DependencyGraph::new();
+    let mut processor = LanguageProcessor::new(language)?;
+
+    for doc in documents {
+        if let Some(current_path) = &doc.metadata.path {
+            graph.add_node(current_path.clone());
+            
+            if language.to_lowercase() == "python" {
+                let imports = processor.extract_python_dependencies(&doc.text, current_path)?;
+                
+                for import in imports {
+                    if import.import_type == ImportType::Local {
+                        if let Some(dep_path) = find_python_dependency_path(&import.module_path, doc_map, current_path) {
+                            debug!("Adding dependency edge: {} -> {}", current_path, dep_path);
+                            graph.add_edge(dep_path, current_path.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    info!("Dependency graph built with {} nodes", graph.nodes.len());
+    Ok(graph)
+}
+
+fn find_python_dependency_path(
+    import_path: &str,
+    doc_map: &HashMap<String, &Document>,
+    _current_path: &str,
+) -> Option<String> {
+    let potential_paths = vec![
+        format!("{}.py", import_path),
+        format!("{}/__init__.py", import_path),
+    ];
+    
+    for path in &potential_paths {
+        if doc_map.contains_key(path) {
+            return Some(path.clone());
+        }
+    }
+    
+    None
+}
 
 fn read_jsonl_zst_file(file_path: &Path) -> Result<Vec<Document>> {
     debug!("Reading JSONL.zst file: {}", file_path.display());
@@ -357,13 +571,61 @@ fn resolve_dependencies(
         doc_map.len()
     );
 
+    // Build dependency graph and get topological order for Python
+    let processing_order = if language.to_lowercase() == "python" {
+        match build_dependency_graph(documents, language, &doc_map) {
+            Ok(graph) => {
+                match graph.topological_sort() {
+                    Ok(sorted_paths) => {
+                        info!("Successfully computed topological order for {} files", sorted_paths.len());
+                        // Create ordered list of documents based on topological sort
+                        let mut ordered_docs = Vec::new();
+                        let mut processed_paths = HashSet::new();
+                        
+                        // First, add documents in topological order
+                        for path in &sorted_paths {
+                            if let Some(doc) = doc_map.get(path) {
+                                ordered_docs.push(*doc);
+                                processed_paths.insert(path.clone());
+                            }
+                        }
+                        
+                        // Add any remaining documents that weren't in the dependency graph
+                        for doc in documents {
+                            if let Some(path) = &doc.metadata.path {
+                                if !processed_paths.contains(path) {
+                                    ordered_docs.push(doc);
+                                }
+                            } else {
+                                ordered_docs.push(doc);
+                            }
+                        }
+                        
+                        ordered_docs
+                    }
+                    Err(e) => {
+                        warn!("Circular dependency detected: {}. Falling back to original order.", e);
+                        documents.iter().collect()
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to build dependency graph: {}. Falling back to original order.", e);
+                documents.iter().collect()
+            }
+        }
+    } else {
+        // For non-Python languages, use original order for now
+        documents.iter().collect()
+    };
+
     let mut resolved_docs = Vec::new();
 
-    for (idx, doc) in documents.iter().enumerate() {
+    for (idx, doc) in processing_order.iter().enumerate() {
         debug!(
             "Processing document {}/{}: {}",
             idx + 1,
-            documents.len(),
+            processing_order.len(),
             doc.metadata.path.as_deref().unwrap_or("<unknown path>")
         );
 
@@ -454,7 +716,7 @@ fn resolve_dependencies(
 
         stats.processed_length += resolved_text.len() as u64;
 
-        let mut new_doc = doc.clone();
+        let mut new_doc = (*doc).clone();
         new_doc.text = resolved_text;
         resolved_docs.push(new_doc);
     }
