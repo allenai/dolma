@@ -342,6 +342,9 @@ fn resolve_dependencies(
     );
     let mut processor = LanguageProcessor::new(language)?;
     let mut stats = ProcessingStats::new();
+    let mut total_imports_found = 0;
+    let mut imports_by_type = HashMap::new();
+    let mut resolution_failures = HashMap::new();
 
     // Create a map of file paths to documents for quick lookup
     let doc_map: HashMap<String, &Document> = documents
@@ -370,12 +373,16 @@ fn resolve_dependencies(
         let imports = processor.extract_imports(&doc.text)?;
         let mut resolved_text = doc.text.clone();
         let original_size = resolved_text.len();
+        total_imports_found += imports.len();
 
         if !imports.is_empty() {
             debug!("Found {} imports to resolve", imports.len());
         }
 
         for import in imports {
+            // Track import types
+            *imports_by_type.entry(format!("{:?}", import.import_type)).or_insert(0) += 1;
+            
             debug!(
                 "Resolving import: {} (type: {:?})",
                 import.module_path, import.import_type
@@ -386,7 +393,7 @@ fn resolve_dependencies(
                         if let Some(dep_doc) =
                             find_local_dependency(&import.module_path, &doc_map, current_path)
                         {
-                            info!(
+                            debug!(
                                 "Successfully resolved local dependency: {} -> {}",
                                 import.module_path,
                                 dep_doc.metadata.path.as_deref().unwrap_or("<unknown>")
@@ -397,32 +404,42 @@ fn resolve_dependencies(
                             resolved_text.push_str(&dep_doc.text);
                             stats.imports_resolved += 1;
                         } else {
-                            warn!(
-                                "Could not resolve local dependency: {} from {}",
+                            let failure_key = "Local dependency not found in document map";
+                            *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
+                            debug!(
+                                "Could not resolve local dependency: {} from {} - not found in document map",
                                 import.module_path, current_path
                             );
                         }
                     } else {
-                        warn!(
-                            "Document has no path, cannot resolve local import: {}",
+                        let failure_key = "Document missing path metadata";
+                        *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
+                        debug!(
+                            "Document has no path metadata, cannot resolve local import: {}",
                             import.module_path
                         );
                     }
                 }
                 ImportType::External if include_external => {
+                    let failure_key = "External dependency resolution not implemented";
+                    *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
                     debug!(
                         "External dependency resolution not implemented: {}",
                         import.module_path
                     );
                 }
-                ImportType::Standard => {
-                    debug!("Skipping standard library import: {}", import.module_path);
-                }
-                _ => {
+                ImportType::External => {
+                    let failure_key = "External dependencies disabled (use --include-external)";
+                    *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
                     debug!(
-                        "Skipping import: {} (type: {:?})",
-                        import.module_path, import.import_type
+                        "Skipping external dependency (--include-external not set): {}",
+                        import.module_path
                     );
+                }
+                ImportType::Standard => {
+                    let failure_key = "Standard library imports skipped by design";
+                    *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
+                    debug!("Skipping standard library import: {}", import.module_path);
                 }
             }
         }
@@ -445,15 +462,23 @@ fn resolve_dependencies(
     info!(
         "Dependency resolution complete: {}/{} imports resolved, {} documents processed",
         stats.imports_resolved,
-        documents
-            .iter()
-            .map(|doc| processor
-                .extract_imports(&doc.text)
-                .unwrap_or_default()
-                .len())
-            .sum::<usize>(),
+        total_imports_found,
         stats.files_processed
     );
+    
+    // Log detailed breakdown of import types
+    info!("Import breakdown by type:");
+    for (import_type, count) in &imports_by_type {
+        info!("  {}: {} imports", import_type, count);
+    }
+    
+    // Log reasons why imports were not resolved
+    if !resolution_failures.is_empty() {
+        info!("Reasons imports were not resolved:");
+        for (reason, count) in &resolution_failures {
+            info!("  {}: {} imports", reason, count);
+        }
+    }
 
     Ok((resolved_docs, stats))
 }
@@ -509,11 +534,9 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
 
     let first_doc = &documents[0];
     let document_texts: Vec<String> = documents.iter().map(|doc| doc.text.clone()).collect();
-    let original_total_size: usize = document_texts.iter().map(|text| text.len()).sum();
 
     let concatenated_text = document_texts.join(&format!("\n{}\n", file_separator_token));
     let final_size = concatenated_text.len();
-    let separator_overhead = final_size - original_total_size;
 
     let total_length: u64 = documents
         .iter()
@@ -527,8 +550,8 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
     result.metadata.path = Some(format!("{}_concatenated", repo_name));
 
     info!(
-        "Concatenation complete: {} bytes total ({} original + {} separator overhead)",
-        final_size, original_total_size, separator_overhead
+        "Concatenation complete: {} bytes total content",
+        final_size
     );
 
     result
