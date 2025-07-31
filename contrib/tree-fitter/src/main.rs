@@ -342,7 +342,9 @@ fn resolve_dependencies(
                         if let Some(dep_doc) = find_local_dependency(&import.module_path, &doc_map, current_path) {
                             info!("Successfully resolved local dependency: {} -> {}", 
                                  import.module_path, dep_doc.metadata.path.as_deref().unwrap_or("<unknown>"));
+                            resolved_text.push_str("\n");
                             resolved_text.push_str(file_separator_token);
+                            resolved_text.push_str("\n");
                             resolved_text.push_str(&dep_doc.text);
                             stats.imports_resolved += 1;
                         } else {
@@ -426,7 +428,7 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
     let document_texts: Vec<String> = documents.iter().map(|doc| doc.text.clone()).collect();
     let original_total_size: usize = document_texts.iter().map(|text| text.len()).sum();
     
-    let concatenated_text = document_texts.join(file_separator_token);
+    let concatenated_text = document_texts.join(&format!("\n{}\n", file_separator_token));
     let final_size = concatenated_text.len();
     let separator_overhead = final_size - original_total_size;
     
