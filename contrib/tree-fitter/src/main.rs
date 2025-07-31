@@ -3,9 +3,11 @@ use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 use tree_sitter::{Language, Parser as TreeParser};
 use walkdir::WalkDir;
+use indicatif::{ProgressBar, ProgressStyle};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -39,24 +41,32 @@ struct Document {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Metadata {
-    detected_licenses: Vec<String>,
-    files_concatenated: u32,
-    int_score: u32,
-    language: String,
-    length_bytes: u64,
-    license_type: String,
-    path: String,
-    repo_name: String,
-    score: f64,
-    src_encoding: String,
-    uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detected_licenses: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    int_score: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    language: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    length_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    license_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repo_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    src_encoding: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    uri: Option<String>,
 }
 
 #[derive(Debug, Clone)]
 struct ImportInfo {
     module_path: String,
     import_type: ImportType,
-    line_number: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -147,7 +157,7 @@ impl LanguageProcessor {
             for capture in match_.captures {
                 let node = capture.node;
                 if let Ok(import_text) = node.utf8_text(source.as_bytes()) {
-                    let import_info = self.parse_import(import_text, node.start_position().row)?;
+                    let import_info = self.parse_import(import_text)?;
                     imports.push(import_info);
                 }
             }
@@ -156,7 +166,7 @@ impl LanguageProcessor {
         Ok(imports)
     }
     
-    fn parse_import(&self, import_text: &str, line_number: usize) -> Result<ImportInfo> {
+    fn parse_import(&self, import_text: &str) -> Result<ImportInfo> {
         // This is a simplified import parsing - would need language-specific logic
         let import_type = if import_text.contains("std") || import_text.contains("os") {
             ImportType::Standard
@@ -169,7 +179,6 @@ impl LanguageProcessor {
         Ok(ImportInfo {
             module_path: import_text.to_string(),
             import_type,
-            line_number,
         })
     }
 }
@@ -211,7 +220,6 @@ const JAVA_IMPORT_QUERY: &str = r#"
   (scoped_identifier) @import)
 "#;
 
-const SQL_IMPORT_QUERY: &str = r#""#; // SQL doesn't typically have imports
 
 const CSHARP_IMPORT_QUERY: &str = r#"
 (using_directive
@@ -261,7 +269,9 @@ fn group_documents_by_repo(documents: Vec<Document>) -> HashMap<String, Vec<Docu
     let mut grouped = HashMap::new();
     
     for doc in documents {
-        let key = format!("{}_{}", doc.metadata.repo_name, doc.metadata.language);
+        let repo_name = doc.metadata.repo_name.as_deref().unwrap_or("unknown");
+        let language = doc.metadata.language.as_deref().unwrap_or("unknown");
+        let key = format!("{}_{}", repo_name, language);
         grouped.entry(key).or_insert_with(Vec::new).push(doc);
     }
     
@@ -280,7 +290,7 @@ fn resolve_dependencies(
     // Create a map of file paths to documents for quick lookup
     let doc_map: HashMap<String, &Document> = documents
         .iter()
-        .map(|doc| (doc.metadata.path.clone(), doc))
+        .filter_map(|doc| doc.metadata.path.as_ref().map(|path| (path.clone(), doc)))
         .collect();
     
     let mut resolved_docs = Vec::new();
@@ -295,10 +305,12 @@ fn resolve_dependencies(
         for import in imports {
             match import.import_type {
                 ImportType::Local => {
-                    if let Some(dep_doc) = find_local_dependency(&import.module_path, &doc_map, &doc.metadata.path) {
-                        resolved_text.push_str(file_separator_token);
-                        resolved_text.push_str(&dep_doc.text);
-                        stats.imports_resolved += 1;
+                    if let Some(current_path) = &doc.metadata.path {
+                        if let Some(dep_doc) = find_local_dependency(&import.module_path, &doc_map, current_path) {
+                            resolved_text.push_str(file_separator_token);
+                            resolved_text.push_str(&dep_doc.text);
+                            stats.imports_resolved += 1;
+                        }
                     }
                 }
                 ImportType::External if include_external => {
@@ -353,13 +365,13 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
     let first_doc = &documents[0];
     let document_texts: Vec<String> = documents.iter().map(|doc| doc.text.clone()).collect();
     let concatenated_text = document_texts.join(file_separator_token);
-    let total_length: u64 = documents.iter().map(|doc| doc.metadata.length_bytes).sum();
+    let total_length: u64 = documents.iter().filter_map(|doc| doc.metadata.length_bytes).sum();
     
     let mut result = first_doc.clone();
     result.text = concatenated_text;
-    result.metadata.length_bytes = total_length;
-    result.metadata.files_concatenated = documents.len() as u32;
-    result.metadata.path = format!("{}_concatenated", first_doc.metadata.repo_name);
+    result.metadata.length_bytes = Some(total_length);
+    let repo_name = first_doc.metadata.repo_name.as_deref().unwrap_or("unknown");
+    result.metadata.path = Some(format!("{}_concatenated", repo_name));
     
     result
 }
@@ -383,11 +395,27 @@ fn process_language_directory(
         .filter(|e| e.path().extension().map_or(false, |ext| ext == "zst"))
         .collect();
     
+    if files.is_empty() {
+        println!("No .zst files found in {}", lang_dir.display());
+        return Ok(ProcessingStats::new());
+    }
+    
+    // Create progress bar for this language
+    let pb = ProgressBar::new(files.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+            .unwrap()
+            .progress_chars("##-")
+    );
+    pb.set_message(format!("Processing {} files", language));
+    
+    let pb = Arc::new(Mutex::new(pb));
+    
     let results: Vec<Result<ProcessingStats>> = files
         .par_iter()
         .map(|entry| {
             let file_path = entry.path();
-            println!("Processing: {}", file_path.display());
             
             let documents = read_jsonl_zst_file(file_path)?;
             let grouped = group_documents_by_repo(documents);
@@ -408,9 +436,20 @@ fn process_language_directory(
                 .join(file_path.file_name().unwrap());
             write_jsonl_zst_file(&output_docs, &output_file)?;
             
+            // Update progress bar
+            if let Ok(pb) = pb.lock() {
+                pb.inc(1);
+                pb.set_message(format!("Processing {} - {}", language, file_path.file_name().unwrap().to_string_lossy()));
+            }
+            
             Ok(file_stats)
         })
         .collect();
+    
+    // Finish progress bar
+    if let Ok(pb) = pb.lock() {
+        pb.finish_with_message(format!("Completed {} ({} files)", language, files.len()));
+    }
     
     for result in results {
         total_stats.add(&result?);
@@ -419,30 +458,154 @@ fn process_language_directory(
     Ok(total_stats)
 }
 
+fn process_language_directory_direct(
+    input_dir: &Path, 
+    output_dir: &Path, 
+    language: &str, 
+    include_external: bool,
+    file_separator_token: &str,
+) -> Result<ProcessingStats> {
+    if !input_dir.exists() {
+        return Ok(ProcessingStats::new());
+    }
+    
+    let mut total_stats = ProcessingStats::new();
+    let files: Vec<_> = WalkDir::new(input_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map_or(false, |ext| ext == "zst"))
+        .collect();
+    
+    if files.is_empty() {
+        println!("No .zst files found in {}", input_dir.display());
+        return Ok(ProcessingStats::new());
+    }
+    
+    // Create progress bar for this language directory
+    let pb = ProgressBar::new(files.len() as u64);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+            .unwrap()
+            .progress_chars("##-")
+    );
+    pb.set_message(format!("Processing {} files", language));
+    
+    let pb = Arc::new(Mutex::new(pb));
+    
+    let results: Vec<Result<ProcessingStats>> = files
+        .par_iter()
+        .map(|entry| {
+            let file_path = entry.path();
+            
+            let documents = read_jsonl_zst_file(file_path)?;
+            let grouped = group_documents_by_repo(documents);
+            
+            let mut file_stats = ProcessingStats::new();
+            let mut output_docs = Vec::new();
+            
+            for (_repo_key, repo_docs) in grouped {
+                let (resolved_docs, stats) = resolve_dependencies(&repo_docs, language, include_external, file_separator_token)?;
+                file_stats.add(&stats);
+                
+                let concatenated = concatenate_repo_files(resolved_docs, file_separator_token);
+                output_docs.push(concatenated);
+            }
+            
+            // Calculate relative path from input_dir to maintain directory structure
+            let relative_path = file_path.strip_prefix(input_dir)?;
+            let output_file = output_dir.join(relative_path);
+            write_jsonl_zst_file(&output_docs, &output_file)?;
+            
+            // Update progress bar
+            if let Ok(pb) = pb.lock() {
+                pb.inc(1);
+                pb.set_message(format!("Processing {} - {}", language, file_path.file_name().unwrap().to_string_lossy()));
+            }
+            
+            Ok(file_stats)
+        })
+        .collect();
+    
+    // Finish progress bar
+    if let Ok(pb) = pb.lock() {
+        pb.finish_with_message(format!("Completed {} ({} files)", language, files.len()));
+    }
+    
+    for result in results {
+        total_stats.add(&result?);
+    }
+    
+    Ok(total_stats)
+}
+
+fn detect_language_from_path(input_dir: &Path) -> Option<String> {
+    if let Some(dir_name) = input_dir.file_name() {
+        let dir_str = dir_name.to_string_lossy().to_lowercase();
+        match dir_str.as_str() {
+            "python" => Some("Python".to_string()),
+            "rust" => Some("Rust".to_string()),
+            "cpp" | "c++" => Some("C++".to_string()),
+            "typescript" => Some("TypeScript".to_string()),
+            "javascript" => Some("JavaScript".to_string()),
+            "java" => Some("Java".to_string()),
+            "sql" => Some("SQL".to_string()),
+            "c#" | "csharp" => Some("C#".to_string()),
+            "go" => Some("Go".to_string()),
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     
     std::fs::create_dir_all(&args.output_dir)?;
     
-    let languages = vec![
-        "Python", "Rust", "C++", "TypeScript", "JavaScript", 
-        "Java", "SQL", "C#", "Go"
-    ];
-    
     let mut overall_stats = ProcessingStats::new();
     
-    println!("Starting parallel processing of language directories...");
-    
-    let results: Vec<Result<ProcessingStats>> = languages
-        .par_iter()
-        .map(|&language| {
-            println!("Processing language: {}", language);
-            process_language_directory(&args.input_dir, &args.output_dir, language, args.include_external, &args.file_separator_token)
-        })
-        .collect();
-    
-    for result in results {
-        overall_stats.add(&result?);
+    // Try to detect language from input directory path
+    if let Some(detected_language) = detect_language_from_path(&args.input_dir) {
+        println!("Detected language from input directory: {}", detected_language);
+        println!("Processing language: {}", detected_language);
+        
+        let stats = process_language_directory_direct(&args.input_dir, &args.output_dir, &detected_language, args.include_external, &args.file_separator_token)?;
+        overall_stats.add(&stats);
+    } else {
+        // Fallback to processing all languages in subdirectories
+        let languages = vec![
+            "Python", "Rust", "C++", "TypeScript", "JavaScript", 
+            "Java", "SQL", "C#", "Go"
+        ];
+        
+        println!("Starting parallel processing of language directories...");
+        
+        // Filter languages that actually exist in the input directory
+        let existing_languages: Vec<&str> = languages
+            .iter()
+            .filter(|&&lang| args.input_dir.join(lang).exists())
+            .copied()
+            .collect();
+        
+        if existing_languages.is_empty() {
+            println!("No language directories found in {}", args.input_dir.display());
+            return Ok(());
+        }
+        
+        println!("Found {} language directories to process", existing_languages.len());
+        
+        let results: Vec<Result<ProcessingStats>> = existing_languages
+            .par_iter()
+            .map(|&language| {
+                process_language_directory(&args.input_dir, &args.output_dir, language, args.include_external, &args.file_separator_token)
+            })
+            .collect();
+        
+        for result in results {
+            overall_stats.add(&result?);
+        }
     }
     
     println!("\n=== Processing Statistics ===");
