@@ -550,8 +550,9 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
     result.metadata.path = Some(format!("{}_concatenated", repo_name));
 
     info!(
-        "Concatenation complete: {} bytes total content",
-        final_size
+        "Concatenation complete: {} bytes total content (+{} bytes delta)",
+        final_size,
+        final_size as i64 - total_length as i64
     );
 
     result
