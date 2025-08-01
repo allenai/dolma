@@ -91,31 +91,34 @@ def merge_group(
     npy_destination = Path(destination)
     csv_destination = npy_destination.with_suffix(".csv.gz")
     total_size = sum(p.size for p in paths)
-
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
-
     target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
-
     bytes_offset = row_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
+        rw = csv.writer(f)
         for path in paths:
-            rw = csv.writer(f)
             source_memmap = np.memmap(path.npy_path, mode="r", dtype=dtype, shape=(path.size // dtype.itemsize,))
             target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = source_memmap
             target_memmap.flush()
-
             row_count = 0
-
-            dir_of_npy = Path(path.npy_path).parent
+            # Extract vigintile info from the npy path to reconstruct original S3 paths
+            npy_path_parts = Path(path.npy_path).parts
+            vigintile_part = next((part for part in npy_path_parts if part.startswith('vigintile_')), None)
+            
+            if vigintile_part is None:
+                raise ValueError(f"Could not find vigintile in path: {path.npy_path}")
             with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
                 rd = csv.reader(g)
                 for row in rd:
                     start, end, id_, src, idx = row
-                    full_src = str(dir_of_npy / src)
-                    rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, full_src, int(idx)]) # use full path
-                    #rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
+                    # rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
+                    
+                    # NEW - reconstruct original S3 path
+                    # hardcode s3 prefix + extract vigintile + extract jsonl file
+                    full_src = ("s3://ai2-llm/pretraining-data/sources/cc_all_dressed/all_dressed_v3/"
+                               f"weborganizer_ft/dclm_plus2_vigintiles/data/adult_content/{vigintile_part}/{src}")
+                    rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, full_src, int(idx)])
                     row_count += 1
-
             bytes_offset += source_memmap.shape[0]
             row_offset += row_count
             del source_memmap
