@@ -114,9 +114,10 @@ def merge_group(
                     # rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
                     
                     # NEW - reconstruct original S3 path
-                    # hardcode s3 prefix + extract vigintile + extract jsonl file
+                    # hardcode s3 prefix + extract vigintile + extract jsonl file name from src
+                    filename = Path(src).name
                     full_src = ("s3://ai2-llm/pretraining-data/sources/cc_all_dressed/all_dressed_v3/"
-                               f"weborganizer_ft/dclm_plus2_vigintiles/data/adult_content/{vigintile_part}/{src}")
+                               f"weborganizer_ft/dclm_plus2_vigintiles/data/adult_content/{vigintile_part}/{filename}")
                     rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, full_src, int(idx)])
                     row_count += 1
             bytes_offset += source_memmap.shape[0]
