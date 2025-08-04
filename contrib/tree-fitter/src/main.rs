@@ -212,11 +212,11 @@ impl LanguageProcessor {
             "c#" | "csharp" => (Some(tree_sitter_c_sharp::language()), CSHARP_IMPORT_QUERY, true),
             "go" => (Some(tree_sitter_go::language()), GO_IMPORT_QUERY, true),
             "sql" => {
-                warn!("SQL language detected - import resolution not supported, using fallback ordering");
+                debug!("SQL language detected - import resolution not supported, using fallback ordering");
                 (None, "", false)
             },
             _ => {
-                warn!("Unsupported language '{}' - using fallback ordering", lang);
+                debug!("Language '{}' - no specific parser available, using fallback ordering", lang);
                 (None, "", false)
             },
         };
@@ -469,15 +469,19 @@ fn build_dependency_graph(
         if let Some(current_path) = &doc.metadata.path {
             graph.add_node(current_path.clone());
             
-            if language.to_lowercase() == "python" {
-                let imports = processor.extract_imports(&doc.text, Some(current_path))?;
-                
-                for import in imports {
-                    if import.import_type == ImportType::Local {
-                        if let Some(dep_path) = find_python_dependency_path(&import.module_path, doc_map, current_path) {
-                            trace!("Adding dependency edge: {} -> {}", current_path, dep_path);
-                            graph.add_edge(dep_path, current_path.clone());
-                        }
+            let imports = processor.extract_imports(&doc.text, Some(current_path))?;
+            
+            for import in imports {
+                if import.import_type == ImportType::Local {
+                    let dep_path = match language.to_lowercase().as_str() {
+                        "python" => find_python_dependency_path(&import.module_path, doc_map, current_path),
+                        _ => find_local_dependency(&import.module_path, doc_map, current_path)
+                            .map(|doc| doc.metadata.path.as_ref().unwrap().clone()),
+                    };
+                    
+                    if let Some(dep_path) = dep_path {
+                        trace!("Adding dependency edge: {} -> {}", current_path, dep_path);
+                        graph.add_edge(dep_path, current_path.clone());
                     }
                 }
             }
@@ -619,7 +623,7 @@ fn resolve_dependencies(
     );
 
     // Try to build dependency graph and get topological order for supported languages
-    let processing_order = if language.to_lowercase() == "python" {
+    let processing_order = if processor.is_supported {
         match build_dependency_graph(documents, language, &doc_map) {
             Ok(graph) => {
                 match graph.topological_sort() {
@@ -662,8 +666,8 @@ fn resolve_dependencies(
             }
         }
     } else {
-        // For non-Python languages or unsupported languages, use simple file ordering
-        debug!("Using simple file ordering for language: {}", language);
+        // For unsupported languages, use simple file ordering
+        debug!("Using simple file ordering for unsupported language: {}", language);
         simple_file_ordering(documents)
     };
 
@@ -1105,15 +1109,15 @@ fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
 
 fn main() -> Result<()> {
     env_logger::Builder::from_default_env()
-        .filter_level(log::LevelFilter::Info)
+        .filter_level(log::LevelFilter::Warn)
         .init();
     let args = Args::parse();
 
-    info!("Starting tree-fitter processing");
-    info!("Input directory: {}", args.input_dir.display());
-    info!("Output directory: {}", args.output_dir.display());
-    info!("Include external dependencies: {}", args.include_external);
-    info!("File separator token: '{}'", args.file_separator_token);
+    debug!("Starting tree-fitter processing");
+    debug!("Input directory: {}", args.input_dir.display());
+    debug!("Output directory: {}", args.output_dir.display());
+    debug!("Include external dependencies: {}", args.include_external);
+    debug!("File separator token: '{}'", args.file_separator_token);
 
     std::fs::create_dir_all(&args.output_dir)?;
 
@@ -1125,16 +1129,16 @@ fn main() -> Result<()> {
         process_multiple_languages(&args)?
     };
 
-    info!("\n=== Processing Statistics ===");
-    info!("Files processed: {}", overall_stats.files_processed);
-    info!("Repositories processed: {}", overall_stats.repos_processed);
-    info!("Total files concatenated: {}", overall_stats.total_files_concatenated);
-    info!(
+    println!("\n=== Processing Statistics ===");
+    println!("Files processed: {}", overall_stats.files_processed);
+    println!("Repositories processed: {}", overall_stats.repos_processed);
+    println!("Total files concatenated: {}", overall_stats.total_files_concatenated);
+    println!(
         "Average files per repository: {:.2}",
         overall_stats.average_files_per_repo()
     );
 
-    info!("Tree-fitter processing completed successfully");
+    println!("Tree-fitter processing completed successfully");
 
     Ok(())
 }
