@@ -299,7 +299,7 @@ fn prepare_output_batches(
     }
 
     if !current_file_docs.is_empty() {
-        let output_path = subdir_output_path.join(format!("grouped_{:04}.jsonl.zst", file_counter));
+        let output_path = subdir_output_path.join(format!("part_{:04}.jsonl.zst", file_counter));
         batches.push(OutputBatch {
             output_path,
             documents: current_file_docs,
