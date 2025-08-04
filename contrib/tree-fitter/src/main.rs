@@ -1005,13 +1005,19 @@ fn detect_language_from_path(input_dir: &Path) -> Option<String> {
         match dir_str.as_str() {
             "python" => Some("Python".to_string()),
             "rust" => Some("Rust".to_string()),
-            "cpp" | "c++" => Some("C++".to_string()),
+            "cpp" | "c++" => Some("Cpp".to_string()),
             "typescript" => Some("TypeScript".to_string()),
             "javascript" => Some("JavaScript".to_string()),
             "java" => Some("Java".to_string()),
             "sql" => Some("SQL".to_string()),
-            "c#" | "csharp" => Some("C#".to_string()),
+            "c#" | "csharp" => Some("CSharp".to_string()),
             "go" => Some("Go".to_string()),
+            "c" => Some("C".to_string()),
+            "php" => Some("PHP".to_string()),
+            "ruby" => Some("Ruby".to_string()),
+            "shell" => Some("Shell".to_string()),
+            "swift" => Some("Swift".to_string()),
+            "markdown" => Some("Markdown".to_string()),
             _ => None,
         }
     } else {
@@ -1040,8 +1046,9 @@ fn process_detected_language(
 
 fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
     let languages = &[
-        "Python", "Rust", "C++", "TypeScript", "JavaScript", 
-        "Java", "SQL", "C#", "Go",
+        "C", "CSharp", "Cpp", "Go", "Java", "JavaScript", 
+        "Markdown", "PHP", "Python", "Ruby", "Rust", "SQL", 
+        "Shell", "Swift", "TypeScript",
     ];
 
     info!("Starting parallel processing of language directories...");
