@@ -193,54 +193,81 @@ impl ProcessingStats {
 }
 
 struct LanguageProcessor {
-    parser: TreeParser,
-    language: Language,
+    parser: Option<TreeParser>,
+    language: Option<Language>,
     import_query: String,
+    is_supported: bool,
 }
 
 impl LanguageProcessor {
     fn new(lang: &str) -> Result<Self> {
-        let mut parser = TreeParser::new();
-        let (language, import_query) = match lang.to_lowercase().as_str() {
-            "python" => (tree_sitter_python::language(), PYTHON_IMPORT_QUERY),
-            "rust" => (tree_sitter_rust::language(), RUST_IMPORT_QUERY),
-            "cpp" | "c++" => (tree_sitter_cpp::language(), CPP_IMPORT_QUERY),
+        let lang_lower = lang.to_lowercase();
+        let (language_opt, import_query, is_supported) = match lang_lower.as_str() {
+            "python" => (Some(tree_sitter_python::language()), PYTHON_IMPORT_QUERY, true),
+            "rust" => (Some(tree_sitter_rust::language()), RUST_IMPORT_QUERY, true),
+            "cpp" | "c++" => (Some(tree_sitter_cpp::language()), CPP_IMPORT_QUERY, true),
             "typescript" => (
-                tree_sitter_typescript::language_typescript(),
+                Some(tree_sitter_typescript::language_typescript()),
                 TS_IMPORT_QUERY,
+                true,
             ),
-            "javascript" => (tree_sitter_javascript::language(), JS_IMPORT_QUERY),
-            "java" => (tree_sitter_java::language(), JAVA_IMPORT_QUERY),
-            "sql" => return Err(anyhow::anyhow!("SQL import resolution not supported")), // SQL doesn't have imports
-            "c#" | "csharp" => (tree_sitter_c_sharp::language(), CSHARP_IMPORT_QUERY),
-            "go" => (tree_sitter_go::language(), GO_IMPORT_QUERY),
-            _ => return Err(anyhow::anyhow!("Unsupported language: {}", lang)),
+            "javascript" => (Some(tree_sitter_javascript::language()), JS_IMPORT_QUERY, true),
+            "java" => (Some(tree_sitter_java::language()), JAVA_IMPORT_QUERY, true),
+            "c#" | "csharp" => (Some(tree_sitter_c_sharp::language()), CSHARP_IMPORT_QUERY, true),
+            "go" => (Some(tree_sitter_go::language()), GO_IMPORT_QUERY, true),
+            "sql" => {
+                warn!("SQL language detected - import resolution not supported, using fallback ordering");
+                (None, "", false)
+            },
+            _ => {
+                warn!("Unsupported language '{}' - using fallback ordering", lang);
+                (None, "", false)
+            },
         };
 
-        parser
-            .set_language(&language)
-            .map_err(|e| anyhow::anyhow!("Failed to set language: {}", e))?;
+        let (parser_opt, language_final) = if let Some(language) = language_opt {
+            let mut parser = TreeParser::new();
+            parser
+                .set_language(&language)
+                .map_err(|e| anyhow::anyhow!("Failed to set language: {}", e))?;
+            (Some(parser), Some(language))
+        } else {
+            (None, None)
+        };
 
         Ok(Self {
-            parser,
-            language,
+            parser: parser_opt,
+            language: language_final,
             import_query: import_query.to_string(),
+            is_supported,
         })
     }
 
     fn extract_imports(&mut self, source: &str, current_path: Option<&str>) -> Result<Vec<ImportInfo>> {
+        if !self.is_supported {
+            debug!("Language not supported for import extraction, returning empty imports");
+            return Ok(Vec::new());
+        }
+
+        let parser = self.parser.as_mut().ok_or_else(|| {
+            anyhow::anyhow!("Parser not available for unsupported language")
+        })?;
+        
+        let language = self.language.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Language not available for unsupported language")
+        })?;
+
         debug!(
             "Extracting imports from source code ({} bytes)",
             source.len()
         );
-        let tree = self
-            .parser
+        let tree = parser
             .parse(source, None)
             .context("Failed to parse source code")?;
 
         let mut imports = Vec::new();
         let mut cursor = tree_sitter::QueryCursor::new();
-        let query = tree_sitter::Query::new(&self.language, &self.import_query)
+        let query = tree_sitter::Query::new(language, &self.import_query)
             .map_err(|e| anyhow::anyhow!("Failed to create query: {}", e))?;
 
         let matches = cursor.matches(&query, tree.root_node(), source.as_bytes());
@@ -266,7 +293,8 @@ impl LanguageProcessor {
     fn parse_import(&self, import_text: &str, current_path: Option<&str>) -> Result<ImportInfo> {
         let cleaned_import = import_text.trim_matches('"').trim_matches('\'');
         
-        let (import_type, resolved_path) = match &self.language {
+        let (import_type, resolved_path) = if let Some(language) = &self.language {
+            match language {
             lang if *lang == tree_sitter_python::language() => {
                 let import_type = if cleaned_import.starts_with('.') {
                     ImportType::Local
@@ -299,6 +327,10 @@ impl LanguageProcessor {
                 };
                 (import_type, cleaned_import.to_string())
             }
+        }
+        } else {
+            // Fallback for unsupported languages
+            (ImportType::External, cleaned_import.to_string())
         };
 
         Ok(ImportInfo {
@@ -400,6 +432,30 @@ fn resolve_python_relative_import(import_path: &str, current_file_path: &str) ->
     }
 }
 
+fn simple_file_ordering(documents: &[Document]) -> Vec<&Document> {
+    info!("Using simple file ordering (no dependency analysis) for {} documents", documents.len());
+    
+    // Simple heuristic: sort by path length (shorter paths first, likely dependencies)
+    // then alphabetically for deterministic ordering
+    let mut docs_with_paths: Vec<_> = documents.iter().collect();
+    docs_with_paths.sort_by(|a, b| {
+        let path_a = a.metadata.path.as_deref().unwrap_or("");
+        let path_b = b.metadata.path.as_deref().unwrap_or("");
+        
+        // First sort by path depth (fewer slashes = likely higher in hierarchy)
+        let depth_a = path_a.matches('/').count();
+        let depth_b = path_b.matches('/').count();
+        
+        match depth_a.cmp(&depth_b) {
+            std::cmp::Ordering::Equal => path_a.cmp(path_b), // Then alphabetically
+            other => other,
+        }
+    });
+    
+    info!("Simple file ordering complete - {} documents sorted by path hierarchy", docs_with_paths.len());
+    docs_with_paths
+}
+
 fn build_dependency_graph(
     documents: &[Document],
     language: &str,
@@ -408,6 +464,10 @@ fn build_dependency_graph(
     info!("Building dependency graph for {} documents in {}", documents.len(), language);
     let mut graph = DependencyGraph::with_capacity(documents.len());
     let mut processor = LanguageProcessor::new(language)?;
+    
+    if !processor.is_supported {
+        return Err(anyhow::anyhow!("Language {} not supported for dependency graph building", language));
+    }
 
     for doc in documents {
         if let Some(current_path) = &doc.metadata.path {
@@ -561,7 +621,7 @@ fn resolve_dependencies(
         doc_map.len()
     );
 
-    // Build dependency graph and get topological order for Python
+    // Try to build dependency graph and get topological order for supported languages
     let processing_order = if language.to_lowercase() == "python" {
         match build_dependency_graph(documents, language, &doc_map) {
             Ok(graph) => {
@@ -594,19 +654,20 @@ fn resolve_dependencies(
                         ordered_docs
                     }
                     Err(e) => {
-                        warn!("Circular dependency detected: {}. Falling back to original order.", e);
-                        documents.iter().collect()
+                        warn!("Circular dependency detected: {}. Falling back to simple file ordering.", e);
+                        simple_file_ordering(documents)
                     }
                 }
             }
             Err(e) => {
-                warn!("Failed to build dependency graph: {}. Falling back to original order.", e);
-                documents.iter().collect()
+                warn!("Failed to build dependency graph: {}. Falling back to simple file ordering.", e);
+                simple_file_ordering(documents)
             }
         }
     } else {
-        // For non-Python languages, use original order for now
-        documents.iter().collect()
+        // For non-Python languages or unsupported languages, use simple file ordering
+        info!("Using simple file ordering for language: {}", language);
+        simple_file_ordering(documents)
     };
 
     let mut resolved_docs = Vec::new();
@@ -622,7 +683,14 @@ fn resolve_dependencies(
         stats.original_length += doc.text.len() as u64;
         stats.files_processed += 1;
 
-        let imports = processor.extract_imports(&doc.text, doc.metadata.path.as_deref())?;
+        let imports = match processor.extract_imports(&doc.text, doc.metadata.path.as_deref()) {
+            Ok(imports) => imports,
+            Err(e) => {
+                warn!("Failed to extract imports for document {}: {}. Continuing without import resolution.", 
+                      doc.metadata.path.as_deref().unwrap_or("<unknown>"), e);
+                Vec::new()
+            }
+        };
         let mut resolved_text = doc.text.clone();
         let original_size = resolved_text.len();
         total_imports_found += imports.len();
