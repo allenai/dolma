@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{debug, info, warn, trace};
+use log::{debug, warn, trace};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -13,7 +13,7 @@ use walkdir::WalkDir;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Input directory containing JSONL.zst files organized by language
+    /// Input directory containing JSONL.zst files organized by language, or path to a single JSONL.zst file
     #[arg(short, long)]
     input_dir: PathBuf,
 
@@ -28,6 +28,10 @@ struct Args {
     /// Value of the file separator token
     #[arg(long, default_value = "<|file_sep|>")]
     file_separator_token: String,
+
+    /// Process a single file instead of a directory
+    #[arg(long, default_value_t = false)]
+    single_file: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -376,9 +380,11 @@ const JAVA_IMPORT_QUERY: &str = r#"
 
 const CSHARP_IMPORT_QUERY: &str = r#"
 (using_directive
-  name: (identifier) @import)
+  (identifier) @import)
 (using_directive
-  name: (qualified_name) @import)
+  (qualified_name) @import)
+(using_directive
+  (alias_qualified_name) @import)
 "#;
 
 const GO_IMPORT_QUERY: &str = r#"
@@ -1107,6 +1113,71 @@ fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
     Ok(overall_stats)
 }
 
+fn process_single_input_file(
+    args: &Args,
+    input_file: &Path,
+) -> Result<ProcessingStats> {
+    debug!("Processing single file: {}", input_file.display());
+    
+    if !input_file.exists() {
+        return Err(anyhow::anyhow!("Input file does not exist: {}", input_file.display()));
+    }
+    
+    if input_file.extension().map_or(true, |ext| ext != "zst") {
+        return Err(anyhow::anyhow!("Input file must have .zst extension: {}", input_file.display()));
+    }
+    
+    // Try to detect language from parent directory or filename
+    let detected_language = if let Some(parent) = input_file.parent() {
+        detect_language_from_path(parent)
+    } else {
+        None
+    }.or_else(|| {
+        // Try to detect from filename if parent detection fails
+        input_file.file_stem()
+            .and_then(|stem| stem.to_str())
+            .and_then(|stem| {
+                if stem.to_lowercase().contains("csharp") || stem.to_lowercase().contains("c#") {
+                    Some("CSharp".to_string())
+                } else if stem.to_lowercase().contains("python") {
+                    Some("Python".to_string())
+                } else if stem.to_lowercase().contains("rust") {
+                    Some("Rust".to_string())
+                } else if stem.to_lowercase().contains("java") {
+                    Some("Java".to_string())
+                } else if stem.to_lowercase().contains("javascript") {
+                    Some("JavaScript".to_string())
+                } else if stem.to_lowercase().contains("typescript") {
+                    Some("TypeScript".to_string())
+                } else {
+                    None
+                }
+            })
+    }).unwrap_or_else(|| {
+        warn!("Could not detect language for file: {}. Defaulting to 'Unknown'", input_file.display());
+        "Unknown".to_string()
+    });
+    
+    debug!("Detected language: {}", detected_language);
+    
+    let _output_file = args.output_dir.join(
+        input_file.file_name().ok_or_else(|| {
+            anyhow::anyhow!("Input file has no filename: {}", input_file.display())
+        })?
+    );
+    
+    process_single_file(
+        input_file,
+        input_file.parent().unwrap_or(Path::new(".")),
+        &args.output_dir,
+        &detected_language,
+        args.include_external,
+        &args.file_separator_token,
+        false,
+        &Arc::new(Mutex::new(create_progress_bar(1, &detected_language))),
+    )
+}
+
 fn main() -> Result<()> {
     env_logger::Builder::from_default_env()
         .filter_level(log::LevelFilter::Warn)
@@ -1114,14 +1185,18 @@ fn main() -> Result<()> {
     let args = Args::parse();
 
     debug!("Starting tree-fitter processing");
-    debug!("Input directory: {}", args.input_dir.display());
+    debug!("Input path: {}", args.input_dir.display());
     debug!("Output directory: {}", args.output_dir.display());
     debug!("Include external dependencies: {}", args.include_external);
     debug!("File separator token: '{}'", args.file_separator_token);
+    debug!("Single file mode: {}", args.single_file);
 
     std::fs::create_dir_all(&args.output_dir)?;
 
-    let overall_stats = if let Some(detected_language) = detect_language_from_path(&args.input_dir) {
+    let overall_stats = if args.single_file || args.input_dir.is_file() {
+        debug!("Processing single file: {}", args.input_dir.display());
+        process_single_input_file(&args, &args.input_dir)?
+    } else if let Some(detected_language) = detect_language_from_path(&args.input_dir) {
         debug!("Detected language from input directory: {}", detected_language);
         process_detected_language(&args, &detected_language)?
     } else {
