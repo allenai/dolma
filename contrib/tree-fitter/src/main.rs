@@ -79,10 +79,9 @@ enum ImportType {
 
 #[derive(Debug)]
 struct ProcessingStats {
-    original_length: u64,
-    processed_length: u64,
     files_processed: usize,
-    imports_resolved: usize,
+    repos_processed: usize,
+    total_files_concatenated: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -168,26 +167,23 @@ impl DependencyGraph {
 impl ProcessingStats {
     fn new() -> Self {
         Self {
-            original_length: 0,
-            processed_length: 0,
             files_processed: 0,
-            imports_resolved: 0,
+            repos_processed: 0,
+            total_files_concatenated: 0,
         }
     }
 
     fn add(&mut self, other: &ProcessingStats) {
-        self.original_length += other.original_length;
-        self.processed_length += other.processed_length;
         self.files_processed += other.files_processed;
-        self.imports_resolved += other.imports_resolved;
+        self.repos_processed += other.repos_processed;
+        self.total_files_concatenated += other.total_files_concatenated;
     }
 
-    fn average_change(&self) -> f64 {
-        if self.files_processed == 0 {
+    fn average_files_per_repo(&self) -> f64 {
+        if self.repos_processed == 0 {
             0.0
         } else {
-            (self.processed_length as f64 - self.original_length as f64)
-                / self.files_processed as f64
+            self.total_files_concatenated as f64 / self.repos_processed as f64
         }
     }
 }
@@ -606,7 +602,8 @@ fn resolve_dependencies(
     );
     let mut processor = LanguageProcessor::new(language)?;
     let mut stats = ProcessingStats::new();
-    let mut total_imports_found = 0;
+    stats.repos_processed = 1;
+    stats.total_files_concatenated = documents.len();
     let mut imports_by_type = HashMap::new();
     let mut resolution_failures = HashMap::new();
 
@@ -680,7 +677,6 @@ fn resolve_dependencies(
             doc.metadata.path.as_deref().unwrap_or("<unknown path>")
         );
 
-        stats.original_length += doc.text.len() as u64;
         stats.files_processed += 1;
 
         let imports = match processor.extract_imports(&doc.text, doc.metadata.path.as_deref()) {
@@ -692,8 +688,6 @@ fn resolve_dependencies(
             }
         };
         let mut resolved_text = doc.text.clone();
-        let original_size = resolved_text.len();
-        total_imports_found += imports.len();
 
         if !imports.is_empty() {
             debug!("Found {} imports to resolve", imports.len());
@@ -722,7 +716,6 @@ fn resolve_dependencies(
                             resolved_text.push_str(file_separator_token);
                             resolved_text.push_str("\n");
                             resolved_text.push_str(&dep_doc.text);
-                            stats.imports_resolved += 1;
                         } else {
                             let failure_key = "Local dependency not found in document map";
                             *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
@@ -764,15 +757,6 @@ fn resolve_dependencies(
             }
         }
 
-        let size_change = resolved_text.len() as i64 - original_size as i64;
-        if size_change > 0 {
-            debug!(
-                "Document size increased by {} bytes after dependency injection",
-                size_change
-            );
-        }
-
-        stats.processed_length += resolved_text.len() as u64;
 
         let mut new_doc = (*doc).clone();
         new_doc.text = resolved_text;
@@ -780,9 +764,7 @@ fn resolve_dependencies(
     }
 
     info!(
-        "Dependency resolution complete: {}/{} imports resolved, {} documents processed",
-        stats.imports_resolved,
-        total_imports_found,
+        "Dependency resolution complete: {} documents processed",
         stats.files_processed
     );
     
@@ -1138,36 +1120,12 @@ fn main() -> Result<()> {
 
     info!("\n=== Processing Statistics ===");
     info!("Files processed: {}", overall_stats.files_processed);
-    info!("Imports resolved: {}", overall_stats.imports_resolved);
+    info!("Repositories processed: {}", overall_stats.repos_processed);
+    info!("Total files concatenated: {}", overall_stats.total_files_concatenated);
     info!(
-        "Original total length: {} bytes",
-        overall_stats.original_length
+        "Average files per repository: {:.2}",
+        overall_stats.average_files_per_repo()
     );
-    info!(
-        "Processed total length: {} bytes",
-        overall_stats.processed_length
-    );
-    info!(
-        "Average change per document: {:.2} bytes",
-        overall_stats.average_change()
-    );
-    let size_change_percent = if overall_stats.original_length > 0 {
-        ((overall_stats.processed_length as f64 - overall_stats.original_length as f64)
-            / overall_stats.original_length as f64)
-            * 100.0
-    } else {
-        0.0
-    };
-    info!("Total size change: {:.2}%", size_change_percent);
-
-    if overall_stats.imports_resolved > 0 {
-        info!(
-            "Successfully injected {} dependencies across {} files",
-            overall_stats.imports_resolved, overall_stats.files_processed
-        );
-    } else {
-        info!("No dependencies were resolved and injected");
-    }
 
     info!("Tree-fitter processing completed successfully");
 
