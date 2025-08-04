@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
-use log::{debug, info, warn};
+use log::{debug, info, warn, trace};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -241,7 +241,7 @@ impl LanguageProcessor {
 
     fn extract_imports(&mut self, source: &str, current_path: Option<&str>) -> Result<Vec<ImportInfo>> {
         if !self.is_supported {
-            debug!("Language not supported for import extraction, returning empty imports");
+            trace!("Language not supported for import extraction, returning empty imports");
             return Ok(Vec::new());
         }
 
@@ -253,7 +253,7 @@ impl LanguageProcessor {
             anyhow::anyhow!("Language not available for unsupported language")
         })?;
 
-        debug!(
+        trace!(
             "Extracting imports from source code ({} bytes)",
             source.len()
         );
@@ -273,7 +273,7 @@ impl LanguageProcessor {
                 let node = capture.node;
                 if let Ok(import_text) = node.utf8_text(source.as_bytes()) {
                     let import_info = self.parse_import(import_text, current_path)?;
-                    debug!(
+                    trace!(
                         "Found import: {} (type: {:?})",
                         import_info.module_path, import_info.import_type
                     );
@@ -282,7 +282,7 @@ impl LanguageProcessor {
             }
         }
 
-        debug!("Extracted {} imports from source", imports.len());
+        trace!("Extracted {} imports from source", imports.len());
         Ok(imports)
     }
 
@@ -429,7 +429,7 @@ fn resolve_python_relative_import(import_path: &str, current_file_path: &str) ->
 }
 
 fn simple_file_ordering(documents: &[Document]) -> Vec<&Document> {
-    info!("Using simple file ordering (no dependency analysis) for {} documents", documents.len());
+    debug!("Using simple file ordering (no dependency analysis) for {} documents", documents.len());
     
     // Simple heuristic: sort by path length (shorter paths first, likely dependencies)
     // then alphabetically for deterministic ordering
@@ -448,7 +448,7 @@ fn simple_file_ordering(documents: &[Document]) -> Vec<&Document> {
         }
     });
     
-    info!("Simple file ordering complete - {} documents sorted by path hierarchy", docs_with_paths.len());
+    debug!("Simple file ordering complete - {} documents sorted by path hierarchy", docs_with_paths.len());
     docs_with_paths
 }
 
@@ -457,7 +457,7 @@ fn build_dependency_graph(
     language: &str,
     doc_map: &HashMap<String, &Document>,
 ) -> Result<DependencyGraph> {
-    info!("Building dependency graph for {} documents in {}", documents.len(), language);
+    debug!("Building dependency graph for {} documents in {}", documents.len(), language);
     let mut graph = DependencyGraph::with_capacity(documents.len());
     let mut processor = LanguageProcessor::new(language)?;
     
@@ -475,7 +475,7 @@ fn build_dependency_graph(
                 for import in imports {
                     if import.import_type == ImportType::Local {
                         if let Some(dep_path) = find_python_dependency_path(&import.module_path, doc_map, current_path) {
-                            debug!("Adding dependency edge: {} -> {}", current_path, dep_path);
+                            trace!("Adding dependency edge: {} -> {}", current_path, dep_path);
                             graph.add_edge(dep_path, current_path.clone());
                         }
                     }
@@ -484,7 +484,7 @@ fn build_dependency_graph(
         }
     }
     
-    info!("Dependency graph built with {} nodes", graph.nodes.len());
+    debug!("Dependency graph built with {} nodes", graph.nodes.len());
     Ok(graph)
 }
 
@@ -508,7 +508,7 @@ fn find_python_dependency_path(
 }
 
 fn read_jsonl_zst_file(file_path: &Path) -> Result<Vec<Document>> {
-    debug!("Reading JSONL.zst file: {}", file_path.display());
+    trace!("Reading JSONL.zst file: {}", file_path.display());
     let file = std::fs::File::open(file_path)?;
     let decoder = zstd::Decoder::new(file)?;
     let reader = std::io::BufReader::new(decoder);
@@ -530,7 +530,7 @@ fn read_jsonl_zst_file(file_path: &Path) -> Result<Vec<Document>> {
         }
     }
 
-    info!(
+    debug!(
         "Loaded {} documents from {} ({} lines processed)",
         documents.len(),
         file_path.display(),
@@ -540,7 +540,7 @@ fn read_jsonl_zst_file(file_path: &Path) -> Result<Vec<Document>> {
 }
 
 fn write_jsonl_zst_file(documents: &[Document], output_path: &Path) -> Result<()> {
-    debug!(
+    trace!(
         "Writing {} documents to {}",
         documents.len(),
         output_path.display()
@@ -560,7 +560,7 @@ fn write_jsonl_zst_file(documents: &[Document], output_path: &Path) -> Result<()
         std::io::Write::write_all(&mut writer, b"\n")?;
     }
 
-    info!(
+    debug!(
         "Successfully wrote {} documents ({} bytes total content) to {}",
         documents.len(),
         total_size_before,
@@ -571,7 +571,7 @@ fn write_jsonl_zst_file(documents: &[Document], output_path: &Path) -> Result<()
 }
 
 fn group_documents_by_repo(documents: Vec<Document>) -> HashMap<String, Vec<Document>> {
-    debug!("Grouping {} documents by repository", documents.len());
+    trace!("Grouping {} documents by repository", documents.len());
     let mut grouped = HashMap::with_capacity(documents.len() / 10); // Estimate
 
     for doc in documents {
@@ -581,9 +581,9 @@ fn group_documents_by_repo(documents: Vec<Document>) -> HashMap<String, Vec<Docu
         grouped.entry(key).or_insert_with(Vec::new).push(doc);
     }
 
-    info!("Grouped documents into {} repositories", grouped.len());
+    debug!("Grouped documents into {} repositories", grouped.len());
     for (repo_key, docs) in &grouped {
-        debug!("Repository '{}': {} documents", repo_key, docs.len());
+        trace!("Repository '{}': {} documents", repo_key, docs.len());
     }
 
     grouped
@@ -595,7 +595,7 @@ fn resolve_dependencies(
     include_external: bool,
     file_separator_token: &str,
 ) -> Result<(Vec<Document>, ProcessingStats)> {
-    info!(
+    debug!(
         "Starting dependency resolution for {} documents in {}",
         documents.len(),
         language
@@ -613,7 +613,7 @@ fn resolve_dependencies(
         .filter_map(|doc| doc.metadata.path.as_ref().map(|path| (path.clone(), doc)))
         .collect();
 
-    info!(
+    debug!(
         "Created document map with {} entries for dependency lookup",
         doc_map.len()
     );
@@ -624,7 +624,7 @@ fn resolve_dependencies(
             Ok(graph) => {
                 match graph.topological_sort() {
                     Ok(sorted_paths) => {
-                        info!("Successfully computed topological order for {} files", sorted_paths.len());
+                        debug!("Successfully computed topological order for {} files", sorted_paths.len());
                         // Create ordered list of documents based on topological sort
                         let mut ordered_docs = Vec::new();
                         let mut processed_paths = HashSet::new();
@@ -663,14 +663,14 @@ fn resolve_dependencies(
         }
     } else {
         // For non-Python languages or unsupported languages, use simple file ordering
-        info!("Using simple file ordering for language: {}", language);
+        debug!("Using simple file ordering for language: {}", language);
         simple_file_ordering(documents)
     };
 
     let mut resolved_docs = Vec::new();
 
     for (idx, doc) in processing_order.iter().enumerate() {
-        debug!(
+        trace!(
             "Processing document {}/{}: {}",
             idx + 1,
             processing_order.len(),
@@ -690,14 +690,14 @@ fn resolve_dependencies(
         let mut resolved_text = doc.text.clone();
 
         if !imports.is_empty() {
-            debug!("Found {} imports to resolve", imports.len());
+            trace!("Found {} imports to resolve", imports.len());
         }
 
         for import in imports {
             // Track import types
             *imports_by_type.entry(format!("{:?}", import.import_type)).or_insert(0) += 1;
             
-            debug!(
+            trace!(
                 "Resolving import: {} (type: {:?})",
                 import.module_path, import.import_type
             );
@@ -707,7 +707,7 @@ fn resolve_dependencies(
                         if let Some(dep_doc) =
                             find_local_dependency(&import.module_path, &doc_map, current_path)
                         {
-                            debug!(
+                            trace!(
                                 "Successfully resolved local dependency: {} -> {}",
                                 import.module_path,
                                 dep_doc.metadata.path.as_deref().unwrap_or("<unknown>")
@@ -719,7 +719,7 @@ fn resolve_dependencies(
                         } else {
                             let failure_key = "Local dependency not found in document map";
                             *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
-                            debug!(
+                            trace!(
                                 "Could not resolve local dependency: {} from {} - not found in document map",
                                 import.module_path, current_path
                             );
@@ -727,7 +727,7 @@ fn resolve_dependencies(
                     } else {
                         let failure_key = "Document missing path metadata";
                         *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
-                        debug!(
+                        trace!(
                             "Document has no path metadata, cannot resolve local import: {}",
                             import.module_path
                         );
@@ -736,7 +736,7 @@ fn resolve_dependencies(
                 ImportType::External if include_external => {
                     let failure_key = "External dependency resolution not implemented";
                     *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
-                    debug!(
+                    trace!(
                         "External dependency resolution not implemented: {}",
                         import.module_path
                     );
@@ -744,7 +744,7 @@ fn resolve_dependencies(
                 ImportType::External => {
                     let failure_key = "External dependencies disabled (use --include-external)";
                     *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
-                    debug!(
+                    trace!(
                         "Skipping external dependency (--include-external not set): {}",
                         import.module_path
                     );
@@ -752,7 +752,7 @@ fn resolve_dependencies(
                 ImportType::Standard => {
                     let failure_key = "Standard library imports skipped by design";
                     *resolution_failures.entry(failure_key.to_string()).or_insert(0) += 1;
-                    debug!("Skipping standard library import: {}", import.module_path);
+                    trace!("Skipping standard library import: {}", import.module_path);
                 }
             }
         }
@@ -763,22 +763,22 @@ fn resolve_dependencies(
         resolved_docs.push(new_doc);
     }
 
-    info!(
+    debug!(
         "Dependency resolution complete: {} documents processed",
         stats.files_processed
     );
     
     // Log detailed breakdown of import types
-    info!("Import breakdown by type:");
+    debug!("Import breakdown by type:");
     for (import_type, count) in &imports_by_type {
-        info!("  {}: {} imports", import_type, count);
+        debug!("  {}: {} imports", import_type, count);
     }
     
     // Log reasons why imports were not resolved
     if !resolution_failures.is_empty() {
-        info!("Reasons imports were not resolved:");
+        debug!("Reasons imports were not resolved:");
         for (reason, count) in &resolution_failures {
-            info!("  {}: {} imports", reason, count);
+            debug!("  {}: {} imports", reason, count);
         }
     }
 
@@ -790,7 +790,7 @@ fn find_local_dependency<'a>(
     doc_map: &'a HashMap<String, &'a Document>,
     current_path: &str,
 ) -> Option<&'a Document> {
-    debug!(
+    trace!(
         "Looking for local dependency '{}' from '{}'",
         import_path, current_path
     );
@@ -804,20 +804,20 @@ fn find_local_dependency<'a>(
         format!("{}/{}.ts", current_dir.display(), import_path),
     ];
 
-    debug!(
+    trace!(
         "Checking {} potential paths for dependency",
         potential_paths.len()
     );
 
     for path in &potential_paths {
-        debug!("Checking path: {}", path);
+        trace!("Checking path: {}", path);
         if let Some(doc) = doc_map.get(path) {
-            debug!("Found dependency at: {}", path);
+            trace!("Found dependency at: {}", path);
             return Some(doc);
         }
     }
 
-    debug!(
+    trace!(
         "No dependency found for '{}' in any of the checked paths",
         import_path
     );
@@ -829,7 +829,7 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
         panic!("Cannot concatenate empty document list");
     }
 
-    info!(
+    debug!(
         "Concatenating {} documents into single repository file",
         documents.len()
     );
@@ -860,7 +860,7 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
     let repo_name = first_doc.metadata.repo_name.as_deref().unwrap_or("unknown");
     result.metadata.path = Some(format!("{}_concatenated", repo_name));
 
-    info!(
+    debug!(
         "Concatenation complete: {} bytes total content (+{} bytes delta)",
         final_size,
         final_size as i64 - total_length as i64
@@ -891,7 +891,7 @@ fn process_single_file(
     preserve_structure: bool,
     pb: &Arc<Mutex<ProgressBar>>,
 ) -> Result<ProcessingStats> {
-    debug!("Processing file: {}", file_path.display());
+    trace!("Processing file: {}", file_path.display());
     let documents = read_jsonl_zst_file(file_path)?;
     let grouped = group_documents_by_repo(documents);
 
@@ -899,7 +899,7 @@ fn process_single_file(
     let mut output_docs = Vec::new();
 
     for (repo_key, repo_docs) in grouped {
-        info!(
+        debug!(
             "Processing repository: {} ({} documents)",
             repo_key,
             repo_docs.len()
@@ -914,7 +914,7 @@ fn process_single_file(
 
         let concatenated = concatenate_repo_files(resolved_docs, file_separator_token);
         output_docs.push(concatenated);
-        info!("Completed processing repository: {}", repo_key);
+        debug!("Completed processing repository: {}", repo_key);
     }
 
     let output_file = if preserve_structure {
@@ -1029,7 +1029,7 @@ fn process_detected_language(
     args: &Args,
     detected_language: &str,
 ) -> Result<ProcessingStats> {
-    info!("Processing language: {}", detected_language);
+    debug!("Processing language: {}", detected_language);
 
     let stats = process_files_in_directory(
         &args.input_dir,
@@ -1040,7 +1040,7 @@ fn process_detected_language(
         true,
     )?;
     
-    info!("Completed processing for detected language: {}", detected_language);
+    debug!("Completed processing for detected language: {}", detected_language);
     Ok(stats)
 }
 
@@ -1051,7 +1051,7 @@ fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
         "Shell", "Swift", "TypeScript",
     ];
 
-    info!("Starting parallel processing of language directories...");
+    debug!("Starting parallel processing of language directories...");
 
     let existing_languages: Vec<&str> = languages
         .iter()
@@ -1059,9 +1059,9 @@ fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
             let lang_dir = args.input_dir.join(lang);
             let exists = lang_dir.exists();
             if exists {
-                debug!("Found language directory: {}", lang_dir.display());
+                trace!("Found language directory: {}", lang_dir.display());
             } else {
-                debug!("Language directory not found: {}", lang_dir.display());
+                trace!("Language directory not found: {}", lang_dir.display());
             }
             exists
         })
@@ -1073,7 +1073,7 @@ fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
         return Ok(ProcessingStats::new());
     }
 
-    info!(
+    debug!(
         "Found {} language directories to process: {:?}",
         existing_languages.len(),
         existing_languages
@@ -1099,7 +1099,7 @@ fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
         overall_stats.add(&result?);
     }
     
-    info!("Completed parallel processing of all language directories");
+    debug!("Completed parallel processing of all language directories");
     Ok(overall_stats)
 }
 
@@ -1118,10 +1118,10 @@ fn main() -> Result<()> {
     std::fs::create_dir_all(&args.output_dir)?;
 
     let overall_stats = if let Some(detected_language) = detect_language_from_path(&args.input_dir) {
-        info!("Detected language from input directory: {}", detected_language);
+        debug!("Detected language from input directory: {}", detected_language);
         process_detected_language(&args, &detected_language)?
     } else {
-        info!("No specific language detected, processing all language directories");
+        debug!("No specific language detected, processing all language directories");
         process_multiple_languages(&args)?
     };
 
