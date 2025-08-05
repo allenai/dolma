@@ -4,6 +4,7 @@ Analyze bucketed JSONL.zst files and generate distribution plots and statistics.
 """
 
 import argparse
+import io
 import zstandard as zstd
 from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional
@@ -75,10 +76,12 @@ def process_zst_file_threaded(file_path: Path, num_threads: int = 4) -> Tuple[in
         with open(file_path, "rb") as fh:
             compressed_data = fh.read()
         
-        # Decompress all data at once to utilize memory
+        # Decompress all data using streaming approach to handle frames without content size
         dctx = zstd.ZstdDecompressor()
         try:
-            decompressed_data = dctx.decompress(compressed_data)
+            # Use streaming decompression to handle frames without content size in header
+            with dctx.stream_reader(io.BytesIO(compressed_data)) as reader:
+                decompressed_data = reader.read()
         except zstd.ZstdError as e:
             print(f"Zstandard decompression error for {file_path}: {e}")
             return 0, []
