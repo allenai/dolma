@@ -5,6 +5,7 @@ Analyze bucketed JSONL.zst files and generate distribution plots and statistics.
 
 import argparse
 import io
+import json
 import zstandard as zstd
 from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional
@@ -333,92 +334,139 @@ def analyze_buckets(input_dir: Path, num_workers: int = 128) -> Dict[str, Dict[s
     return bucket_stats
 
 
+def sort_bucket_names(bucket_names: List[str]) -> List[str]:
+    """Sort bucket names correctly, handling length_2e9, length_2e10, etc."""
+    def bucket_sort_key(name: str) -> float:
+        # Extract numeric part from bucket names like "length_2e9", "length_2e10", etc.
+        if name.startswith("length_"):
+            try:
+                # Handle scientific notation like "2e9", "2e10"
+                numeric_part = name.replace("length_", "")
+                return float(numeric_part)
+            except ValueError:
+                pass
+        # Fallback to string sorting for non-standard names
+        return float('inf')
+    
+    return sorted(bucket_names, key=bucket_sort_key)
+
+
 def create_visualizations(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
-    """Create distribution plots and visualizations."""
-    # Prepare data for plotting
-    bucket_names = list(bucket_stats.keys())
-    line_counts = [stats["total_lines"] for stats in bucket_stats.values()]
-
-    # Create figure with subplots
-    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle("Bucket Analysis", fontsize=16)
-
-    # 1. Distribution of line counts across buckets
-    ax1 = axes[0, 0]
-    sns.barplot(x=bucket_names, y=line_counts, ax=ax1)
-    ax1.set_title("Lines per Bucket")
-    ax1.set_xlabel("Bucket")
-    ax1.set_ylabel("Number of Lines")
-    ax1.tick_params(axis="x", rotation=45)
-
-    # Format y-axis with comma separators
-    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-
-    # 2. Score distribution across all buckets
-    ax2 = axes[0, 1]
+    """Create distribution plots and visualizations using seaborn."""
+    # Prepare data for plotting with proper sorting
+    sorted_bucket_names = sort_bucket_names(list(bucket_stats.keys()))
+    line_counts = [bucket_stats[name]["total_lines"] for name in sorted_bucket_names]
     all_scores = [score for stats in bucket_stats.values() if stats["scores"] for score in stats["scores"]]
 
-    if all_scores:
-        sns.histplot(all_scores, bins=50, ax=ax2)
-        ax2.set_title("Score Distribution (All Buckets)")
-        ax2.set_xlabel("Score")
-        ax2.set_ylabel("Frequency")
+    # Set seaborn style for better-looking plots
+    sns.set_style("whitegrid")
+    sns.set_palette("husl")
 
-    # 3. Box plot of scores by bucket
-    ax3 = axes[1, 0]
+    # Create figure with subplots - 2x2 grid with 4 plots total
+    fig = plt.figure(figsize=(16, 10))
+    
+    # 1. Bar plot of lines per bucket
+    ax1 = plt.subplot(2, 2, 1)
+    sns.barplot(x=sorted_bucket_names, y=line_counts, ax=ax1)
+    ax1.set_title("Lines per Bucket", fontsize=14, fontweight='bold')
+    ax1.set_xlabel("Bucket Name", fontsize=12)
+    ax1.set_ylabel("Number of Lines", fontsize=12)
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
+    # Improve x-axis labels - rotate and show every nth label
+    ax1.tick_params(axis="x", rotation=45, labelsize=10)
+    step = max(1, len(sorted_bucket_names)//10)
+    ticks = range(0, len(sorted_bucket_names), step)
+    ax1.set_xticks(ticks)
+    ax1.set_xticklabels([sorted_bucket_names[i] for i in ticks])
+
+    # 2. Score distribution across all buckets with KDE
+    ax2 = plt.subplot(2, 2, 2)
+    if all_scores:
+        sns.histplot(all_scores, kde=True, bins=50, ax=ax2)
+        ax2.set_title("Score Distribution (All Buckets)", fontsize=14, fontweight='bold')
+        ax2.set_xlabel("Score", fontsize=12)
+        ax2.set_ylabel("Count", fontsize=12)
+
+    # 3. Violin plot of scores by bucket
+    ax3 = plt.subplot(2, 2, 3)
     buckets_with_scores = [
         (bucket_name, stats["scores"]) for bucket_name, stats in bucket_stats.items() if stats["scores"]
     ]
+    
+    if buckets_with_scores and len(buckets_with_scores) > 1:
+        # Sort buckets for consistent ordering
+        bucket_names_only = [bucket_name for bucket_name, _ in buckets_with_scores]
+        sorted_bucket_names = sort_bucket_names(bucket_names_only)
+        bucket_dict = {name: scores for name, scores in buckets_with_scores}
+        
+        # Create dataframe for violin plot with sorted buckets
+        plot_data = []
+        for bucket_name in sorted_bucket_names:
+            if bucket_name in bucket_dict:
+                scores = bucket_dict[bucket_name]
+                # Limit to 500 scores per bucket and sample evenly for better performance and cleaner viz
+                sample_size = min(500, len(scores))
+                if len(scores) > sample_size:
+                    # Sample evenly across the range
+                    indices = np.linspace(0, len(scores) - 1, sample_size, dtype=int)
+                    sampled_scores = [scores[i] for i in indices]
+                else:
+                    sampled_scores = scores
+                for score in sampled_scores:
+                    plot_data.append({'Bucket': bucket_name, 'Score': score})
+        
+        if plot_data:
+            df_violin = pd.DataFrame(plot_data)
+            # Use quartile inner marks instead of box for cleaner look
+            sns.violinplot(data=df_violin, x="Bucket", y="Score", ax=ax3, order=sorted_bucket_names, inner="quartile", density_norm="width", cut=0)
+            ax3.set_title("Score Distribution by Bucket", fontsize=14, fontweight='bold')
+            ax3.set_xlabel("Bucket", fontsize=12)
+            ax3.set_ylabel("Score", fontsize=12)
+            # Improve x-axis label spacing - more aggressive filtering for violin plot
+            ax3.tick_params(axis="x", rotation=45, labelsize=9)
+            # Show only every 4th bucket to reduce clutter
+            step = max(1, len(sorted_bucket_names) // 6)
+            ticks = range(0, len(sorted_bucket_names), step)
+            ax3.set_xticks(ticks)
+            ax3.set_xticklabels([sorted_bucket_names[i] for i in ticks])
 
+    # 4. Box plot of scores by bucket
+    ax4 = plt.subplot(2, 2, 4)
     if buckets_with_scores:
-        bucket_labels, score_data = zip(*buckets_with_scores)
-        bucket_labels = list(bucket_labels)
-        score_data = list(score_data)
+        # Sort buckets for consistent ordering
+        bucket_names_only = [bucket_name for bucket_name, _ in buckets_with_scores]
+        sorted_bucket_names = sort_bucket_names(bucket_names_only)
+        bucket_dict = {name: scores for name, scores in buckets_with_scores}
+        
+        plot_data = []
+        for bucket_name in sorted_bucket_names:
+            if bucket_name in bucket_dict:
+                scores = bucket_dict[bucket_name]
+                for score in scores:
+                    plot_data.append({'Bucket': bucket_name, 'Score': score})
+        
+        if plot_data:
+            df_box = pd.DataFrame(plot_data)
+            sns.boxplot(data=df_box, x="Bucket", y="Score", ax=ax4, order=sorted_bucket_names, showfliers=False)
+            ax4.set_title("Score Distribution by Bucket (Box Plot)", fontsize=14, fontweight='bold')
+            ax4.set_xlabel("Bucket", fontsize=12)
+            ax4.set_ylabel("Score", fontsize=12)
+            # Improve x-axis label spacing
+            ax4.tick_params(axis="x", rotation=45, labelsize=10)
+            # Show every nth label to avoid crowding
+            step = max(1, len(sorted_bucket_names) // 8)
+            ticks = range(0, len(sorted_bucket_names), step)
+            ax4.set_xticks(ticks)
+            ax4.set_xticklabels([sorted_bucket_names[i] for i in ticks])
 
-    if buckets_with_scores:
-        # Handle buckets with different numbers of scores
-        max_len = max(len(scores) for scores in score_data)
-        padded_data = {}
-        for label, scores in zip(bucket_labels, score_data):
-            padded_data[label] = scores + [np.nan] * (max_len - len(scores))
 
-        df_scores = pd.DataFrame(padded_data)
-        df_melted = df_scores.melt(var_name="Bucket", value_name="Score")
-        df_melted = df_melted.dropna(subset=["Score"])
-        sns.boxplot(data=df_melted, x="Bucket", y="Score", ax=ax3)
-        ax3.set_title("Score Distribution by Bucket")
-        ax3.tick_params(axis="x", rotation=45)
-
-    # 4. Scatter plot of median score vs line count
-    ax4 = axes[1, 1]
-    buckets_with_median = [
-        (bucket_name, stats["score_median"], stats["total_lines"])
-        for bucket_name, stats in bucket_stats.items()
-        if stats["score_median"] is not None
-    ]
-
-    if buckets_with_median:
-        bucket_names_with_scores, median_scores, line_counts_with_scores = zip(*buckets_with_median)
-        bucket_names_with_scores = list(bucket_names_with_scores)
-        median_scores = list(median_scores)
-        line_counts_with_scores = list(line_counts_with_scores)
-
-    if buckets_with_median:
-        ax4.scatter(line_counts_with_scores, median_scores, alpha=0.7)
-        ax4.set_title("Median Score vs Line Count")
-        ax4.set_xlabel("Lines in Bucket")
-        ax4.set_ylabel("Median Score")
-        ax4.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
-
-        # Add bucket labels to points
-        for bucket_name, median_score, line_count in zip(
-            bucket_names_with_scores, median_scores, line_counts_with_scores
-        ):
-            ax4.annotate(
-                bucket_name, (line_count, median_score), xytext=(5, 5), textcoords="offset points", fontsize=8
-            )
-
-    plt.tight_layout()
+    plt.tight_layout(pad=3.0)
+    
+    # Save the plot
+    output_path = Path("bucket_analysis_plots.png")
+    plt.savefig(output_path, dpi=300, bbox_inches='tight')
+    print(f"Plots saved to: {output_path}")
+    
     try:
         plt.show()
     except Exception as e:
@@ -500,29 +548,83 @@ def print_statistics(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
         print("No score data found in any bucket.")
 
 
+def save_results_to_json(bucket_stats: Dict[str, Dict[str, Any]], output_path: Path) -> None:
+    """Save analysis results to JSON file for later reuse."""
+    # Convert numpy types to native Python types for JSON serialization
+    json_stats = {}
+    for bucket_name, stats in bucket_stats.items():
+        json_stats[bucket_name] = {
+            "total_lines": int(stats["total_lines"]),
+            "file_count": int(stats["file_count"]),
+            "scores": [float(score) for score in stats["scores"]] if stats["scores"] else [],
+            "score_min": float(stats["score_min"]) if stats["score_min"] is not None else None,
+            "score_max": float(stats["score_max"]) if stats["score_max"] is not None else None,
+            "score_median": float(stats["score_median"]) if stats["score_median"] is not None else None,
+            "score_mean": float(stats["score_mean"]) if stats["score_mean"] is not None else None,
+            "score_std": float(stats["score_std"]) if stats["score_std"] is not None else None,
+            "score_q25": float(stats["score_q25"]) if stats["score_q25"] is not None else None,
+            "score_q75": float(stats["score_q75"]) if stats["score_q75"] is not None else None,
+        }
+    
+    with open(output_path, 'w') as f:
+        json.dump(json_stats, f, indent=2)
+    print(f"Results saved to: {output_path}")
+
+
+def load_results_from_json(input_path: Path) -> Dict[str, Dict[str, Any]]:
+    """Load analysis results from JSON file."""
+    with open(input_path, 'r') as f:
+        return json.load(f)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Analyze bucketed JSONL.zst files")
     parser.add_argument("input_dir", type=Path, help="Input directory containing bucket subdirectories")
     parser.add_argument("--workers", type=int, default=128, help="Number of total cores to use (default: 128)")
+    parser.add_argument("--output-json", type=Path, default=Path("bucket_analysis_results.json"), 
+                       help="Path to save/load results JSON file (default: bucket_analysis_results.json)")
+    parser.add_argument("--force-regenerate", action="store_true", 
+                       help="Force regeneration of results even if JSON file exists")
+    parser.add_argument("--plot-only", action="store_true", 
+                       help="Only generate plots from existing JSON results (skip analysis)")
 
     args = parser.parse_args()
 
-    if not args.input_dir.exists():
-        print(f"Error: Input directory {args.input_dir} does not exist")
-        return 1
+    if not args.plot_only:
+        if not args.input_dir.exists():
+            print(f"Error: Input directory {args.input_dir} does not exist")
+            return 1
 
-    if not args.input_dir.is_dir():
-        print(f"Error: {args.input_dir} is not a directory")
-        return 1
+        if not args.input_dir.is_dir():
+            print(f"Error: {args.input_dir} is not a directory")
+            return 1
 
-    print(f"Analyzing buckets in: {args.input_dir}")
-
-    # Analyze buckets
-    bucket_stats = analyze_buckets(args.input_dir, args.workers)
-
-    if not bucket_stats:
-        print("No buckets found in the input directory")
-        return 1
+    # Check if we should load from existing JSON or run analysis
+    bucket_stats = None
+    
+    if args.plot_only:
+        # Plot-only mode: load from JSON
+        if not args.output_json.exists():
+            print(f"Error: JSON file {args.output_json} does not exist. Run analysis first without --plot-only.")
+            return 1
+        print(f"Loading results from: {args.output_json}")
+        bucket_stats = load_results_from_json(args.output_json)
+    elif args.output_json.exists() and not args.force_regenerate:
+        # JSON exists and not forcing regeneration
+        print(f"Found existing results at: {args.output_json}")
+        print("Loading existing results. Use --force-regenerate to reanalyze.")
+        bucket_stats = load_results_from_json(args.output_json)
+    else:
+        # Run full analysis
+        print(f"Analyzing buckets in: {args.input_dir}")
+        bucket_stats = analyze_buckets(args.input_dir, args.workers)
+        
+        if not bucket_stats:
+            print("No buckets found in the input directory")
+            return 1
+        
+        # Save results to JSON
+        save_results_to_json(bucket_stats, args.output_json)
 
     # Print statistics
     print_statistics(bucket_stats)
