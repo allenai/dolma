@@ -4,17 +4,32 @@ Analyze bucketed JSONL.zst files and generate distribution plots and statistics.
 """
 
 import argparse
-import json
 import zstandard as zstd
 from pathlib import Path
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, cpu_count, Manager
 from functools import partial
 from rich.progress import Progress, TaskID, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
+from rich.console import Console
+import threading
+import queue
+import time
+from concurrent.futures import ThreadPoolExecutor
+import msgspec
+
+
+class Metadata(msgspec.Struct):
+    """Struct for extracting only the score field from metadata."""
+    score: Optional[float] = None
+
+
+class Record(msgspec.Struct):
+    """Struct for extracting only the metadata field from records."""
+    metadata: Optional[Metadata] = None
 
 
 def count_lines_in_zst_file(file_path: Path) -> int:
@@ -22,22 +37,26 @@ def count_lines_in_zst_file(file_path: Path) -> int:
     try:
         with open(file_path, "rb") as fh:
             dctx = zstd.ZstdDecompressor()
-            with dctx.stream_reader(fh) as reader:
-                line_count = 0
-                buffer = b""
-                while True:
-                    chunk = reader.read(8192)
-                    if not chunk:
-                        break
-                    buffer += chunk
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        if line.strip():
-                            line_count += 1
-                # Handle last line if no trailing newline
-                if buffer.strip():
-                    line_count += 1
-                return line_count
+            try:
+                with dctx.stream_reader(fh) as reader:
+                    line_count = 0
+                    buffer = b""
+                    while True:
+                        chunk = reader.read(8192)
+                        if not chunk:
+                            break
+                        buffer += chunk
+                        while b"\n" in buffer:
+                            line, buffer = buffer.split(b"\n", 1)
+                            if line.strip():
+                                line_count += 1
+                    # Handle last line if no trailing newline
+                    if buffer.strip():
+                        line_count += 1
+                    return line_count
+            except zstd.ZstdError as e:
+                print(f"Zstandard decompression error for {file_path}: {e}")
+                return 0
     except (OSError, IOError) as e:
         print(f"Error reading {file_path}: {e}")
         return 0
@@ -46,40 +65,48 @@ def count_lines_in_zst_file(file_path: Path) -> int:
         return 0
 
 
-def process_zst_file(file_path: Path) -> Tuple[int, List[float]]:
-    """Process a single zst file to count lines and extract scores."""
+def process_zst_file_threaded(file_path: Path, num_threads: int = 4) -> Tuple[int, List[float]]:
+    """Process a single zst file using multiple threads for line processing."""
     line_count = 0
     scores = []
-
+    
+    # Read entire file into memory first to utilize high memory
     try:
         with open(file_path, "rb") as fh:
-            dctx = zstd.ZstdDecompressor()
-            with dctx.stream_reader(fh) as reader:
-                buffer = b""
-                while True:
-                    chunk = reader.read(8192)
-                    if not chunk:
-                        break
-                    buffer += chunk
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        if line.strip():
-                            line_count += 1
-                            try:
-                                record = json.loads(line.decode("utf-8"))
-                                if "metadata" in record and "score" in record["metadata"]:
-                                    scores.append(float(record["metadata"]["score"]))
-                            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-                                continue
-                # Handle last line if no trailing newline
-                if buffer.strip():
-                    line_count += 1
-                    try:
-                        record = json.loads(buffer.decode("utf-8"))
-                        if "metadata" in record and "score" in record["metadata"]:
-                            scores.append(float(record["metadata"]["score"]))
-                    except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-                        pass
+            compressed_data = fh.read()
+        
+        # Decompress all data at once to utilize memory
+        dctx = zstd.ZstdDecompressor()
+        try:
+            decompressed_data = dctx.decompress(compressed_data)
+        except zstd.ZstdError as e:
+            print(f"Zstandard decompression error for {file_path}: {e}")
+            return 0, []
+        
+        # Split into lines
+        lines = decompressed_data.split(b"\n")
+        lines = [line for line in lines if line.strip()]
+        
+        # Process lines in parallel using threadpool
+        def process_line(line_data):
+            try:
+                record = msgspec.json.decode(line_data, type=Record)
+                score = None
+                if record.metadata and record.metadata.score is not None:
+                    score = record.metadata.score
+                return 1, score
+            except (msgspec.DecodeError, ValueError, TypeError):
+                return 1, None
+        
+        with ThreadPoolExecutor(max_workers=num_threads) as executor:
+            results = list(executor.map(process_line, lines))
+        
+        # Aggregate results
+        for count, score in results:
+            line_count += count
+            if score is not None:
+                scores.append(score)
+                
     except (OSError, IOError) as e:
         print(f"Error reading {file_path}: {e}")
         return 0, []
@@ -96,30 +123,34 @@ def extract_scores_from_zst_file(file_path: Path) -> List[float]:
     try:
         with open(file_path, "rb") as fh:
             dctx = zstd.ZstdDecompressor()
-            with dctx.stream_reader(fh) as reader:
-                buffer = b""
-                while True:
-                    chunk = reader.read(8192)
-                    if not chunk:
-                        break
-                    buffer += chunk
-                    while b"\n" in buffer:
-                        line, buffer = buffer.split(b"\n", 1)
-                        if line.strip():
-                            try:
-                                record = json.loads(line.decode("utf-8"))
-                                if "metadata" in record and "score" in record["metadata"]:
-                                    scores.append(float(record["metadata"]["score"]))
-                            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-                                continue
-                # Handle last line if no trailing newline
-                if buffer.strip():
-                    try:
-                        record = json.loads(buffer.decode("utf-8"))
-                        if "metadata" in record and "score" in record["metadata"]:
-                            scores.append(float(record["metadata"]["score"]))
-                    except (json.JSONDecodeError, KeyError, ValueError, TypeError):
-                        pass
+            try:
+                with dctx.stream_reader(fh) as reader:
+                    buffer = b""
+                    while True:
+                        chunk = reader.read(8192)
+                        if not chunk:
+                            break
+                        buffer += chunk
+                        while b"\n" in buffer:
+                            line, buffer = buffer.split(b"\n", 1)
+                            if line.strip():
+                                try:
+                                    record = msgspec.json.decode(line, type=Record)
+                                    if record.metadata and record.metadata.score is not None:
+                                        scores.append(record.metadata.score)
+                                except (msgspec.DecodeError, ValueError, TypeError):
+                                    continue
+                    # Handle last line if no trailing newline
+                    if buffer.strip():
+                        try:
+                            record = msgspec.json.decode(buffer, type=Record)
+                            if record.metadata and record.metadata.score is not None:
+                                scores.append(record.metadata.score)
+                        except (msgspec.DecodeError, ValueError, TypeError):
+                            pass
+            except zstd.ZstdError as e:
+                print(f"Zstandard decompression error for {file_path}: {e}")
+                return []
     except (OSError, IOError) as e:
         print(f"Error reading {file_path}: {e}")
     except Exception as e:
@@ -127,9 +158,9 @@ def extract_scores_from_zst_file(file_path: Path) -> List[float]:
     return scores
 
 
-def process_bucket(bucket_info: Tuple[Path, str]) -> Tuple[str, Dict[str, Any]]:
-    """Process a single bucket and return its statistics."""
-    bucket_dir, bucket_name = bucket_info
+def process_bucket_sequential(bucket_info: Tuple[Path, str, 'queue.Queue', int]) -> Tuple[str, Dict[str, Any]]:
+    """Process a single bucket with sequential file processing but threaded line processing."""
+    bucket_dir, bucket_name, progress_queue, threads_per_file = bucket_info
     
     # Process all .jsonl.zst files in the bucket (including subdirectories)
     zst_files = list(bucket_dir.glob("**/*.jsonl.zst"))
@@ -147,25 +178,23 @@ def process_bucket(bucket_info: Tuple[Path, str]) -> Tuple[str, Dict[str, Any]]:
             "score_q75": None,
         }
 
-    # Process files with limited parallelism within the bucket
     file_count = len(zst_files)
     total_lines = 0
     all_scores = []
     
-    # Use fewer workers per bucket to avoid overwhelming the system
-    bucket_workers = min(8, cpu_count(), len(zst_files))  # Max 8 workers per bucket
-    
-    if bucket_workers > 1:
-        with Pool(processes=bucket_workers) as pool:
-            results = pool.map(process_zst_file, zst_files)
-    else:
-        # Process sequentially for small buckets
-        results = [process_zst_file(f) for f in zst_files]
-
-    # Aggregate results
-    for lines, scores in results:
-        total_lines += lines
-        all_scores.extend(scores)
+    # Process files sequentially within each bucket
+    for file_path in zst_files:
+        try:
+            lines, scores = process_zst_file_threaded(file_path, threads_per_file)
+            total_lines += lines
+            all_scores.extend(scores)
+            
+            if progress_queue:
+                progress_queue.put(('file_completed', bucket_name, file_path.name))
+        except Exception as e:
+            print(f"Error processing {file_path} in bucket {bucket_name}: {e}")
+            if progress_queue:
+                progress_queue.put(('file_completed', bucket_name, file_path.name))
 
     # Create bucket statistics
     base_stats = {
@@ -203,51 +232,101 @@ def process_bucket(bucket_info: Tuple[Path, str]) -> Tuple[str, Dict[str, Any]]:
     return bucket_name, base_stats
 
 
-def analyze_buckets(input_dir: Path) -> Dict[str, Dict[str, Any]]:
-    """Analyze all buckets in the input directory using bucket-level parallelization."""
+def analyze_buckets(input_dir: Path, num_workers: int = 128) -> Dict[str, Dict[str, Any]]:
+    """Analyze all buckets using concurrent bucket processing with sequential file processing per bucket."""
     bucket_stats = {}
 
-    # Scan all buckets first to get total count
+    # Scan all buckets first to get total count and file counts
     bucket_dirs = [d for d in input_dir.iterdir() if d.is_dir()]
-    bucket_info_list = [(bucket_dir, bucket_dir.name) for bucket_dir in bucket_dirs]
     
-    # Determine number of bucket workers to use
-    num_bucket_workers = min(cpu_count() // 4, 8, len(bucket_dirs))  # Conservative approach
-    print(f"Using {num_bucket_workers} bucket worker processes")
+    # Count total files for accurate progress reporting
+    print("Scanning files for progress tracking...")
+    total_files = 0
+    bucket_file_counts = {}
+    for bucket_dir in bucket_dirs:
+        file_count = len(list(bucket_dir.glob("**/*.jsonl.zst")))
+        bucket_file_counts[bucket_dir.name] = file_count
+        total_files += file_count
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeRemainingColumn(),
-        console=None,  # Use default console
-    ) as progress:
+    print(f"Found {len(bucket_dirs)} buckets with {total_files:,} total files")
+    
+    # Configure parallelization: concurrent buckets, sequential files within bucket, threaded line processing
+    total_cores = cpu_count()  # Should be 128
+    num_bucket_workers = min(len(bucket_dirs), max(1, total_cores // 8))  # Allow more bucket workers
+    threads_per_file = max(1, total_cores // num_bucket_workers) if num_bucket_workers > 0 else 4
+    print(f"Using {num_bucket_workers} concurrent bucket processes")
+    print(f"Each file processed with {threads_per_file} threads for line processing")
+    print(f"Files within each bucket processed sequentially to utilize high memory")
+    
+    # Create progress tracking
+    console = Console()
+    progress_queue = Manager().Queue()
+    
+    def progress_monitor(progress_queue, total_files, bucket_file_counts):
+        """Monitor and update progress based on completed files."""
+        completed_files = 0
+        bucket_progress = {name: 0 for name in bucket_file_counts.keys()}
         
-        bucket_task = progress.add_task("Processing buckets", total=len(bucket_dirs))
-        completed_buckets = 0
-        
-        if num_bucket_workers > 1:
-            # Process buckets in parallel
-            with Pool(processes=num_bucket_workers) as pool:
-                # Use imap for better progress tracking
-                for bucket_name, stats in pool.imap(process_bucket, bucket_info_list):
-                    bucket_stats[bucket_name] = stats
-                    completed_buckets += 1
-                    progress.update(bucket_task, 
-                                  description=f"Completed bucket: {bucket_name} ({completed_buckets}/{len(bucket_dirs)})",
-                                  completed=completed_buckets)
-        else:
-            # Process buckets sequentially
-            for bucket_info in bucket_info_list:
-                bucket_name, stats = process_bucket(bucket_info)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TextColumn("({task.completed}/{task.total} files)"),
+            TimeRemainingColumn(),
+            console=console,
+        ) as progress:
+            
+            file_task = progress.add_task("Processing files", total=total_files)
+            
+            while completed_files < total_files:
+                try:
+                    msg = progress_queue.get(timeout=1.0)
+                    if msg[0] == 'file_completed':
+                        _, bucket_name, file_name = msg
+                        completed_files += 1
+                        bucket_progress[bucket_name] += 1
+                        
+                        # Update progress with global file count only
+                        progress.update(file_task, 
+                                      description="Processing files",
+                                      completed=completed_files)
+                except queue.Empty:
+                    continue
+                except:
+                    break
+    
+    # Start progress monitoring in background thread
+    bucket_info_list = [(bucket_dir, bucket_dir.name, progress_queue, threads_per_file) for bucket_dir in bucket_dirs]
+    
+    progress_thread = threading.Thread(
+        target=progress_monitor, 
+        args=(progress_queue, total_files, bucket_file_counts)
+    )
+    progress_thread.daemon = True
+    progress_thread.start()
+    
+    # Process buckets in parallel
+    if num_bucket_workers > 1:
+        with Pool(processes=num_bucket_workers) as pool:
+            results = pool.map(process_bucket_sequential, bucket_info_list)
+            for bucket_name, stats in results:
                 bucket_stats[bucket_name] = stats
-                completed_buckets += 1
-                progress.update(bucket_task, 
-                              description=f"Completed bucket: {bucket_name} ({completed_buckets}/{len(bucket_dirs)})",
-                              completed=completed_buckets)
-
-
+    else:
+        # Process buckets sequentially
+        for bucket_info in bucket_info_list:
+            bucket_name, stats = process_bucket_sequential(bucket_info)
+            bucket_stats[bucket_name] = stats
+    
+    # Signal completion and wait for progress thread
+    for _ in range(total_files):
+        try:
+            progress_queue.put(('file_completed', 'DONE', 'DONE'))
+        except:
+            break
+    
+    time.sleep(0.5)  # Give progress thread time to finish
+    
     return bucket_stats
 
 
@@ -421,6 +500,7 @@ def print_statistics(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Analyze bucketed JSONL.zst files")
     parser.add_argument("input_dir", type=Path, help="Input directory containing bucket subdirectories")
+    parser.add_argument("--workers", type=int, default=128, help="Number of total cores to use (default: 128)")
 
     args = parser.parse_args()
 
@@ -435,7 +515,7 @@ def main() -> int:
     print(f"Analyzing buckets in: {args.input_dir}")
 
     # Analyze buckets
-    bucket_stats = analyze_buckets(args.input_dir)
+    bucket_stats = analyze_buckets(args.input_dir, args.workers)
 
     if not bucket_stats:
         print("No buckets found in the input directory")
