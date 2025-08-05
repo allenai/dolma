@@ -66,6 +66,8 @@ struct Metadata {
     src_encoding: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repo_avg_score: Option<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -864,9 +866,21 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
         .filter_map(|doc| doc.metadata.length_bytes)
         .sum();
 
+    // Calculate average score from all documents that have scores
+    let scores: Vec<f64> = documents
+        .iter()
+        .filter_map(|doc| doc.metadata.score)
+        .collect();
+    let repo_avg_score = if !scores.is_empty() {
+        Some(scores.iter().sum::<f64>() / scores.len() as f64)
+    } else {
+        None
+    };
+
     let mut result = first_doc.clone();
     result.text = concatenated_text;
     result.metadata.length_bytes = Some(total_length);
+    result.metadata.repo_avg_score = repo_avg_score;
     let repo_name = first_doc.metadata.repo_name.as_deref().unwrap_or("unknown");
     result.metadata.path = Some(format!("{}_concatenated", repo_name));
 
