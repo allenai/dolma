@@ -127,16 +127,93 @@ def extract_scores_from_zst_file(file_path: Path) -> List[float]:
     return scores
 
 
-def analyze_buckets(input_dir: Path) -> Dict[str, Dict[str, Any]]:
-    """Analyze all buckets in the input directory using multiprocessing."""
-    bucket_stats = {}
+def process_bucket(bucket_info: Tuple[Path, str]) -> Tuple[str, Dict[str, Any]]:
+    """Process a single bucket and return its statistics."""
+    bucket_dir, bucket_name = bucket_info
+    
+    # Process all .jsonl.zst files in the bucket (including subdirectories)
+    zst_files = list(bucket_dir.glob("**/*.jsonl.zst"))
+    if not zst_files:
+        return bucket_name, {
+            "total_lines": 0,
+            "file_count": 0,
+            "scores": [],
+            "score_min": None,
+            "score_max": None,
+            "score_median": None,
+            "score_mean": None,
+            "score_std": None,
+            "score_q25": None,
+            "score_q75": None,
+        }
 
-    # Determine number of workers to use
-    num_workers = min(cpu_count(), 128)  # Cap at 128 to avoid overwhelming the system
-    print(f"Using {num_workers} worker processes")
+    # Process files with limited parallelism within the bucket
+    file_count = len(zst_files)
+    total_lines = 0
+    all_scores = []
+    
+    # Use fewer workers per bucket to avoid overwhelming the system
+    bucket_workers = min(8, cpu_count(), len(zst_files))  # Max 8 workers per bucket
+    
+    if bucket_workers > 1:
+        with Pool(processes=bucket_workers) as pool:
+            results = pool.map(process_zst_file, zst_files)
+    else:
+        # Process sequentially for small buckets
+        results = [process_zst_file(f) for f in zst_files]
+
+    # Aggregate results
+    for lines, scores in results:
+        total_lines += lines
+        all_scores.extend(scores)
+
+    # Create bucket statistics
+    base_stats = {
+        "total_lines": total_lines,
+        "file_count": file_count,
+        "scores": all_scores,
+    }
+
+    if all_scores:
+        score_array = np.array(all_scores)
+        base_stats.update(
+            {
+                "score_min": float(np.min(score_array)),
+                "score_max": float(np.max(score_array)),
+                "score_median": float(np.median(score_array)),
+                "score_mean": float(np.mean(score_array)),
+                "score_std": float(np.std(score_array)),
+                "score_q25": float(np.percentile(score_array, 25)),
+                "score_q75": float(np.percentile(score_array, 75)),
+            }
+        )
+    else:
+        base_stats.update(
+            {
+                "score_min": None,
+                "score_max": None,
+                "score_median": None,
+                "score_mean": None,
+                "score_std": None,
+                "score_q25": None,
+                "score_q75": None,
+            }
+        )
+
+    return bucket_name, base_stats
+
+
+def analyze_buckets(input_dir: Path) -> Dict[str, Dict[str, Any]]:
+    """Analyze all buckets in the input directory using bucket-level parallelization."""
+    bucket_stats = {}
 
     # Scan all buckets first to get total count
     bucket_dirs = [d for d in input_dir.iterdir() if d.is_dir()]
+    bucket_info_list = [(bucket_dir, bucket_dir.name) for bucket_dir in bucket_dirs]
+    
+    # Determine number of bucket workers to use
+    num_bucket_workers = min(cpu_count() // 4, 8, len(bucket_dirs))  # Conservative approach
+    print(f"Using {num_bucket_workers} bucket worker processes")
     
     with Progress(
         SpinnerColumn(),
@@ -148,73 +225,28 @@ def analyze_buckets(input_dir: Path) -> Dict[str, Dict[str, Any]]:
     ) as progress:
         
         bucket_task = progress.add_task("Processing buckets", total=len(bucket_dirs))
+        completed_buckets = 0
         
-        for bucket_dir in bucket_dirs:
-            bucket_name = bucket_dir.name
-            progress.update(bucket_task, description=f"Processing bucket: {bucket_name}")
+        if num_bucket_workers > 1:
+            # Process buckets in parallel
+            with Pool(processes=num_bucket_workers) as pool:
+                # Use imap for better progress tracking
+                for bucket_name, stats in pool.imap(process_bucket, bucket_info_list):
+                    bucket_stats[bucket_name] = stats
+                    completed_buckets += 1
+                    progress.update(bucket_task, 
+                                  description=f"Completed bucket: {bucket_name} ({completed_buckets}/{len(bucket_dirs)})",
+                                  completed=completed_buckets)
+        else:
+            # Process buckets sequentially
+            for bucket_info in bucket_info_list:
+                bucket_name, stats = process_bucket(bucket_info)
+                bucket_stats[bucket_name] = stats
+                completed_buckets += 1
+                progress.update(bucket_task, 
+                              description=f"Completed bucket: {bucket_name} ({completed_buckets}/{len(bucket_dirs)})",
+                              completed=completed_buckets)
 
-            # Process all .jsonl.zst files in the bucket (including subdirectories)
-            zst_files = list(bucket_dir.glob("**/*.jsonl.zst"))
-            if not zst_files:
-                progress.advance(bucket_task)
-                continue
-
-            file_count = len(zst_files)
-            
-            # Add file processing task
-            file_task = progress.add_task(f"Files in {bucket_name}", total=file_count)
-
-            # Process files in parallel
-            total_lines = 0
-            all_scores = []
-
-            with Pool(processes=num_workers) as pool:
-                results = pool.map(process_zst_file, zst_files)
-
-            # Aggregate results
-            for i, (lines, scores) in enumerate(results):
-                total_lines += lines
-                all_scores.extend(scores)
-                progress.advance(file_task)
-            
-            # Remove the file task after completion
-            progress.remove_task(file_task)
-
-            # Create bucket statistics
-            base_stats = {
-                "total_lines": total_lines,
-                "file_count": file_count,
-                "scores": all_scores,
-            }
-
-            if all_scores:
-                score_array = np.array(all_scores)
-                base_stats.update(
-                    {
-                        "score_min": float(np.min(score_array)),
-                        "score_max": float(np.max(score_array)),
-                        "score_median": float(np.median(score_array)),
-                        "score_mean": float(np.mean(score_array)),
-                        "score_std": float(np.std(score_array)),
-                        "score_q25": float(np.percentile(score_array, 25)),
-                        "score_q75": float(np.percentile(score_array, 75)),
-                    }
-                )
-            else:
-                base_stats.update(
-                    {
-                        "score_min": None,
-                        "score_max": None,
-                        "score_median": None,
-                        "score_mean": None,
-                        "score_std": None,
-                        "score_q25": None,
-                        "score_q75": None,
-                    }
-                )
-
-            bucket_stats[bucket_name] = base_stats
-            progress.advance(bucket_task)
 
     return bucket_stats
 
