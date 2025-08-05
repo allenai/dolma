@@ -7,11 +7,13 @@ import argparse
 import json
 import zstandard as zstd
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+from multiprocessing import Pool, cpu_count
+from functools import partial
 
 
 def count_lines_in_zst_file(file_path: Path) -> int:
@@ -41,6 +43,50 @@ def count_lines_in_zst_file(file_path: Path) -> int:
     except Exception as e:
         print(f"Unexpected error reading {file_path}: {e}")
         return 0
+
+
+def process_zst_file(file_path: Path) -> Tuple[int, List[float]]:
+    """Process a single zst file to count lines and extract scores."""
+    line_count = 0
+    scores = []
+    
+    try:
+        with open(file_path, 'rb') as fh:
+            dctx = zstd.ZstdDecompressor()
+            with dctx.stream_reader(fh) as reader:
+                buffer = b''
+                while True:
+                    chunk = reader.read(8192)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                    while b'\n' in buffer:
+                        line, buffer = buffer.split(b'\n', 1)
+                        if line.strip():
+                            line_count += 1
+                            try:
+                                record = json.loads(line.decode('utf-8'))
+                                if 'metadata' in record and 'score' in record['metadata']:
+                                    scores.append(float(record['metadata']['score']))
+                            except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                                continue
+                # Handle last line if no trailing newline
+                if buffer.strip():
+                    line_count += 1
+                    try:
+                        record = json.loads(buffer.decode('utf-8'))
+                        if 'metadata' in record and 'score' in record['metadata']:
+                            scores.append(float(record['metadata']['score']))
+                    except (json.JSONDecodeError, KeyError, ValueError, TypeError):
+                        pass
+    except (OSError, IOError) as e:
+        print(f"Error reading {file_path}: {e}")
+        return 0, []
+    except Exception as e:
+        print(f"Unexpected error processing {file_path}: {e}")
+        return 0, []
+    
+    return line_count, scores
 
 
 def extract_scores_from_zst_file(file_path: Path) -> List[float]:
@@ -81,8 +127,12 @@ def extract_scores_from_zst_file(file_path: Path) -> List[float]:
 
 
 def analyze_buckets(input_dir: Path) -> Dict[str, Dict[str, Any]]:
-    """Analyze all buckets in the input directory."""
+    """Analyze all buckets in the input directory using multiprocessing."""
     bucket_stats = {}
+    
+    # Determine number of workers to use
+    num_workers = min(cpu_count(), 8)  # Cap at 8 to avoid overwhelming the system
+    print(f"Using {num_workers} worker processes")
     
     print("Scanning buckets...")
     for bucket_dir in input_dir.iterdir():
@@ -90,25 +140,27 @@ def analyze_buckets(input_dir: Path) -> Dict[str, Dict[str, Any]]:
             bucket_name = bucket_dir.name
             print(f"Processing bucket: {bucket_name}")
             
-            total_lines = 0
-            all_scores = []
-            file_count = 0
-            
-            # Process all .jsonl.zst files in the bucket
-            zst_files = list(bucket_dir.glob("*.jsonl.zst"))
+            # Process all .jsonl.zst files in the bucket (including subdirectories)
+            zst_files = list(bucket_dir.glob("**/*.jsonl.zst"))
             if not zst_files:
                 print(f"  No .jsonl.zst files found in {bucket_name}")
                 continue
-                
-            for file_path in zst_files:
-                file_count += 1
-                lines = count_lines_in_zst_file(file_path)
+            
+            file_count = len(zst_files)
+            print(f"  Found {file_count} files, processing with {num_workers} workers...")
+            
+            # Process files in parallel
+            total_lines = 0
+            all_scores = []
+            
+            with Pool(processes=num_workers) as pool:
+                results = pool.map(process_zst_file, zst_files)
+            
+            # Aggregate results
+            for i, (lines, scores) in enumerate(results):
                 total_lines += lines
-                
-                scores = extract_scores_from_zst_file(file_path)
                 all_scores.extend(scores)
-                
-                print(f"  {file_path.name}: {lines:,} lines, {len(scores)} scores")
+                print(f"  {zst_files[i].name}: {lines:,} lines, {len(scores)} scores")
             
             # Create bucket statistics
             base_stats = {
