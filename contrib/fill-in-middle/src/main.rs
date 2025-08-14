@@ -245,16 +245,22 @@ fn process_single(
         let mut json_obj: serde_json::Value = serde_json::from_str(&line).unwrap();
 
         let src_text = json_obj.get("text").unwrap().as_str().unwrap();
-        let mut new_text = fim.perform_on_document_text(src_text);
-        
-        // Replace file separator token if replacement is specified
-        if let Some(replacement) = file_separator_replacement {
-            new_text = new_text.replace(file_separator_token, replacement);
-        }
+        let new_text = fim.perform_on_document_text(src_text);
         
         json_obj["text"] = serde_json::Value::String(new_text);
 
-        out_bytes.extend_from_slice(&serde_json::to_vec(&json_obj)?);
+        let mut json_bytes = serde_json::to_vec(&json_obj)?;
+        
+        // Apply file separator replacement after JSON serialization to avoid escaping
+        if let Some(replacement) = file_separator_replacement {
+            let json_str = String::from_utf8(json_bytes)
+                .map_err(|e| Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let separator_with_newlines = format!("\\n{}\\n", replacement);
+            let modified_json = json_str.replace("<|file_sep|>", &separator_with_newlines);
+            json_bytes = modified_json.into_bytes();
+        }
+        
+        out_bytes.extend_from_slice(&json_bytes);
         out_bytes.push(newline);
     }
 
