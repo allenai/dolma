@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::Parser;
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use log::{debug, warn, trace};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -893,8 +893,13 @@ fn concatenate_repo_files(documents: Vec<Document>, file_separator_token: &str) 
     result
 }
 
-fn create_progress_bar(file_count: usize, language: &str) -> ProgressBar {
-    let pb = ProgressBar::new(file_count as u64);
+fn create_progress_bar(file_count: usize, language: &str, multi_progress: Option<&MultiProgress>) -> ProgressBar {
+    let pb = if let Some(mp) = multi_progress {
+        mp.add(ProgressBar::new(file_count as u64))
+    } else {
+        ProgressBar::new(file_count as u64)
+    };
+    
     pb.set_style(
         ProgressStyle::default_bar()
             .template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
@@ -975,6 +980,7 @@ fn process_files_in_directory(
     include_external: bool,
     file_separator_token: &str,
     preserve_structure: bool,
+    multi_progress: Option<&MultiProgress>,
 ) -> Result<ProcessingStats> {
     if !input_dir.exists() {
         return Ok(ProcessingStats::new());
@@ -987,11 +993,13 @@ fn process_files_in_directory(
         .collect();
 
     if files.is_empty() {
-        println!("No .zst files found in {}", input_dir.display());
+        if multi_progress.is_none() {
+            println!("No .zst files found in {}", input_dir.display());
+        }
         return Ok(ProcessingStats::new());
     }
 
-    let pb = create_progress_bar(files.len(), language);
+    let pb = create_progress_bar(files.len(), language, multi_progress);
     let pb = Arc::new(Mutex::new(pb));
 
     let results: Vec<Result<ProcessingStats>> = files
@@ -1062,6 +1070,7 @@ fn process_detected_language(
         args.include_external,
         &args.file_separator_token,
         true,
+        None,
     )?;
     
     debug!("Completed processing for detected language: {}", detected_language);
@@ -1103,6 +1112,9 @@ fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
         existing_languages
     );
 
+    // Create a MultiProgress container to manage all progress bars
+    let multi_progress = MultiProgress::new();
+
     let results: Vec<Result<ProcessingStats>> = existing_languages
         .par_iter()
         .map(|&language| {
@@ -1114,6 +1126,7 @@ fn process_multiple_languages(args: &Args) -> Result<ProcessingStats> {
                 args.include_external,
                 &args.file_separator_token,
                 false,
+                Some(&multi_progress),
             )
         })
         .collect();
@@ -1188,7 +1201,7 @@ fn process_single_input_file(
         args.include_external,
         &args.file_separator_token,
         false,
-        &Arc::new(Mutex::new(create_progress_bar(1, &detected_language))),
+        &Arc::new(Mutex::new(create_progress_bar(1, &detected_language, None))),
     )
 }
 

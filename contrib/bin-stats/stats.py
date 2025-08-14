@@ -173,6 +173,7 @@ def process_bucket_sequential(bucket_info: Tuple[Path, str, 'queue.Queue', int])
             "total_lines": 0,
             "file_count": 0,
             "scores": [],
+            "scores_by_language": {},
             "score_min": None,
             "score_max": None,
             "score_median": None,
@@ -185,6 +186,7 @@ def process_bucket_sequential(bucket_info: Tuple[Path, str, 'queue.Queue', int])
     file_count = len(zst_files)
     total_lines = 0
     all_scores = []
+    scores_by_language = {}
     
     # Process files sequentially within each bucket
     for file_path in zst_files:
@@ -192,6 +194,12 @@ def process_bucket_sequential(bucket_info: Tuple[Path, str, 'queue.Queue', int])
             lines, scores = process_zst_file_threaded(file_path, threads_per_file)
             total_lines += lines
             all_scores.extend(scores)
+            
+            # Extract language from directory structure (e.g., bucket/C/part_0000.jsonl.zst)
+            language = file_path.parent.name
+            if language not in scores_by_language:
+                scores_by_language[language] = []
+            scores_by_language[language].extend(scores)
             
             if progress_queue:
                 progress_queue.put(('file_completed', bucket_name, file_path.name))
@@ -205,6 +213,7 @@ def process_bucket_sequential(bucket_info: Tuple[Path, str, 'queue.Queue', int])
         "total_lines": total_lines,
         "file_count": file_count,
         "scores": all_scores,
+        "scores_by_language": scores_by_language,
     }
 
     if all_scores:
@@ -355,7 +364,7 @@ def create_visualizations(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
     """Create distribution plots and visualizations using seaborn."""
     # Prepare data for plotting with proper sorting
     sorted_bucket_names = sort_bucket_names(list(bucket_stats.keys()))
-    line_counts = [bucket_stats[name]["total_lines"] for name in sorted_bucket_names]
+    document_counts = [bucket_stats[name]["total_lines"] for name in sorted_bucket_names]
     all_scores = [score for stats in bucket_stats.values() if stats["scores"] for score in stats["scores"]]
 
     # Set seaborn style for better-looking plots
@@ -363,14 +372,15 @@ def create_visualizations(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
     sns.set_palette("husl")
 
     # Create figure with subplots - 2x2 grid with 4 plots total
-    fig = plt.figure(figsize=(16, 10))
+    fig = plt.figure(figsize=(20, 16))
+    gs = fig.add_gridspec(2, 2, hspace=0.4, wspace=0.3)
     
-    # 1. Bar plot of lines per bucket
-    ax1 = plt.subplot(2, 2, 1)
-    sns.barplot(x=sorted_bucket_names, y=line_counts, ax=ax1)
-    ax1.set_title("Lines per Bucket", fontsize=14, fontweight='bold')
+    # 1. Bar plot of lines per bucket (top-left)
+    ax1 = fig.add_subplot(gs[0, 0])
+    sns.barplot(x=sorted_bucket_names, y=document_counts, ax=ax1)
+    ax1.set_title("Documents per Bucket", fontsize=14, fontweight='bold')
     ax1.set_xlabel("Bucket Name", fontsize=12)
-    ax1.set_ylabel("Number of Lines", fontsize=12)
+    ax1.set_ylabel("Number of Documents", fontsize=12)
     ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
     # Improve x-axis labels - rotate and show every nth label
     ax1.tick_params(axis="x", rotation=45, labelsize=10)
@@ -379,16 +389,16 @@ def create_visualizations(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
     ax1.set_xticks(ticks)
     ax1.set_xticklabels([sorted_bucket_names[i] for i in ticks])
 
-    # 2. Score distribution across all buckets with KDE
-    ax2 = plt.subplot(2, 2, 2)
+    # 2. Score distribution across all buckets with KDE (top-right)
+    ax2 = fig.add_subplot(gs[0, 1])
     if all_scores:
         sns.histplot(all_scores, kde=True, bins=50, ax=ax2)
         ax2.set_title("Score Distribution (All Buckets)", fontsize=14, fontweight='bold')
         ax2.set_xlabel("Score", fontsize=12)
         ax2.set_ylabel("Count", fontsize=12)
 
-    # 3. Violin plot of scores by bucket
-    ax3 = plt.subplot(2, 2, 3)
+    # 3. Violin plot of scores by bucket (bottom-left)
+    ax3 = fig.add_subplot(gs[1, 0])
     buckets_with_scores = [
         (bucket_name, stats["scores"]) for bucket_name, stats in bucket_stats.items() if stats["scores"]
     ]
@@ -430,37 +440,45 @@ def create_visualizations(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
             ax3.set_xticks(ticks)
             ax3.set_xticklabels([sorted_bucket_names[i] for i in ticks])
 
-    # 4. Box plot of scores by bucket
-    ax4 = plt.subplot(2, 2, 4)
-    if buckets_with_scores:
-        # Sort buckets for consistent ordering
-        bucket_names_only = [bucket_name for bucket_name, _ in buckets_with_scores]
-        sorted_bucket_names = sort_bucket_names(bucket_names_only)
-        bucket_dict = {name: scores for name, scores in buckets_with_scores}
+    # 4. Violin plot of scores by programming language (bottom-right)
+    ax4 = fig.add_subplot(gs[1, 1])
+    
+    # Collect all scores by language across all buckets
+    language_scores = {}
+    for bucket_name, stats in bucket_stats.items():
+        if "scores_by_language" in stats and stats["scores_by_language"]:
+            for language, scores in stats["scores_by_language"].items():
+                if language not in language_scores:
+                    language_scores[language] = []
+                language_scores[language].extend(scores)
+    
+    if language_scores:
+        # Create dataframe for language violin plot
+        language_plot_data = []
+        sorted_languages = sorted(language_scores.keys())
         
-        plot_data = []
-        for bucket_name in sorted_bucket_names:
-            if bucket_name in bucket_dict:
-                scores = bucket_dict[bucket_name]
-                for score in scores:
-                    plot_data.append({'Bucket': bucket_name, 'Score': score})
+        for language in sorted_languages:
+            scores = language_scores[language]
+            # Limit to 1000 scores per language for better performance
+            sample_size = min(1000, len(scores))
+            if len(scores) > sample_size:
+                # Sample evenly across the range
+                indices = np.linspace(0, len(scores) - 1, sample_size, dtype=int)
+                sampled_scores = [scores[i] for i in indices]
+            else:
+                sampled_scores = scores
+            for score in sampled_scores:
+                language_plot_data.append({'Language': language, 'Score': score})
         
-        if plot_data:
-            df_box = pd.DataFrame(plot_data)
-            sns.boxplot(data=df_box, x="Bucket", y="Score", ax=ax4, order=sorted_bucket_names, showfliers=False)
-            ax4.set_title("Score Distribution by Bucket (Box Plot)", fontsize=14, fontweight='bold')
-            ax4.set_xlabel("Bucket", fontsize=12)
+        if language_plot_data:
+            df_language = pd.DataFrame(language_plot_data)
+            sns.violinplot(data=df_language, x="Language", y="Score", ax=ax4, order=sorted_languages, inner="quartile", density_norm="width", cut=0)
+            ax4.set_title("Score Distribution by Programming Language", fontsize=14, fontweight='bold')
+            ax4.set_xlabel("Programming Language", fontsize=12)
             ax4.set_ylabel("Score", fontsize=12)
-            # Improve x-axis label spacing
             ax4.tick_params(axis="x", rotation=45, labelsize=10)
-            # Show every nth label to avoid crowding
-            step = max(1, len(sorted_bucket_names) // 8)
-            ticks = range(0, len(sorted_bucket_names), step)
-            ax4.set_xticks(ticks)
-            ax4.set_xticklabels([sorted_bucket_names[i] for i in ticks])
 
-
-    plt.tight_layout(pad=3.0)
+    plt.subplots_adjust(left=0.08, bottom=0.1, right=0.95, top=0.92, wspace=0.3, hspace=0.4)
     
     # Save the plot
     output_path = Path("bucket_analysis_plots.png")
@@ -511,6 +529,30 @@ def print_statistics(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
             score_info = "No scores found"
 
         print(f"{bucket_name:<15} {stats['total_lines']:<12,} {stats['file_count']:<8} {score_info:<30}")
+        
+        # Show programming language breakdown for this bucket
+        if stats.get("scores_by_language"):
+            language_stats = []
+            for lang, lang_scores in stats["scores_by_language"].items():
+                if lang_scores:
+                    lang_array = np.array(lang_scores)
+                    lang_stats = {
+                        'count': len(lang_scores),
+                        'mean': float(np.mean(lang_array)),
+                        'median': float(np.median(lang_array)),
+                        'min': float(np.min(lang_array)),
+                        'max': float(np.max(lang_array))
+                    }
+                    language_stats.append((lang, lang_stats))
+            
+            if language_stats:
+                # Sort languages by count descending
+                language_stats.sort(key=lambda x: x[1]['count'], reverse=True)
+                print(f"  {'Languages:':<14}")
+                for lang, lang_stats in language_stats:
+                    print(f"    {lang:<12} {lang_stats['count']:<8,} scores, "
+                          f"mean:{lang_stats['mean']:.3f} med:{lang_stats['median']:.3f} "
+                          f"[{lang_stats['min']:.3f}-{lang_stats['max']:.3f}]")
 
     # Score analysis
     print(f"\nSCORE ANALYSIS:")
@@ -547,16 +589,65 @@ def print_statistics(bucket_stats: Dict[str, Dict[str, Any]]) -> None:
     else:
         print("No score data found in any bucket.")
 
+    # Programming Language Analysis
+    print(f"\nPROGRAMMING LANGUAGE ANALYSIS:")
+    print("-" * 80)
+    
+    # Collect all language stats across all buckets
+    all_language_stats = {}
+    for bucket_name, stats in bucket_stats.items():
+        if stats.get("scores_by_language"):
+            for lang, lang_scores in stats["scores_by_language"].items():
+                if lang_scores:
+                    if lang not in all_language_stats:
+                        all_language_stats[lang] = []
+                    all_language_stats[lang].extend(lang_scores)
+    
+    if all_language_stats:
+        print(f"{'Language':<15} {'Count':<10} {'Mean':<8} {'Median':<8} {'Min':<8} {'Max':<8} {'Std':<8}")
+        print("-" * 80)
+        
+        # Calculate stats for each language and sort by count
+        language_summary = []
+        for lang, all_scores in all_language_stats.items():
+            lang_array = np.array(all_scores)
+            lang_summary = {
+                'count': len(all_scores),
+                'mean': float(np.mean(lang_array)),
+                'median': float(np.median(lang_array)),
+                'min': float(np.min(lang_array)),
+                'max': float(np.max(lang_array)),
+                'std': float(np.std(lang_array))
+            }
+            language_summary.append((lang, lang_summary))
+        
+        # Sort by count descending
+        language_summary.sort(key=lambda x: x[1]['count'], reverse=True)
+        
+        for lang, lang_stats in language_summary:
+            print(f"{lang:<15} {lang_stats['count']:<10,} "
+                  f"{lang_stats['mean']:<8.3f} {lang_stats['median']:<8.3f} "
+                  f"{lang_stats['min']:<8.3f} {lang_stats['max']:<8.3f} "
+                  f"{lang_stats['std']:<8.3f}")
+    else:
+        print("No programming language data found in any bucket.")
+
 
 def save_results_to_json(bucket_stats: Dict[str, Dict[str, Any]], output_path: Path) -> None:
     """Save analysis results to JSON file for later reuse."""
     # Convert numpy types to native Python types for JSON serialization
     json_stats = {}
     for bucket_name, stats in bucket_stats.items():
+        scores_by_language = {}
+        if "scores_by_language" in stats and stats["scores_by_language"]:
+            for lang, scores in stats["scores_by_language"].items():
+                scores_by_language[lang] = [float(score) for score in scores]
+        
         json_stats[bucket_name] = {
             "total_lines": int(stats["total_lines"]),
             "file_count": int(stats["file_count"]),
             "scores": [float(score) for score in stats["scores"]] if stats["scores"] else [],
+            "scores_by_language": scores_by_language,
             "score_min": float(stats["score_min"]) if stats["score_min"] is not None else None,
             "score_max": float(stats["score_max"]) if stats["score_max"] is not None else None,
             "score_median": float(stats["score_median"]) if stats["score_median"] is not None else None,

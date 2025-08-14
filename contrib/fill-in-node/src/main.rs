@@ -50,6 +50,10 @@ struct Args {
     /// Optional replacement string for file separator token in output documents
     #[arg(long)]
     file_separator_replacement: Option<String>,
+
+    /// AST node distribution strategy: "single" for single middle node, "balanced" for even distribution
+    #[arg(long, default_value = "single")]
+    ast_node_distribution: String,
 }
 
 /// Compute the longest common prefix of a non-empty slice of paths.
@@ -219,6 +223,7 @@ fn process_single(
     fim_middle_token: &str,
     fim_suffix_token: &str,
     file_separator_replacement: Option<&str>,
+    ast_node_distribution: &str,
 ) -> Result<(), Error> {
     let mut fim = ast_fim::AstFillInMiddle::new(
         fim_rate,
@@ -227,6 +232,7 @@ fn process_single(
         fim_prefix_token,
         fim_middle_token,
         fim_suffix_token,
+        ast_node_distribution,
     );
 
     println!("Processing {:?} -> {:?}", src_path, dst_path);
@@ -245,16 +251,22 @@ fn process_single(
         let mut json_obj: serde_json::Value = serde_json::from_str(&line).unwrap();
 
         let src_text = json_obj.get("text").unwrap().as_str().unwrap();
-        let mut new_text = fim.perform_on_document_text(src_text);
-        
-        // Replace file separator token if replacement is specified
-        if let Some(replacement) = file_separator_replacement {
-            new_text = new_text.replace(file_separator_token, replacement);
-        }
+        let new_text = fim.perform_on_document_text_with_replacement(src_text, None);
         
         json_obj["text"] = serde_json::Value::String(new_text);
 
-        out_bytes.extend_from_slice(&serde_json::to_vec(&json_obj)?);
+        let mut json_bytes = serde_json::to_vec(&json_obj)?;
+        
+        // Apply file separator replacement after JSON serialization to avoid escaping
+        if let Some(replacement) = file_separator_replacement {
+            let json_str = String::from_utf8(json_bytes)
+                .map_err(|e| Error::new(std::io::ErrorKind::InvalidData, e))?;
+            let separator_with_newlines = format!("\\n{}\\n", replacement);
+            let modified_json = json_str.replace("<|file_sep|>", &separator_with_newlines);
+            json_bytes = modified_json.into_bytes();
+        }
+        
+        out_bytes.extend_from_slice(&json_bytes);
         out_bytes.push(newline);
     }
 
@@ -292,6 +304,7 @@ fn main() {
                 &args.fim_middle_token,
                 &args.fim_suffix_token,
                 args.file_separator_replacement.as_deref(),
+                &args.ast_node_distribution,
             )
             .unwrap();
             pbar.inc(1);

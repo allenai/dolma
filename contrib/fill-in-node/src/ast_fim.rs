@@ -1,6 +1,7 @@
 use rand::prelude::*;
 use rand::rng;
 use tree_sitter::{Language, Parser as TreeParser, Node};
+use std::collections::HashMap;
 
 pub struct AstFillInMiddle<'a> {
     pub fim_rate: f32,
@@ -9,6 +10,8 @@ pub struct AstFillInMiddle<'a> {
     pub fim_prefix_token: &'a str,
     pub fim_middle_token: &'a str,
     pub fim_suffix_token: &'a str,
+    pub ast_node_distribution: &'a str,
+    parsers: HashMap<String, TreeParser>,
 }
 
 impl<'a> AstFillInMiddle<'a> {
@@ -19,6 +22,7 @@ impl<'a> AstFillInMiddle<'a> {
         fim_prefix_token: &'a str,
         fim_middle_token: &'a str,
         fim_suffix_token: &'a str,
+        ast_node_distribution: &'a str,
     ) -> Self {
         Self {
             fim_rate,
@@ -27,13 +31,15 @@ impl<'a> AstFillInMiddle<'a> {
             fim_prefix_token,
             fim_middle_token,
             fim_suffix_token,
+            ast_node_distribution,
+            parsers: HashMap::new(),
         }
     }
 
-    pub fn perform_on_document_text(&mut self, document_text: &str) -> String {
+    pub fn perform_on_document_text_with_replacement(&mut self, document_text: &str, file_separator_replacement: Option<&str>) -> String {
         let mut random = rng();
 
-        document_text
+        let processed_parts: Vec<String> = document_text
             .split(self.file_separator_token)
             .map(|file_text| {
                 // Decide whether we're applying FIM to this file text
@@ -55,14 +61,27 @@ impl<'a> AstFillInMiddle<'a> {
                     file_text.to_string()
                 }
             })
-            .collect::<Vec<String>>()
-            .join(self.file_separator_token)
+            .collect();
+
+        // Join the parts with appropriate separator  
+        let separator = if let Some(replacement) = file_separator_replacement {
+            // Create separator with actual newlines 
+            format!("\n{}\n", replacement)
+        } else {
+            self.file_separator_token.to_string()
+        };
+        
+        processed_parts.join(&separator)
     }
 
     fn apply_ast_fim(&mut self, file_text: &str, language: &str, random: &mut ThreadRng) -> Result<String, Box<dyn std::error::Error>> {
-        let lang = get_language_for_name(language)?;
-        let mut parser = TreeParser::new();
-        parser.set_language(&lang)?;
+        // Get or create parser for this language
+        let parser = self.parsers.entry(language.to_owned()).or_insert_with(|| {
+            let lang = get_language_for_name(language).unwrap();
+            let mut parser = TreeParser::new();
+            parser.set_language(&lang).unwrap();
+            parser
+        });
         
         let tree = parser.parse(file_text, None).ok_or("Failed to parse")?;
         let root_node = tree.root_node();
@@ -70,22 +89,17 @@ impl<'a> AstFillInMiddle<'a> {
         // Collect all suitable nodes for FIM
         let suitable_nodes = collect_suitable_nodes(root_node, file_text.as_bytes());
         
-        if suitable_nodes.len() < 2 {
+        if suitable_nodes.len() < 3 {
             // Not enough nodes for meaningful FIM, fall back to character-level
             return Ok(self.apply_character_fim(file_text, random));
         }
         
-        // Select a random node as the "middle" part  
-        let middle_idx = random.random_range(1..suitable_nodes.len()-1);
-        let middle_node = suitable_nodes[middle_idx];
-        
-        // Split the text based on the selected node
-        let middle_start = middle_node.start_byte();
-        let middle_end = middle_node.end_byte();
-        
-        let prefix = &file_text[..middle_start];
-        let middle = &file_text[middle_start..middle_end];
-        let suffix = &file_text[middle_end..];
+        let (prefix, middle, suffix) = if self.ast_node_distribution == "balanced" {
+            self.apply_balanced_node_distribution(&suitable_nodes, file_text, random)?
+        } else {
+            // Default "single" node strategy
+            self.apply_single_node_strategy(&suitable_nodes, file_text, random)?
+        };
         
         // Format according to PSM/SPM split
         if random.random::<f32>() < self.psm_spm_split {
@@ -111,6 +125,108 @@ impl<'a> AstFillInMiddle<'a> {
                 middle
             ))
         }
+    }
+    
+    fn apply_single_node_strategy(&self, suitable_nodes: &[Node], file_text: &str, random: &mut ThreadRng) -> Result<(String, String, String), Box<dyn std::error::Error>> {
+        // Select a random node as the "middle" part  
+        let middle_idx = random.random_range(1..suitable_nodes.len()-1);
+        let middle_node = suitable_nodes[middle_idx];
+        
+        // Split the text based on the selected node
+        let middle_start = middle_node.start_byte();
+        let middle_end = middle_node.end_byte();
+        
+        let prefix = file_text[..middle_start].to_string();
+        let middle = file_text[middle_start..middle_end].to_string();
+        let suffix = file_text[middle_end..].to_string();
+        
+        Ok((prefix, middle, suffix))
+    }
+    
+    fn apply_balanced_node_distribution(&self, suitable_nodes: &[Node], file_text: &str, random: &mut ThreadRng) -> Result<(String, String, String), Box<dyn std::error::Error>> {
+        // Need at least 3 nodes for balanced distribution
+        if suitable_nodes.len() < 3 {
+            return Err("Need at least 3 nodes for balanced distribution".into());
+        }
+        
+        let total_bytes = file_text.len();
+        let target_prefix_bytes = total_bytes / 3;
+        let target_middle_bytes = total_bytes / 3;
+        
+        // Find suitable split points that create roughly equal byte distributions
+        let mut best_prefix_split = 0;
+        let mut best_middle_split = 0;
+        let mut best_score = f32::INFINITY;
+        
+        // Try different combinations of split points
+        for i in 1..suitable_nodes.len()-1 {
+            for j in i+1..suitable_nodes.len() {
+                let prefix_split_byte = suitable_nodes[i].end_byte();
+                let middle_split_byte = suitable_nodes[j].end_byte();
+                
+                // Skip if split points are not in correct order
+                if prefix_split_byte >= middle_split_byte {
+                    continue;
+                }
+                
+                // Calculate actual byte counts for each section
+                let prefix_bytes = prefix_split_byte;
+                let middle_bytes = middle_split_byte - prefix_split_byte;
+                let suffix_bytes = total_bytes - middle_split_byte;
+                
+                // Calculate deviation from ideal 1/3 distribution
+                let prefix_deviation = (prefix_bytes as f32 - target_prefix_bytes as f32).abs();
+                let middle_deviation = (middle_bytes as f32 - target_middle_bytes as f32).abs();
+                let suffix_deviation = (suffix_bytes as f32 - target_middle_bytes as f32).abs();
+                
+                let score = prefix_deviation + middle_deviation + suffix_deviation;
+                
+                if score < best_score {
+                    best_score = score;
+                    best_prefix_split = i;
+                    best_middle_split = j;
+                }
+            }
+        }
+        
+        // If we didn't find a good combination, fall back to random selection
+        // but ensure we have at least some content in each section
+        if best_score == f32::INFINITY {
+            // Select split points that ensure non-empty sections and proper ordering
+            let quarter = suitable_nodes.len() / 4;
+            for _ in 0..100 { // Try up to 100 times to find valid splits
+                let candidate_prefix = random.random_range(quarter.max(1)..suitable_nodes.len() - quarter.max(1));
+                let candidate_middle = random.random_range(candidate_prefix + 1..suitable_nodes.len());
+                
+                let candidate_prefix_byte = suitable_nodes[candidate_prefix].end_byte();
+                let candidate_middle_byte = suitable_nodes[candidate_middle].end_byte();
+                
+                if candidate_prefix_byte < candidate_middle_byte {
+                    best_prefix_split = candidate_prefix;
+                    best_middle_split = candidate_middle;
+                    break;
+                }
+            }
+            
+            // Final fallback: if we still can't find valid splits, return an error
+            if best_score == f32::INFINITY {
+                return Err("Could not find valid split points with proper byte ordering".into());
+            }
+        }
+        
+        let prefix_split_byte = suitable_nodes[best_prefix_split].end_byte();
+        let middle_split_byte = suitable_nodes[best_middle_split].end_byte();
+        
+        // Final validation to ensure proper byte ordering
+        if prefix_split_byte >= middle_split_byte {
+            return Err("Invalid split points: prefix split byte must be less than middle split byte".into());
+        }
+        
+        let prefix = file_text[..prefix_split_byte].to_string();
+        let middle = file_text[prefix_split_byte..middle_split_byte].to_string();
+        let suffix = file_text[middle_split_byte..].to_string();
+        
+        Ok((prefix, middle, suffix))
     }
 
     // Fallback character-level FIM (similar to original implementation)
@@ -175,26 +291,44 @@ impl<'a> AstFillInMiddle<'a> {
     }
 }
 
-fn detect_language_from_content(content: &str) -> Option<String> {
-    // Simple heuristics to detect language from content
-    if content.contains("def ") || content.contains("import ") || content.contains("class ") {
-        Some("python".to_string())
-    } else if content.contains("fn ") || content.contains("use ") || content.contains("struct ") {
-        Some("rust".to_string())
-    } else if content.contains("function ") || content.contains("const ") || content.contains("let ") {
-        if content.contains("interface ") || content.contains(": string") {
-            Some("typescript".to_string())
-        } else {
-            Some("javascript".to_string())
+fn detect_language_from_content(content: &str) -> Option<&'static str> {
+    // Optimized language detection with early returns and &str
+    if content.len() > 1000 {
+        // Find a safe UTF-8 character boundary at or before index 1000
+        let mut safe_index = 1000.min(content.len());
+        while safe_index > 0 && !content.is_char_boundary(safe_index) {
+            safe_index -= 1;
         }
-    } else if content.contains("public class ") || content.contains("import java") {
-        Some("java".to_string())
-    } else if content.contains("#include") || content.contains("int main") {
-        Some("cpp".to_string())
+        let prefix = &content[..safe_index];
+        return detect_language_from_prefix(prefix);
+    }
+    detect_language_from_prefix(content)
+}
+
+fn detect_language_from_prefix(content: &str) -> Option<&'static str> {
+    // Check for distinctive patterns first (more specific patterns first)
+    if content.contains("import java") || content.contains("public class ") {
+        return Some("java");
+    }
+    if content.contains("interface ") || content.contains(": string") {
+        return Some("typescript");
+    }
+    if content.contains("#include") || content.contains("int main") {
+        return Some("cpp");
+    }
+    if content.contains("using ") && content.contains("namespace ") {
+        return Some("csharp");
+    }
+    
+    // Check for common keywords
+    if content.contains("def ") || content.contains("import ") {
+        Some("python")
+    } else if content.contains("fn ") || content.contains("use ") {
+        Some("rust")
+    } else if content.contains("function ") || content.contains("const ") || content.contains("let ") {
+        Some("javascript")
     } else if content.contains("package ") || content.contains("func ") {
-        Some("go".to_string())
-    } else if content.contains("using ") || content.contains("namespace ") {
-        Some("csharp".to_string())
+        Some("go")
     } else {
         None
     }
@@ -216,22 +350,24 @@ fn get_language_for_name(lang_name: &str) -> Result<Language, Box<dyn std::error
 
 fn collect_suitable_nodes<'a>(node: Node<'a>, source: &'a [u8]) -> Vec<Node<'a>> {
     let mut nodes = Vec::new();
-    collect_nodes_recursive(node, source, &mut nodes);
-    nodes
-}
-
-fn collect_nodes_recursive<'a>(node: Node<'a>, source: &'a [u8], nodes: &mut Vec<Node<'a>>) {
-    // Only consider nodes that represent complete constructs
-    if is_suitable_for_fim(node, source) {
-        nodes.push(node);
-    }
+    let mut stack = Vec::new();
+    stack.push(node);
     
-    // Recursively collect from children
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            collect_nodes_recursive(child, source, nodes);
+    while let Some(current_node) = stack.pop() {
+        // Only consider nodes that represent complete constructs
+        if is_suitable_for_fim(current_node, source) {
+            nodes.push(current_node);
+        }
+        
+        // Add children to stack for iterative traversal
+        for i in 0..current_node.child_count() {
+            if let Some(child) = current_node.child(i) {
+                stack.push(child);
+            }
         }
     }
+    
+    nodes
 }
 
 fn is_suitable_for_fim(node: Node, _source: &[u8]) -> bool {
