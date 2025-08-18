@@ -344,6 +344,8 @@ class ReshardingPrefixConfig:
     target_size: int | None = None
     prefix: str | Path | None = None
     prefixes: list[str | Path] = field(default_factory=list)
+    skip_empty: bool = False
+
 
     def __post_init__(self):
         if self.prefix is not None:
@@ -398,8 +400,9 @@ class ReshardingPrefixConfig:
             local_prefixes.append(local_prefix)
 
             if result.returncode != 0:
-                print(f"s5cmd failed with error: {result.stderr}")
-                raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
+                logger.warning(f"s5cmd failed with error: {result.stderr}")
+                if not self.skip_empty:
+                    raise Exception(f"Failed to download files using s5cmd: {result.stderr}")
 
         return ReshardingPrefixConfig(
             prefixes=local_prefixes,
@@ -420,7 +423,11 @@ class ReshardingPrefixConfig:
             local_prefix = Path(local_prefix)
 
             if not local_prefix.exists():
-                raise FileNotFoundError(f"Local prefix {local_prefix} does not exist")
+                if not self.skip_empty:
+                    raise FileNotFoundError(f"Local prefix {local_prefix} does not exist")
+                else:
+                    logger.warning(f"Local prefix {local_prefix} does not exist")
+                    continue
 
             for root, _, files in os.walk(local_prefix):
                 for file in files:
@@ -430,7 +437,10 @@ class ReshardingPrefixConfig:
                         paths.append(TokensMetadataPaths(npy_path, csv_path))
 
         if len(paths) == 0:
-            raise FileNotFoundError(f"No files found in {self.prefixes}")
+            if self.skip_empty:
+                return []
+            else:
+                raise FileNotFoundError(f"No files found in {self.prefixes}")
 
         new_paths = []
 
