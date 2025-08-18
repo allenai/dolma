@@ -10,6 +10,7 @@ from ..core.paths import exists
 from .analyzer import AnalyzerCli
 from .deduper import DeduperCli
 from .mixer import MixerCli
+from .. import __version__
 
 # must import these to register the resolvers
 from .resolvers import *  # noqa: F401,F403,W0401
@@ -65,6 +66,11 @@ def main(argv: Optional[List[str]] = None):
         help="Path to configuration optional file",
         type=Path,
         default=None,
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"dolma {__version__}",
     )
 
     # Continue by adding subparsers and parsing the arguments

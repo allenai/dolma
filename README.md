@@ -29,6 +29,74 @@ To install, simply type `pip install dolma` in your terminal.
 
 To learn more about how to use the Dolma Toolkit, please visit the [documentation](/docs).
 
+## Development
+
+The Dolma Toolkit is a mixed Python/Rust project that uses [maturin](https://github.com/PyO3/maturin) for building. Here's how to set up a development environment:
+
+### Using uv (Recommended)
+
+If you're using [uv](https://docs.astral.sh/uv/), the easiest way to work with the codebase is:
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/allenai/dolma.git
+   cd dolma
+   ```
+
+2. **Run dolma commands during development:**
+   ```bash
+   # For regular use (caches builds)
+   uv run dolma --version
+   
+   # After making Rust changes (rebuilds if needed)
+   uv run --reinstall-package dolma dolma --version
+   ```
+
+3. **Create a development alias (optional):**
+   ```bash
+   alias dolma-dev="uv run --reinstall-package dolma dolma"
+   # Then use: dolma-dev --version
+   ```
+
+### Using pip/conda
+
+If you're not using uv:
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/allenai/dolma.git
+   cd dolma
+   ```
+
+2. **Install maturin and build dependencies:**
+   ```bash
+   pip install maturin[patchelf]  # Linux
+   pip install maturin           # macOS/Windows
+   ```
+
+3. **Build and install in development mode:**
+   ```bash
+   # Initial build
+   maturin develop --release
+   
+   # After making Rust changes, rebuild
+   maturin develop --release
+   ```
+
+4. **Install Python dependencies:**
+   ```bash
+   pip install -e .
+   ```
+
+### Version Management
+
+This project uses a unified versioning system where:
+- The version is defined in `Cargo.toml` (Rust)
+- Python dynamically reads the version from the Rust extension
+- Both `dolma --version` and `import dolma; dolma.__version__` show the same version
+
+To update the version, simply change it in `Cargo.toml` and rebuild.
+
 ## Citation
 
 If you use the Dolma dataset or toolkit, please cite the following items:

@@ -1,6 +1,6 @@
 [project]
 name = "dolma"
-version = "1.2.1"
+dynamic = ["version"]
 description = "Toolkit for pre-processing LLM training data."
 license = { text = "Apache-2.0" }
 readme = "README.md"
