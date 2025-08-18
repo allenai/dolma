@@ -233,7 +233,6 @@ def merge_all_npys(
         "Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
     )
 
-
     digits_in_npy_names = calculate_number_of_digits_positions_in_filenames(grouped_paths)
 
     with ProcessPoolExecutor(
