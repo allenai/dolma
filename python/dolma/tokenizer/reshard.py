@@ -277,7 +277,7 @@ class ReshardingPrefixConfig:
         if self.prefix is not None:
             if len(self.prefixes) > 0:
                 raise ValueError("Cannot provide both prefix and prefixes")
-            logging.warning("Deprecation warning: prefix is deprecated; use prefixes instead")
+            logger.warning("Deprecation warning: prefix is deprecated; use prefixes instead")
             self.prefixes.append(self.prefix)
         elif len(self.prefixes) == 0:
             raise ValueError("Either prefix or prefixes must be provided")
