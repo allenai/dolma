@@ -37,6 +37,7 @@ Author: Luca Soldaini
 Email:  luca@soldaini.net
 """
 
+import argparse
 import csv
 from functools import cached_property
 import logging
@@ -507,7 +508,11 @@ def reshard(config: ReshardingConfig):
 
 
 def main():
-    config = ReshardingConfig.from_file(sys.argv[1])
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config", type=str, help="Path to the resharding config file")
+    args = parser.parse_args()
+
+    config = ReshardingConfig.from_file(args.config)
     reshard(config)
 
 
