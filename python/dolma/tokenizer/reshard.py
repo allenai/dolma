@@ -4,33 +4,6 @@
 Given a prefix with npy and csv.gz files, this script will merge the npy files so that the output
 satisfies a minimum size constraint.
 
-
-## Usage
-
-In case we wanna reshard from S3, we can do:
-
-```bash
-python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded
-```
-
-If you wanna customize which local tempdir to use, you can do:
-
-```bash
-python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded -l /mnt/raid0/tempdir
-```
-
-If you want to reshard locally, you can do:
-
-```
-python -m dolma.tokenizer.reshard -s /path/to/local/prefix -d /path/to/local/prefix-resharded
-```
-
-To change number of workers, you can do:
-
-```bash
-python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded -w 10
-```
-
 ## Contact info
 
 Author: Luca Soldaini
@@ -39,7 +12,7 @@ Email:  luca@soldaini.net
 
 import argparse
 import csv
-from functools import cached_property
+from functools import cached_property, partial
 import logging
 import math
 import os
@@ -49,7 +22,7 @@ import shutil
 import subprocess
 import sys
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import mkdtemp
@@ -206,9 +179,18 @@ def group_paths_by_max_num_files(
     return grouped_paths
 
 
+def reset_random_seed(random_seed: int):
+    """Function used to make sure that workers use the same random seed.
+
+    This is needed because the random seed is not thread-/process-safe.
+    """
+    random.seed(random_seed)
+
+
 def merge_all_npys(
     paths: list[TokensMetadataPaths],
     destination: str | Path,
+    random_seed: int,
     max_size_bytes: int | None = None,
     max_num_files: int | None = None,
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer",
@@ -246,7 +228,10 @@ def merge_all_npys(
     # easiest way to use 3 digits even in cases like 100 files.
     digits_in_npy_names = int(np.log10(len(grouped_paths))) + 1
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    with ProcessPoolExecutor(
+        max_workers=max_workers,
+        initializer=partial(reset_random_seed, random_seed=random_seed),
+    ) as pool:
         futures = []
         for i, group in enumerate(grouped_paths):
             future = pool.submit(
@@ -369,6 +354,8 @@ class ReshardingConfig:
         if self.max_size_bytes is None and self.max_num_files is None:
             raise ValueError("Either max_size_bytes or max_num_files must be provided")
 
+        random.seed(self.random_seed)
+
     @cached_property
     def tempdir(self) -> Path:
         if self.local_tempdir is None:
@@ -445,6 +432,20 @@ def is_remote(path: str | Path) -> bool:
 
 
 def make_local_source_prefixes(config: ReshardingConfig) -> list[ReshardingPrefixConfig]:
+
+    """
+    Create local copies of source prefixes if the destination is remote.
+
+    If the destination prefix is remote (e.g., S3), this function downloads all source
+    prefixes to a local temporary directory. If the destination is already local,
+    it returns the source prefixes unchanged.
+
+    Args:
+        config: The resharding configuration containing source prefixes and destination info.
+
+    Returns:
+        A list of ReshardingPrefixConfig objects pointing to local paths.
+    """
     if not is_remote(config.destination_prefix):
         return config.source_prefixes
 
@@ -457,6 +458,19 @@ def make_local_source_prefixes(config: ReshardingConfig) -> list[ReshardingPrefi
 
 
 def make_local_output_dir(config: ReshardingConfig) -> Path:
+    """
+    Create and return a local output directory for resharded files.
+
+    If the destination prefix is remote (e.g., S3), creates a temporary local
+    output directory. If the destination is already local, uses the destination
+    prefix directly as the output directory.
+
+    Args:
+        config: The resharding configuration containing destination prefix and tempdir info.
+
+    Returns:
+        A Path object pointing to the local output directory.
+    """
     if is_remote(config.destination_prefix):
         local_output_dir = config.tempdir / "output"
     else:
@@ -466,6 +480,14 @@ def make_local_output_dir(config: ReshardingConfig) -> Path:
 
 
 def clean_tempdir(config: ReshardingConfig):
+    """
+    Clean up the temporary directory after resharding.
+
+    Deletes all files and subdirectories in the temporary directory.
+
+    Args:
+        config: The resharding configuration containing the temporary directory.
+    """
     for path in config.tempdir.iterdir():
         if path.is_dir():
             shutil.rmtree(path)
@@ -474,8 +496,6 @@ def clean_tempdir(config: ReshardingConfig):
 
 
 def reshard(config: ReshardingConfig):
-    random.seed(config.random_seed)
-
     try:
         local_source_prefixes = make_local_source_prefixes(config)
         local_output_dir = make_local_output_dir(config)
@@ -490,6 +510,7 @@ def reshard(config: ReshardingConfig):
         merge_all_npys(
             tokens_source_paths,
             destination=local_output_dir,
+            random_seed=config.random_seed,
             max_size_bytes=config.max_size_bytes,
             max_num_files=config.max_num_files,
             max_workers=config.max_workers,
