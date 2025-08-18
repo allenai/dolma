@@ -1,0 +1,17 @@
+destination_prefix: s3://ai2-llm/preprocessed/all-reasoning/round3-reshard/allenai/dolma2-tokenizer
+local_tempdir: /home/ec2-user/temp-resharding/reasoning
+max_num_files: 10
+max_workers: 10
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/thinking-data/big-reasoning-traces/allenai/dolma2-tokenizer
+  sample_rate: 1.0
+- prefix: s3://ai2-llm/preprocessed/thinking-data/qwq-traces/dolma2-tokenizer
+  sample_rate: 1.0
+- prefix: s3://ai2-llm/preprocessed/thinking-data/s1k-gemini-traces/dolma2-tokenizer
+  sample_rate: 1.0
+- prefix: s3://ai2-llm/pretraining-data/sources/midtraining-reasoning/math-meta-reasoning/allenai/dolma2-tokenizer
+  sample_rate: 1.0
+- prefix: s3://ai2-llm/pretraining-data/sources/midtraining-reasoning/verifiable/gpt-41/allenai/dolma2-tokenizer
+  sample_rate: 1.0
+- prefix: s3://ai2-llm/pretraining-data/sources/midtraining-reasoning/code-meta-reasoning/allenai/dolma2-tokenizer
+  sample_rate: 1.0

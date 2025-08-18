@@ -1,0 +1,7 @@
+destination_prefix: s3://ai2-llm/preprocessed/sponge/sponge_63_mixes/eli5_60%_decon_final-reshard/allenai/dolma2-tokenizer
+local_tempdir: /home/ec2-user/temp-resharding/sponge
+max_num_files: 10
+max_workers: 10
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/sponge/sponge_63_mixes/eli5_60%_decon_final/
+  sample_rate: 1.0

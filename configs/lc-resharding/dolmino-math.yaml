@@ -1,0 +1,13 @@
+destination_prefix: s3://ai2-llm/preprocessed/all-dolmino-math/round3-reshard/allenai/dolma2-tokenizer
+local_tempdir: /home/ec2-user/temp-resharding/dolmino-math
+max_num_files: 10
+max_workers: 10
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/dolmino-math-1124-retok/dolma2-tokenizer
+  sample_rate: 1.0
+- prefix: s3://ai2-llm/preprocessed/midtraining-reasoning/OpenMathReasoning/OpenMathReasoning-rewrite-full-thoughts/allenai/dolma2-tokenizer
+  sample_rate: 1.0
+- prefix: s3://ai2-llm/preprocessed/midtraining-reasoning/tinyMATH/MIND/allenai/dolma2-tokenizer
+  sample_rate: 1.0
+- prefix: s3://ai2-llm/preprocessed/midtraining-reasoning/tinyMATH/PoT_tokens/allenai/dolma2-tokenizer
+  sample_rate: 1.0
