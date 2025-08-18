@@ -47,7 +47,7 @@ If you're using [uv](https://docs.astral.sh/uv/), the easiest way to work with t
    ```bash
    # For regular use (caches builds)
    uv run dolma --version
-   
+
    # After making Rust changes (rebuilds if needed)
    uv run --reinstall-package dolma dolma --version
    ```
@@ -78,7 +78,7 @@ If you're not using uv:
    ```bash
    # Initial build
    maturin develop --release
-   
+
    # After making Rust changes, rebuild
    maturin develop --release
    ```
@@ -88,9 +88,32 @@ If you're not using uv:
    pip install -e .
    ```
 
+### Using Make Commands
+
+The project includes a Makefile that automatically detects if `uv` is available and uses it for faster development workflows:
+
+```bash
+# Development setup (uses uv sync if available, maturin develop otherwise)
+make develop
+
+# Run dolma with automatic rebuild after Rust changes
+make run ARGS="--version"
+make run ARGS="tag --help"
+
+# Run tests (uses uv when available)
+make test
+make test-python
+make test-rust
+
+# Code formatting and linting (uses uv when available)
+make style
+make check
+```
+
 ### Version Management
 
 This project uses a unified versioning system where:
+
 - The version is defined in `Cargo.toml` (Rust)
 - Python dynamically reads the version from the Rust extension
 - Both `dolma --version` and `import dolma; dolma.__version__` show the same version
