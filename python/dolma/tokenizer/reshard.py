@@ -346,7 +346,6 @@ class ReshardingPrefixConfig:
     prefixes: list[str | Path] = field(default_factory=list)
     skip_empty: bool = False
 
-
     def __post_init__(self):
         if self.prefix is not None:
             if len(self.prefixes) > 0:
@@ -366,6 +365,7 @@ class ReshardingPrefixConfig:
                 raise ValueError("target_size must be greater than 0")
         else:
             raise ValueError("Either sample_rate or target_size must be provided")
+
 
     def download(self, shared_local_prefix: str | Path) -> "ReshardingPrefixConfig":
         local_prefixes: list[str | Path] = []
@@ -404,11 +404,8 @@ class ReshardingPrefixConfig:
                 if not self.skip_empty:
                     raise Exception(f"Failed to download files using s5cmd: {result.stderr}")
 
-        return ReshardingPrefixConfig(
-            prefixes=local_prefixes,
-            sample_rate=self.sample_rate,
-            target_size=self.target_size,
-        )
+        new_config = {**self.to_dict(), "prefixes": local_prefixes}
+        return ReshardingPrefixConfig.from_dict(new_config)
 
     def take(self) -> list[TokensMetadataPaths]:
         paths: list[TokensMetadataPaths] = []
@@ -471,11 +468,9 @@ class ReshardingPrefixConfig:
         return new_paths
 
     def to_dict(self) -> dict:
-        return {
-            "prefixes": [str(p) for p in self.prefixes],
-            "sample_rate": self.sample_rate,
-            "target_size": self.target_size,
-        }
+        # we cast prefixes to string in case user wants to save this config to a json/yaml file.
+        # we also have to set prefix to None because we changed it to prefixes in __post_init__.
+        return {**asdict(self), "prefixes": [str(p) for p in self.prefixes], "prefix": None}
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingPrefixConfig":
