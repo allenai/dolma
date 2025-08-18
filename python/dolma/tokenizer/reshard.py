@@ -38,6 +38,7 @@ Email:  luca@soldaini.net
 """
 
 import csv
+from functools import cached_property
 import logging
 import math
 import os
@@ -238,13 +239,19 @@ def merge_all_npys(
         "Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
     )
 
+    # the number of digits in the npy names depends on the number of groups. We take the log10 to figure out
+    # how many digits we need. for example, if we have 103 groups, we need 3 digits, which is equal to log(103)
+    # rounded up. Note that we always round down to closest integer, and then add always add 1. This is the
+    # easiest way to use 3 digits even in cases like 100 files.
+    digits_in_npy_names = int(np.log10(len(grouped_paths))) + 1
+
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = []
         for i, group in enumerate(grouped_paths):
             future = pool.submit(
                 merge_group,
                 paths=group,
-                destination=destination / f"{i:06d}.npy",
+                destination=destination / f"{i:0{digits_in_npy_names}d}.npy",
                 dtype=tokenizer.dtype,
             )
             futures.append(future)
@@ -302,6 +309,10 @@ class ReshardingPrefixConfig:
             )
 
         local_prefix = Path(self.prefix)
+
+        if not local_prefix.exists():
+            raise FileNotFoundError(f"Local prefix {local_prefix} does not exist")
+
         paths = []
         for root, _, files in os.walk(local_prefix):
             for file in files:
@@ -309,6 +320,9 @@ class ReshardingPrefixConfig:
                     npy_path = os.path.join(root, file)
                     csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
                     paths.append(TokensMetadataPaths(npy_path, csv_path))
+
+        if len(paths) == 0:
+            raise FileNotFoundError(f"No files found in {local_prefix}")
 
         new_paths = []
 
@@ -320,7 +334,8 @@ class ReshardingPrefixConfig:
         # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
         # of same size, we can just take a random sample.
         if (residual_frac := self.sample_rate - repetition_rate) > 0:
-            new_paths.extend(random.sample(paths, max(1, round(residual_frac * len(paths)))))
+            sample = random.sample(paths, max(1, round(residual_frac * len(paths))))
+            new_paths.extend(sample)
 
         # sort by size
         logger.info("Taking %s paths from %s using %s sample rate", len(new_paths), len(paths), self.sample_rate)
@@ -353,11 +368,15 @@ class ReshardingConfig:
         if self.max_size_bytes is None and self.max_num_files is None:
             raise ValueError("Either max_size_bytes or max_num_files must be provided")
 
+    @cached_property
+    def tempdir(self) -> Path:
         if self.local_tempdir is None:
             logging.warning("No local tempdir provided; using a temporary directory")
-            self.local_tempdir = Path(mkdtemp())
+            local_tempdir = Path(mkdtemp())
         else:
-            self.local_tempdir = Path(self.local_tempdir)
+            local_tempdir = Path(self.local_tempdir)
+        local_tempdir.mkdir(parents=True, exist_ok=True)
+        return local_tempdir
 
     def to_dict(self) -> dict:
         source_prefixes_dict = [p.to_dict() for p in self.source_prefixes]
@@ -365,7 +384,11 @@ class ReshardingConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingConfig":
-        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
+        if "source_prefixes" not in d or len(d["source_prefixes"]) == 0:
+            raise ValueError("source_prefixes is required")
+
+        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d["source_prefixes"]]
+
         return cls(
             source_prefixes=source_prefixes,
             destination_prefix=str(d["destination_prefix"]),
@@ -374,6 +397,7 @@ class ReshardingConfig:
             max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
             max_workers=int(d.get("max_workers", 1)),
             random_seed=int(d.get("random_seed", 42)),
+            tokenizer_name_or_path=d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer"),
         )
 
     @classmethod
@@ -402,34 +426,68 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
         raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
 
 
+
+def is_remote(path: str | Path) -> bool:
+    """
+    Check if a path is remote.
+
+    Returns true if the path is an S3 path, false if it is a local path, and raises an error for other schemes.
+    """
+
+    if urlparse(str(path)).scheme in {"file", ""}:
+        return False
+    elif urlparse(str(path)).scheme == "s3":
+        return True
+    else:
+        raise ValueError(f"Unsupported remote scheme: {urlparse(str(path)).scheme}")
+
+
+
+def make_local_source_prefixes(config: ReshardingConfig) -> list[ReshardingPrefixConfig]:
+    if not is_remote(config.destination_prefix):
+        return config.source_prefixes
+
+    (local_input_tempdir := config.tempdir / "input").mkdir(parents=True, exist_ok=True)
+
+    return [
+        source_prefix.download(local_input_tempdir / f"{i:06d}")
+        for i, source_prefix in enumerate(config.source_prefixes)
+    ]
+
+
+def make_local_output_dir(config: ReshardingConfig) -> Path:
+    if is_remote(config.destination_prefix):
+        local_output_dir = config.tempdir / "output"
+    else:
+        local_output_dir = Path(config.destination_prefix)
+    local_output_dir.mkdir(parents=True, exist_ok=True)
+    return local_output_dir
+
+
+def clean_tempdir(config: ReshardingConfig):
+    for path in config.tempdir.iterdir():
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+
+
 def reshard(config: ReshardingConfig):
     random.seed(config.random_seed)
 
     try:
-        local_tempdir = Path(config.local_tempdir or mkdtemp())
-        local_tempdir.mkdir(parents=True, exist_ok=True)
-
-        local_output_dir = (
-            local_tempdir / "output"
-            if urlparse(config.destination_prefix).scheme == "s3"
-            else Path(config.destination_prefix)
-        )
-
-        # download the files
-        source_prefixes = [
-            source_prefix.download(local_tempdir / f"input/{i:06d}")
-            for i, source_prefix in enumerate(config.source_prefixes)
-        ]
+        local_source_prefixes = make_local_source_prefixes(config)
+        local_output_dir = make_local_output_dir(config)
 
         # get repetition aware samples
-        source_paths = [path for source_prefix in source_prefixes for path in source_prefix.take()]
+        tokens_source_paths = [path for source_prefix in local_source_prefixes for path in source_prefix.take()]
 
         # make destination directory
         local_output_dir.mkdir(parents=True, exist_ok=True)
 
         # merge the files
         merge_all_npys(
-            source_paths,
+            tokens_source_paths,
             destination=local_output_dir,
             max_size_bytes=config.max_size_bytes,
             max_num_files=config.max_num_files,
@@ -445,7 +503,7 @@ def reshard(config: ReshardingConfig):
         )
 
     finally:
-        shutil.rmtree(local_tempdir)
+        clean_tempdir(config)
 
 
 def main():
