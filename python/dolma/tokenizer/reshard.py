@@ -23,7 +23,7 @@ import subprocess
 import sys
 from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from tempfile import mkdtemp
 from urllib.parse import urlparse
@@ -187,6 +187,17 @@ def reset_random_seed(random_seed: int):
     random.seed(random_seed)
 
 
+def calculate_number_of_digits_positions_in_filenames(list_of_filenames: list) -> int:
+    """
+    Calculate the number of digits positions in the filenames.
+    """
+    # the number of digits in the file names depends on the number of groups. We take the log10 to figure out
+    # how many digits we need. for example, if we have 103 groups, we need 3 digits, which is equal to log(103)
+    # rounded up. Note that we always round down to closest integer, and then add always add 1. This is the
+    # easiest way to use 3 digits even in cases like 100 files.
+    return int(np.log10(len(list_of_filenames))) + 1
+
+
 def merge_all_npys(
     paths: list[TokensMetadataPaths],
     destination: str | Path,
@@ -222,11 +233,8 @@ def merge_all_npys(
         "Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
     )
 
-    # the number of digits in the npy names depends on the number of groups. We take the log10 to figure out
-    # how many digits we need. for example, if we have 103 groups, we need 3 digits, which is equal to log(103)
-    # rounded up. Note that we always round down to closest integer, and then add always add 1. This is the
-    # easiest way to use 3 digits even in cases like 100 files.
-    digits_in_npy_names = int(np.log10(len(grouped_paths))) + 1
+
+    digits_in_npy_names = calculate_number_of_digits_positions_in_filenames(grouped_paths)
 
     with ProcessPoolExecutor(
         max_workers=max_workers,
@@ -261,54 +269,78 @@ class ReshardingPrefixConfig:
     Can be used to download the files and compute file up/down sampling.
     """
 
-    prefix: str | Path
     sample_rate: float
+    prefix: str | Path | None = None
+    prefixes: list[str | Path] = field(default_factory=list)
 
     def __post_init__(self):
-        assert self.sample_rate > 0
+        if self.prefix is not None:
+            if len(self.prefixes) > 0:
+                raise ValueError("Cannot provide both prefix and prefixes")
+            logging.warning("Deprecation warning: prefix is deprecated; use prefixes instead")
+            self.prefixes.append(self.prefix)
+        elif len(self.prefixes) == 0:
+            raise ValueError("Either prefix or prefixes must be provided")
 
-    def download(self, local_prefix: str | Path) -> "ReshardingPrefixConfig":
-        if urlparse(str(self.prefix)).scheme != "s3":
-            return self
+        if self.sample_rate <= 0:
+            raise ValueError("sample_rate must be greater than 0")
 
-        logger.info("Downloading %s to %s", self.prefix, local_prefix)
-        remote_prefix_no_star = re.sub(r"(/|/\*)$", "", str(self.prefix))
-        local_prefix_no_trailing_slash = str(local_prefix).rstrip("/")
-        cmd = ["s5cmd", "cp", "-sp", f"{remote_prefix_no_star}/*", f"{local_prefix_no_trailing_slash}/"]
+    def download(self, shared_local_prefix: str | Path) -> "ReshardingPrefixConfig":
+        local_prefixes: list[str | Path] = []
 
-        logger.info("Running command: %s", " ".join(cmd))
-        result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        digits_in_local_names = calculate_number_of_digits_positions_in_filenames(local_prefixes)
 
-        if result.returncode != 0:
-            print(f"s5cmd failed with error: {result.stderr}")
-            raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
+        for i, prefix in enumerate(self.prefixes):
+            if urlparse(str(prefix)).scheme != "s3":
+                local_prefixes.append(Path(prefix))
+                continue
+
+            local_prefix = Path(shared_local_prefix) / f"{i:0{digits_in_local_names}d}"
+
+            logger.info("Downloading %s to %s", prefix, local_prefix)
+            remote_prefix_no_star = re.sub(r"(/|/\*)$", "", str(self.prefix))
+            local_prefix_no_trailing_slash = str(local_prefix).rstrip("/")
+            cmd = ["s5cmd", "cp", "-sp", f"{remote_prefix_no_star}/*", f"{local_prefix_no_trailing_slash}/"]
+
+            logger.info("Running command: %s", " ".join(cmd))
+            result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            # append to the set of prefixes where we downloaded the files.
+            local_prefixes.append(local_prefix)
+
+            if result.returncode != 0:
+                print(f"s5cmd failed with error: {result.stderr}")
+                raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
+
         return ReshardingPrefixConfig(
-            prefix=local_prefix,
+            prefixes=local_prefixes,
             sample_rate=self.sample_rate,
         )
 
     def take(self) -> list[TokensMetadataPaths]:
-        if urlparse(str(self.prefix)).scheme not in {"file", ""}:
-            raise ValueError(
-                f"Invalid protocol: {urlparse(str(self.prefix)).scheme}; "
-                f"only local paths are supported; download the files first."
-            )
-
-        local_prefix = Path(self.prefix)
-
-        if not local_prefix.exists():
-            raise FileNotFoundError(f"Local prefix {local_prefix} does not exist")
-
         paths = []
-        for root, _, files in os.walk(local_prefix):
-            for file in files:
-                if file.endswith(".npy"):
-                    npy_path = os.path.join(root, file)
-                    csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
-                    paths.append(TokensMetadataPaths(npy_path, csv_path))
+
+        for local_prefix in self.prefixes:
+            if urlparse(str(local_prefix)).scheme not in {"file", ""}:
+                raise ValueError(
+                    f"Invalid protocol: {urlparse(str(local_prefix)).scheme}; "
+                    f"only local paths are supported; download the files first."
+                )
+
+            local_prefix = Path(local_prefix)
+
+            if not local_prefix.exists():
+                raise FileNotFoundError(f"Local prefix {local_prefix} does not exist")
+
+            for root, _, files in os.walk(local_prefix):
+                for file in files:
+                    if file.endswith(".npy"):
+                        npy_path = os.path.join(root, file)
+                        csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
+                        paths.append(TokensMetadataPaths(npy_path, csv_path))
 
         if len(paths) == 0:
-            raise FileNotFoundError(f"No files found in {local_prefix}")
+            raise FileNotFoundError(f"No files found in {self.prefixes}")
 
         new_paths = []
 
@@ -328,7 +360,7 @@ class ReshardingPrefixConfig:
         return new_paths
 
     def to_dict(self) -> dict:
-        return {"prefix": str(self.prefix), "sample_rate": self.sample_rate}
+        return {"prefixes": [str(p) for p in self.prefixes], "sample_rate": self.sample_rate}
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingPrefixConfig":
