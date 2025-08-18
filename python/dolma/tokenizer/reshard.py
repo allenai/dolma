@@ -22,7 +22,6 @@ import shutil
 import subprocess
 import sys
 from collections import Counter
-from contextlib import ExitStack
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -45,11 +44,13 @@ logger.setLevel(logging.INFO)
 class TokensMetadataPaths:
     npy_path: str
     csv_path: str
+    fraction: float = 1.0
 
     def __post_init__(self):
         assert self.npy_path.endswith(".npy")
         assert self.csv_path.endswith(".csv.gz")
         assert Path(self.npy_path).stem == Path(Path(self.csv_path).stem).stem
+        assert self.fraction > 0 and self.fraction <= 1
 
     @property
     def size(self) -> int:
@@ -367,19 +368,28 @@ class ReshardingPrefixConfig:
     def download(self, shared_local_prefix: str | Path) -> "ReshardingPrefixConfig":
         local_prefixes: list[str | Path] = []
 
-        digits_in_local_names = calculate_number_of_digits_positions_in_filenames(local_prefixes)
+        digits_in_local_names = calculate_number_of_digits_positions_in_filenames(self.prefixes)
 
-        for i, prefix in enumerate(self.prefixes):
-            if urlparse(str(prefix)).scheme != "s3":
-                local_prefixes.append(Path(prefix))
+        for i, remote_prefix in enumerate(self.prefixes):
+            if urlparse(str(remote_prefix)).scheme != "s3":
+                local_prefixes.append(Path(remote_prefix))
                 continue
 
             local_prefix = Path(shared_local_prefix) / f"{i:0{digits_in_local_names}d}"
 
-            logger.info("Downloading %s to %s", prefix, local_prefix)
-            remote_prefix_no_star = re.sub(r"(/|/\*)$", "", str(self.prefix))
+            logger.info("Downloading %s to %s", remote_prefix, local_prefix)
+            if "*" in str(remote_prefix):
+                raise ValueError("Wildcard is not supported in prefixes")
+
+            remote_prefix_no_trailing_slash = str(remote_prefix).rstrip("/")
             local_prefix_no_trailing_slash = str(local_prefix).rstrip("/")
-            cmd = ["s5cmd", "cp", "-sp", f"{remote_prefix_no_star}/*", f"{local_prefix_no_trailing_slash}/"]
+            cmd = [
+                "s5cmd",
+                "cp",
+                "-sp",
+                f"{remote_prefix_no_trailing_slash}/*",
+                f"{local_prefix_no_trailing_slash}/",
+            ]
 
             logger.info("Running command: %s", " ".join(cmd))
             result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)

@@ -1,0 +1,222 @@
+destination_prefix: s3://ai2-llm/preprocessed/s2pdf/dedupe_minhash_v1_with_no_pii_basic_quality/datadelve/norefs_mdtables_v2_denylisted_reshard/length-buckets/compression/allenai/dolma2-tokenizer/2e15
+local_tempdir: /home/ec2-user/temp-resharding/s2pdf_2e15
+max_num_files: 10
+num_workers: 32
+
+source_prefixes:
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/adult/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/adult/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/adult/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/adult/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/adult/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/adult/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/adult/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/art_design/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/art_design/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/art_design/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/art_design/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/art_design/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/art_design/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/art_design/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/crime_law/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/crime_law/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/crime_law/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/crime_law/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/crime_law/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/crime_law/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/crime_law/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/education_jobs/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/education_jobs/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/education_jobs/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/education_jobs/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/education_jobs/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/education_jobs/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/education_jobs/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/entertainment/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/entertainment/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/entertainment/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/entertainment/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/entertainment/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/entertainment/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/entertainment/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/fashion_beauty/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/fashion_beauty/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/fashion_beauty/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/fashion_beauty/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/fashion_beauty/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/fashion_beauty/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/fashion_beauty/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/finance_business/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/finance_business/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/finance_business/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/finance_business/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/finance_business/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/finance_business/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/finance_business/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/food_dining/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/food_dining/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/food_dining/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/food_dining/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/food_dining/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/food_dining/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/food_dining/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/games/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/games/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/games/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/games/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/games/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/games/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/games/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/hardware/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/hardware/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/hardware/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/hardware/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/hardware/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/hardware/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/hardware/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/health/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/health/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/health/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/health/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/health/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/health/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/health/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/history/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/history/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/history/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/history/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/history/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/history/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/history/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/home_hobbies/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/home_hobbies/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/home_hobbies/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/home_hobbies/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/home_hobbies/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/home_hobbies/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/home_hobbies/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/industrial/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/industrial/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/industrial/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/industrial/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/industrial/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/industrial/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/industrial/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/literature/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/literature/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/literature/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/literature/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/literature/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/literature/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/literature/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/politics/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/politics/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/politics/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/politics/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/politics/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/politics/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/politics/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/religion/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/religion/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/religion/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/religion/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/religion/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/religion/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/religion/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/science_tech/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/science_tech/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/science_tech/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/science_tech/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/science_tech/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/science_tech/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/science_tech/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/social_life/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/social_life/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/social_life/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/social_life/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/social_life/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/social_life/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/social_life/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software_dev/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software_dev/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software_dev/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software_dev/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software_dev/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software_dev/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software_dev/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/software/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/sports_fitness/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/sports_fitness/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/sports_fitness/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/sports_fitness/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/sports_fitness/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/sports_fitness/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/sports_fitness/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/transportation/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/transportation/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/transportation/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/transportation/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/transportation/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/transportation/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/transportation/p080/allenai/dolma2-tokenizer/*.npy
+- sample_rate: 1.0
+  prefixes:
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/travel/p020/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/travel/p030/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/travel/p040/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/travel/p050/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/travel/p060/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/travel/p070/allenai/dolma2-tokenizer/*.npy
+  - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression/length_2e15/travel/p080/allenai/dolma2-tokenizer/*.npy
