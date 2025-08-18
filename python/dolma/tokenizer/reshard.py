@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 from collections import Counter
+from contextlib import ExitStack
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -54,6 +55,71 @@ class TokensMetadataPaths:
     def size(self) -> int:
         return os.path.getsize(self.npy_path)
 
+# class RingReader:
+#     def __init__(self, paths: list[TokensMetadataPaths], ring_size: int):
+#         self.paths = paths[:]
+#         self.ring_size = ring_size
+#         self.memmaps = []
+#         self.sizes = []
+#         random.shuffle(self.paths)
+
+#     def __iter__(self):
+#         while True:
+#             if len(self.memmaps) == 0 and len(self.paths)  == 0:
+#                 break
+
+#             if len(self.memmaps) < self.ring_size:
+#                 new_path = self.paths.pop(0)
+
+
+# def merge_group_with_block_shuffle(
+#     paths: list[TokensMetadataPaths],
+#     destination: str | Path,
+#     dtype: np.dtype,
+#     block_size: int = 100_000_000,
+#     ring_size: int = 8,
+# ):
+#     """
+#     Given a list of paths, merge them into a single memmap. Adjacent sequences are periodically shuffled every
+#     block_size tokens (by default, 100 million tokens). This is useful to avoid to avoid content from the same
+#     file being adjacent in the resulting memmap.
+
+#     Args:
+#         paths: List of paths to merge.
+#         destination: Path to the destination memmap.
+#         dtype: Data type of the memmap.
+#         block_size: The block size is the number of tokens to shuffle in each block; by default, we shuffle
+#             (approximately) every 100 million tokens.
+#         ring_size: The number of files to shuffle from.
+#     """
+#     npy_destination = Path(destination)
+#     csv_destination = npy_destination.with_suffix(".csv.gz")
+#     total_size = sum(p.size for p in paths)
+
+#     npy_destination.parent.mkdir(parents=True, exist_ok=True)
+
+#     target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
+
+#     bytes_offset = row_offset = 0
+#     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
+#         for path in paths:
+#             rw = csv.writer(f)
+#             source_memmap = np.memmap(path.npy_path, mode="r", dtype=dtype, shape=(path.size // dtype.itemsize,))
+#             target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = source_memmap
+#             target_memmap.flush()
+
+#             row_count = 0
+#             with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
+#                 rd = csv.reader(g)
+#                 for row in rd:
+#                     start, end, id_, src, idx = row
+#                     rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
+#                     row_count += 1
+
+#             bytes_offset += source_memmap.shape[0]
+#             row_offset += row_count
+#             del source_memmap
+
 
 def merge_group(
     paths: list[TokensMetadataPaths],
@@ -62,6 +128,11 @@ def merge_group(
 ):
     """
     Given a list of paths, merge them into a single memmap.
+
+    Args:
+        paths: List of paths to merge.
+        destination: Path to the destination memmap.
+        dtype: Data type of the memmap.
     """
     npy_destination = Path(destination)
     csv_destination = npy_destination.with_suffix(".csv.gz")
@@ -268,7 +339,8 @@ class ReshardingPrefixConfig:
     Can be used to download the files and compute file up/down sampling.
     """
 
-    sample_rate: float
+    sample_rate: float | None = None
+    target_size: int | None = None
     prefix: str | Path | None = None
     prefixes: list[str | Path] = field(default_factory=list)
 
@@ -281,8 +353,16 @@ class ReshardingPrefixConfig:
         elif len(self.prefixes) == 0:
             raise ValueError("Either prefix or prefixes must be provided")
 
-        if self.sample_rate <= 0:
-            raise ValueError("sample_rate must be greater than 0")
+        if self.sample_rate is not None:
+            if self.target_size is not None:
+                raise ValueError("Cannot provide both sample_rate and target_size")
+            if self.sample_rate <= 0:
+                raise ValueError("sample_rate must be greater than 0")
+        elif self.target_size is not None:
+            if self.target_size <= 0:
+                raise ValueError("target_size must be greater than 0")
+        else:
+            raise ValueError("Either sample_rate or target_size must be provided")
 
     def download(self, shared_local_prefix: str | Path) -> "ReshardingPrefixConfig":
         local_prefixes: list[str | Path] = []
@@ -314,10 +394,11 @@ class ReshardingPrefixConfig:
         return ReshardingPrefixConfig(
             prefixes=local_prefixes,
             sample_rate=self.sample_rate,
+            target_size=self.target_size,
         )
 
     def take(self) -> list[TokensMetadataPaths]:
-        paths = []
+        paths: list[TokensMetadataPaths] = []
 
         for local_prefix in self.prefixes:
             if urlparse(str(local_prefix)).scheme not in {"file", ""}:
@@ -343,23 +424,38 @@ class ReshardingPrefixConfig:
 
         new_paths = []
 
+        if self.sample_rate is None:
+            # sample rate is not provided, therefore we have to calculate it from the target size.
+            assert self.target_size is not None, "this should have been checked in __post_init__"
+
+            # get current size of all the npy files in the prefixes.
+            current_size = sum(p.size for p in paths)
+            sample_rate = self.target_size / current_size
+        else:
+            # sample rate is provided, let's just use that!
+            sample_rate = self.sample_rate
+
         # if the multiplier k is > 1, we first take ⌊k⌋ copies of each path.
-        if (repetition_rate := int(math.floor(self.sample_rate))) > 0:
+        if (repetition_rate := int(math.floor(sample_rate))) > 0:
             new_paths.extend(paths * repetition_rate)
 
         # this is the remaining non-integer part of the sample rate; because the npys are actually uneven in
         # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
         # of same size, we can just take a random sample.
-        if (residual_frac := self.sample_rate - repetition_rate) > 0:
+        if (residual_frac := sample_rate - repetition_rate) > 0:
             sample = random.sample(paths, max(1, round(residual_frac * len(paths))))
             new_paths.extend(sample)
 
         # sort by size
-        logger.info("Taking %s paths from %s using %s sample rate", len(new_paths), len(paths), self.sample_rate)
+        logger.info("Taking %s paths from %s using %s sample rate", len(new_paths), len(paths), sample_rate)
         return new_paths
 
     def to_dict(self) -> dict:
-        return {"prefixes": [str(p) for p in self.prefixes], "sample_rate": self.sample_rate}
+        return {
+            "prefixes": [str(p) for p in self.prefixes],
+            "sample_rate": self.sample_rate,
+            "target_size": self.target_size,
+        }
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingPrefixConfig":
