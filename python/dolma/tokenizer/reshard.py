@@ -94,14 +94,23 @@ def merge_group(
 
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
 
-    target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
+    target_memmap = np.memmap(
+        npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype
+    )
 
     bytes_offset = row_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
         for path in paths:
             rw = csv.writer(f)
-            source_memmap = np.memmap(path.npy_path, mode="r", dtype=dtype, shape=(path.size // dtype.itemsize,))
-            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = source_memmap
+            source_memmap = np.memmap(
+                path.npy_path,
+                mode="r",
+                dtype=dtype,
+                shape=(path.size // dtype.itemsize,),
+            )
+            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = (
+                source_memmap
+            )
             target_memmap.flush()
 
             row_count = 0
@@ -109,7 +118,15 @@ def merge_group(
                 rd = csv.reader(g)
                 for row in rd:
                     start, end, id_, src, idx = row
-                    rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
+                    rw.writerow(
+                        [
+                            int(start) + bytes_offset,
+                            int(end) + bytes_offset,
+                            id_,
+                            src,
+                            int(idx),
+                        ]
+                    )
                     row_count += 1
 
             bytes_offset += source_memmap.shape[0]
@@ -124,7 +141,9 @@ def group_paths_by_max_size(
     """
     Group paths by max size.
     """
-    counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
+    counts: dict[TokensMetadataPaths, int] = {
+        p: int(c) for p, c in Counter(paths).items()
+    }
     logger.info(
         "Found %s unique paths from %s files; max repetition is %s",
         len(counts),
@@ -145,7 +164,11 @@ def group_paths_by_max_size(
                 grouped_paths[-1].append(path)
 
         # decrease counts, remove paths with 0 count.
-        counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
+        counts = {
+            path: new_count
+            for path, count in counts.items()
+            if (new_count := count - 1) > 0
+        }
 
     logger.info(
         "By size: organized %s files into %s groups of max %.2f GB",
@@ -182,7 +205,9 @@ def group_paths_by_max_num_files(
     )
 
     if (m := max(counts.values())) > max_num_files:
-        raise ValueError(f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}")
+        raise ValueError(
+            f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}"
+        )
 
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
     # Distribute each element across groups in round-robin fashion
@@ -235,7 +260,10 @@ def merge_all_npys(
         raise ValueError("Either max_size_bytes or max_num_files must be provided")
 
     logger.info(
-        "Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
+        "Organizing %s files into %s groups using %s workers...",
+        len(paths),
+        len(grouped_paths),
+        max_workers,
     )
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -249,7 +277,9 @@ def merge_all_npys(
             )
             futures.append(future)
 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Merging files"):
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="Merging files"
+        ):
             try:
                 future.result()
             except Exception as e:
@@ -266,72 +296,303 @@ class ReshardingPrefixConfig:
     Configuration for a resharding source.
 
     Can be used to download the files and compute file up/down sampling.
+    Supports both a single prefix and a list of path globs.
     """
 
-    prefix: str | Path
-    sample_rate: float
+    prefix: str | Path | None = None  # Single prefix (for backward compatibility)
+    paths: list[str | Path] | None = None  # List of path globs
+    sample_rate: float | None = None
+    target_ratio: float | None = None
+    _computed_sample_rate: float | None = None
 
     def __post_init__(self):
-        assert self.sample_rate > 0
+        # Validate that either prefix or paths is provided
+        if self.prefix is None and self.paths is None:
+            raise ValueError("Must specify either 'prefix' or 'paths'")
+        if self.prefix is not None and self.paths is not None:
+            raise ValueError("Cannot specify both 'prefix' and 'paths'")
 
-    def download(self, local_prefix: str | Path) -> "ReshardingPrefixConfig":
-        if urlparse(str(self.prefix)).scheme != "s3":
-            return self
+        # Convert single prefix to paths list for consistency
+        if self.prefix is not None:
+            self.paths = [self.prefix]
 
-        logger.info("Downloading %s to %s", self.prefix, local_prefix)
-        remote_prefix_no_star = re.sub(r"(/|/\*)$", "", str(self.prefix))
-        local_prefix_no_trailing_slash = str(local_prefix).rstrip("/")
-        cmd = ["s5cmd", "cp", "-sp", f"{remote_prefix_no_star}/*", f"{local_prefix_no_trailing_slash}/"]
+        if self.sample_rate is not None and self.target_ratio is not None:
+            raise ValueError("Cannot specify both sample_rate and target_ratio")
+        if self.sample_rate is None and self.target_ratio is None:
+            raise ValueError("Must specify either sample_rate or target_ratio")
+        if self.sample_rate is not None:
+            assert self.sample_rate > 0
+            self._computed_sample_rate = self.sample_rate
+        if self.target_ratio is not None:
+            assert 0 < self.target_ratio <= 1.0
 
-        logger.info("Running command: %s", " ".join(cmd))
-        result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    def get_sample_rate(
+        self, total_source_sizes: dict[str, int] | None = None
+    ) -> float:
+        """Get the computed sample rate, calculating from target_ratio if needed."""
+        if self._computed_sample_rate is not None:
+            return self._computed_sample_rate
 
-        if result.returncode != 0:
-            print(f"s5cmd failed with error: {result.stderr}")
-            raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
-        return ReshardingPrefixConfig(
-            prefix=local_prefix,
-            sample_rate=self.sample_rate,
+        if self.target_ratio is not None and total_source_sizes is not None:
+            # Calculate sample_rate from target_ratio
+            # sample_rate = (target_ratio * total_mix_size) / source_size
+            # Sum up sizes for all paths in this source
+            source_size = 0
+            for path in self.paths or []:
+                source_size += total_source_sizes.get(str(path), 0)
+
+            total_mix_size = sum(total_source_sizes.values())
+            if source_size > 0:
+                self._computed_sample_rate = (
+                    self.target_ratio * total_mix_size
+                ) / source_size
+            else:
+                raise ValueError(f"Source size for paths {self.paths} is 0")
+            return self._computed_sample_rate
+
+        if self.sample_rate is not None:
+            return self.sample_rate
+
+        raise ValueError(
+            "Cannot compute sample rate without total_source_sizes when using target_ratio"
         )
 
-    def take(self) -> list[TokensMetadataPaths]:
-        if urlparse(str(self.prefix)).scheme not in {"file", ""}:
-            raise ValueError(
-                f"Invalid protocol: {urlparse(str(self.prefix)).scheme}; "
-                f"only local paths are supported; download the files first."
-            )
+    def download(self, local_prefix: str | Path) -> "ReshardingPrefixConfig":
+        """Download files from remote paths to local directory."""
+        if not self.paths:
+            return self
 
-        local_prefix = Path(self.prefix)
+        # Check if any of the paths are remote (s3 or gs)
+        needs_download = any(
+            urlparse(str(path)).scheme in {"s3", "gs"} for path in self.paths
+        )
+
+        if not needs_download:
+            return self
+
+        local_prefix = Path(local_prefix)
+        local_prefix.mkdir(parents=True, exist_ok=True)
+
+        for i, path in enumerate(self.paths):
+            scheme = urlparse(str(path)).scheme
+
+            if scheme == "s3":
+                # Create a subdirectory for each path to avoid filename collisions
+                path_subdir = local_prefix / f"path_{i:04d}"
+                path_subdir.mkdir(parents=True, exist_ok=True)
+                logger.info("Downloading S3 path %s to %s", path, path_subdir)
+
+                # Use s5cmd with glob support
+                cmd = [
+                    "s5cmd",
+                    "cp",
+                    "-sp",
+                    str(path),
+                    f"{path_subdir}/",
+                ]
+
+                logger.info("Running command: %s", " ".join(cmd))
+                result = subprocess.run(
+                    cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+
+                if result.returncode != 0:
+                    print(f"s5cmd failed with error: {result.stderr}")
+                    raise Exception(
+                        f"Failed to download files using s5cmd: {result.stderr}"
+                    )
+
+            elif scheme == "gs":
+                # Create a subdirectory for each path to avoid filename collisions
+                path_subdir = local_prefix / f"path_{i:04d}"
+                path_subdir.mkdir(parents=True, exist_ok=True)
+                logger.info("Downloading GCS path %s to %s", path, path_subdir)
+
+                # For GCS paths with glob patterns, we need to handle them differently
+                # gsutil doesn't expand globs with -r flag, so we remove -r for glob patterns
+                path_str = str(path)
+
+                # We need to download both .npy and .csv.gz files
+                # First download .npy files
+                if "*" in path_str or "**" in path_str:
+                    # For glob patterns, use cp without -r flag
+                    cmd = [
+                        "gsutil",
+                        "-m",
+                        "cp",
+                        path_str,
+                        f"{path_subdir}/",
+                    ]
+                else:
+                    # For non-glob paths (directories), use -r flag
+                    cmd = [
+                        "gsutil",
+                        "-m",
+                        "cp",
+                        "-r",
+                        path_str,
+                        str(path_subdir),
+                    ]
+
+                logger.info("Running command: %s", " ".join(cmd))
+                result = subprocess.run(
+                    cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+
+                if result.returncode != 0:
+                    print(f"gsutil failed with error: {result.stderr}")
+                    raise Exception(
+                        f"Failed to download files using gsutil: {result.stderr}"
+                    )
+
+                # Also download corresponding .csv.gz files
+                csv_path_str = path_str.replace(".npy", ".csv.gz")
+                if "*" in csv_path_str or "**" in csv_path_str:
+                    cmd_csv = [
+                        "gsutil",
+                        "-m",
+                        "cp",
+                        csv_path_str,
+                        f"{path_subdir}/",
+                    ]
+                else:
+                    cmd_csv = [
+                        "gsutil",
+                        "-m",
+                        "cp",
+                        "-r",
+                        csv_path_str,
+                        str(path_subdir),
+                    ]
+
+                logger.info("Running command for CSV files: %s", " ".join(cmd_csv))
+                result_csv = subprocess.run(
+                    cmd_csv, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+
+                if result_csv.returncode != 0:
+                    logger.warning(
+                        "Failed to download CSV files: %s", result_csv.stderr
+                    )
+
+                # Check if any files were actually downloaded
+                downloaded_npy_files = list(path_subdir.rglob("*.npy"))
+                downloaded_csv_files = list(path_subdir.rglob("*.csv.gz"))
+                if not downloaded_npy_files:
+                    logger.warning("No .npy files were downloaded from %s", path)
+                else:
+                    logger.info(
+                        "Downloaded %d .npy files and %d .csv.gz files from %s",
+                        len(downloaded_npy_files),
+                        len(downloaded_csv_files),
+                        path,
+                    )
+
+        # After downloading, the paths are now local under local_prefix
+        return ReshardingPrefixConfig(
+            paths=[local_prefix],  # All files are now under this local directory
+            sample_rate=self.sample_rate,
+            target_ratio=self.target_ratio,
+            _computed_sample_rate=self._computed_sample_rate,
+        )
+
+    def take(
+        self, total_source_sizes: dict[str, int] | None = None
+    ) -> list[TokensMetadataPaths]:
+        """Collect files from all path globs and apply sampling."""
+        if not self.paths:
+            return []
+
+        # Ensure all paths are local
+        for path_pattern in self.paths:
+            if urlparse(str(path_pattern)).scheme not in {"file", ""}:
+                raise ValueError(
+                    f"Invalid protocol: {urlparse(str(path_pattern)).scheme}; "
+                    f"only local paths are supported; download the files first."
+                )
+
         paths = []
-        for root, _, files in os.walk(local_prefix):
-            for file in files:
-                if file.endswith(".npy"):
-                    npy_path = os.path.join(root, file)
-                    csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
-                    paths.append(TokensMetadataPaths(npy_path, csv_path))
+        for path_pattern in self.paths:
+            path_pattern_str = str(path_pattern)
+
+            # Handle glob patterns
+            if "*" in path_pattern_str:
+                # Use glob to find matching files
+                import glob
+
+                matching_files = glob.glob(path_pattern_str, recursive=True)
+                for npy_path in matching_files:
+                    if npy_path.endswith(".npy"):
+                        csv_path = npy_path.replace(".npy", ".csv.gz")
+                        if os.path.exists(csv_path):
+                            paths.append(TokensMetadataPaths(npy_path, csv_path))
+            else:
+                # Treat as a directory path and walk it
+                local_path = Path(path_pattern)
+                if local_path.exists():
+                    for root, _, files in os.walk(local_path):
+                        for file in files:
+                            if file.endswith(".npy"):
+                                npy_path = os.path.join(root, file)
+                                csv_path = os.path.join(
+                                    root, file.replace(".npy", ".csv.gz")
+                                )
+                                if os.path.exists(csv_path):
+                                    paths.append(
+                                        TokensMetadataPaths(npy_path, csv_path)
+                                    )
 
         new_paths = []
 
+        # Get the computed sample rate
+        sample_rate = self.get_sample_rate(total_source_sizes)
+
         # if the multiplier k is > 1, we first take ⌊k⌋ copies of each path.
-        if (repetition_rate := int(math.floor(self.sample_rate))) > 0:
+        if (repetition_rate := int(math.floor(sample_rate))) > 0:
             new_paths.extend(paths * repetition_rate)
 
         # this is the remaining non-integer part of the sample rate; because the npys are actually uneven in
         # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
         # of same size, we can just take a random sample.
-        if (residual_frac := self.sample_rate - repetition_rate) > 0:
-            new_paths.extend(random.sample(paths, max(1, round(residual_frac * len(paths)))))
+        if (residual_frac := sample_rate - repetition_rate) > 0:
+            sample_size = min(len(paths), max(1, round(residual_frac * len(paths))))
+            new_paths.extend(random.sample(paths, sample_size))
 
         # sort by size
-        logger.info("Taking %s paths from %s using %s sample rate", len(new_paths), len(paths), self.sample_rate)
+        logger.info(
+            "Taking %s paths from %s using %s sample rate",
+            len(new_paths),
+            len(paths),
+            sample_rate,
+        )
         return new_paths
 
     def to_dict(self) -> dict:
-        return {"prefix": str(self.prefix), "sample_rate": self.sample_rate}
+        result = {}
+        # Use 'paths' if we have multiple paths, 'prefix' for single path (backward compatibility)
+        if self.paths and len(self.paths) == 1 and self.prefix is not None:
+            result["prefix"] = str(self.prefix)
+        elif self.paths:
+            result["paths"] = [str(p) for p in self.paths]
+
+        if self.sample_rate is not None:
+            result["sample_rate"] = self.sample_rate
+        if self.target_ratio is not None:
+            result["target_ratio"] = self.target_ratio
+        return result
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingPrefixConfig":
-        return cls(**d)
+        # Handle both 'prefix' (single) and 'paths' (multiple)
+        prefix = d.get("prefix")
+        paths = d.get("paths")
+
+        return cls(
+            prefix=prefix if prefix is not None else None,
+            paths=paths if paths is not None else None,
+            sample_rate=d.get("sample_rate"),
+            target_ratio=d.get("target_ratio"),
+        )
 
 
 @dataclass
@@ -365,13 +626,21 @@ class ReshardingConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingConfig":
-        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
+        source_prefixes = [
+            ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])
+        ]
         return cls(
             source_prefixes=source_prefixes,
             destination_prefix=str(d["destination_prefix"]),
-            local_tempdir=(Path(p) if (p := d.get("local_tempdir")) is not None else None),
-            max_size_bytes=(int(s) if (s := d.get("max_size_bytes")) is not None else None),
-            max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
+            local_tempdir=(
+                Path(p) if (p := d.get("local_tempdir")) is not None else None
+            ),
+            max_size_bytes=(
+                int(s) if (s := d.get("max_size_bytes")) is not None else None
+            ),
+            max_num_files=(
+                int(n) if (n := d.get("max_num_files")) is not None else None
+            ),
             max_workers=int(d.get("max_workers", 1)),
             random_seed=int(d.get("random_seed", 42)),
         )
@@ -394,12 +663,21 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
 
     local_prefix_no_star = re.sub(r"(/|/\*)$", "", str(local_prefix))
     remote_prefix_no_trailing_slash = str(remote_prefix).rstrip("/")
-    cmd = ["s5cmd", "cp", "-sp", f"{local_prefix_no_star}/*", f"{remote_prefix_no_trailing_slash}/"]
-    result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    cmd = [
+        "s5cmd",
+        "cp",
+        "-sp",
+        f"{local_prefix_no_star}/*",
+        f"{remote_prefix_no_trailing_slash}/",
+    ]
+    result = subprocess.run(
+        cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
     if result.returncode != 0:
         print(f"s5cmd failed with error: {result.stderr}")
         raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
+    print(f"Uploaded {local_prefix} to {remote_prefix}")
 
 
 def reshard(config: ReshardingConfig):
@@ -421,8 +699,50 @@ def reshard(config: ReshardingConfig):
             for i, source_prefix in enumerate(config.source_prefixes)
         ]
 
+        # Calculate total source sizes if any prefix uses target_ratio
+        total_source_sizes = None
+        if any(sp.target_ratio is not None for sp in source_prefixes):
+            total_source_sizes = {}
+            for source_prefix in source_prefixes:
+                # Calculate total size for all paths in this source
+                for path_pattern in source_prefix.paths or []:
+                    path_pattern_str = str(path_pattern)
+                    total_size = 0
+
+                    # Handle glob patterns
+                    if "*" in path_pattern_str:
+                        import glob
+
+                        matching_files = glob.glob(path_pattern_str, recursive=True)
+                        for npy_path in matching_files:
+                            if npy_path.endswith(".npy"):
+                                total_size += os.path.getsize(npy_path)
+                    else:
+                        # Treat as a directory path and walk it
+                        local_path = Path(path_pattern)
+                        if local_path.exists():
+                            for root, _, files in os.walk(local_path):
+                                for file in files:
+                                    if file.endswith(".npy"):
+                                        npy_path = os.path.join(root, file)
+                                        total_size += os.path.getsize(npy_path)
+
+                    # Store size for this specific path pattern
+                    total_source_sizes[str(path_pattern)] = total_size
+
+            # Verify target ratios sum to <= 1.0
+            total_ratio = sum(
+                sp.target_ratio for sp in source_prefixes if sp.target_ratio is not None
+            )
+            if total_ratio > 1.0:
+                raise ValueError(f"Sum of target_ratios ({total_ratio}) exceeds 1.0")
+
         # get repetition aware samples
-        source_paths = [path for source_prefix in source_prefixes for path in source_prefix.take()]
+        source_paths = [
+            path
+            for source_prefix in source_prefixes
+            for path in source_prefix.take(total_source_sizes)
+        ]
 
         # make destination directory
         local_output_dir.mkdir(parents=True, exist_ok=True)
