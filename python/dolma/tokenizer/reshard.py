@@ -94,9 +94,7 @@ def merge_group(
 
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
 
-    target_memmap = np.memmap(
-        npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype
-    )
+    target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
 
     bytes_offset = row_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
@@ -108,9 +106,7 @@ def merge_group(
                 dtype=dtype,
                 shape=(path.size // dtype.itemsize,),
             )
-            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = (
-                source_memmap
-            )
+            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = source_memmap
             target_memmap.flush()
 
             row_count = 0
@@ -141,9 +137,7 @@ def group_paths_by_max_size(
     """
     Group paths by max size.
     """
-    counts: dict[TokensMetadataPaths, int] = {
-        p: int(c) for p, c in Counter(paths).items()
-    }
+    counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
     logger.info(
         "Found %s unique paths from %s files; max repetition is %s",
         len(counts),
@@ -164,11 +158,7 @@ def group_paths_by_max_size(
                 grouped_paths[-1].append(path)
 
         # decrease counts, remove paths with 0 count.
-        counts = {
-            path: new_count
-            for path, count in counts.items()
-            if (new_count := count - 1) > 0
-        }
+        counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
 
     logger.info(
         "By size: organized %s files into %s groups of max %.2f GB",
@@ -205,9 +195,7 @@ def group_paths_by_max_num_files(
     )
 
     if (m := max(counts.values())) > max_num_files:
-        raise ValueError(
-            f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}"
-        )
+        raise ValueError(f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}")
 
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
     # Distribute each element across groups in round-robin fashion
@@ -277,9 +265,7 @@ def merge_all_npys(
             )
             futures.append(future)
 
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="Merging files"
-        ):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Merging files"):
             try:
                 future.result()
             except Exception as e:
@@ -326,9 +312,7 @@ class ReshardingPrefixConfig:
         if self.target_ratio is not None:
             assert 0 < self.target_ratio <= 1.0
 
-    def get_sample_rate(
-        self, total_source_sizes: dict[str, int] | None = None
-    ) -> float:
+    def get_sample_rate(self, total_source_sizes: dict[str, int] | None = None) -> float:
         """Get the computed sample rate, calculating from target_ratio if needed."""
         if self._computed_sample_rate is not None:
             return self._computed_sample_rate
@@ -343,9 +327,7 @@ class ReshardingPrefixConfig:
 
             total_mix_size = sum(total_source_sizes.values())
             if source_size > 0:
-                self._computed_sample_rate = (
-                    self.target_ratio * total_mix_size
-                ) / source_size
+                self._computed_sample_rate = (self.target_ratio * total_mix_size) / source_size
             else:
                 raise ValueError(f"Source size for paths {self.paths} is 0")
             return self._computed_sample_rate
@@ -353,9 +335,7 @@ class ReshardingPrefixConfig:
         if self.sample_rate is not None:
             return self.sample_rate
 
-        raise ValueError(
-            "Cannot compute sample rate without total_source_sizes when using target_ratio"
-        )
+        raise ValueError("Cannot compute sample rate without total_source_sizes when using target_ratio")
 
     def download(self, local_prefix: str | Path) -> "ReshardingPrefixConfig":
         """Download files from remote paths to local directory."""
@@ -395,15 +375,11 @@ class ReshardingPrefixConfig:
                 ]
 
                 logger.info("Running command: %s", " ".join(cmd))
-                result = subprocess.run(
-                    cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                )
+                result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
                 if result.returncode != 0:
                     print(f"s5cmd failed with error: {result.stderr}")
-                    raise Exception(
-                        f"Failed to download files using s5cmd: {result.stderr}"
-                    )
+                    raise Exception(f"Failed to download files using s5cmd: {result.stderr}")
 
             elif scheme in {"", "file"}:
                 # Local path; nothing to do
@@ -419,9 +395,7 @@ class ReshardingPrefixConfig:
             _computed_sample_rate=self._computed_sample_rate,
         )
 
-    def take(
-        self, total_source_sizes: dict[str, int] | None = None
-    ) -> list[TokensMetadataPaths]:
+    def take(self, total_source_sizes: dict[str, int] | None = None) -> list[TokensMetadataPaths]:
         """Collect files from all path globs and apply sampling."""
         if not self.paths:
             return []
@@ -457,13 +431,9 @@ class ReshardingPrefixConfig:
                         for file in files:
                             if file.endswith(".npy"):
                                 npy_path = os.path.join(root, file)
-                                csv_path = os.path.join(
-                                    root, file.replace(".npy", ".csv.gz")
-                                )
+                                csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
                                 if os.path.exists(csv_path):
-                                    paths.append(
-                                        TokensMetadataPaths(npy_path, csv_path)
-                                    )
+                                    paths.append(TokensMetadataPaths(npy_path, csv_path))
 
         new_paths = []
 
@@ -549,21 +519,13 @@ class ReshardingConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingConfig":
-        source_prefixes = [
-            ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])
-        ]
+        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
         return cls(
             source_prefixes=source_prefixes,
             destination_prefix=str(d["destination_prefix"]),
-            local_tempdir=(
-                Path(p) if (p := d.get("local_tempdir")) is not None else None
-            ),
-            max_size_bytes=(
-                int(s) if (s := d.get("max_size_bytes")) is not None else None
-            ),
-            max_num_files=(
-                int(n) if (n := d.get("max_num_files")) is not None else None
-            ),
+            local_tempdir=(Path(p) if (p := d.get("local_tempdir")) is not None else None),
+            max_size_bytes=(int(s) if (s := d.get("max_size_bytes")) is not None else None),
+            max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
             max_workers=int(d.get("max_workers", 1)),
             random_seed=int(d.get("random_seed", 42)),
         )
@@ -593,9 +555,7 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
         f"{local_prefix_no_star}/*",
         f"{remote_prefix_no_trailing_slash}/",
     ]
-    result = subprocess.run(
-        cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+    result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     if result.returncode != 0:
         print(f"s5cmd failed with error: {result.stderr}")
@@ -654,17 +614,13 @@ def reshard(config: ReshardingConfig):
                     total_source_sizes[str(path_pattern)] = total_size
 
             # Verify target ratios sum to <= 1.0
-            total_ratio = sum(
-                sp.target_ratio for sp in source_prefixes if sp.target_ratio is not None
-            )
+            total_ratio = sum(sp.target_ratio for sp in source_prefixes if sp.target_ratio is not None)
             if total_ratio > 1.0:
                 raise ValueError(f"Sum of target_ratios ({total_ratio}) exceeds 1.0")
 
         # get repetition aware samples
         source_paths = [
-            path
-            for source_prefix in source_prefixes
-            for path in source_prefix.take(total_source_sizes)
+            path for source_prefix in source_prefixes for path in source_prefix.take(total_source_sizes)
         ]
 
         # make destination directory

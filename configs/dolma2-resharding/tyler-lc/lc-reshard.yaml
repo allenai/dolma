@@ -1,6 +1,6 @@
-destination_prefix: s3://ai2-llm/preprocessed/tylerr/lc-reshard/v0.1/allenai/dolma2-tokenizer/
+destination_prefix: s3://ai2-llm/preprocessed/tylerr/lc-reshard/v0.2/allenai/dolma2-tokenizer/
 local_tempdir: /tmp/resharding/tylerr/lc-reshard
-max_num_files: 32
+max_num_files: 128
 source_prefixes:
 - target_ratio: 0.141666667
   paths:
