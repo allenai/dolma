@@ -635,8 +635,7 @@ def reshard(config: ReshardingConfig):
                 "Downloading source prefix %d/%d", i + 1, len(config.source_prefixes)
             )
             downloaded_prefix = source_prefix.download(
-                local_tempdir / f"input/{i:06d}",
-                skip_download=True,  ## !!!
+                local_tempdir / f"input/{i:06d}", skip_download=False
             )
             source_prefixes.append(downloaded_prefix)
         logger.info("Finished downloading all source prefixes")
