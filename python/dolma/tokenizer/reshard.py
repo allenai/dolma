@@ -94,7 +94,9 @@ def merge_group(
 
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
 
-    target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
+    target_memmap = np.memmap(
+        npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype
+    )
 
     bytes_offset = row_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
@@ -106,7 +108,9 @@ def merge_group(
                 dtype=dtype,
                 shape=(path.size // dtype.itemsize,),
             )
-            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = source_memmap
+            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = (
+                source_memmap
+            )
             target_memmap.flush()
 
             row_count = 0
@@ -137,7 +141,9 @@ def group_paths_by_max_size(
     """
     Group paths by max size.
     """
-    counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
+    counts: dict[TokensMetadataPaths, int] = {
+        p: int(c) for p, c in Counter(paths).items()
+    }
     logger.info(
         "Found %s unique paths from %s files; max repetition is %s",
         len(counts),
@@ -158,7 +164,11 @@ def group_paths_by_max_size(
                 grouped_paths[-1].append(path)
 
         # decrease counts, remove paths with 0 count.
-        counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
+        counts = {
+            path: new_count
+            for path, count in counts.items()
+            if (new_count := count - 1) > 0
+        }
 
     logger.info(
         "By size: organized %s files into %s groups of max %.2f GB",
@@ -195,7 +205,9 @@ def group_paths_by_max_num_files(
     )
 
     if (m := max(counts.values())) > max_num_files:
-        raise ValueError(f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}")
+        raise ValueError(
+            f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}"
+        )
 
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
     # Distribute each element across groups in round-robin fashion
@@ -225,7 +237,7 @@ def merge_all_npys(
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer",
     max_workers: int | None = None,
 ):
-    max_workers = max_workers or os.cpu_count() or 1
+    max_workers = max_workers or os.cpu_count() or 192
 
     if len(paths) == 0:
         raise ValueError("No paths provided")
@@ -265,7 +277,9 @@ def merge_all_npys(
             )
             futures.append(future)
 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Merging files"):
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="Merging files"
+        ):
             try:
                 future.result()
             except Exception as e:
@@ -312,7 +326,9 @@ class ReshardingPrefixConfig:
         if self.target_ratio is not None:
             assert 0 < self.target_ratio <= 1.0
 
-    def get_sample_rate(self, total_source_sizes: dict[str, int] | None = None) -> float:
+    def get_sample_rate(
+        self, total_source_sizes: dict[str, int] | None = None
+    ) -> float:
         """Get the computed sample rate, calculating from target_ratio if needed."""
         if self._computed_sample_rate is not None:
             return self._computed_sample_rate
@@ -327,7 +343,9 @@ class ReshardingPrefixConfig:
 
             total_mix_size = sum(total_source_sizes.values())
             if source_size > 0:
-                self._computed_sample_rate = (self.target_ratio * total_mix_size) / source_size
+                self._computed_sample_rate = (
+                    self.target_ratio * total_mix_size
+                ) / source_size
             else:
                 raise ValueError(f"Source size for paths {self.paths} is 0")
             return self._computed_sample_rate
@@ -335,7 +353,9 @@ class ReshardingPrefixConfig:
         if self.sample_rate is not None:
             return self.sample_rate
 
-        raise ValueError("Cannot compute sample rate without total_source_sizes when using target_ratio")
+        raise ValueError(
+            "Cannot compute sample rate without total_source_sizes when using target_ratio"
+        )
 
     def download(self, local_prefix: str | Path) -> "ReshardingPrefixConfig":
         """Download files from remote paths to local directory."""
@@ -363,23 +383,106 @@ class ReshardingPrefixConfig:
                 # Create a subdirectory for each path to avoid filename collisions
                 path_subdir = local_prefix / f"path_{i:04d}"
                 path_subdir.mkdir(parents=True, exist_ok=True)
-                logger.info("Downloading S3 path %s to %s", path, path_subdir)
+                logger.info("Preparing download from %s to %s", path, path_subdir)
 
-                # Use s5cmd with glob support
-                cmd = [
-                    "s5cmd",
-                    "cp",
-                    "-sp",
-                    str(path),
-                    f"{path_subdir}/",
-                ]
+                # 1) Probe remote contents to determine completeness
+                def _s5cmd_ls(p: str) -> tuple[list[tuple[int, str]], str]:
+                    """Return list of (size, url) for objects under path and the exact path used.
 
-                logger.info("Running command: %s", " ".join(cmd))
-                result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    Tries a few variants to support both direct prefixes and glob patterns.
+                    """
+                    variants = [str(p)]
+                    if not str(p).endswith("*") and not str(p).endswith("/"):
+                        variants.extend(
+                            [f"{p}/*", f"{p}/**"]
+                        )  # non-recursive then recursive
+                    elif str(p).endswith("/"):
+                        variants.extend([f"{p}*", f"{p}**"])  # treat as prefix dir
 
-                if result.returncode != 0:
-                    print(f"s5cmd failed with error: {result.stderr}")
-                    raise Exception(f"Failed to download files using s5cmd: {result.stderr}")
+                    for variant in variants:
+                        ls = subprocess.run(
+                            ["s5cmd", "ls", variant],
+                            text=True,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                        )
+                        if ls.returncode == 0 and ls.stdout.strip():
+                            objects: list[tuple[int, str]] = []
+                            for line in ls.stdout.splitlines():
+                                # expected: "YYYY/MM/DD HH:MM:SS <size> <url>"
+                                parts = line.strip().split()
+                                if len(parts) < 4:
+                                    continue
+                                try:
+                                    size = int(parts[-2])
+                                    url = parts[-1]
+                                except Exception:
+                                    continue
+                                # only consider npy and csv.gz files
+                                if url.endswith(".npy") or url.endswith(".csv.gz"):
+                                    objects.append((size, url))
+                            if objects:
+                                return objects, variant
+                    return [], str(p)
+
+                remote_objects, used_ls_path = _s5cmd_ls(str(path))
+
+                # Tally remote counts/sizes of files we care about
+                remote_sizes_total = sum(size for size, _ in remote_objects)
+                remote_counts = {
+                    "npy": sum(1 for _, u in remote_objects if u.endswith(".npy")),
+                    "csv": sum(1 for _, u in remote_objects if u.endswith(".csv.gz")),
+                }
+
+                # Tally local counts/sizes
+                local_sizes_total = 0
+                local_counts = {"npy": 0, "csv": 0}
+                for root, _, files in os.walk(path_subdir):
+                    for fname in files:
+                        if fname.endswith(".npy"):
+                            local_counts["npy"] += 1
+                            local_sizes_total += os.path.getsize(
+                                os.path.join(root, fname)
+                            )
+                        elif fname.endswith(".csv.gz"):
+                            local_counts["csv"] += 1
+                            local_sizes_total += os.path.getsize(
+                                os.path.join(root, fname)
+                            )
+
+                # If local already matches remote, skip download
+                if (
+                    remote_objects
+                    and local_sizes_total == remote_sizes_total
+                    and local_counts == remote_counts
+                ):
+                    logger.info(
+                        "Skipping download for %s; already present (%d files, %d bytes).",
+                        used_ls_path,
+                        local_counts["npy"] + local_counts["csv"],
+                        local_sizes_total,
+                    )
+                else:
+                    # Use s5cmd with glob support
+                    logger.info("Downloading S3 path %s to %s", path, path_subdir)
+                    cmd = [
+                        "s5cmd",
+                        "cp",
+                        "-sp",
+                        str(path),
+                        f"{path_subdir}/",
+                    ]
+
+                    logger.info("Running command: %s", " ".join(cmd))
+                    result = subprocess.run(
+                        cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                    )
+
+                    if result.returncode != 0:
+                        print(f"s5cmd failed with error: {result.stderr}")
+                        raise Exception(
+                            f"Failed to download files using s5cmd: {result.stderr}"
+                        )
 
             elif scheme in {"", "file"}:
                 # Local path; nothing to do
@@ -395,7 +498,9 @@ class ReshardingPrefixConfig:
             _computed_sample_rate=self._computed_sample_rate,
         )
 
-    def take(self, total_source_sizes: dict[str, int] | None = None) -> list[TokensMetadataPaths]:
+    def take(
+        self, total_source_sizes: dict[str, int] | None = None
+    ) -> list[TokensMetadataPaths]:
         """Collect files from all path globs and apply sampling."""
         if not self.paths:
             return []
@@ -431,9 +536,13 @@ class ReshardingPrefixConfig:
                         for file in files:
                             if file.endswith(".npy"):
                                 npy_path = os.path.join(root, file)
-                                csv_path = os.path.join(root, file.replace(".npy", ".csv.gz"))
+                                csv_path = os.path.join(
+                                    root, file.replace(".npy", ".csv.gz")
+                                )
                                 if os.path.exists(csv_path):
-                                    paths.append(TokensMetadataPaths(npy_path, csv_path))
+                                    paths.append(
+                                        TokensMetadataPaths(npy_path, csv_path)
+                                    )
 
         new_paths = []
 
@@ -497,7 +606,7 @@ class ReshardingConfig:
     local_tempdir: str | Path | None = None
     max_size_bytes: int | None = None
     max_num_files: int | None = None
-    max_workers: int = os.cpu_count() or 1
+    max_workers: int = os.cpu_count() or 192
     random_seed: int = 42
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer"
 
@@ -519,14 +628,22 @@ class ReshardingConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> "ReshardingConfig":
-        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
+        source_prefixes = [
+            ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])
+        ]
         return cls(
             source_prefixes=source_prefixes,
             destination_prefix=str(d["destination_prefix"]),
-            local_tempdir=(Path(p) if (p := d.get("local_tempdir")) is not None else None),
-            max_size_bytes=(int(s) if (s := d.get("max_size_bytes")) is not None else None),
-            max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
-            max_workers=int(d.get("max_workers", 1)),
+            local_tempdir=(
+                Path(p) if (p := d.get("local_tempdir")) is not None else None
+            ),
+            max_size_bytes=(
+                int(s) if (s := d.get("max_size_bytes")) is not None else None
+            ),
+            max_num_files=(
+                int(n) if (n := d.get("max_num_files")) is not None else None
+            ),
+            max_workers=int(d.get("max_workers", 192)),
             random_seed=int(d.get("random_seed", 42)),
         )
 
@@ -555,7 +672,9 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
         f"{local_prefix_no_star}/*",
         f"{remote_prefix_no_trailing_slash}/",
     ]
-    result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    result = subprocess.run(
+        cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
     if result.returncode != 0:
         print(f"s5cmd failed with error: {result.stderr}")
@@ -614,13 +733,17 @@ def reshard(config: ReshardingConfig):
                     total_source_sizes[str(path_pattern)] = total_size
 
             # Verify target ratios sum to <= 1.0
-            total_ratio = sum(sp.target_ratio for sp in source_prefixes if sp.target_ratio is not None)
+            total_ratio = sum(
+                sp.target_ratio for sp in source_prefixes if sp.target_ratio is not None
+            )
             if total_ratio > 1.0:
                 raise ValueError(f"Sum of target_ratios ({total_ratio}) exceeds 1.0")
 
         # get repetition aware samples
         source_paths = [
-            path for source_prefix in source_prefixes for path in source_prefix.take(total_source_sizes)
+            path
+            for source_prefix in source_prefixes
+            for path in source_prefix.take(total_source_sizes)
         ]
 
         # make destination directory
