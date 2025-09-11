@@ -1,6 +1,6 @@
 destination_prefix: s3://ai2-llm/preprocessed/tylerr/lc-reshard-final/v0.4/allenai/dolma2-tokenizer/
 local_tempdir: /mnt/raid0/resharding/tylerr/lc-reshard-final
-max_num_files: 8192
+max_num_files: 1000
 source_prefixes:
 - target_ratio: 0.03473789024
   paths:

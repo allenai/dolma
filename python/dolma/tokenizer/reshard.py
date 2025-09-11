@@ -215,10 +215,17 @@ def group_paths_by_max_num_files(
         # sample count buckets out of max_num_files where we could put the element
         # we sample with weights proportional to the number of elements in the bucket,
         # so that we are more likely to sample buckets with fewer elements.
+        weights = [1 / (len(grouped_paths[i]) + 1) for i in range(max_num_files)]
         buckets = weighted_bucket_sample(
             values=list(range(max_num_files)),
             count=count,
-            weights=[1 / (len(grouped_paths[i]) + 1) for i in range(max_num_files)],
+            weights=weights,
+        )
+        logger.info(
+            "Distributing element %s (count=%d) to buckets %s",
+            element,
+            count,
+            buckets,
         )
         for bucket in buckets:
             grouped_paths[bucket].append(element)
@@ -226,6 +233,11 @@ def group_paths_by_max_num_files(
     # there is still a change that some buckets might be empty; we remove them.
     grouped_paths = [group for group in grouped_paths if len(group) > 0]
 
+    logger.info(
+        "Organized %s files into %s groups",
+        len(paths),
+        len(grouped_paths),
+    )
     return grouped_paths
 
 
