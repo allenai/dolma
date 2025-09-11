@@ -386,7 +386,7 @@ class ReshardingPrefixConfig:
 
                 # Use s5cmd with glob support
                 logger.info("Downloading S3 path %s to %s", path, path_subdir)
-                cmd = ["s5cmd", "cp", "-s", "--sp", str(path), f"{path_subdir}/"]
+                cmd = ["s5cmd", "cp", "--sp", str(path), f"{path_subdir}/"]
 
                 logger.info("Running command: %s", " ".join(cmd))
                 result = subprocess.run(
