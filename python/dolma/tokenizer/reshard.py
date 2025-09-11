@@ -369,9 +369,14 @@ class ReshardingPrefixConfig:
             "Cannot compute sample rate without total_source_sizes when using target_ratio"
         )
 
-    def download(self, local_prefix: str | Path) -> "ReshardingPrefixConfig":
+    def download(
+        self, local_prefix: str | Path, skip_download: bool = False
+    ) -> "ReshardingPrefixConfig":
         """Download files from remote paths to local directory."""
         if not self.paths:
+            return self
+
+        if skip_download:
             return self
 
         # Disallow GCS; check if any paths are remote (s3)
@@ -615,18 +620,28 @@ def reshard(config: ReshardingConfig):
     try:
         local_tempdir = Path(config.local_tempdir or mkdtemp())
         local_tempdir.mkdir(parents=True, exist_ok=True)
+        logger.info("Using local temp directory: %s", local_tempdir)
 
         local_output_dir = (
             local_tempdir / "output"
             if urlparse(config.destination_prefix).scheme == "s3"
             else Path(config.destination_prefix)
         )
+        logger.info("Local output directory: %s", local_output_dir)
 
         # download the files
-        source_prefixes = [
-            source_prefix.download(local_tempdir / f"input/{i:06d}")
-            for i, source_prefix in enumerate(config.source_prefixes)
-        ]
+        logger.info("Processing %d source prefixes", len(config.source_prefixes))
+        source_prefixes = []
+        for i, source_prefix in enumerate(config.source_prefixes):
+            logger.info(
+                "Downloading source prefix %d/%d", i + 1, len(config.source_prefixes)
+            )
+            downloaded_prefix = source_prefix.download(
+                local_tempdir / f"input/{i:06d}",
+                skip_download=True,  ## !!!
+            )
+            source_prefixes.append(downloaded_prefix)
+        logger.info("Finished downloading all source prefixes")
 
         # Calculate total source sizes if any prefix uses target_ratio
         total_source_sizes = None
