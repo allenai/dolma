@@ -376,9 +376,6 @@ class ReshardingPrefixConfig:
         if not self.paths:
             return self
 
-        if skip_download:
-            return self
-
         # Disallow GCS; check if any paths are remote (s3)
         schemes = {urlparse(str(path)).scheme for path in self.paths}
         if "gs" in schemes:
@@ -393,34 +390,35 @@ class ReshardingPrefixConfig:
         local_prefix = Path(local_prefix)
         local_prefix.mkdir(parents=True, exist_ok=True)
 
-        for i, path in enumerate(self.paths):
-            scheme = urlparse(str(path)).scheme
+        if not skip_download:
+            for i, path in enumerate(self.paths):
+                scheme = urlparse(str(path)).scheme
 
-            if scheme == "s3":
-                # Create a subdirectory for each path to avoid filename collisions
-                path_subdir = local_prefix / f"path_{i:04d}"
-                path_subdir.mkdir(parents=True, exist_ok=True)
+                if scheme == "s3":
+                    # Create a subdirectory for each path to avoid filename collisions
+                    path_subdir = local_prefix / f"path_{i:04d}"
+                    path_subdir.mkdir(parents=True, exist_ok=True)
 
-                # Use s5cmd with glob support
-                logger.info("Downloading S3 path %s to %s", path, path_subdir)
-                cmd = ["s5cmd", "cp", "-u", "--sp", str(path), f"{path_subdir}/"]
+                    # Use s5cmd with glob support
+                    logger.info("Downloading S3 path %s to %s", path, path_subdir)
+                    cmd = ["s5cmd", "cp", "-u", "--sp", str(path), f"{path_subdir}/"]
 
-                logger.info("Running command: %s", " ".join(cmd))
-                result = subprocess.run(
-                    cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                )
-
-                if result.returncode != 0:
-                    print(f"s5cmd failed with error: {result.stderr}")
-                    raise Exception(
-                        f"Failed to download files using s5cmd: {result.stderr}"
+                    logger.info("Running command: %s", " ".join(cmd))
+                    result = subprocess.run(
+                        cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
                     )
 
-            elif scheme in {"", "file"}:
-                # Local path; nothing to do
-                continue
-            else:
-                raise ValueError(f"Unsupported protocol: {scheme}")
+                    if result.returncode != 0:
+                        print(f"s5cmd failed with error: {result.stderr}")
+                        raise Exception(
+                            f"Failed to download files using s5cmd: {result.stderr}"
+                        )
+
+                elif scheme in {"", "file"}:
+                    # Local path; nothing to do
+                    continue
+                else:
+                    raise ValueError(f"Unsupported protocol: {scheme}")
 
         # After downloading, the paths are now local under local_prefix
         return ReshardingPrefixConfig(
