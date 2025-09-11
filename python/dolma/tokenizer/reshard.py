@@ -383,107 +383,21 @@ class ReshardingPrefixConfig:
                 # Create a subdirectory for each path to avoid filename collisions
                 path_subdir = local_prefix / f"path_{i:04d}"
                 path_subdir.mkdir(parents=True, exist_ok=True)
-                logger.info("Preparing download from %s to %s", path, path_subdir)
 
-                # 1) Probe remote contents to determine completeness
-                def _s5cmd_ls(p: str) -> tuple[list[tuple[int, str]], str]:
-                    """Return list of (size, url) for objects under path and the exact path used.
+                # Use s5cmd with glob support
+                logger.info("Downloading S3 path %s to %s", path, path_subdir)
+                cmd = ["s5cmd", "cp", "-s", "--sp", str(path), f"{path_subdir}/"]
 
-                    Tries a few variants to support both direct prefixes and glob patterns.
-                    """
-                    variants = [str(p)]
-                    if not str(p).endswith("*") and not str(p).endswith("/"):
-                        variants.extend(
-                            [f"{p}/*", f"{p}/**"]
-                        )  # non-recursive then recursive
-                    elif str(p).endswith("/"):
-                        variants.extend([f"{p}*", f"{p}**"])  # treat as prefix dir
+                logger.info("Running command: %s", " ".join(cmd))
+                result = subprocess.run(
+                    cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
 
-                    for variant in variants:
-                        ls = subprocess.run(
-                            ["s5cmd", "ls", variant],
-                            text=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                        )
-                        if ls.returncode == 0 and ls.stdout.strip():
-                            objects: list[tuple[int, str]] = []
-                            for line in ls.stdout.splitlines():
-                                # expected: "YYYY/MM/DD HH:MM:SS <size> <url>"
-                                parts = line.strip().split()
-                                if len(parts) < 4:
-                                    continue
-                                try:
-                                    size = int(parts[-2])
-                                    url = parts[-1]
-                                except Exception:
-                                    continue
-                                # only consider npy and csv.gz files
-                                if url.endswith(".npy") or url.endswith(".csv.gz"):
-                                    objects.append((size, url))
-                            if objects:
-                                return objects, variant
-                    return [], str(p)
-
-                remote_objects, used_ls_path = _s5cmd_ls(str(path))
-
-                # Tally remote counts/sizes of files we care about
-                remote_sizes_total = sum(size for size, _ in remote_objects)
-                remote_counts = {
-                    "npy": sum(1 for _, u in remote_objects if u.endswith(".npy")),
-                    "csv": sum(1 for _, u in remote_objects if u.endswith(".csv.gz")),
-                }
-
-                # Tally local counts/sizes
-                local_sizes_total = 0
-                local_counts = {"npy": 0, "csv": 0}
-                for root, _, files in os.walk(path_subdir):
-                    for fname in files:
-                        if fname.endswith(".npy"):
-                            local_counts["npy"] += 1
-                            local_sizes_total += os.path.getsize(
-                                os.path.join(root, fname)
-                            )
-                        elif fname.endswith(".csv.gz"):
-                            local_counts["csv"] += 1
-                            local_sizes_total += os.path.getsize(
-                                os.path.join(root, fname)
-                            )
-
-                # If local already matches remote, skip download
-                if (
-                    remote_objects
-                    and local_sizes_total == remote_sizes_total
-                    and local_counts == remote_counts
-                ):
-                    logger.info(
-                        "Skipping download for %s; already present (%d files, %d bytes).",
-                        used_ls_path,
-                        local_counts["npy"] + local_counts["csv"],
-                        local_sizes_total,
+                if result.returncode != 0:
+                    print(f"s5cmd failed with error: {result.stderr}")
+                    raise Exception(
+                        f"Failed to download files using s5cmd: {result.stderr}"
                     )
-                else:
-                    # Use s5cmd with glob support
-                    logger.info("Downloading S3 path %s to %s", path, path_subdir)
-                    cmd = [
-                        "s5cmd",
-                        "cp",
-                        "-s",
-                        "--sp",
-                        str(path),
-                        f"{path_subdir}/",
-                    ]
-
-                    logger.info("Running command: %s", " ".join(cmd))
-                    result = subprocess.run(
-                        cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-                    )
-
-                    if result.returncode != 0:
-                        print(f"s5cmd failed with error: {result.stderr}")
-                        raise Exception(
-                            f"Failed to download files using s5cmd: {result.stderr}"
-                        )
 
             elif scheme in {"", "file"}:
                 # Local path; nothing to do
