@@ -468,7 +468,8 @@ class ReshardingPrefixConfig:
                     cmd = [
                         "s5cmd",
                         "cp",
-                        "-sp",
+                        "-s",
+                        "--sp",
                         str(path),
                         f"{path_subdir}/",
                     ]
