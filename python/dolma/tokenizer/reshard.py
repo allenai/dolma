@@ -604,7 +604,7 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
     cmd = [
         "s5cmd",
         "cp",
-        "-sp",
+        "--sp",
         f"{local_prefix_no_star}/*",
         f"{remote_prefix_no_trailing_slash}/",
     ]
@@ -695,14 +695,14 @@ def reshard(config: ReshardingConfig):
         local_output_dir.mkdir(parents=True, exist_ok=True)
 
         # merge the files
-        merge_all_npys(
-            source_paths,
-            destination=local_output_dir,
-            max_size_bytes=config.max_size_bytes,
-            max_num_files=config.max_num_files,
-            max_workers=config.max_workers,
-            tokenizer_name_or_path=config.tokenizer_name_or_path,
-        )
+        # merge_all_npys(
+        #     source_paths,
+        #     destination=local_output_dir,
+        #     max_size_bytes=config.max_size_bytes,
+        #     max_num_files=config.max_num_files,
+        #     max_workers=config.max_workers,
+        #     tokenizer_name_or_path=config.tokenizer_name_or_path,
+        # )
 
         # upload the files
         upload_to_s3(
