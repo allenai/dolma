@@ -281,10 +281,16 @@ def merge_all_npys(
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = []
         for i, group in enumerate(grouped_paths):
+            dest_path = destination / f"{i:06d}.npy"
+            # Skip if destination already exists
+            if dest_path.exists():
+                logger.info("Skipping %s, already exists", dest_path)
+                continue
+
             future = pool.submit(
                 merge_group,
                 paths=group,
-                destination=destination / f"{i:06d}.npy",
+                destination=dest_path,
                 dtype=tokenizer.dtype,
             )
             futures.append(future)
