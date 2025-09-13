@@ -156,8 +156,7 @@ def group_paths_by_max_size(
         # add a fresh group
         grouped_paths.append([])
 
-        # partition in groups of max_num_files
-        for path, _ in sorted(counts.items(), key=lambda x: -x[1]):
+        for path, _ in sorted(counts.items(), key=lambda x: (-x[1], x[0].npy_path)):
             if sum(p.size for p in grouped_paths[-1]) + path.size > max_size_bytes:
                 grouped_paths.append([path])
             else:
@@ -211,7 +210,9 @@ def group_paths_by_max_num_files(
 
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
     # Distribute each element across groups in round-robin fashion
-    for element, count in counts.items():
+    for element, count in sorted(
+        counts.items(), key=lambda kv: (-kv[1], kv[0].npy_path)
+    ):
         # sample count buckets out of max_num_files where we could put the element
         # we sample with weights proportional to the number of elements in the bucket,
         # so that we are more likely to sample buckets with fewer elements.
@@ -464,7 +465,7 @@ class ReshardingPrefixConfig:
                 import glob
 
                 matching_files = glob.glob(path_pattern_str, recursive=True)
-                for npy_path in matching_files:
+                for npy_path in sorted(matching_files):
                     if npy_path.endswith(".npy"):
                         csv_path = npy_path.replace(".npy", ".csv.gz")
                         if os.path.exists(csv_path):
@@ -473,8 +474,9 @@ class ReshardingPrefixConfig:
                 # Treat as a directory path and walk it
                 local_path = Path(path_pattern)
                 if local_path.exists():
-                    for root, _, files in os.walk(local_path):
-                        for file in files:
+                    for root, dirs, files in os.walk(local_path):
+                        dirs.sort()
+                        for file in sorted(files):
                             if file.endswith(".npy"):
                                 npy_path = os.path.join(root, file)
                                 csv_path = os.path.join(
@@ -484,6 +486,8 @@ class ReshardingPrefixConfig:
                                     paths.append(
                                         TokensMetadataPaths(npy_path, csv_path)
                                     )
+
+        paths = sorted(paths, key=lambda p: (p.npy_path, p.csv_path))
 
         new_paths = []
 
@@ -625,6 +629,7 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
 
 def reshard(config: ReshardingConfig):
     random.seed(config.random_seed)
+    np.random.seed(config.random_seed)
 
     try:
         local_tempdir = Path(config.local_tempdir or mkdtemp())
@@ -666,15 +671,16 @@ def reshard(config: ReshardingConfig):
                         import glob
 
                         matching_files = glob.glob(path_pattern_str, recursive=True)
-                        for npy_path in matching_files:
+                        for npy_path in sorted(matching_files):
                             if npy_path.endswith(".npy"):
                                 total_size += os.path.getsize(npy_path)
                     else:
                         # Treat as a directory path and walk it
                         local_path = Path(path_pattern)
                         if local_path.exists():
-                            for root, _, files in os.walk(local_path):
-                                for file in files:
+                            for root, dirs, files in os.walk(local_path):
+                                dirs.sort()
+                                for file in sorted(files):
                                     if file.endswith(".npy"):
                                         npy_path = os.path.join(root, file)
                                         total_size += os.path.getsize(npy_path)
