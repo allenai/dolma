@@ -289,8 +289,8 @@ def merge_all_npys(
                 logger.info("Skipping %s, already exists", dest_path)
                 continue
 
-            if i <= total_paths // 2:
-                # skip the first half of the paths
+            if i > total_paths // 2:
+                # skip the second half of the paths
                 continue
 
             future = pool.submit(
