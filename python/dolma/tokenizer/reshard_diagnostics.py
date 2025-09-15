@@ -45,9 +45,7 @@ class TokensMetadataInfo:
         npy_stem = Path(self.npy_path).stem
         csv_stem = Path(Path(self.csv_path).stem).stem
         if npy_stem != csv_stem:
-            raise ValueError(
-                f"Mismatched stems: {self.npy_path} vs {self.csv_path}"
-            )
+            raise ValueError(f"Mismatched stems: {self.npy_path} vs {self.csv_path}")
 
     @property
     def size(self) -> int:
@@ -222,7 +220,8 @@ def _sample_paths_for_prefix(
         new_paths.extend(random.sample(paths, sample_size))
 
     logger.info(
-        "Taking %d paths from %d using %.6f sample rate",
+        "Prefix %s: Taking %d paths from %d available paths using %.6f sample rate",
+        prefix.paths[0] if prefix.paths else "unknown",
         len(new_paths),
         len(paths),
         sample_rate,
