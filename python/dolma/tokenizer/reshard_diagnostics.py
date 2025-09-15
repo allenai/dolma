@@ -52,6 +52,27 @@ class TokensMetadataInfo:
         return self.size_bytes
 
 
+@dataclass
+class PrefixSamplingDiagnostics:
+    """Summary of requested vs realized sampling for a prefix."""
+
+    prefix: ReshardingPrefixConfig
+    requested_rate: float
+    actual_rate: float
+    available_bytes: int
+    sampled_bytes: int
+
+    @property
+    def delta(self) -> float:
+        return self.actual_rate - self.requested_rate
+
+    @property
+    def delta_pct(self) -> float | None:
+        if self.requested_rate == 0:
+            return None
+        return self.delta / self.requested_rate
+
+
 def _list_local_files(path_pattern: str) -> List[TokensMetadataInfo]:
     """Enumerate .npy/.csv.gz pairs for a local path or glob."""
     infos: list[TokensMetadataInfo] = []
@@ -198,7 +219,7 @@ def _sample_paths_for_prefix(
     prefix: ReshardingPrefixConfig,
     mapping: Dict[str, List[TokensMetadataInfo]],
     total_source_sizes: Dict[str, int] | None,
-) -> List[TokensMetadataInfo]:
+) -> tuple[List[TokensMetadataInfo], PrefixSamplingDiagnostics | None]:
     sample_rate = prefix.get_sample_rate(total_source_sizes)
     paths: list[TokensMetadataInfo] = []
     for path in prefix.paths or []:
@@ -207,7 +228,19 @@ def _sample_paths_for_prefix(
     paths = sorted(paths, key=lambda p: (p.npy_path, p.csv_path))
     if not paths:
         logger.warning("No data available for prefix %s", prefix)
-        return []
+        return [], None
+
+    available_bytes = sum(info.size for info in paths)
+    if available_bytes == 0:
+        logger.warning("Total size for prefix %s is 0 bytes", prefix)
+        diagnostics = PrefixSamplingDiagnostics(
+            prefix=prefix,
+            requested_rate=sample_rate,
+            actual_rate=0.0,
+            available_bytes=0,
+            sampled_bytes=0,
+        )
+        return [], diagnostics
 
     new_paths: list[TokensMetadataInfo] = []
     repetition_rate = int(math.floor(sample_rate))
@@ -226,7 +259,16 @@ def _sample_paths_for_prefix(
         len(paths),
         sample_rate,
     )
-    return new_paths
+    sampled_bytes = sum(info.size for info in new_paths)
+    actual_rate = sampled_bytes / available_bytes if available_bytes else 0.0
+    diagnostics = PrefixSamplingDiagnostics(
+        prefix=prefix,
+        requested_rate=sample_rate,
+        actual_rate=actual_rate,
+        available_bytes=available_bytes,
+        sampled_bytes=sampled_bytes,
+    )
+    return new_paths, diagnostics
 
 
 def run_diagnostics(config_path: str) -> None:
@@ -236,10 +278,14 @@ def run_diagnostics(config_path: str) -> None:
     total_source_sizes = _compute_total_source_sizes(config.source_prefixes, mapping)
 
     sampled_paths: list[TokensMetadataInfo] = []
+    prefix_diagnostics: list[PrefixSamplingDiagnostics] = []
     for prefix in config.source_prefixes:
-        sampled_paths.extend(
-            _sample_paths_for_prefix(prefix, mapping, total_source_sizes)
+        sampled, diagnostics = _sample_paths_for_prefix(
+            prefix, mapping, total_source_sizes
         )
+        sampled_paths.extend(sampled)
+        if diagnostics is not None:
+            prefix_diagnostics.append(diagnostics)
 
     if not sampled_paths:
         logger.warning("No sampled paths collected; nothing to report")
@@ -256,6 +302,21 @@ def run_diagnostics(config_path: str) -> None:
         total_paths,
         max_repetition,
     )
+
+    for i, diag in enumerate(prefix_diagnostics, start=1):
+        delta_pct = diag.delta_pct
+        delta_pct_str = f"{delta_pct * 100:.2f}%" if delta_pct is not None else "n/a"
+        logger.info(
+            "Prefix %d requested rate %.6f -> actual %.6f (Δ=%.6f, %s) "
+            "using %d/%d bytes",
+            i,
+            diag.requested_rate,
+            diag.actual_rate,
+            diag.delta,
+            delta_pct_str,
+            diag.sampled_bytes,
+            diag.available_bytes,
+        )
 
 
 def main() -> None:
