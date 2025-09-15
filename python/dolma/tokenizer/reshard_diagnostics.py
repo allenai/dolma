@@ -252,9 +252,10 @@ def _sample_paths_for_prefix(
         sample_size = min(len(paths), max(1, round(residual_frac * len(paths))))
         new_paths.extend(random.sample(paths, sample_size))
 
+    prefix_label = ",".join(str(p) for p in (prefix.paths or [])) or "unknown"
     logger.info(
         "Prefix %s: Taking %d paths from %d available paths using %.6f sample rate",
-        prefix.paths[0] if prefix.paths else "unknown",
+        prefix_label,
         len(new_paths),
         len(paths),
         sample_rate,
@@ -303,14 +304,14 @@ def run_diagnostics(config_path: str) -> None:
         max_repetition,
     )
 
-    for i, diag in enumerate(prefix_diagnostics, start=1):
+    for diag in prefix_diagnostics:
         delta_pct = diag.delta_pct
         delta_pct_str = f"{delta_pct * 100:.2f}%" if delta_pct is not None else "n/a"
+        diag_label = ",".join(str(p) for p in (diag.prefix.paths or [])) or "unknown"
         logger.info(
-            "Prefix %d (%s) requested rate %.6f -> actual %.6f (Δ=%.6f, %s) "
+            "Prefix %s requested rate %.6f -> actual %.6f (Δ=%.6f, %s) "
             "using %d/%d bytes",
-            i,
-            diag.prefix.prefix if hasattr(diag.prefix, "prefix") else diag.prefix,
+            diag_label,
             diag.requested_rate,
             diag.actual_rate,
             diag.delta,
