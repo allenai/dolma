@@ -1,0 +1,16 @@
+destination_prefix: s3://ai2-llm/preprocessed/tylerr/lc-reshard-test/v0.1/allenai/dolma2-tokenizer/
+local_tempdir: /tmp/resharding/tylerr/lc-reshard-test
+max_num_files: 4
+source_prefixes:
+# Just one vigintile from CC for testing
+- target_ratio: 0.5
+  paths:
+    - s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0020/*
+# Small test from sponge
+- target_ratio: 0.3
+  paths:
+    - s3://ai2-llm/preprocessed/sponge/sponge_63_mixes/eli5_60%_decon_final/*
+# Small test from stack-edu Python only
+- target_ratio: 0.2
+  paths:
+    - s3://ai2-llm/preprocessed/stack-edu-fim/weighted-pl-all/allenai/dolma2-tokenizer/Python/**/*
