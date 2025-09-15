@@ -281,16 +281,11 @@ def merge_all_npys(
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = []
-        total_paths = len(grouped_paths)
         for i, group in enumerate(grouped_paths):
             dest_path = destination / f"{i:06d}.npy"
             # Skip if destination already exists
             if dest_path.exists():
                 logger.info("Skipping %s, already exists", dest_path)
-                continue
-
-            if i > total_paths // 2:
-                # skip the second half of the paths
                 continue
 
             future = pool.submit(
@@ -705,25 +700,26 @@ def reshard(config: ReshardingConfig):
         # make destination directory
         local_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # merge the files
-        merge_all_npys(
-            source_paths,
-            destination=local_output_dir,
-            max_size_bytes=config.max_size_bytes,
-            max_num_files=config.max_num_files,
-            max_workers=config.max_workers,
-            tokenizer_name_or_path=config.tokenizer_name_or_path,
-        )
+        # # merge the files
+        # merge_all_npys(
+        #     source_paths,
+        #     destination=local_output_dir,
+        #     max_size_bytes=config.max_size_bytes,
+        #     max_num_files=config.max_num_files,
+        #     max_workers=config.max_workers,
+        #     tokenizer_name_or_path=config.tokenizer_name_or_path,
+        # )
 
-        # upload the files
-        upload_to_s3(
-            local_prefix=local_output_dir,
-            remote_prefix=config.destination_prefix,
-            max_workers=config.max_workers,
-        )
+        # # upload the files
+        # upload_to_s3(
+        #     local_prefix=local_output_dir,
+        #     remote_prefix=config.destination_prefix,
+        #     max_workers=config.max_workers,
+        # )
 
     finally:
-        shutil.rmtree(local_tempdir)
+        pass
+        # shutil.rmtree(local_tempdir)
 
 
 def main():
