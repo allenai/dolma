@@ -307,9 +307,10 @@ def run_diagnostics(config_path: str) -> None:
         delta_pct = diag.delta_pct
         delta_pct_str = f"{delta_pct * 100:.2f}%" if delta_pct is not None else "n/a"
         logger.info(
-            "Prefix %d requested rate %.6f -> actual %.6f (Δ=%.6f, %s) "
+            "Prefix %d (%s) requested rate %.6f -> actual %.6f (Δ=%.6f, %s) "
             "using %d/%d bytes",
             i,
+            diag.prefix.prefix if hasattr(diag.prefix, "prefix") else diag.prefix,
             diag.requested_rate,
             diag.actual_rate,
             diag.delta,
