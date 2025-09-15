@@ -279,34 +279,34 @@ def merge_all_npys(
         max_workers,
     )
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = []
-        for i, group in enumerate(grouped_paths):
-            dest_path = destination / f"{i:06d}.npy"
-            # Skip if destination already exists
-            if dest_path.exists():
-                logger.info("Skipping %s, already exists", dest_path)
-                continue
+    # with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    #     futures = []
+    #     for i, group in enumerate(grouped_paths):
+    #         dest_path = destination / f"{i:06d}.npy"
+    #         # Skip if destination already exists
+    #         if dest_path.exists():
+    #             logger.info("Skipping %s, already exists", dest_path)
+    #             continue
 
-            future = pool.submit(
-                merge_group,
-                paths=group,
-                destination=dest_path,
-                dtype=tokenizer.dtype,
-            )
-            futures.append(future)
+    #         future = pool.submit(
+    #             merge_group,
+    #             paths=group,
+    #             destination=dest_path,
+    #             dtype=tokenizer.dtype,
+    #         )
+    #         futures.append(future)
 
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="Merging files"
-        ):
-            try:
-                future.result()
-            except Exception as e:
-                for future in futures:
-                    future.cancel()
-                raise e
+    #     for future in tqdm(
+    #         as_completed(futures), total=len(futures), desc="Merging files"
+    #     ):
+    #         try:
+    #             future.result()
+    #         except Exception as e:
+    #             for future in futures:
+    #                 future.cancel()
+    #             raise e
 
-        logger.info("Done merging NumPy memmaps.")
+    #     logger.info("Done merging NumPy memmaps.")
 
 
 @dataclass
@@ -700,15 +700,15 @@ def reshard(config: ReshardingConfig):
         # make destination directory
         local_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # # merge the files
-        # merge_all_npys(
-        #     source_paths,
-        #     destination=local_output_dir,
-        #     max_size_bytes=config.max_size_bytes,
-        #     max_num_files=config.max_num_files,
-        #     max_workers=config.max_workers,
-        #     tokenizer_name_or_path=config.tokenizer_name_or_path,
-        # )
+        # merge the files
+        merge_all_npys(
+            source_paths,
+            destination=local_output_dir,
+            max_size_bytes=config.max_size_bytes,
+            max_num_files=config.max_num_files,
+            max_workers=config.max_workers,
+            tokenizer_name_or_path=config.tokenizer_name_or_path,
+        )
 
         # # upload the files
         # upload_to_s3(
