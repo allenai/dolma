@@ -326,7 +326,7 @@ class ReshardingPrefixConfig:
             "s5cmd",
             "cp",
             "-sp",
-            "--if=source-newer",
+            "--if-source-newer",
             f"{remote_prefix_no_star}/*",
             f"{local_prefix_no_trailing_slash}/"
         ]
@@ -336,7 +336,7 @@ class ReshardingPrefixConfig:
 
         if result.returncode != 0:
             print(f"s5cmd failed with error: {result.stderr}")
-            raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
+            raise Exception(f"Failed to download files using s5cmd: {result.stderr}")
         return ReshardingPrefixConfig(
             prefix=local_prefix,
             sample_rate=self.sample_rate,
