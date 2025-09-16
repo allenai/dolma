@@ -89,7 +89,7 @@ def main():
 
     for lang, size in sizes.items():
         if size == 0:
-            print(f"[WARNING] {lang} has no tokens; skipping")
+            print(f"[WARNING] {lang} has no tokens; skipping\n")
             continue
 
         print(f"Subset         : {lang}")
@@ -99,7 +99,7 @@ def main():
         print(f"Sampling rate  : {desired_size / size:.2f}x")
         total_size_computed += desired_size
 
-        # if destination exists, then get the final size nad print how much we are off
+        # if destination exists, then get the final size and print how much we are off
         dest_size = get_size_of_prefix(f"{destination_path}/{lang}/") // 4
         if dest_size > 0:
             print(f"Final size     : {dest_size / 1024 ** 3:.1f}B")
