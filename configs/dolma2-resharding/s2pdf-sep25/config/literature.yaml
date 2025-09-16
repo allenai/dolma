@@ -1,0 +1,6 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2pdf/literature
+local_tempdir: /mnt/raid0/resharding/s2pdf/literature
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_denyagain/literature
+  sample_rate: 0.24124585665420228
