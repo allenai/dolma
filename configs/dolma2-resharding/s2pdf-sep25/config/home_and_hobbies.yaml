@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf/home_and_hobbies
+destination_prefix: /mnt/raid0/ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf/home_and_hobbies
 local_tempdir: /mnt/raid0/resharding/s2pdf/home_hobbies
 max_num_files: 8
 source_prefixes:

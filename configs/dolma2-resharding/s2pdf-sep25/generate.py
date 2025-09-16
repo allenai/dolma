@@ -48,7 +48,9 @@ with open(Path(__file__).parent / "full_pstar_7rep_dclm_stackedu_conditional.jso
     full_pstar = json.load(f)
 
 code_base_tokenized_path = "s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_denyagain"
-destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf"
+
+# save locally first
+destination_path = "/mnt/raid0/ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf"
 
 token_target = 6_000_000_000_000
 
@@ -128,11 +130,11 @@ def main():
         print(f"Sampling rate  : {desired_size / size:.2f}x")
         total_size_computed += desired_size
 
-        # if destination exists, then get the final size and print how much we are off
-        dest_size = get_size_of_prefix(f"{destination_path}/{lang}/") // 4
-        if dest_size > 0:
-            print(f"Final size     : {dest_size / 1024 ** 3:.1f}B")
-            print(f"Off by         : {(dest_size - desired_size) / desired_size:.2%}")
+        # # if destination exists, then get the final size and print how much we are off
+        # dest_size = get_size_of_prefix(f"{destination_path}/{lang}/") // 4
+        # if dest_size > 0:
+        #     print(f"Final size     : {dest_size / 1024 ** 3:.1f}B")
+        #     print(f"Off by         : {(dest_size - desired_size) / desired_size:.2%}")
 
         print('\n')
 

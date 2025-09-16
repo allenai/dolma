@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf/crime_and_law
+destination_prefix: /mnt/raid0/ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf/crime_and_law
 local_tempdir: /mnt/raid0/resharding/s2pdf/crime_law
 max_num_files: 8
 source_prefixes:
