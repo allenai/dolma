@@ -22,12 +22,12 @@ rename_categories = {
     "art_design": "art_and_design",
     "crime_law": "crime_and_law",
     "education_jobs": "education_and_jobs",
-    "entertainment": "electronics_and_hardware",
-    "fashion_beauty": "entertainment",
-    "finance_business": "fashion_and_beauty",
-    "food_dining": "finance_and_business",
-    "games": "food_and_dining",
-    "hardware": "games",
+    "entertainment": "entertainment",
+    "fashion_beauty": "fashion_and_beauty",
+    "finance_business": "finance_and_business",
+    "food_dining": "food_and_dining",
+    "games": "games",
+    "hardware": "electronics_and_hardware",
     "health": "health",
     "history": "history_and_geography",
     "home_hobbies": "home_and_hobbies",
@@ -118,7 +118,7 @@ def main():
 
     total_size_computed = 0
 
-    for lang, size in sizes.items():
+    for i, (lang, size) in enumerate(sizes.items()):
         if size == 0:
             print(f"[WARNING] {lang} has no tokens; skipping\n")
             continue
@@ -138,6 +138,20 @@ def main():
 
         print('\n')
 
+        # max num files is:
+        # - at least ceil(desired_size / size)
+        # if asking < 10 billion tokens, then max num files is 2
+        # if asking < 100 billion tokens, then max num files is 4
+        # else it is 8
+
+        max_num_files = math.ceil(desired_size / size)
+        if desired_size < 10 * 10 ** 9:
+            max_num_files = min(max_num_files, 2)
+        elif desired_size < 100 * 10 ** 9:
+            max_num_files = min(max_num_files, 4)
+        else:
+            max_num_files = min(max_num_files, 8)
+
         if desired_size == 0:
             print(f"Skipping {lang} because desired size is 0")
             continue
@@ -151,7 +165,9 @@ def main():
             ],
             "destination_prefix": f"{destination_path}/{rename_categories[lang]}",
             "local_tempdir": f"/mnt/raid0/resharding/s2pdf/{lang}",
-            "max_num_files": 8
+            "max_workers": max_num_files,
+            "max_num_files": max_num_files,
+            "random_seed": 42 + i
         }
         dest = script_dir / f"config/{rename_categories[lang]}.yaml"
         dest.parent.mkdir(parents=True, exist_ok=True)

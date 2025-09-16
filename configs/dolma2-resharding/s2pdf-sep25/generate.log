@@ -28,39 +28,39 @@ Sampling rate  : 0.31x
 
 Subset         : entertainment
 Natural tokens : 5.6B
-Desired tokens : 4.0B
-Sampling rate  : 0.73x
+Desired tokens : 1.6B
+Sampling rate  : 0.29x
 
 
 Subset         : fashion_beauty
 Natural tokens : 0.5B
-Desired tokens : 1.6B
-Sampling rate  : 3.21x
-
-
-Subset         : finance_business
-Natural tokens : 56.2B
 Desired tokens : 0.0B
 Sampling rate  : 0.00x
 
 
-Skipping finance_business because desired size is 0
+Skipping fashion_beauty because desired size is 0
+Subset         : finance_business
+Natural tokens : 56.2B
+Desired tokens : 10.3B
+Sampling rate  : 0.18x
+
+
 Subset         : food_dining
 Natural tokens : 2.1B
-Desired tokens : 10.3B
-Sampling rate  : 4.85x
-
-
-Subset         : games
-Natural tokens : 2.3B
 Desired tokens : 0.0B
 Sampling rate  : 0.02x
 
 
+Subset         : games
+Natural tokens : 2.3B
+Desired tokens : 0.2B
+Sampling rate  : 0.08x
+
+
 Subset         : hardware
 Natural tokens : 6.8B
-Desired tokens : 0.2B
-Sampling rate  : 0.03x
+Desired tokens : 4.0B
+Sampling rate  : 0.59x
 
 
 Subset         : health

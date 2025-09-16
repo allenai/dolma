@@ -322,7 +322,14 @@ class ReshardingPrefixConfig:
         logger.info("Downloading %s to %s", self.prefix, local_prefix)
         remote_prefix_no_star = re.sub(r"(/|/\*)$", "", str(self.prefix))
         local_prefix_no_trailing_slash = str(local_prefix).rstrip("/")
-        cmd = ["s5cmd", "cp", "-sp", f"{remote_prefix_no_star}/*", f"{local_prefix_no_trailing_slash}/"]
+        cmd = [
+            "s5cmd",
+            "cp",
+            "-sp",
+            "--if=source-newer",
+            f"{remote_prefix_no_star}/*",
+            f"{local_prefix_no_trailing_slash}/"
+        ]
 
         logger.info("Running command: %s", " ".join(cmd))
         result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
