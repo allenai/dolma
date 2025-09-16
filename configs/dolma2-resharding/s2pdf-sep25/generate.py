@@ -146,11 +146,11 @@ def main():
 
         max_num_files = math.ceil(desired_size / size)
         if desired_size < 10 * 10 ** 9:
-            max_num_files = min(max_num_files, 2)
+            max_num_files = max(max_num_files, 2)
         elif desired_size < 100 * 10 ** 9:
-            max_num_files = min(max_num_files, 4)
+            max_num_files = max(max_num_files, 4)
         else:
-            max_num_files = min(max_num_files, 8)
+            max_num_files = max(max_num_files, 8)
 
         if desired_size == 0:
             print(f"Skipping {lang} because desired size is 0")
