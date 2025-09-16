@@ -16,6 +16,34 @@ cross_source_pstar = {
     "stack-edu": 0.06816936506111054,
 }
 
+
+rename_categories = {
+    "adult": "adult_content",
+    "art_design": "art_and_design",
+    "crime_law": "crime_and_law",
+    "education_jobs": "education_and_jobs",
+    "entertainment": "electronics_and_hardware",
+    "fashion_beauty": "entertainment",
+    "finance_business": "fashion_and_beauty",
+    "food_dining": "finance_and_business",
+    "games": "food_and_dining",
+    "hardware": "games",
+    "health": "health",
+    "history": "history_and_geography",
+    "home_hobbies": "home_and_hobbies",
+    "industrial": "industrial",
+    "literature": "literature",
+    "politics": "politics",
+    "religion": "religion",
+    "science_tech": "science_math_and_technology",
+    "social_life": "social_life",
+    "software": "software",
+    "software_dev": "software_development",
+    "sports_fitness": "sports_and_fitness",
+    "transportation": "transportation",
+    "travel": "travel_and_tourism",
+}
+
 with open(Path(__file__).parent / "full_pstar_7rep_dclm_stackedu_conditional.json", "r") as f:
     full_pstar = json.load(f)
 
@@ -74,8 +102,9 @@ def main():
     }
 
     sizes = {}
-    for lang in tqdm.tqdm(s2pdf_pstar, desc="Getting sizes"):
+    for lang in tqdm.tqdm(rename_categories, desc="Getting sizes"):
         sizes[lang] = get_size_of_prefix(f"{code_base_tokenized_path}/{lang}/") // 4 # 4 bytes per token
+
 
     assert math.isclose(sum(s2pdf_pstar.values()), cross_source_pstar["s2pdf"], rel_tol=1e-6)
     desired_code_size = token_target * sum(s2pdf_pstar.values())
@@ -94,7 +123,7 @@ def main():
 
         print(f"Subset         : {lang}")
         print(f"Natural tokens : {size / 1024 ** 3:.1f}B")
-        desired_size = token_target * s2pdf_pstar[lang]
+        desired_size = token_target * s2pdf_pstar[rename_categories[lang]]
         print(f"Desired tokens : {desired_size / 1024 ** 3:.1f}B")
         print(f"Sampling rate  : {desired_size / size:.2f}x")
         total_size_computed += desired_size
@@ -118,11 +147,11 @@ def main():
                     "sample_rate": desired_size / size,
                 }
             ],
-            "destination_prefix": f"{destination_path}/{lang}",
+            "destination_prefix": f"{destination_path}/{rename_categories[lang]}",
             "local_tempdir": f"/mnt/raid0/resharding/s2pdf/{lang}",
             "max_num_files": 8
         }
-        dest = script_dir / f"config/{lang}.yaml"
+        dest = script_dir / f"config/{rename_categories[lang]}.yaml"
         dest.parent.mkdir(parents=True, exist_ok=True)
 
         with open(dest, "w") as f:
