@@ -38,9 +38,12 @@ Email:  luca@soldaini.net
 """
 
 import csv
+from functools import partial
 import logging
 import math
 import os
+import threading
+import multiprocessing
 import random
 import re
 import shutil
@@ -204,6 +207,41 @@ def group_paths_by_max_num_files(
     return grouped_paths
 
 
+def _get_worker_rank() -> int:
+    """
+    Returns an index for the current worker:
+    - 0 if running in a plain session (no threads/processes)
+    - 1..N for threads in multithreading
+    - 1..N for processes in multiprocessing
+    """
+    # Case 1: Detect multiprocessing worker
+    # multiprocessing sets a special process name like "Process-1", "SpawnPoolWorker-1", etc.
+    pname = multiprocessing.current_process().name
+    if pname != "MainProcess":
+        # Try to extract a trailing integer
+        try:
+            return int(pname.split('-')[-1])
+        except ValueError:
+            return 1  # fallback if no number is found
+
+    # Case 2: Detect multithreading worker
+    tname = threading.current_thread().name
+    if tname != "MainThread":
+        # Threads are usually named like "Thread-1", "Thread-2", etc.
+        try:
+            return int(tname.split('-')[-1])
+        except ValueError:
+            return 1  # fallback if no number is found
+
+    # Case 3: No multiprocessing or threading
+    return 0
+
+
+def _worker_init(seed: int):
+    """Initialize the random seed for the current worker."""
+    random.seed(seed + _get_worker_rank())
+
+
 def merge_all_npys(
     paths: list[TokensMetadataPaths],
     destination: str | Path,
@@ -211,6 +249,7 @@ def merge_all_npys(
     max_num_files: int | None = None,
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer",
     max_workers: int | None = None,
+    seed: int = 42,
 ):
     max_workers = max_workers or os.cpu_count() or 1
 
@@ -238,7 +277,9 @@ def merge_all_npys(
         "Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
     )
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    init_fn = partial(_worker_init, seed=seed)
+
+    with ThreadPoolExecutor(max_workers=max_workers, initializer=init_fn) as pool:
         futures = []
         for i, group in enumerate(grouped_paths):
             future = pool.submit(
@@ -435,6 +476,7 @@ def reshard(config: ReshardingConfig):
             max_num_files=config.max_num_files,
             max_workers=config.max_workers,
             tokenizer_name_or_path=config.tokenizer_name_or_path,
+            seed=config.random_seed,
         )
 
         # upload the files

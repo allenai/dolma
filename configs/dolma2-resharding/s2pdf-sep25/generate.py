@@ -48,7 +48,7 @@ with open(Path(__file__).parent / "full_pstar_7rep_dclm_stackedu_conditional.jso
     full_pstar = json.load(f)
 
 code_base_tokenized_path = "s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_denyagain"
-destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2pdf"
+destination_path = "s3://ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf"
 
 token_target = 6_000_000_000_000
 

@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2pdf/travel_and_tourism
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf/travel_and_tourism
 local_tempdir: /mnt/raid0/resharding/s2pdf/travel
 max_num_files: 8
 source_prefixes:

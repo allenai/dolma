@@ -7,5 +7,7 @@ set -ex
 
 
 for config in $script_dir/config/*.yaml; do
-    uv run python -m dolma.tokenizer.reshard $config
+    uv run python -m dolma.tokenizer.reshard $config &
 done
+
+wait

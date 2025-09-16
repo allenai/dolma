@@ -1,4 +1,4 @@
-destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2pdf/sports_and_fitness
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.2/allenai/dolma2-tokenizer/s2pdf/sports_and_fitness
 local_tempdir: /mnt/raid0/resharding/s2pdf/sports_fitness
 max_num_files: 8
 source_prefixes:
