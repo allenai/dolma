@@ -38,20 +38,20 @@ Email:  luca@soldaini.net
 """
 
 import csv
-from functools import partial
 import logging
 import math
-import os
-import threading
 import multiprocessing
+import os
 import random
 import re
 import shutil
 import subprocess
 import sys
+import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from tempfile import mkdtemp
 from urllib.parse import urlparse
@@ -220,7 +220,7 @@ def _get_worker_rank() -> int:
     if pname != "MainProcess":
         # Try to extract a trailing integer
         try:
-            return int(pname.split('-')[-1])
+            return int(pname.split("-")[-1])
         except ValueError:
             return 1  # fallback if no number is found
 
@@ -229,7 +229,7 @@ def _get_worker_rank() -> int:
     if tname != "MainThread":
         # Threads are usually named like "Thread-1", "Thread-2", etc.
         try:
-            return int(tname.split('-')[-1])
+            return int(tname.split("-")[-1])
         except ValueError:
             return 1  # fallback if no number is found
 
@@ -328,7 +328,7 @@ class ReshardingPrefixConfig:
             "-sp",
             "--if-source-newer",
             f"{remote_prefix_no_star}/*",
-            f"{local_prefix_no_trailing_slash}/"
+            f"{local_prefix_no_trailing_slash}/",
         ]
 
         logger.info("Running command: %s", " ".join(cmd))
