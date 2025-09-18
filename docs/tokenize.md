@@ -14,12 +14,16 @@ The library employs the following strategy to provide a light shuffling of the d
 - The process shuffles the documents in the chunk.
 - The process writes the output.
 
+
+## Output Format 
+
 The tokenization library outputs to files: a `.npy` file containing the concatenated tokenized documents, and a `.csv.gz` file containing the metadata for each tokenized document. The metadata file contains the following columns:
 
-- `start`: the start index of the document in the `.npy` file.
-- `end`: the end index of the document in the `.npy` file.
-- `path`: the path to the original document.
-- `id`: the id of the original document.
+- `start` (int): The start index of the document/chunk in the .npy tokenized file (0-indexed)
+- `end` (int): The end index of the document/chunk in the .npy tokenized file (0-indexed, exclusive)
+- `id` (str): The unique identifier of the original document
+- `src` (str): The source file path where the original document came from
+- `loc` (int): The line number/location of the document in the original source file (1-indexed)
 
 ## Parameters
 
