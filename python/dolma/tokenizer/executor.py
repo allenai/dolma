@@ -14,9 +14,10 @@ from typing_extensions import TypeAlias
 from ..core.loggers import get_logger
 from ..core.parallel import BaseParallelProcessor, QueueType
 from ..core.paths import get_size, glob_path, join_path, mkdir_p
+from ..core.utils import TYPES_MAP
 from .data_types import TokenizerOutput  # pylint: disable=unused-import
 from .memmap_writer import MemmapWriter
-from .tokenizer import Tokenizer, tokenize_file
+from .tokenizer import make_tokenizer, tokenize_file
 
 TokenizedSeqsQueueType: TypeAlias = "Queue[List[TokenizerOutput]]"
 PathsQueueType: TypeAlias = "Queue[str]"
@@ -89,6 +90,18 @@ class MemMapParallelWriter(BaseParallelProcessor):
         # whether to split the special tokens into separate tokens, e.g. <s> -> < s >
         tokenizer_kwargs["encode_special_tokens"] = kwargs.pop("encode_special_tokens", None) or False
 
+        # name of the text and id fields in the input files
+        tokenizer_kwargs["text_field_name"] = kwargs.pop("text_field_name", None) or "text"
+        tokenizer_kwargs["id_field_name"] = kwargs.pop("id_field_name", None)
+
+        # type of the text and id fields in the input files
+        text_field_type_str = kwargs.pop("text_field_type", None) or "str"
+        assert text_field_type_str in TYPES_MAP, f"Invalid text field type: {text_field_type_str}"
+        tokenizer_kwargs["text_field_type"] = TYPES_MAP[text_field_type_str]
+        id_field_type_str = kwargs.pop("id_field_type", None) or "str"
+        assert id_field_type_str in TYPES_MAP, f"Invalid id field type: {id_field_type_str}"
+        tokenizer_kwargs["id_field_type"] = TYPES_MAP[id_field_type_str]
+
         # this is useful for making sure the queue does not grows too much
         cpu_count = multiprocessing.cpu_count()
 
@@ -99,6 +112,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
         tokenizer_ring: List[Generator[TokenizerOutput, None, None]] = []
         tokenizer_sizes: List[int] = []
+
         for _ in range(min(ring_size, len(source_paths))):
             path = source_paths.pop()
             tokenizer_ring.append(
@@ -123,7 +137,34 @@ class MemMapParallelWriter(BaseParallelProcessor):
             cls.increment_progressbar(queue, memmaps=1)
 
             while len(source_paths) > 0 or len(tokenizer_ring) > 0:
+
+                # recall that the local_shuffle here is how many rows we try to collect before shuffling them
+                # and writing them into a memmap. This ensures, plus the fact that we are reading from a ring
+                # ensures that the tokenized sequences are somewhat mixed.
+                #
+                # To ensure proper mixing, one should prioritize reading from more files in the buffer, rather
+                # than increasing the count of rows we read before shuffling.
                 for i in range(local_shuffle):
+                    if len(tokenizer_ring) == 0:
+                        # this can happen when the amount of content in the ring is not
+                        # enough to collect a local_shuffle amount of rows. This is normal
+                        # in cases where we are trying to tokenize very small files.
+                        # We try adding a new file to the ring, but if there are no more files, we break
+                        if len(source_paths) > 0:
+                            path = source_paths.pop()
+                            tokenizer_ring.append(
+                                tokenize_file(
+                                    tokenizer_name_or_path=tokenizer_name_or_path,
+                                    path=path,
+                                    refresh_tokenizer_every=refresh_tokenizer,
+                                    **tokenizer_kwargs,
+                                )
+                            )
+                            tokenizer_sizes.append(get_size(path))
+                        else:
+                            # no more files to add, we break out of the loop.
+                            break
+
                     if sample_ring_prop:
                         # you are sampling proportionally to the size of files in the ring
                         j = np.random.choice(len(tokenizer_ring), p=tokenizer_probs)
@@ -132,7 +173,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         j = i % len(tokenizer_ring)
 
                     try:
-                        # trying to read the next sequence of tokens (might fail if end of file)
+                        # trying to read the next sequence of tokens (will raise StopIteration if end of file)
                         content = next(tokenizer_ring[j])
 
                         # added to the accumulator, we will shuffle this later
@@ -179,11 +220,14 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
                 # try to write all the sequences, collect the ones that don't fit in remaining
                 remaining = memwriter.write_many(outputs=accumulator, flush=documents_cnt == 0)
-
-                if remaining:
+                # we need to pass over remaining multiple times cuz not all
+                # the remaining might fit onto a single memmap
+                while remaining:
                     # if we have remaining sequences, we need to close the current memwriter and open a new one
                     mm_cnt += 1
                     stack.pop_all().close()
+
+                    # create a new memwriter for the few remaining sequences
                     memwriter = stack.enter_context(
                         MemmapWriter(
                             path=destination_path + f"-{mm_cnt:05d}",
@@ -193,12 +237,15 @@ class MemMapParallelWriter(BaseParallelProcessor):
                     )
                     cls.increment_progressbar(queue, memmaps=1)
 
+                    # shuffle the remaining sequences
+                    random.shuffle(remaining)
+
                     # finally, write the remaining sequences
-                    memwriter.write_many(outputs=remaining, flush=True)
+                    remaining = memwriter.write_many(outputs=remaining, flush=True)
 
-                accumulator = []
-
+                # done writing, flush (triggers a write to disk)
                 memwriter.flush()
+                accumulator = []
 
         cls.increment_progressbar(queue, documents=documents_cnt, tokens=tokens_cnt)
 
@@ -305,6 +352,10 @@ def tokenize_in_parallel(
     sample_ring_prop: bool = False,
     refresh_tokenizer: int = 0,
     use_fast_tokenizer: bool = True,
+    text_field_name: str = "text",
+    text_field_type: str = "str",
+    id_field_name: Optional[str] = "id",
+    id_field_type: str = "str",
 ):
     """
     Tokenizes the input sources in parallel using multiple writers and readers.
@@ -334,18 +385,28 @@ def tokenize_in_parallel(
         refresh_tokenizer (int, optional): Number of batches after which to refresh the tokenizer.
             Defaults to 0, which means the tokenizer will not be refreshed.
         use_fast_tokenizer (bool, optional): Whether to use the fast tokenizer. Defaults to True.
+        text_field_name (str, optional): Name of the text field in the input files. Defaults to "text".
+        text_field_type (str, optional): Type of the text field in the input files. Defaults to "str".
+        id_field_name (str, optional): Name of the id field in the input files. Defaults to "id". Set to None if
+            the input files do not have an id field.
+        id_field_type (str, optional): Type of the id field in the input files. Defaults to "str".
     """
     # variables to avoid issues with parallelism
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-    # do it once so it gets cached (unless it's local path, so no need)
-    if not os.path.exists(tokenizer_name_or_path):
-        Tokenizer.from_pretrained(
-            identifier=tokenizer_name_or_path,
-            bos_token_id=bos_token_id,
-            eos_token_id=eos_token_id,
-            pad_token_id=pad_token_id,
-            use_fast=use_fast_tokenizer,
+    # do it once so it gets cached, and we can check if dtype is correct
+
+    tokenizer = make_tokenizer(
+        tokenizer_name_or_path,
+        bos_token_id=bos_token_id,
+        eos_token_id=eos_token_id,
+        pad_token_id=pad_token_id,
+        use_fast=use_fast_tokenizer,
+    )
+    if tokenizer.dtype != np.dtype(dtype):
+        raise TypeError(
+            f"Numpy type mismatch: provided dtype '{dtype}' does not match "
+            f"inferred dtype '{tokenizer.dtype}' based on vocab size {tokenizer.vocab_size:,}!"
         )
 
     # get a run hash
@@ -380,4 +441,8 @@ def tokenize_in_parallel(
         sample_ring_prop=sample_ring_prop,
         use_fast_tokenizer=use_fast_tokenizer,
         refresh_tokenizer=refresh_tokenizer,
+        text_field_name=text_field_name,
+        text_field_type=text_field_type,
+        id_field_name=id_field_name,
+        id_field_type=id_field_type,
     )

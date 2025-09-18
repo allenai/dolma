@@ -14,12 +14,16 @@ The library employs the following strategy to provide a light shuffling of the d
 - The process shuffles the documents in the chunk.
 - The process writes the output.
 
+
+## Output Format 
+
 The tokenization library outputs to files: a `.npy` file containing the concatenated tokenized documents, and a `.csv.gz` file containing the metadata for each tokenized document. The metadata file contains the following columns:
 
-- `start`: the start index of the document in the `.npy` file.
-- `end`: the end index of the document in the `.npy` file.
-- `path`: the path to the original document.
-- `id`: the id of the original document.
+- `start` (int): The start index of the document/chunk in the .npy tokenized file (0-indexed)
+- `end` (int): The end index of the document/chunk in the .npy tokenized file (0-indexed, exclusive)
+- `id` (str): The unique identifier of the original document
+- `src` (str): The source file path where the original document came from
+- `loc` (int): The line number/location of the document in the original source file (1-indexed)
 
 ## Parameters
 
@@ -44,3 +48,7 @@ The following parameters are supported either via CLI (e.g. `dolma tokens --para
 |`work_dir.output`|No| Path to a local scratch directory where temporary output files can be placed. If not provided, Dolma will make one for you and delete it upon completion. |
 |`dryrun`|No| If true, only print the configuration and exit without running the tokenizer. |
 |`seed`|No| Seed for random number generation. |
+|`fields.text_field_name`|No|Name of the text field in the input files. Can be a nested field (e.g. "text.nested"). Defaults to "text". |
+|`fields.text_field_type`|No|Type of the text field in the input files. Defaults to "str". |
+|`fields.id_field_name`|No|Name of the id field in the input files. Can be a nested field (e.g. "id.nested.more"). Can be set to null to disable id field. Defaults to "id". |
+|`fields.id_field_type`|No|Type of the id field in the input files. Defaults to "str". |

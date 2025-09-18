@@ -1,0 +1,6 @@
+destination_prefix: s3://ai2-llm/preprocessed/dolma2-0625/v0.1/allenai/dolma2-tokenizer/s2orc/environmental-science
+local_tempdir: /mnt/raid0/resharding/s2orc/environmental-science
+max_num_files: 8
+source_prefixes:
+- prefix: s3://ai2-llm/preprocessed/olmo3-final/s2orc/allenai/dolma2-tokenizer/environmental-science
+  sample_rate: 0.19462197483457688
