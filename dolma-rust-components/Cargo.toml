@@ -7,7 +7,7 @@ description = "Rust components for Dolma - Toolkit for pre-processing LLM traini
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [lib]
-name = "dolma"
+name = "dolma_rust_components"
 crate-type = ["cdylib"]
 
 [dependencies]

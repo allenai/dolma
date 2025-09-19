@@ -126,7 +126,7 @@ fn dolma_rust_components(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<UrlBlocker>()?;
 
     if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "dolma=info,deduper=info");
+        env::set_var("RUST_LOG", "dolma_rust_components=info,deduper=info");
     }
     env_logger::init();
 

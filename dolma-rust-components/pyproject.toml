@@ -33,6 +33,14 @@ requires = [
 ]
 build-backend = "maturin"
 
+
 [tool.maturin]
 python-source = "python"
 features = ["pyo3/extension-module"]
+
+
+[tool.setuptools.packages.find]
+where = ["python"]
+
+[tool.setuptools.package-data]
+dolma-rust-components = ["py.typed", "data/*"]
