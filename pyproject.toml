@@ -164,19 +164,12 @@ all = [
 requires = [
     "setuptools >= 61.0.0",
     "wheel",
-    "maturin[patchelf]>=1.1,<2.0 ; platform_system=='Linux'",
-    "maturin>=1.1,<2.0 ; platform_system!='Linux'",
 ]
-build-backend = "maturin"
-
-
-[tool.maturin]
-python-source = "python"
-features = ["pyo3/extension-module"]
+build-backend = "setuptools.build_meta"
 
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["python"]
 
 [tool.setuptools.package-data]
 dolma = ["py.typed", "data/*"]

@@ -18,6 +18,13 @@ use crate::deduper::deduper_config::DeduperConfig;
 use crate::mixer::mixer_config::MixerConfig;
 use std::env;
 
+
+#[pyfunction]
+fn get_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
+
 #[pyfunction]
 fn deduper_entrypoint(config_str: &str) -> PyResult<()> {
     let config: DeduperConfig = DeduperConfig::parse_from_string(config_str).unwrap();
@@ -112,7 +119,8 @@ impl UrlBlocker {
 // the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
 // import the module.
 #[pymodule]
-fn dolma(_py: Python, m: &PyModule) -> PyResult<()> {
+fn dolma_rust_components(_py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(get_version, m)?)?;
     m.add_function(wrap_pyfunction!(deduper_entrypoint, m)?)?;
     m.add_function(wrap_pyfunction!(mixer_entrypoint, m)?)?;
     m.add_class::<UrlBlocker>()?;
