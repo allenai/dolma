@@ -22,6 +22,8 @@ EMAIL_SPANS = Path(__file__).parent.parent / "config/email-spans.json"
 EMAIL_SPANS_JQ = Path(__file__).parent.parent / "config/email-spans-jq.yaml"
 FILTER_BY_SPANS = Path(__file__).parent.parent / "config/filter-by-spans.json"
 MIXER = Path(__file__).parent.parent / "config/mixer.json"
+ALT_DOC_PATH_MIXER = Path(__file__).parent.parent / "config/alt-path-mixer.json"
+
 PARAGRAPH_SPANS = Path(__file__).parent.parent / "config/paragraph-spans.json"
 
 
@@ -126,6 +128,35 @@ class TestMixer(TestCase):
             return self.skipTest("Skipping AWS tests")
 
         with open(MIXER, mode="r", encoding="utf8") as f:
+            config = json.load(f)
+
+        # keep track of local output path
+        local_input = config["streams"][0]["documents"][0]
+        local_output = config["streams"][0]["output"]["path"]
+
+        # replace results path with s3 path
+        config["streams"][0]["output"]["path"] = f"{self.remote_test_prefix}/{local_output}"
+
+        # upload local input to s3, replace local input with s3 path
+        config["streams"][0]["documents"][0] = f"{self.remote_test_prefix}/{local_input}"
+
+        with NamedTemporaryFile("w") as f:
+            json.dump(config, f)
+            f.flush()
+
+            main(argv=["-c", f.name, "mix"])
+
+        download_s3_prefix(f"{self.remote_test_prefix}/tests/work", "tests/work/remote")
+        expected = load_jsonl("tests/data/expected/mixer.json.gz")
+        provided = load_jsonl("tests/work/remote/output/mixer/mixer-test-0000.json.gz")
+        provided = self.checkAndRemoveProvenance(provided)
+        self.assertEqual(expected, provided)
+
+    def test_alt_doc_path_mixer(self):
+        if self.remote_test_prefix is None:
+            return self.skipTest("Skipping AWS tests")
+
+        with open(ALT_DOC_PATH_MIXER, mode="r", encoding="utf8") as f:
             config = json.load(f)
 
         # keep track of local output path

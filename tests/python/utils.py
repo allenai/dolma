@@ -71,9 +71,9 @@ def skip_aws_tests() -> bool:
     return (dolma_tests_skip or "false").lower() in {"true", "1", "yes", "y"}
 
 
-def upload_test_documents(local_input: str, test_prefix: str) -> Tuple[str, str]:
-    remote_input = f"{test_prefix}/input/documents"
-    remote_output = f"{test_prefix}/output/documents"
+def upload_test_documents(local_input: str, test_prefix: str, document_dir: str = "documents") -> Tuple[str, str]:
+    remote_input = f"{test_prefix}/input/{document_dir}"
+    remote_output = f"{test_prefix}/output/{document_dir}"
 
     for i, local_fp in enumerate(glob_path(local_input)):
         remote_fp = f"{remote_input}/{i:05d}.json.gz"
@@ -128,6 +128,7 @@ def upload_s3_prefix(s3_prefix: str, local_prefix: str):
     bucket_name, prefix = parse_s3_path(s3_prefix)
 
     for local_fp in glob_path(local_prefix):
+        print(f"LOCAL_FP {local_fp}")
         name = local_fp.replace(local_prefix, "").lstrip("/")
         s3.upload_file(Bucket=bucket_name, Key=f"{prefix}/{name}", Filename=local_fp)
 
@@ -168,9 +169,11 @@ class TestCasePipeline(TestCase):
 
         return [str(p) for p in file_paths]
 
-    def writeDocs(self, docs: List[str], partitions: int = 1, ext_dir: Optional[Path] = None) -> List[str]:
+    def writeDocs(
+        self, docs: List[str], partitions: int = 1, ext_dir: Optional[Path] = None, unit_type: str = "documents"
+    ) -> List[str]:
         encoded_docs = [{"id": str(i), "text": d, "source": __file__} for i, d in enumerate(docs)]
-        return self.writeUnits(units=encoded_docs, unit_type="documents", partitions=partitions, ext_dir=ext_dir)
+        return self.writeUnits(units=encoded_docs, unit_type=unit_type, partitions=partitions, ext_dir=ext_dir)
 
     def writeAttributes(
         self,

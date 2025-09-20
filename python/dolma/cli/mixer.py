@@ -66,6 +66,9 @@ class StreamConfig:
             "from the file extension."
         ),
     )
+    document_dir: str = field(
+        default="documents", help="Folder in source path to replace with 'attributes' when looking for attributes"
+    )
 
 
 @dataclass
@@ -145,7 +148,6 @@ class MixerCli(BaseCli):
                 # perform some path validation to make sure we don't call the mixer with invalid config
                 total_matching_documents = 0
                 for document in stream_config.documents:
-
                     current_matching_documents = sum(1 for _ in glob_path(document))
                     if current_matching_documents == 0:
                         # only raise a warning if no documents are found for a single path
@@ -159,6 +161,7 @@ class MixerCli(BaseCli):
                 # populate the stream config dict
                 stream_config_dict["name"] = stream_config.name
                 stream_config_dict["documents"] = [str(d) for d in stream_config.documents]
+                stream_config_dict["document_dir"] = stream_config.document_dir
                 stream_config_dict["attributes"] = [str(a) for a in list(stream_config.attributes)]
                 stream_config_dict["output"] = {
                     "path": str(stream_config.output.path),

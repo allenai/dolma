@@ -238,6 +238,7 @@ def create_and_run_warc_pipeline(
     store_html_in_metadata: bool = False,
     skip_no_pre_taggers: bool = False,
     skip_no_post_taggers: bool = False,
+    skip_linearization: bool = False,
 ):
     with ExitStack() as stack:
         if metadata is None:

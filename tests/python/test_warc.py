@@ -103,3 +103,59 @@ class TestWarcExtractor(unittest.TestCase):
             {"by_4_0", "by_3_0"},
         )
         self.assertIn("cc_re__cc_re__cc_by_4_0", sample1[2]["attributes"])
+
+    def test_skip_linearization(self):
+        """Test that when skip_linearization is True, the raw HTML content is preserved."""
+        outputs = self._run_pipeline_with_skip_linearization()
+        self.assertEqual(len(outputs), 2)
+        self.assertIn("sample-0000.jsonl.gz", outputs)
+        self.assertIn("sample-0001.jsonl.gz", outputs)
+
+        sample0 = outputs["sample-0000.jsonl.gz"]
+        sample1 = outputs["sample-0001.jsonl.gz"]
+
+        # Check that we got some documents
+        self.assertGreater(len(sample0), 0)
+        self.assertGreater(len(sample1), 0)
+
+        # For all documents, verify they contain raw HTML instead of linearized text
+        for sample in chain(sample0, sample1):
+            # HTML content should be in the text field
+            self.assertIn("<", sample["text"])
+            self.assertIn(">", sample["text"])
+
+            # Common HTML tags that should be present in raw HTML
+            html_indicators = ["<html", "<body", "<div", "<p"]
+            self.assertTrue(any(indicator in sample["text"].lower() for indicator in html_indicators))
+
+            # Basic metadata should still be present
+            self.assertEqual(sample["version"], "v0")
+            self.assertEqual(sample["source"], "test")
+            self.assertIn("warc_url", sample["metadata"])
+            self.assertIn("url", sample["metadata"])
+            self.assertIn("warc_date", sample["metadata"])
+            self.assertIn("warc_filename", sample["metadata"])
+            self.assertIn("content_type", sample["metadata"])
+
+    def _run_pipeline_with_skip_linearization(self) -> Dict[str, List[dict]]:
+        """Helper method to run pipeline with skip_linearization=True."""
+        create_and_run_warc_pipeline(
+            documents=[f"{DATA_PATH}/*.warc.gz"],
+            destination=[self.tempdir],
+            num_processes=1,
+            ignore_existing=False,
+            debug=True,
+            source_name="test",
+            skip_no_pre_taggers=False,
+            skip_no_post_taggers=False,
+            store_html_in_metadata=False,
+            linearizer_name="no-op",
+            pre_taggers=["cc_re"],
+            post_taggers=["lingua_1e2"],
+        )
+        outputs: Dict[str, List[dict]] = {}
+        for fn in os.listdir(self.tempdir):
+            with smart_open.open(os.path.join(self.tempdir, fn), mode="rt", encoding="utf-8") as f:
+                for ln in f:
+                    outputs.setdefault(fn, []).append(json.loads(ln))
+        return outputs
