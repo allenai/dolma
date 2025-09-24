@@ -169,6 +169,7 @@ class TokenizationConfig:
 
 class TokenizerCli(BaseCli):
     CONFIG = TokenizationConfig
+    COMMAND = "tokens"
     DESCRIPTION = "Tokenize documents using the provided tokenizer."
 
     @classmethod

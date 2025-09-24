@@ -69,6 +69,7 @@ class WarcExtractorConfig:
 
 class WarcExtractorCli(BaseCli):
     CONFIG = WarcExtractorConfig
+    COMMAND = "warc"
     DESCRIPTION = "Extract documents from WARC files and parse HTML out."
 
     @classmethod

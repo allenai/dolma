@@ -7,19 +7,13 @@ warnings.filterwarnings("ignore", message=r".*pkg_resources is deprecated.*", ca
 
 # must import taggers to register them
 from .core import TaggerRegistry  # noqa: E402
-from .core.errors import DolmaRustPipelineError  # noqa: E402
 from .core.taggers import BaseTagger  # noqa: E402
-from .taggers import *  # noqa: E402
-
-# Import Rust components from the separate package
-from dolma_rust_components import deduper, mixer, UrlBlocker  # noqa: E402
+from .version import __version__  # noqa: E402
 
 __all__ = [
     "add_tagger",
     "BaseTagger",
-    "deduper",
-    "mixer",
-    "UrlBlocker",
+    "__version__",
 ]
 
 # we create a shortcut to easily add taggers to the registry

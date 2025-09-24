@@ -15,20 +15,19 @@ from .mixer import MixerCli
 from .resolvers import *  # noqa: F401,F403,W0401
 from .tagger import ListTaggerCli, TaggerCli
 from .tokenizer import TokenizerCli
+from .version import VersionCli
 from .warc import WarcExtractorCli
 
-AVAILABLE_COMMANDS = {
-    "dedupe": DeduperCli,
-    "mix": MixerCli,
-    "tag": TaggerCli,
-    "list": ListTaggerCli,
-    "stat": AnalyzerCli,
-    "tokens": TokenizerCli,
-    "warc": WarcExtractorCli,
-    # following functionality is not yet implemented
-    # "train-ft": None,
-    # "train-lm": None,
-}
+AVAILABLE_COMMANDS = [
+    DeduperCli,
+    MixerCli,
+    TaggerCli,
+    ListTaggerCli,
+    AnalyzerCli,
+    TokenizerCli,
+    VersionCli,
+    WarcExtractorCli,
+]
 
 
 def read_config(path: Union[None, str]) -> Dict[str, Any]:
@@ -70,9 +69,8 @@ def main(argv: Optional[List[str]] = None):
     # Continue by adding subparsers and parsing the arguments
     subparsers = parser.add_subparsers(dest="command")
     subparsers.required = True
-    subparsers.choices = AVAILABLE_COMMANDS.keys()  # type: ignore
-    for command, cli in AVAILABLE_COMMANDS.items():
-        cli.make_parser(subparsers.add_parser(command, help=cli.DESCRIPTION))
+    for cli in AVAILABLE_COMMANDS:
+        cli.make_parser(subparsers.add_parser(cli.COMMAND, help=cli.DESCRIPTION))
 
     # parse the arguments
     args = parser.parse_args(argv)
@@ -89,5 +87,5 @@ def main(argv: Optional[List[str]] = None):
     config = read_config(config_path)
 
     # get the cli for the command and run it with the config we just loaded + the args
-    cli = AVAILABLE_COMMANDS[command]
+    cli = next(cli for cli in AVAILABLE_COMMANDS if cli.COMMAND == command)
     return cli.run_from_args(args=args, config=config)

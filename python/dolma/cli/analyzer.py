@@ -51,6 +51,7 @@ class AnalyzerConfig:
 
 class AnalyzerCli(BaseCli):
     CONFIG = AnalyzerConfig
+    COMMAND = "stat"
     DESCRIPTION = "Analyze the distribution of attributes values in a dataset."
 
     @classmethod

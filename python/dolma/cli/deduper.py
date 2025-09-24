@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 import smart_open
 from omegaconf import OmegaConf as om
 
-from dolma import deduper
+from dolma_rust_components import deduper
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import (
     CompressionConfig,
@@ -137,6 +137,7 @@ class DeduperConfig:
 
 class DeduperCli(BaseCli):
     CONFIG = DeduperConfig
+    COMMAND = "dedupe"
     DESCRIPTION = "Deduplicate documents or paragraphs using a bloom filter."
 
     @classmethod

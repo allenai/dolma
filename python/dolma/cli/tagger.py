@@ -95,6 +95,7 @@ class TaggerConfig:
 
 class TaggerCli(BaseCli):
     CONFIG = TaggerConfig
+    COMMAND = "tag"
     DESCRIPTION = (
         "Tag documents or spans of documents using one or more taggers. "
         "For a list of available taggers, run `dolma list`."
@@ -153,6 +154,7 @@ class ListTaggerConfig:
 
 class ListTaggerCli(BaseCli):
     CONFIG = ListTaggerConfig
+    COMMAND = "list"
     DESCRIPTION = "List available taggers."
 
     @classmethod

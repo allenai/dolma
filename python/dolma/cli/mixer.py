@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from dolma import mixer
+from dolma_rust_components import mixer
 from dolma.cli import BaseCli, field, print_config
 from dolma.cli.shared import CompressionConfig, WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
@@ -82,6 +82,7 @@ class MixerConfig:
 
 class MixerCli(BaseCli):
     CONFIG = MixerConfig
+    COMMAND = "mix"
     DESCRIPTION = "Mix documents from multiple streams."
 
     @classmethod

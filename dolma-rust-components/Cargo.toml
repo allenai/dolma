@@ -1,6 +1,6 @@
 [package]
 name = "dolma-rust-components"
-version = "1.3.0"
+version = "1.3.0-dev"
 edition = "2021"
 license = "Apache-2.0"
 description = "Rust components for Dolma - Toolkit for pre-processing LLM training data."

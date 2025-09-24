@@ -1,10 +1,10 @@
 [project]
 name = "dolma"
-version = "1.2.1"
+version = "1.3.0"
 description = "Toolkit for pre-processing LLM training data."
 license = { text = "Apache-2.0" }
 readme = "README.md"
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.10"
 dependencies = [
     "anyascii>=0.3.2",
     "blingfire==0.1.8",
@@ -35,6 +35,7 @@ dependencies = [
     "necessary>=0.4.3",
     "charset-normalizer>=3.2.0",
     "zstandard>=0.23.0",
+    "dolma-rust-components==1.3.0",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -51,49 +52,6 @@ classifiers = [
 name = "Allen Institute for Artificial Intelligence"
 email = "contact@allenai.org"
 
-[[project.authors]]
-name = "Luca Soldaini"
-email = "luca@soldaini.net"
-
-[[project.authors]]
-name = "Kyle Lo"
-email = "kylel@allenai.org"
-
-[[project.authors]]
-name = "Rodney Kinney"
-email = "rodneyk@allenai.org"
-
-[[project.authors]]
-name = "Aakanksha Naik"
-email = "aakankshan@allenai.org"
-
-[[project.authors]]
-name = "Abhilasha Ravichander"
-email = "abhilashar@allenai.org"
-
-[[project.authors]]
-name = "Akshita Bhagia"
-email = "akshitab@allenai.org"
-
-[[project.authors]]
-name = "Dirk Groeneveld"
-email = "dirkg@allenai.org"
-
-[[project.authors]]
-name = "Dustin Schwenk"
-email = "dustins@allenai.org"
-
-[[project.authors]]
-name = "Ian Magnusson"
-email = "ianm@allenai.org"
-
-[[project.authors]]
-name = "Khyathi Chandu"
-email = "khyathic@allenai.org"
-
-[[project.maintainers]]
-name = "Allen Institute for Artificial Intelligence"
-email = "contact@allenai.org"
 
 [project.urls]
 Homepage = "https://github.com/allenai/dolma"

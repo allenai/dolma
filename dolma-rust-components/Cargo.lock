@@ -1145,7 +1145,7 @@ dependencies = [
 
 [[package]]
 name = "dolma-rust-components"
-version = "1.3.0"
+version = "1.3.0-dev"
 dependencies = [
  "adblock",
  "ahash",
