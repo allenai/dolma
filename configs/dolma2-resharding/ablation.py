@@ -8,17 +8,17 @@
 # ]
 # ///
 
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 import json
+import math
 import os
-from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlparse
+
 import boto3
 import tqdm
-import math
 import yaml
-
 
 BASE_URLS = {
     "all-dressed": "s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/{topic}/{quality}",
@@ -39,11 +39,7 @@ def get_size_of_prefix(prefix: str, ext: str = ".npy") -> int:
 
     while True:
         if continuation_token:
-            response = s3.list_objects_v2(
-                Bucket=bucket,
-                Prefix=prefix,
-                ContinuationToken=continuation_token
-            )
+            response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix, ContinuationToken=continuation_token)
         else:
             response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
 
@@ -82,22 +78,14 @@ class WeightConfig:
                 domain=domain_topic_quality[0],
                 topic=domain_topic_quality[1],
                 quality=domain_topic_quality[2],
-                weight=d["weight"]
+                weight=d["weight"],
             )
         elif len(domain_topic_quality) == 2:
             return cls(
-                domain=domain_topic_quality[0],
-                topic=domain_topic_quality[1],
-                quality=None,
-                weight=d["weight"]
+                domain=domain_topic_quality[0], topic=domain_topic_quality[1], quality=None, weight=d["weight"]
             )
         elif len(domain_topic_quality) == 1:
-            return cls(
-                domain=domain_topic_quality[0],
-                topic=None,
-                quality=None,
-                weight=d["weight"]
-            )
+            return cls(domain=domain_topic_quality[0], topic=None, quality=None, weight=d["weight"])
         else:
             raise ValueError(f"Invalid domain: {d['domain']}")
 
@@ -134,7 +122,7 @@ cross_source_pstar = {
 
 def make_one_config(weight_config: WeightConfig, token_target: int) -> dict:
     base_uri = weight_config.uri
-    actual_size = get_size_of_prefix(base_uri.rstrip("/") + "/") // 4 # 4 bytes per token
+    actual_size = get_size_of_prefix(base_uri.rstrip("/") + "/") // 4  # 4 bytes per token
     desired_size = token_target * weight_config.weight
     sample_rate = math.ceil(desired_size / actual_size)
 
@@ -170,9 +158,9 @@ def main():
         snazzy2_weights = [
             WeightConfig(
                 domain="all-dressed",
-                topic=(topic_quality := k.split('/'))[0],
+                topic=(topic_quality := k.split("/"))[0],
                 quality=topic_quality[1],
-                weight=v * cross_source_pstar["all-dressed"]
+                weight=v * cross_source_pstar["all-dressed"],
             )
             for k, v in json.load(f).items()
         ]
@@ -187,7 +175,7 @@ def main():
         ]
 
     with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
-    # with ThreadPoolExecutor(max_workers=1) as executor:
+        # with ThreadPoolExecutor(max_workers=1) as executor:
         futures = []
         for weight_config in weights:
             future = executor.submit(make_one_config, weight_config=weight_config, token_target=TOKEN_TARGET)
@@ -214,6 +202,7 @@ def main():
     config = {"dataset": {"sources": sources}}
     with open(Path(__file__).parent / "ablation.yaml", "w") as f:
         yaml.dump(config, f)
+
 
 if __name__ == "__main__":
     main()
