@@ -1,5 +1,5 @@
-destination_prefix: s3://ai2-llm/preprocessed/tylerr/lc-reshard-final/v0.6/allenai/dolma2-tokenizer/
-local_tempdir: /mnt/raid0/resharding/tylerr/lc-reshard-final
+destination_prefix: s3://ai2-llm/preprocessed/tylerr/lc-reshard-final-cleaned/v0.1/allenai/dolma2-tokenizer/
+local_tempdir: /mnt/raid0/resharding/tylerr/lc-reshard-final-cleaned
 max_num_files: 1000
 source_prefixes:
 - target_ratio: 0.03473789024
@@ -152,14 +152,14 @@ source_prefixes:
     - s3://ai2-llm/preprocessed/all_dressed_v3_weborganizer_ft_dclm_plus2_vigintiles/vigintile_0020_subset-decon-2/travel_and_tourism/allenai/dolma2-tokenizer/*
 - target_ratio: 0.1223
   paths:
-    - s3://ai2-llm/preprocessed/LC_synth/yake_s2pdf/olmo2-32b/length_2e15/output_merged/allenai/dolma2-tokenizer/*
+    - s3://ai2-llm/preprocessed/LC_synth_redacted_denyagain/rex_s2pdf/length_2e15_olmo2-32b-9284/allenai/dolma2-tokenizer/*
 - target_ratio: 0.0391
   paths:
-    - s3://ai2-llm/preprocessed/LC_synth/cwe_s2pdf/length_2e15_olmo2-32b-9284_number-short/allenai/dolma2-tokenizer/*
+    - s3://ai2-llm/preprocessed/LC_synth_redacted_denyagain/cwe_s2pdf/length_2e15_olmo2-32b-9284/allenai/dolma2-tokenizer/*
 - target_ratio: 0.0953
   paths:
     - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression-decon-2/length_2e15/**/allenai/dolma2-tokenizer/*
 - target_ratio: 0.0833
   paths:
-    - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression-decon-2/length_2e13/**/allenai/dolma2-tokenizer/*
-    - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression-decon-2/length_2e14/**/allenai/dolma2-tokenizer/*
+    - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression-decon-2_denyagain/length_2e13/**/allenai/dolma2-tokenizer/*
+    - s3://ai2-llm/preprocessed/s2pdf_dedupe_minhash_v1_with_no_pii_basic_quality_datadelve_norefs_mdtables_v2_denylisted_reshard_length-buckets_compression-decon-2_denyagain/length_2e14/**/allenai/dolma2-tokenizer/*
