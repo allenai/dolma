@@ -1,0 +1,1702 @@
+Sum of weights is 0.9886, rounding up to 1
+Subset Name       : s2pdf:electronics_and_hardware
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/electronics_and_hardware
+Natural tokens    :   7.02 B
+Desired tokens    :   4.34 B
+Target ratio      : 0.0007
+Repetition factor : 1
+
+Subset Name       : s2pdf:science_math_and_technology
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/science_math_and_technology
+Natural tokens    : 414.21 B
+Desired tokens    : 479.91 B
+Target ratio      : 0.0809
+Repetition factor : 2
+
+Subset Name       : all-dressed:entertainment:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0014
+Natural tokens    :  40.30 B
+Desired tokens    :   0.17 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:fashion_and_beauty:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/fashion_and_beauty/vigintile_0020
+Natural tokens    :  16.52 B
+Desired tokens    :   0.45 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:health:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0018
+Natural tokens    :  54.39 B
+Desired tokens    : 123.70 B
+Target ratio      : 0.0209
+Repetition factor : 3
+
+Subset Name       : all-dressed:home_and_hobbies:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/home_and_hobbies/vigintile_0020
+Natural tokens    :  44.67 B
+Desired tokens    :  32.98 B
+Target ratio      : 0.0056
+Repetition factor : 1
+
+Subset Name       : all-dressed:literature:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/literature/vigintile_0015
+Natural tokens    :  26.05 B
+Desired tokens    :   0.67 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:religion:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/religion/vigintile_0018
+Natural tokens    :  31.17 B
+Desired tokens    :  16.12 B
+Target ratio      : 0.0027
+Repetition factor : 1
+
+Subset Name       : all-dressed:social_life:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/social_life/vigintile_0014
+Natural tokens    :  22.74 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:transportation:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0013
+Natural tokens    :  12.18 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:games
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/games
+Natural tokens    :   2.41 B
+Desired tokens    :   0.19 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:religion
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/religion
+Natural tokens    :  24.32 B
+Desired tokens    :   4.06 B
+Target ratio      : 0.0007
+Repetition factor : 1
+
+Subset Name       : all-dressed:art_and_design:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0014
+Natural tokens    :  11.28 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0017
+Natural tokens    :  19.18 B
+Desired tokens    :   3.45 B
+Target ratio      : 0.0006
+Repetition factor : 1
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0013
+Natural tokens    :  11.85 B
+Desired tokens    :   0.14 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:fashion_and_beauty:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/fashion_and_beauty/vigintile_0012
+Natural tokens    :  11.75 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0020
+Natural tokens    :  50.20 B
+Desired tokens    : 133.28 B
+Target ratio      : 0.0225
+Repetition factor : 3
+
+Subset Name       : all-dressed:games:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/games/vigintile_0015
+Natural tokens    :  23.61 B
+Desired tokens    :   4.10 B
+Target ratio      : 0.0007
+Repetition factor : 1
+
+Subset Name       : all-dressed:history_and_geography:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/history_and_geography/vigintile_0014
+Natural tokens    :  13.14 B
+Desired tokens    :   0.02 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:industrial:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0012
+Natural tokens    :   7.09 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:politics:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0012
+Natural tokens    :  39.05 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:religion:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/religion/vigintile_0016
+Natural tokens    :  26.98 B
+Desired tokens    :   0.19 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:social_life:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/social_life/vigintile_0015
+Natural tokens    :  25.20 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:software_development:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software_development/vigintile_0012
+Natural tokens    :  10.58 B
+Desired tokens    :  12.52 B
+Target ratio      : 0.0021
+Repetition factor : 2
+
+Subset Name       : all-dressed:transportation:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0015
+Natural tokens    :  14.37 B
+Desired tokens    :   0.05 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:education_and_jobs
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/education_and_jobs
+Natural tokens    : 133.65 B
+Desired tokens    :  41.88 B
+Target ratio      : 0.0071
+Repetition factor : 1
+
+Subset Name       : stack-edu:Cpp
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Cpp
+Natural tokens    :  12.53 B
+Desired tokens    :  49.04 B
+Target ratio      : 0.0083
+Repetition factor : 4
+
+Subset Name       : all-dressed:adult_content:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/adult_content/vigintile_0014
+Natural tokens    :   6.01 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0012
+Natural tokens    :  12.60 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0018
+Natural tokens    :  30.67 B
+Desired tokens    :  39.14 B
+Target ratio      : 0.0066
+Repetition factor : 2
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0017
+Natural tokens    :  61.29 B
+Desired tokens    :   8.82 B
+Target ratio      : 0.0015
+Repetition factor : 1
+
+Subset Name       : all-dressed:games:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/games/vigintile_0013
+Natural tokens    :  20.82 B
+Desired tokens    :   0.61 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:health:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0020
+Natural tokens    :  40.46 B
+Desired tokens    : 281.14 B
+Target ratio      : 0.0474
+Repetition factor : 7
+
+Subset Name       : all-dressed:home_and_hobbies:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/home_and_hobbies/vigintile_0014
+Natural tokens    :  39.06 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:industrial:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0018
+Natural tokens    :   9.60 B
+Desired tokens    :  14.13 B
+Target ratio      : 0.0024
+Repetition factor : 2
+
+Subset Name       : all-dressed:software:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0012
+Natural tokens    :  12.76 B
+Desired tokens    :   0.41 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:software_development:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software_development/vigintile_0020
+Natural tokens    :  12.04 B
+Desired tokens    : 100.76 B
+Target ratio      : 0.0170
+Repetition factor : 9
+
+Subset Name       : all-dressed:transportation:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0016
+Natural tokens    :  15.59 B
+Desired tokens    :   0.24 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:art_and_design
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/art_and_design
+Natural tokens    :   6.70 B
+Desired tokens    :   0.77 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : s2pdf:literature
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/literature
+Natural tokens    :  31.36 B
+Desired tokens    :   7.27 B
+Target ratio      : 0.0012
+Repetition factor : 1
+
+Subset Name       : stack-edu:Python
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Python
+Natural tokens    :  18.02 B
+Desired tokens    :  74.80 B
+Target ratio      : 0.0126
+Repetition factor : 5
+
+Subset Name       : all-dressed:art_and_design:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0012
+Natural tokens    :   8.95 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0012
+Natural tokens    :  21.33 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0017
+Natural tokens    :  16.53 B
+Desired tokens    :  13.18 B
+Target ratio      : 0.0022
+Repetition factor : 1
+
+Subset Name       : all-dressed:fashion_and_beauty:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/fashion_and_beauty/vigintile_0014
+Natural tokens    :  14.44 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:games:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/games/vigintile_0018
+Natural tokens    :  29.32 B
+Desired tokens    :  82.13 B
+Target ratio      : 0.0139
+Repetition factor : 3
+
+Subset Name       : all-dressed:history_and_geography:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/history_and_geography/vigintile_0017
+Natural tokens    :  19.46 B
+Desired tokens    :   4.30 B
+Target ratio      : 0.0007
+Repetition factor : 1
+
+Subset Name       : all-dressed:industrial:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0015
+Natural tokens    :   8.62 B
+Desired tokens    :   0.11 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:politics:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0016
+Natural tokens    :  52.06 B
+Desired tokens    :   0.56 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:science_math_and_technology:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/science_math_and_technology/vigintile_0016
+Natural tokens    :  40.51 B
+Desired tokens    : 112.08 B
+Target ratio      : 0.0189
+Repetition factor : 3
+
+Subset Name       : all-dressed:software:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0013
+Natural tokens    :  13.89 B
+Desired tokens    :   0.98 B
+Target ratio      : 0.0002
+Repetition factor : 1
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0011
+Natural tokens    :  29.75 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:transportation:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0018
+Natural tokens    :  16.76 B
+Desired tokens    :   8.24 B
+Target ratio      : 0.0014
+Repetition factor : 1
+
+Subset Name       : s2pdf:health
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/health
+Natural tokens    : 105.24 B
+Desired tokens    :  95.45 B
+Target ratio      : 0.0161
+Repetition factor : 1
+
+Subset Name       : stack-edu:Go
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Go
+Natural tokens    :   1.40 B
+Desired tokens    :   5.37 B
+Target ratio      : 0.0009
+Repetition factor : 4
+
+Subset Name       : all-dressed:adult_content:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/adult_content/vigintile_0013
+Natural tokens    :   5.55 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0013
+Natural tokens    :  13.68 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0012
+Natural tokens    :  10.99 B
+Desired tokens    :   0.05 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:fashion_and_beauty:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/fashion_and_beauty/vigintile_0017
+Natural tokens    :  22.34 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0014
+Natural tokens    :  17.83 B
+Desired tokens    :   0.02 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:health:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0012
+Natural tokens    :  37.34 B
+Desired tokens    :   0.05 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:literature:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/literature/vigintile_0014
+Natural tokens    :  22.48 B
+Desired tokens    :   0.19 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:religion:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/religion/vigintile_0020
+Natural tokens    :  22.15 B
+Desired tokens    :  71.14 B
+Target ratio      : 0.0120
+Repetition factor : 4
+
+Subset Name       : all-dressed:software:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0020
+Natural tokens    :  12.83 B
+Desired tokens    :  96.35 B
+Target ratio      : 0.0162
+Repetition factor : 8
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0017
+Natural tokens    :  41.14 B
+Desired tokens    :   2.45 B
+Target ratio      : 0.0004
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0011
+Natural tokens    :  15.42 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:finance_and_business
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/finance_and_business
+Natural tokens    :  59.19 B
+Desired tokens    :  11.06 B
+Target ratio      : 0.0019
+Repetition factor : 1
+
+Subset Name       : s2pdf:travel_and_tourism
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/travel_and_tourism
+Natural tokens    :   2.04 B
+Desired tokens    :   0.08 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : stack-edu:PHP
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/PHP
+Natural tokens    :   7.40 B
+Desired tokens    :  24.81 B
+Target ratio      : 0.0042
+Repetition factor : 4
+
+Subset Name       : all-dressed:art_and_design:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0013
+Natural tokens    :   9.97 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0020
+Natural tokens    :  16.64 B
+Desired tokens    : 104.06 B
+Target ratio      : 0.0175
+Repetition factor : 7
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0016
+Natural tokens    :  15.89 B
+Desired tokens    :   4.02 B
+Target ratio      : 0.0007
+Repetition factor : 1
+
+Subset Name       : all-dressed:fashion_and_beauty:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/fashion_and_beauty/vigintile_0013
+Natural tokens    :  13.10 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0018
+Natural tokens    :  58.25 B
+Desired tokens    :  39.14 B
+Target ratio      : 0.0066
+Repetition factor : 1
+
+Subset Name       : all-dressed:games:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/games/vigintile_0014
+Natural tokens    :  22.28 B
+Desired tokens    :   1.61 B
+Target ratio      : 0.0003
+Repetition factor : 1
+
+Subset Name       : all-dressed:history_and_geography:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/history_and_geography/vigintile_0013
+Natural tokens    :  11.40 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:home_and_hobbies:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/home_and_hobbies/vigintile_0015
+Natural tokens    :  44.02 B
+Desired tokens    :   0.02 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:literature:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/literature/vigintile_0020
+Natural tokens    :  33.14 B
+Desired tokens    : 220.00 B
+Target ratio      : 0.0371
+Repetition factor : 7
+
+Subset Name       : all-dressed:religion:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/religion/vigintile_0017
+Natural tokens    :  29.54 B
+Desired tokens    :   1.69 B
+Target ratio      : 0.0003
+Repetition factor : 1
+
+Subset Name       : all-dressed:social_life:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/social_life/vigintile_0013
+Natural tokens    :  20.53 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:software:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0017
+Natural tokens    :  17.16 B
+Desired tokens    :  30.09 B
+Target ratio      : 0.0051
+Repetition factor : 2
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0014
+Natural tokens    :  36.41 B
+Desired tokens    :   0.02 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:crime_and_law
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/crime_and_law
+Natural tokens    :  41.59 B
+Desired tokens    :  12.37 B
+Target ratio      : 0.0021
+Repetition factor : 1
+
+Subset Name       : stack-edu:Markdown
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Markdown
+Natural tokens    :  28.92 B
+Desired tokens    :  68.05 B
+Target ratio      : 0.0115
+Repetition factor : 3
+
+Subset Name       : all-dressed:adult_content:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/adult_content/vigintile_0017
+Natural tokens    :  10.17 B
+Desired tokens    :   0.43 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0015
+Natural tokens    :  16.10 B
+Desired tokens    :   0.10 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0011
+Natural tokens    :  10.17 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:entertainment:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0017
+Natural tokens    :  53.47 B
+Desired tokens    :  15.47 B
+Target ratio      : 0.0026
+Repetition factor : 1
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0013
+Natural tokens    :  55.13 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0015
+Natural tokens    :  19.55 B
+Desired tokens    :   0.09 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:health:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0014
+Natural tokens    :  44.87 B
+Desired tokens    :   0.63 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:home_and_hobbies:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/home_and_hobbies/vigintile_0013
+Natural tokens    :  35.01 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:literature:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/literature/vigintile_0016
+Natural tokens    :  30.08 B
+Desired tokens    :   2.51 B
+Target ratio      : 0.0004
+Repetition factor : 1
+
+Subset Name       : all-dressed:politics:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0018
+Natural tokens    :  54.90 B
+Desired tokens    :  19.78 B
+Target ratio      : 0.0033
+Repetition factor : 1
+
+Subset Name       : all-dressed:science_math_and_technology:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/science_math_and_technology/vigintile_0018
+Natural tokens    :  45.02 B
+Desired tokens    : 271.35 B
+Target ratio      : 0.0458
+Repetition factor : 7
+
+Subset Name       : all-dressed:software:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0014
+Natural tokens    :  15.67 B
+Desired tokens    :   2.42 B
+Target ratio      : 0.0004
+Repetition factor : 1
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0012
+Natural tokens    :  32.14 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:transportation:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0020
+Natural tokens    :  14.35 B
+Desired tokens    :  34.23 B
+Target ratio      : 0.0058
+Repetition factor : 3
+
+Subset Name       : s2pdf:food_and_dining
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/food_and_dining
+Natural tokens    :   2.25 B
+Desired tokens    :   0.05 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:software
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/software
+Natural tokens    :   8.81 B
+Desired tokens    :   9.72 B
+Target ratio      : 0.0016
+Repetition factor : 2
+
+Subset Name       : stack-edu:SQL
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/SQL
+Natural tokens    :   7.06 B
+Desired tokens    :   7.46 B
+Target ratio      : 0.0013
+Repetition factor : 2
+
+Subset Name       : all-dressed:art_and_design:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0016
+Natural tokens    :  13.48 B
+Desired tokens    :   0.18 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0014
+Natural tokens    :  25.40 B
+Desired tokens    :   0.05 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:entertainment:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0012
+Natural tokens    :  32.80 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0013
+Natural tokens    :  16.21 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:health:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0011
+Natural tokens    :  34.13 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:history_and_geography:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/history_and_geography/vigintile_0020
+Natural tokens    :  13.17 B
+Desired tokens    :  87.37 B
+Target ratio      : 0.0147
+Repetition factor : 7
+
+Subset Name       : all-dressed:industrial:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0016
+Natural tokens    :   9.30 B
+Desired tokens    :   0.53 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:politics:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0017
+Natural tokens    :  54.98 B
+Desired tokens    :   3.40 B
+Target ratio      : 0.0006
+Repetition factor : 1
+
+Subset Name       : all-dressed:science_math_and_technology:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/science_math_and_technology/vigintile_0017
+Natural tokens    :  45.61 B
+Desired tokens    : 186.06 B
+Target ratio      : 0.0314
+Repetition factor : 5
+
+Subset Name       : all-dressed:software:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0015
+Natural tokens    :  16.48 B
+Desired tokens    :   5.71 B
+Target ratio      : 0.0010
+Repetition factor : 1
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0013
+Natural tokens    :  34.06 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0010
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0010
+Natural tokens    :  14.43 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:home_and_hobbies
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/home_and_hobbies
+Natural tokens    :   3.79 B
+Desired tokens    :   0.66 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : s2pdf:software_development
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/software_development
+Natural tokens    :  40.25 B
+Desired tokens    :  69.68 B
+Target ratio      : 0.0117
+Repetition factor : 2
+
+Subset Name       : stack-edu:TypeScript
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/TypeScript
+Natural tokens    :   2.50 B
+Desired tokens    :   9.38 B
+Target ratio      : 0.0016
+Repetition factor : 4
+
+Subset Name       : all-dressed:art_and_design:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0018
+Natural tokens    :  15.98 B
+Desired tokens    :  10.52 B
+Target ratio      : 0.0018
+Repetition factor : 1
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0016
+Natural tokens    :  29.41 B
+Desired tokens    :   1.29 B
+Target ratio      : 0.0002
+Repetition factor : 1
+
+Subset Name       : all-dressed:entertainment:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0013
+Natural tokens    :  36.52 B
+Desired tokens    :   0.05 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:fashion_and_beauty:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/fashion_and_beauty/vigintile_0015
+Natural tokens    :  16.42 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0012
+Natural tokens    :  14.67 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:games:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/games/vigintile_0020
+Natural tokens    :  25.85 B
+Desired tokens    : 183.47 B
+Target ratio      : 0.0309
+Repetition factor : 8
+
+Subset Name       : all-dressed:history_and_geography:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/history_and_geography/vigintile_0018
+Natural tokens    :  20.08 B
+Desired tokens    :  29.84 B
+Target ratio      : 0.0050
+Repetition factor : 2
+
+Subset Name       : all-dressed:industrial:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0017
+Natural tokens    :   9.76 B
+Desired tokens    :   2.84 B
+Target ratio      : 0.0005
+Repetition factor : 1
+
+Subset Name       : all-dressed:politics:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0015
+Natural tokens    :  49.64 B
+Desired tokens    :   0.10 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:science_math_and_technology:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/science_math_and_technology/vigintile_0014
+Natural tokens    :  31.86 B
+Desired tokens    :  41.08 B
+Target ratio      : 0.0069
+Repetition factor : 2
+
+Subset Name       : all-dressed:social_life:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/social_life/vigintile_0018
+Natural tokens    :  31.39 B
+Desired tokens    :   3.54 B
+Target ratio      : 0.0006
+Repetition factor : 1
+
+Subset Name       : all-dressed:software:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0018
+Natural tokens    :  16.59 B
+Desired tokens    :  63.99 B
+Target ratio      : 0.0108
+Repetition factor : 4
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0016
+Natural tokens    :  40.32 B
+Desired tokens    :   0.46 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0013
+Natural tokens    :  17.96 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:history_and_geography
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/history_and_geography
+Natural tokens    :  25.52 B
+Desired tokens    :   4.02 B
+Target ratio      : 0.0007
+Repetition factor : 1
+
+Subset Name       : s2pdf:transportation
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/transportation
+Natural tokens    :  16.52 B
+Desired tokens    :   1.79 B
+Target ratio      : 0.0003
+Repetition factor : 1
+
+Subset Name       : stack-edu:Rust
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Rust
+Natural tokens    :   1.42 B
+Desired tokens    :   5.73 B
+Target ratio      : 0.0010
+Repetition factor : 5
+
+Subset Name       : all-dressed:adult_content:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/adult_content/vigintile_0020
+Natural tokens    :   0.47 B
+Desired tokens    :   0.62 B
+Target ratio      : 0.0001
+Repetition factor : 2
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0011
+Natural tokens    :  11.66 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0017
+Natural tokens    :  30.13 B
+Desired tokens    :   7.04 B
+Target ratio      : 0.0012
+Repetition factor : 1
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0012
+Natural tokens    :  49.98 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0017
+Natural tokens    :  20.98 B
+Desired tokens    :   3.02 B
+Target ratio      : 0.0005
+Repetition factor : 1
+
+Subset Name       : all-dressed:home_and_hobbies:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/home_and_hobbies/vigintile_0016
+Natural tokens    :  50.70 B
+Desired tokens    :   0.14 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:literature:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/literature/vigintile_0017
+Natural tokens    :  37.19 B
+Desired tokens    :  12.00 B
+Target ratio      : 0.0020
+Repetition factor : 1
+
+Subset Name       : all-dressed:religion:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/religion/vigintile_0013
+Natural tokens    :  19.33 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:science_math_and_technology:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/science_math_and_technology/vigintile_0020
+Natural tokens    :  28.83 B
+Desired tokens    : 235.43 B
+Target ratio      : 0.0397
+Repetition factor : 9
+
+Subset Name       : all-dressed:software:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0016
+Natural tokens    :  17.08 B
+Desired tokens    :  13.47 B
+Target ratio      : 0.0023
+Repetition factor : 1
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0015
+Natural tokens    :  38.65 B
+Desired tokens    :   0.09 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0012
+Natural tokens    :  16.70 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : wikipedia
+Base URI          : s3://ai2-llm/preprocessed/wikipedia-dolma-0823/allenai/dolma2-tokenizer
+Natural tokens    :   3.69 B
+Desired tokens    :   2.50 B
+Target ratio      : 0.0004
+Repetition factor : 1
+
+Subset Name       : stack-edu:C
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/C
+Natural tokens    :   4.74 B
+Desired tokens    :  16.58 B
+Target ratio      : 0.0028
+Repetition factor : 4
+
+Subset Name       : stack-edu:Ruby
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Ruby
+Natural tokens    :   1.39 B
+Desired tokens    :   5.37 B
+Target ratio      : 0.0009
+Repetition factor : 4
+
+Subset Name       : all-dressed:adult_content:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/adult_content/vigintile_0018
+Natural tokens    :   8.42 B
+Desired tokens    :   4.08 B
+Target ratio      : 0.0007
+Repetition factor : 1
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0018
+Natural tokens    :  20.39 B
+Desired tokens    :  23.72 B
+Target ratio      : 0.0040
+Repetition factor : 2
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0014
+Natural tokens    :  13.07 B
+Desired tokens    :   0.40 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0014
+Natural tokens    :  57.29 B
+Desired tokens    :   0.07 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0020
+Natural tokens    :  15.72 B
+Desired tokens    :  45.88 B
+Target ratio      : 0.0077
+Repetition factor : 3
+
+Subset Name       : all-dressed:health:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0013
+Natural tokens    :  41.01 B
+Desired tokens    :   0.18 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:home_and_hobbies:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/home_and_hobbies/vigintile_0012
+Natural tokens    :  31.47 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:literature:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/literature/vigintile_0013
+Natural tokens    :  19.52 B
+Desired tokens    :   0.05 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:science_math_and_technology:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/science_math_and_technology/vigintile_0012
+Natural tokens    :  25.66 B
+Desired tokens    :  10.92 B
+Target ratio      : 0.0018
+Repetition factor : 1
+
+Subset Name       : all-dressed:social_life:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/social_life/vigintile_0020
+Natural tokens    :  25.94 B
+Desired tokens    :  16.85 B
+Target ratio      : 0.0028
+Repetition factor : 1
+
+Subset Name       : all-dressed:software_development:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software_development/vigintile_0015
+Natural tokens    :  13.75 B
+Desired tokens    :  51.31 B
+Target ratio      : 0.0087
+Repetition factor : 4
+
+Subset Name       : all-dressed:transportation:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0012
+Natural tokens    :  11.31 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0015
+Natural tokens    :  21.54 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:fashion_and_beauty
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/fashion_and_beauty
+Natural tokens    :   0.54 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 0
+
+Subset Name       : s2pdf:sports_and_fitness
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/sports_and_fitness
+Natural tokens    :   5.28 B
+Desired tokens    :   2.88 B
+Target ratio      : 0.0005
+Repetition factor : 1
+
+Subset Name       : stack-edu:JavaScript
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/JavaScript
+Natural tokens    :   8.89 B
+Desired tokens    :  35.62 B
+Target ratio      : 0.0060
+Repetition factor : 5
+
+Subset Name       : all-dressed:adult_content:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/adult_content/vigintile_0016
+Natural tokens    :   8.84 B
+Desired tokens    :   0.03 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0014
+Natural tokens    :  14.76 B
+Desired tokens    :   0.02 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0018
+Natural tokens    :  16.54 B
+Desired tokens    :  41.69 B
+Target ratio      : 0.0070
+Repetition factor : 3
+
+Subset Name       : all-dressed:fashion_and_beauty:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/fashion_and_beauty/vigintile_0016
+Natural tokens    :  19.16 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0011
+Natural tokens    :  13.46 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:games:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/games/vigintile_0016
+Natural tokens    :  24.96 B
+Desired tokens    :  10.49 B
+Target ratio      : 0.0018
+Repetition factor : 1
+
+Subset Name       : all-dressed:history_and_geography:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/history_and_geography/vigintile_0016
+Natural tokens    :  17.00 B
+Desired tokens    :   0.61 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:industrial:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0014
+Natural tokens    :   8.09 B
+Desired tokens    :   0.02 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:politics:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0014
+Natural tokens    :  46.26 B
+Desired tokens    :   0.02 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:science_math_and_technology:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/science_math_and_technology/vigintile_0013
+Natural tokens    :  28.57 B
+Desired tokens    :  23.93 B
+Target ratio      : 0.0040
+Repetition factor : 1
+
+Subset Name       : all-dressed:social_life:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/social_life/vigintile_0016
+Natural tokens    :  28.51 B
+Desired tokens    :   0.07 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:software_development:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software_development/vigintile_0013
+Natural tokens    :  11.77 B
+Desired tokens    :  24.93 B
+Target ratio      : 0.0042
+Repetition factor : 3
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0020
+Natural tokens    :  33.45 B
+Desired tokens    :  43.58 B
+Target ratio      : 0.0073
+Repetition factor : 2
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0016
+Natural tokens    :  23.12 B
+Desired tokens    :   0.07 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : arxiv
+Base URI          : s3://ai2-llm/preprocessed/proof-pile-2/v0_decontaminated-0625_tokenized/arxiv/train/allenai/dolma2-tokenizer
+Natural tokens    :  21.38 B
+Desired tokens    :  49.70 B
+Target ratio      : 0.0084
+Repetition factor : 3
+
+Subset Name       : s2pdf:industrial
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/industrial
+Natural tokens    :  28.25 B
+Desired tokens    :  42.87 B
+Target ratio      : 0.0072
+Repetition factor : 2
+
+Subset Name       : all-dressed:art_and_design:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0020
+Natural tokens    :  12.03 B
+Desired tokens    :  44.37 B
+Target ratio      : 0.0075
+Repetition factor : 4
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0013
+Natural tokens    :  23.44 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0020
+Natural tokens    :  13.58 B
+Desired tokens    :  95.05 B
+Target ratio      : 0.0160
+Repetition factor : 8
+
+Subset Name       : all-dressed:entertainment:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0020
+Natural tokens    :  52.26 B
+Desired tokens    : 333.58 B
+Target ratio      : 0.0563
+Repetition factor : 7
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0016
+Natural tokens    :  62.36 B
+Desired tokens    :   1.80 B
+Target ratio      : 0.0003
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0018
+Natural tokens    :  19.26 B
+Desired tokens    :  14.00 B
+Target ratio      : 0.0024
+Repetition factor : 1
+
+Subset Name       : all-dressed:health:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0016
+Natural tokens    :  51.03 B
+Desired tokens    :   8.28 B
+Target ratio      : 0.0014
+Repetition factor : 1
+
+Subset Name       : all-dressed:home_and_hobbies:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/home_and_hobbies/vigintile_0017
+Natural tokens    :  56.59 B
+Desired tokens    :   1.08 B
+Target ratio      : 0.0002
+Repetition factor : 1
+
+Subset Name       : all-dressed:literature:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/literature/vigintile_0018
+Natural tokens    :  44.84 B
+Desired tokens    :  72.46 B
+Target ratio      : 0.0122
+Repetition factor : 2
+
+Subset Name       : all-dressed:politics:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0020
+Natural tokens    :  44.35 B
+Desired tokens    :  74.04 B
+Target ratio      : 0.0125
+Repetition factor : 2
+
+Subset Name       : all-dressed:social_life:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/social_life/vigintile_0012
+Natural tokens    :  18.94 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:software_development:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software_development/vigintile_0018
+Natural tokens    :  16.23 B
+Desired tokens    : 114.28 B
+Target ratio      : 0.0193
+Repetition factor : 8
+
+Subset Name       : all-dressed:transportation:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0014
+Natural tokens    :  13.13 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0017
+Natural tokens    :  25.21 B
+Desired tokens    :   0.39 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : finemath-3plus
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/math/allenai/dolma2-tokenizer/finemath_3plus_all
+Natural tokens    :  34.06 B
+Desired tokens    : 152.00 B
+Target ratio      : 0.0256
+Repetition factor : 5
+
+Subset Name       : stack-edu:CSharp
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/CSharp
+Natural tokens    :   7.20 B
+Desired tokens    :  25.13 B
+Target ratio      : 0.0042
+Repetition factor : 4
+
+Subset Name       : stack-edu:Swift
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Swift
+Natural tokens    :   1.51 B
+Desired tokens    :   5.80 B
+Target ratio      : 0.0010
+Repetition factor : 4
+
+Subset Name       : all-dressed:art_and_design:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0015
+Natural tokens    :  12.28 B
+Desired tokens    :   0.03 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0011
+Natural tokens    :  19.74 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:electronics_and_hardware:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/electronics_and_hardware/vigintile_0015
+Natural tokens    :  14.39 B
+Desired tokens    :   1.21 B
+Target ratio      : 0.0002
+Repetition factor : 1
+
+Subset Name       : all-dressed:entertainment:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0018
+Natural tokens    :  56.97 B
+Desired tokens    :  79.80 B
+Target ratio      : 0.0135
+Repetition factor : 2
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0015
+Natural tokens    :  60.68 B
+Desired tokens    :   0.34 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:games:vigintile_0012
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/games/vigintile_0012
+Natural tokens    :  19.20 B
+Desired tokens    :   0.19 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:health:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0017
+Natural tokens    :  53.83 B
+Desired tokens    :  32.30 B
+Target ratio      : 0.0054
+Repetition factor : 1
+
+Subset Name       : all-dressed:industrial:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0011
+Natural tokens    :   6.79 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:industrial:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0020
+Natural tokens    :   8.38 B
+Desired tokens    :  53.40 B
+Target ratio      : 0.0090
+Repetition factor : 7
+
+Subset Name       : all-dressed:religion:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/religion/vigintile_0015
+Natural tokens    :  24.51 B
+Desired tokens    :   0.02 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:software_development:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software_development/vigintile_0016
+Natural tokens    :  14.85 B
+Desired tokens    :  69.78 B
+Target ratio      : 0.0118
+Repetition factor : 5
+
+Subset Name       : all-dressed:transportation:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0011
+Natural tokens    :  10.61 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0018
+Natural tokens    :  25.14 B
+Desired tokens    :   2.12 B
+Target ratio      : 0.0004
+Repetition factor : 1
+
+Subset Name       : s2pdf:adult_content
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/adult_content
+Natural tokens    :   0.30 B
+Desired tokens    :   0.08 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : s2pdf:politics
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/politics
+Natural tokens    :  38.46 B
+Desired tokens    :  14.65 B
+Target ratio      : 0.0025
+Repetition factor : 1
+
+Subset Name       : stack-edu:Shell
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Shell
+Natural tokens    :   2.54 B
+Desired tokens    :  10.44 B
+Target ratio      : 0.0018
+Repetition factor : 5
+
+Subset Name       : all-dressed:art_and_design:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/art_and_design/vigintile_0017
+Natural tokens    :  14.73 B
+Desired tokens    :   1.27 B
+Target ratio      : 0.0002
+Repetition factor : 1
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0015
+Natural tokens    :  27.77 B
+Desired tokens    :   0.24 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:entertainment:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0015
+Natural tokens    :  44.76 B
+Desired tokens    :   0.71 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:fashion_and_beauty:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/fashion_and_beauty/vigintile_0018
+Natural tokens    :  20.64 B
+Desired tokens    :   0.10 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:games:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/games/vigintile_0017
+Natural tokens    :  26.81 B
+Desired tokens    :  28.28 B
+Target ratio      : 0.0048
+Repetition factor : 2
+
+Subset Name       : all-dressed:history_and_geography:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/history_and_geography/vigintile_0015
+Natural tokens    :  14.93 B
+Desired tokens    :   0.10 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:industrial:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/industrial/vigintile_0013
+Natural tokens    :   7.49 B
+Desired tokens    :   0.01 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:politics:vigintile_0013
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0013
+Natural tokens    :  42.27 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:science_math_and_technology:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/science_math_and_technology/vigintile_0015
+Natural tokens    :  35.84 B
+Desired tokens    :  67.66 B
+Target ratio      : 0.0114
+Repetition factor : 2
+
+Subset Name       : all-dressed:software:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software/vigintile_0011
+Natural tokens    :  11.70 B
+Desired tokens    :   0.14 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:software_development:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software_development/vigintile_0017
+Natural tokens    :  15.98 B
+Desired tokens    :  92.20 B
+Target ratio      : 0.0155
+Repetition factor : 6
+
+Subset Name       : all-dressed:transportation:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/transportation/vigintile_0017
+Natural tokens    :  16.49 B
+Desired tokens    :   1.43 B
+Target ratio      : 0.0002
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0020
+Natural tokens    :  19.93 B
+Desired tokens    :   7.32 B
+Target ratio      : 0.0012
+Repetition factor : 1
+
+Subset Name       : s2pdf:entertainment
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/entertainment
+Natural tokens    :   5.86 B
+Desired tokens    :   1.76 B
+Target ratio      : 0.0003
+Repetition factor : 1
+
+Subset Name       : s2pdf:social_life
+Base URI          : s3://ai2-llm/preprocessed/olmo3-final/s2pdfs/allenai/dolma2-tokenizer/social_life
+Natural tokens    :   3.11 B
+Desired tokens    :   0.17 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : stack-edu:Java
+Base URI          : s3://ai2-llm/preprocessed/stack-edu/allenai/dolma2-tokenizer/Java
+Natural tokens    :  31.35 B
+Desired tokens    :  65.31 B
+Target ratio      : 0.0110
+Repetition factor : 3
+
+Subset Name       : all-dressed:adult_content:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/adult_content/vigintile_0015
+Natural tokens    :   7.05 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:crime_and_law:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/crime_and_law/vigintile_0016
+Natural tokens    :  17.73 B
+Desired tokens    :   0.54 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:education_and_jobs:vigintile_0020
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/education_and_jobs/vigintile_0020
+Natural tokens    :  25.14 B
+Desired tokens    : 145.66 B
+Target ratio      : 0.0246
+Repetition factor : 6
+
+Subset Name       : all-dressed:entertainment:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/entertainment/vigintile_0016
+Natural tokens    :  49.56 B
+Desired tokens    :   3.20 B
+Target ratio      : 0.0005
+Repetition factor : 1
+
+Subset Name       : all-dressed:finance_and_business:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/finance_and_business/vigintile_0011
+Natural tokens    :  46.08 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:food_and_dining:vigintile_0016
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/food_and_dining/vigintile_0016
+Natural tokens    :  20.67 B
+Desired tokens    :   0.53 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:health:vigintile_0015
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/health/vigintile_0015
+Natural tokens    :  47.63 B
+Desired tokens    :   2.21 B
+Target ratio      : 0.0004
+Repetition factor : 1
+
+Subset Name       : all-dressed:home_and_hobbies:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/home_and_hobbies/vigintile_0018
+Natural tokens    :  54.82 B
+Desired tokens    :   7.41 B
+Target ratio      : 0.0012
+Repetition factor : 1
+
+Subset Name       : all-dressed:politics:vigintile_0011
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/politics/vigintile_0011
+Natural tokens    :  35.73 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:religion:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/religion/vigintile_0014
+Natural tokens    :  22.03 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
+Subset Name       : all-dressed:social_life:vigintile_0017
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/social_life/vigintile_0017
+Natural tokens    :  31.04 B
+Desired tokens    :   0.49 B
+Target ratio      : 0.0001
+Repetition factor : 1
+
+Subset Name       : all-dressed:software_development:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/software_development/vigintile_0014
+Natural tokens    :  12.69 B
+Desired tokens    :  36.86 B
+Target ratio      : 0.0062
+Repetition factor : 3
+
+Subset Name       : all-dressed:sports_and_fitness:vigintile_0018
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/sports_and_fitness/vigintile_0018
+Natural tokens    :  40.28 B
+Desired tokens    :  12.37 B
+Target ratio      : 0.0021
+Repetition factor : 1
+
+Subset Name       : all-dressed:travel_and_tourism:vigintile_0014
+Base URI          : s3://ai2-llm/preprocessed/cc_all_dressed/all_dressed_v3/dclm_plus2_vigilantes/allenai/dolma2-tokenizer/travel_and_tourism/vigintile_0014
+Natural tokens    :  19.31 B
+Desired tokens    :   0.00 B
+Target ratio      : 0.0000
+Repetition factor : 1
+
