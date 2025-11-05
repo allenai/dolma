@@ -46,7 +46,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import mkdtemp
@@ -87,53 +87,68 @@ def merge_group(
     """
     Given a list of paths, merge them into a single memmap.
     """
-    npy_destination = Path(destination)
-    csv_destination = npy_destination.with_suffix(".csv.gz")
-    total_size = sum(p.size for p in paths)
+    try:
+        npy_destination = Path(destination)
+        csv_destination = npy_destination.with_suffix(".csv.gz")
+        total_size = sum(p.size for p in paths)
 
-    npy_destination.parent.mkdir(parents=True, exist_ok=True)
+        npy_destination.parent.mkdir(parents=True, exist_ok=True)
 
-    target_memmap = np.memmap(
-        npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype
-    )
+        target_memmap = np.memmap(
+            npy_destination,
+            mode="w+",
+            shape=(total_size // dtype.itemsize,),
+            dtype=dtype,
+        )
 
-    bytes_offset = row_offset = 0
-    with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
-        rw = csv.writer(f)
-        for path in paths:
-            source_memmap = np.memmap(
-                path.npy_path,
-                mode="r",
-                dtype=dtype,
-                shape=(path.size // dtype.itemsize,),
-            )
-            # Copy the array slice (CPU-bound operation)
-            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = (
-                source_memmap
-            )
+        bytes_offset = row_offset = 0
+        with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
+            rw = csv.writer(f)
+            for path in paths:
+                source_memmap = np.memmap(
+                    path.npy_path,
+                    mode="r",
+                    dtype=dtype,
+                    shape=(path.size // dtype.itemsize,),
+                )
+                # Copy the array slice (CPU-bound operation)
+                target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = (
+                    source_memmap
+                )
 
-            row_count = 0
-            with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
-                rd = csv.reader(g)
-                for row in rd:
-                    start, end, id_, src, idx = row
-                    rw.writerow(
-                        [
-                            int(start) + bytes_offset,
-                            int(end) + bytes_offset,
-                            id_,
-                            src,
-                            int(idx),
-                        ]
-                    )
-                    row_count += 1
+                row_count = 0
+                with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
+                    rd = csv.reader(g)
+                    for row in rd:
+                        start, end, id_, src, idx = row
+                        rw.writerow(
+                            [
+                                int(start) + bytes_offset,
+                                int(end) + bytes_offset,
+                                id_,
+                                src,
+                                int(idx),
+                            ]
+                        )
+                        row_count += 1
 
-            bytes_offset += source_memmap.shape[0]
-            row_offset += row_count
-            del source_memmap
+                bytes_offset += source_memmap.shape[0]
+                row_offset += row_count
+                del source_memmap
 
-        # Flush once at the end instead of after each file
-        target_memmap.flush()
+            # Flush once at the end instead of after each file
+            target_memmap.flush()
+    except Exception as e:
+        # Log the error with context for debugging
+        logger.error(
+            "Error merging group to %s: %s\nPaths: %s",
+            destination,
+            str(e),
+            [p.npy_path for p in paths],
+            exc_info=True,
+        )
+        print(f"Error merging group to {destination}: {e}")
+        raise
 
 
 def group_paths_by_max_size(
@@ -285,34 +300,97 @@ def merge_all_npys(
     # Convert dtype to a serializable format for multiprocessing
     dtype_str = str(tokenizer.dtype)
 
-    with ProcessPoolExecutor(max_workers=max_workers) as pool:
-        futures = []
-        for i, group in enumerate(grouped_paths):
-            dest_path = destination / f"{i:06d}.npy"
-            # Skip if destination already exists
-            if dest_path.exists():
-                logger.info("Skipping %s, already exists", dest_path)
-                continue
+    # For ProcessPoolExecutor, use fewer workers to avoid memory issues
+    # Each process has its own memory space, so reduce parallelism
+    process_workers = min(max_workers, os.cpu_count() or 8)
+    logger.info("Using ProcessPoolExecutor with %s workers", process_workers)
 
-            future = pool.submit(
-                merge_group,
-                paths=group,
-                destination=dest_path,
-                dtype=np.dtype(dtype_str),
-            )
-            futures.append(future)
+    try:
+        with ProcessPoolExecutor(max_workers=process_workers) as pool:
+            futures = []
+            for i, group in enumerate(grouped_paths):
+                dest_path = destination / f"{i:06d}.npy"
+                # Skip if destination already exists
+                if dest_path.exists():
+                    logger.info("Skipping %s, already exists", dest_path)
+                    continue
 
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="Merging files"
-        ):
-            try:
-                future.result()
-            except Exception as e:
-                for future in futures:
-                    future.cancel()
-                raise e
+                future = pool.submit(
+                    merge_group,
+                    paths=group,
+                    destination=dest_path,
+                    dtype=np.dtype(dtype_str),
+                )
+                futures.append(future)
+
+            for future in tqdm(
+                as_completed(futures), total=len(futures), desc="Merging files"
+            ):
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error("Error in worker process: %s", str(e), exc_info=True)
+                    # Shutdown the pool to get better error messages
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    # Re-raise as RuntimeError but preserve original exception
+                    raise RuntimeError(
+                        f"Worker process failed: {str(e)}. "
+                        "This may be due to memory issues, file access problems, or pickling errors."
+                    ) from e
 
         logger.info("Done merging NumPy memmaps.")
+    except Exception as e:
+        # Check if this is a BrokenProcessPool or process pool related error
+        error_msg = str(e).lower()
+        error_type = type(e).__name__.lower()
+        is_process_pool_error = (
+            "brokenprocesspool" in error_type
+            or "brokenprocesspool" in error_msg
+            or ("process" in error_msg and "pool" in error_msg)
+            or "worker process" in error_msg
+        )
+
+        if not is_process_pool_error:
+            # If it's not a process pool error, re-raise the original exception
+            raise
+
+        # If ProcessPoolExecutor fails, fall back to ThreadPoolExecutor
+        # This can happen due to memory issues, pickling problems, or OOM kills
+        logger.warning(
+            "ProcessPoolExecutor failed (%s), falling back to ThreadPoolExecutor. "
+            "This may be slower but should be more stable.",
+            str(e),
+        )
+        logger.info("Using ThreadPoolExecutor with %s workers", max_workers)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = []
+            for i, group in enumerate(grouped_paths):
+                dest_path = destination / f"{i:06d}.npy"
+                # Skip if destination already exists
+                if dest_path.exists():
+                    logger.info("Skipping %s, already exists", dest_path)
+                    continue
+
+                future = pool.submit(
+                    merge_group,
+                    paths=group,
+                    destination=dest_path,
+                    dtype=tokenizer.dtype,  # Can use original dtype with threads
+                )
+                futures.append(future)
+
+            for future in tqdm(
+                as_completed(futures), total=len(futures), desc="Merging files"
+            ):
+                try:
+                    future.result()
+                except Exception as e:
+                    logger.error("Error in worker thread: %s", str(e), exc_info=True)
+                    pool.shutdown(wait=False, cancel_futures=True)
+                    raise RuntimeError(f"Worker thread failed: {str(e)}") from e
+
+        logger.info("Done merging NumPy memmaps (using ThreadPoolExecutor).")
 
 
 @dataclass
