@@ -46,6 +46,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import mkdtemp
@@ -54,6 +55,7 @@ from urllib.parse import urlparse
 import numpy as np
 import smart_open
 import yaml
+from tqdm import tqdm
 
 from dolma.core.loggers import get_logger
 from dolma.tokenizer.tokenizer import Tokenizer
@@ -276,34 +278,34 @@ def merge_all_npys(
         max_workers,
     )
 
-    # with ThreadPoolExecutor(max_workers=max_workers) as pool:
-    #     futures = []
-    #     for i, group in enumerate(grouped_paths):
-    #         dest_path = destination / f"{i:06d}.npy"
-    #         # Skip if destination already exists
-    #         if dest_path.exists():
-    #             logger.info("Skipping %s, already exists", dest_path)
-    #             continue
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = []
+        for i, group in enumerate(grouped_paths):
+            dest_path = destination / f"{i:06d}.npy"
+            # Skip if destination already exists
+            if dest_path.exists():
+                logger.info("Skipping %s, already exists", dest_path)
+                continue
 
-    #         future = pool.submit(
-    #             merge_group,
-    #             paths=group,
-    #             destination=dest_path,
-    #             dtype=tokenizer.dtype,
-    #         )
-    #         futures.append(future)
+            future = pool.submit(
+                merge_group,
+                paths=group,
+                destination=dest_path,
+                dtype=tokenizer.dtype,
+            )
+            futures.append(future)
 
-    #     for future in tqdm(
-    #         as_completed(futures), total=len(futures), desc="Merging files"
-    #     ):
-    #         try:
-    #             future.result()
-    #         except Exception as e:
-    #             for future in futures:
-    #                 future.cancel()
-    #             raise e
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="Merging files"
+        ):
+            try:
+                future.result()
+            except Exception as e:
+                for future in futures:
+                    future.cancel()
+                raise e
 
-    #     logger.info("Done merging NumPy memmaps.")
+        logger.info("Done merging NumPy memmaps.")
 
 
 @dataclass
@@ -600,6 +602,21 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
     if urlparse(remote_prefix).scheme != "s3":
         return
 
+    local_prefix_path = Path(local_prefix)
+    if not local_prefix_path.exists():
+        logger.warning("Local prefix %s does not exist, skipping upload", local_prefix)
+        return
+
+    # Check if there are any files to upload
+    files = list(local_prefix_path.glob("*"))
+    if not files:
+        logger.warning("No files found in %s, skipping upload", local_prefix)
+        return
+
+    logger.info(
+        "Uploading %d files from %s to %s", len(files), local_prefix, remote_prefix
+    )
+
     local_prefix_no_star = re.sub(r"(/|/\*)$", "", str(local_prefix))
     remote_prefix_no_trailing_slash = str(remote_prefix).rstrip("/")
     cmd = [
@@ -614,9 +631,9 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
     )
 
     if result.returncode != 0:
-        print(f"s5cmd failed with error: {result.stderr}")
+        logger.error("s5cmd failed with error: %s", result.stderr)
         raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
-    print(f"Uploaded {local_prefix} to {remote_prefix}")
+    logger.info("Uploaded %s to %s", local_prefix, remote_prefix)
 
 
 def reshard(config: ReshardingConfig):
