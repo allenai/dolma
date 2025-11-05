@@ -46,7 +46,7 @@ import re
 import subprocess
 import sys
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from tempfile import mkdtemp
@@ -99,18 +99,18 @@ def merge_group(
 
     bytes_offset = row_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
+        rw = csv.writer(f)
         for path in paths:
-            rw = csv.writer(f)
             source_memmap = np.memmap(
                 path.npy_path,
                 mode="r",
                 dtype=dtype,
                 shape=(path.size // dtype.itemsize,),
             )
+            # Copy the array slice (CPU-bound operation)
             target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = (
                 source_memmap
             )
-            target_memmap.flush()
 
             row_count = 0
             with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
@@ -131,6 +131,9 @@ def merge_group(
             bytes_offset += source_memmap.shape[0]
             row_offset += row_count
             del source_memmap
+
+        # Flush once at the end instead of after each file
+        target_memmap.flush()
 
 
 def group_paths_by_max_size(
@@ -278,7 +281,11 @@ def merge_all_npys(
         max_workers,
     )
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    # Use ProcessPoolExecutor for CPU-bound numpy operations
+    # Convert dtype to a serializable format for multiprocessing
+    dtype_str = str(tokenizer.dtype)
+
+    with ProcessPoolExecutor(max_workers=max_workers) as pool:
         futures = []
         for i, group in enumerate(grouped_paths):
             dest_path = destination / f"{i:06d}.npy"
@@ -291,7 +298,7 @@ def merge_all_npys(
                 merge_group,
                 paths=group,
                 destination=dest_path,
-                dtype=tokenizer.dtype,
+                dtype=np.dtype(dtype_str),
             )
             futures.append(future)
 
