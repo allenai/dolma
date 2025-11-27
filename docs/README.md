@@ -38,7 +38,7 @@ To read Dolma toolkit's documentation, visit the following pages:
 - [Getting Started](getting-started.md)
 - [Data Format](data-format.md)
 - [Taggers](taggers.md)
-- [Deduplication](deduplication.md)
+- [Deduplication](deduplication.md) (including temporal strategies and document types)
 - [Mixer](mixer.md)
 - [Tokenization](tokenize.md)
 - [Writing a Parallel Processor](parallel-processor.md)
