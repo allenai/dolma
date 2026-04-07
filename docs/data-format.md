@@ -85,7 +85,7 @@ These are flat JSONs that look like:
 
 where the `source` and `id` keys uniquely identify which document carries these attributes.
 
-The mixer create a unified `attributes` dictionary by merging all of the individual `attributes` dictionaries.
+The mixer creates a unified `attributes` dictionary by merging all of the individual `attributes` dictionaries.
 
 Note that it's very important that the `*.jsonl.gz` files for attributes lines up exactly (same number of rows, same sort order) with the `*.jsonl.gz` files for the associated documents. It'll save us a lot of headache in the future.
 
@@ -109,6 +109,4 @@ Each attribute can have one or more scores associated with it; in the example ab
 For each paragraph, the tuple indicate the start and end index of the paragraph, and the score associated with it.
 
 The idea that we're going with is that attributes identify spans of text within a document that might be problematic.
-These signal get cached during tagging and allow for "building" of the dataset to happen as a configuration afterwards. so for example, given signal data like this, we might try different confidence thresholds on mean_word_length when creating final data mixture
-how does your signals data look?
-}
+These signals get cached during tagging and allow for "building" of the dataset to happen as a configuration afterwards. For example, given signal data like this, we might try different confidence thresholds on mean_word_length when creating the final data mixture.

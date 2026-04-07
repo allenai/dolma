@@ -55,7 +55,7 @@ class CustomParallelProcessor(BaseParallelProcessor):
         ...
 ```
 
-Let's dive a bit deeper into one might implement the `process_single` method in the case of removing empty documents.
+Let's dive a bit deeper into how one might implement the `process_single` method in the case of removing empty documents.
 We assume `source_path` is a path to a either local or remote JSONL gzip'ed file, and use `smart_open` to deal with that.
 
 ```python
