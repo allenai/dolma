@@ -60,16 +60,16 @@ A list of built-in taggers can be obtained by running `dolma list` command. At t
 | `jigsaw_hatespeech_sentence_v2` | Tags spans of documents as containing hate speech or not using a FastText classifier trained on the [Jigsaw](https://www.kaggle.com/c/jigsaw-unintended-bias-in-toxicity-classification) hate speech dataset. |
 | `jigsaw_nsfw_document_v1` | Tags documents as containing NSFW content or not using a FastText classifier trained on the [Jigsaw](https://www.kaggle.com/c/jigsaw-unintended-bias-in-toxicity-classification) NSFW dataset. |
 | `jigsaw_nsfw_sentence_v2` | Tags spans of documents as containing NSFW content or not using a FastText classifier trained on the [Jigsaw](https://www.kaggle.com/c/jigsaw-unintended-bias-in-toxicity-classification) NSFW dataset. |
-| `olmo_pretokenizer_v1` | Count the number of tokens in each document using pre-tokenizer used by [OLMo v1](https://allenai.org/olmo), which is a the same as [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b). |
-| `olmo_pretokenizer_with_paragraphs_v1` | Count the number of tokens in each document and each paragraph using pre-tokenizer used by [OLMo v1](https://allenai.org/olmo), which is a the same as [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b). |
+| `olmo_pretokenizer_v1` | Count the number of tokens in each document using pre-tokenizer used by [OLMo v1](https://allenai.org/olmo), which is the same as [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b). |
+| `olmo_pretokenizer_with_paragraphs_v1` | Count the number of tokens in each document and each paragraph using pre-tokenizer used by [OLMo v1](https://allenai.org/olmo), which is the same as [GPT Neo-X 20B](https://huggingface.co/EleutherAI/gpt-neox-20b). |
 | `pii_presidio_v1` | Tags spans of documents that contain personally identifiable information (PII) using the [Presidio Analyzer](https://microsoft.github.io/presidio/analyzer/) library. |
 | `pii_regex_v1` | Tags spans of documents that contain personally identifiable information (PII) using a set of regular expressions. |
 | `pii_regex_v2` | Faster implementation of `pii_regex_v1`. |
 | `pii_regex_with_counts_v2` | Tags spans of documents that contain personally identifiable information (PII) using a set of regular expressions. It also counts the number of matches for each regular expression. |
 | `pii_regex_with_counts_fast_v2` | Faster implementation of `pii_regex_with_counts_v2`. |
 | `random_number_v1` | Assigns a random number to each document. This allows us to split the dataset into train, validation, and test sets. |
-| `uniseg_length_paragraphs_v1` | Count the number of [unicode "words" (grapheme clusers)](https://www.unicode.org/reports/tr29/) in each paragraph. |
-| `uniseg_length_paragraphs_with_doc_length_v1` | Count the number of [unicode "words" (grapheme clusers)](https://www.unicode.org/reports/tr29/) in each paragraph and the document. |
+| `uniseg_length_paragraphs_v1` | Count the number of [unicode "words" (grapheme clusters)](https://www.unicode.org/reports/tr29/) in each paragraph. |
+| `uniseg_length_paragraphs_with_doc_length_v1` | Count the number of [unicode "words" (grapheme clusters)](https://www.unicode.org/reports/tr29/) in each paragraph and the document. |
 | `whitespace_tokenizer_v1` | Count the number of whitespace-separated tokens in each document. |
 | `whitespace_tokenizer_with_paragraphs_v1` | Count the number of whitespace-separated tokens in each document and each paragraph. |
 

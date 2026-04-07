@@ -83,7 +83,7 @@ dolma tag \
               ft_lang_id_en_paragraph_with_doc_score_v2 \
               char_length_with_paragraphs_v1 \
               whitespace_tokenizer_with_paragraphs_v1 \
-    --processes 16   # run on 96 cores
+    --processes 16
 ```
 
 To learn more about the taggers, see the [taggers documentation](taggers.md).
