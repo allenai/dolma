@@ -59,7 +59,7 @@ class BaseUrlTagger(BaseTaggerWithMetadata):
     URL_METADATA_KEY = "url"
     MAYBE_IP_REGEX = re.compile(r"([0-9a-f\.\:]+)")
     IGNORE_IP_REGEX = re.compile(r"(127\.0\.0\.1|0\.0\.0\.0|::1)")
-    IGNORE_IP_REGEX_START = re.compile(r"^{IGNORE_IP_REGEX.pattern}")
+    IGNORE_IP_REGEX_START = re.compile(f"^{IGNORE_IP_REGEX.pattern}")
     URL_REGEX = re.compile(r"(([a-z0-9\-_]+\.?){2,}|localhost|localdomain)")
     ONLY_URL_REGEX = re.compile(f"^{URL_REGEX.pattern}")
     ADP_FORMAT_REGEX = re.compile(f"\\|+{URL_REGEX.pattern}\\^")
