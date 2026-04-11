@@ -111,10 +111,8 @@ class CodeCopyrightTagger(BaseTagger):
         for line in lines:
             if line.startswith("//") or line.startswith("#") or line.startswith("--") or not line:
                 skip = skip + 1
-                if not line:
-                    end += 1
-                else:
-                    end += len(line)
+                # +1 accounts for the "\n" separator that str.split dropped
+                end += len(line) + 1
             else:
                 break
 
