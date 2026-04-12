@@ -138,7 +138,7 @@ class CodeCopyrightTagger(BaseTagger):
             else:
                 span = copyright_spans[0]
                 # percentage of content affected
-                score = (span.end - span.start + 1) * 1.0 / len(text)
+                score = (span.end - span.start) * 1.0 / len(text)
         except ZeroDivisionError:
             score = -1.0
         return score
