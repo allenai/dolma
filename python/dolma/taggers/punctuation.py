@@ -18,7 +18,7 @@ class NotAlphanumParagraphV1(BaseTagger):
             "\U0001f300-\U0001f64f"
             "\U0001f680-\U0001f6ff"
             "\u2600-\u26ff\u2700-\u27bf"
-            r"]+"
+            r"]"
             r")+$",
             regex.UNICODE,
         )
