@@ -232,7 +232,7 @@ class BaseBucketApi:
 
         for value, count in zip(values, counts):
             self._add(value, count)
-            self._total += 1
+            self._total += count
             self._sum += value * count
 
     def add_summary(self, summary: SummaryTuple):
