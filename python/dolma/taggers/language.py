@@ -254,7 +254,7 @@ class LinguaTagger(BaseLanguageTagger):
     def __init__(self) -> None:
         super().__init__()
         if not LINGUA_AVAILABLE:
-            raise ImportError("langdetect is not installed, please run `pip install dolma[lang]`.")
+            raise ImportError("lingua is not installed, please run `pip install dolma[lang]`.")
         self.detector = LanguageDetectorBuilder.from_languages(*Language.all()).build()
 
     def predict_text(self, text: str) -> List[Tuple[str, float]]:
