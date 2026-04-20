@@ -36,7 +36,7 @@ def main() -> None:
             # in case of not exact match
             loc -= 1
 
-        if data.iloc[loc].start >= offset or data.iloc[loc].end <= offset:
+        if data.iloc[loc].start > offset or data.iloc[loc].end <= offset:
             raise ValueError(f"Offset {offset} not found in {opts.file}.")
         locs.append(loc)
 
