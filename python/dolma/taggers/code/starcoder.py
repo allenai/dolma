@@ -121,6 +121,8 @@ def comment_size(text, language):
 
 def get_nl_ratio(text, language):
     """get the ratio of comments to code in a program"""
+    if not text:
+        return 0.0
     if language == "python":
         comments = get_text_python(text)
         ratio = len(comments) / len(text)
