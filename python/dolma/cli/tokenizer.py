@@ -51,7 +51,7 @@ class TokenizerConfig:
         help="Whether to encode special tokens in the tokenized output, e.g. splitting '<s>' into '<', 's', '>'.",
     )
 
-    def __post__init__(self):
+    def __post_init__(self):
         logger = get_logger(__file__)
 
         if self.eos_token_id is None:
