@@ -143,7 +143,7 @@ class BaseDomainTagger(BaseUrlTagger):
             hostname = urllib3.util.parse_url(url).host
             if not hostname:
                 return
-            yield (hostname := hostname.lstrip("www."))
+            yield (hostname := hostname.removeprefix("www."))
             yield f"www.{hostname}"
 
 
