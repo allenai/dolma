@@ -59,7 +59,10 @@ class Dolma17QualityClassifier(BaseFastTextTagger):
         return tokens
 
     def predict_slice(self, text_slice: TextSlice) -> Iterable[Prediction]:
-        tokens, _ = zip(*self.preprocess(text_slice.text))
+        pairs = self.preprocess(text_slice.text)
+        if not pairs:
+            return []
+        tokens, _ = zip(*pairs)
         preds = self.classifier.predict(" ".join(tokens), k=-1)
         out = [
             Prediction(label=label.replace("__label__", ""), score=score)
