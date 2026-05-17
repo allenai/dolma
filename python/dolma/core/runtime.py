@@ -56,11 +56,12 @@ def _make_paths_from_substitution(paths: List[str], find: str, replace: str) -> 
             # nothing past the glob pattern: then we wanna go back up one level in the directory structure
             curr_parts = curr_parts[:-1]
 
-        find_dir_index = curr_parts.index(find)
-
         if not curr_pre_glob.strip():
             raise RuntimeError(f"Path '{curr}' contains a wildcard at the beginning. ")
-        elif find_dir_index < 0:
+
+        try:
+            find_dir_index = curr_parts.index(find)
+        except ValueError:
             raise RuntimeError(f"Path '{curr}' does not contain a '{find}' component.")
 
         dst_parts = [p if i != find_dir_index else replace for i, p in enumerate(curr_parts)]
