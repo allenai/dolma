@@ -12,6 +12,7 @@ import tarfile
 from datetime import datetime
 import boto3
 from ftplib import FTP
+from pathlib import Path, PureWindowsPath
 import tempfile
 
 # FTP server details
@@ -36,7 +37,44 @@ def download_and_extract_ftp_file(ftp_url: str, ftp_path: str, extract_to: str) 
 
 def extract_tar_gz(file_path: str, extract_to: str) -> None:
     with tarfile.open(file_path, 'r:gz') as tar:
-        tar.extractall(path=extract_to)
+        for member in tar.getmembers():
+            _extract_tar_member_safely(tar, member, extract_to)
+
+
+def _extract_tar_member_safely(tar: tarfile.TarFile, member: tarfile.TarInfo, extract_to: str) -> None:
+    _validate_tar_member(member, extract_to)
+    try:
+        tar.extract(member, path=extract_to, filter="data")
+    except TypeError as exc:
+        if "filter" not in str(exc):
+            raise
+        tar.extract(member, path=extract_to)
+
+
+def _validate_tar_member(member: tarfile.TarInfo, extract_to: str) -> None:
+    member_path = Path(member.name)
+    windows_path = PureWindowsPath(member.name)
+    extract_root = Path(extract_to).resolve()
+    target_path = (extract_root / member.name).resolve()
+    if (
+        member_path.is_absolute()
+        or windows_path.is_absolute()
+        or windows_path.drive
+        or ".." in member_path.parts
+        or ".." in windows_path.parts
+        or not _is_relative_to(target_path, extract_root)
+    ):
+        raise RuntimeError(f"unsafe archive member: {member.name}")
+    if not (member.isfile() or member.isdir()):
+        raise RuntimeError(f"unsupported archive member: {member.name}")
+
+
+def _is_relative_to(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+    except ValueError:
+        return False
+    return True
 
 
 def upload_directory_to_s3(directory_path: str, bucket: str, folder: str) -> None:
