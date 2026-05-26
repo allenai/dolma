@@ -271,7 +271,7 @@ class FastPiiRegex(BaseTagger):
 
         try:
             # fraction of words that are PII
-            score = sum(len(s) for s in spans) / len(doc.text)
+            score = sum(len(s) for s in spans if s.type != "doc_count") / len(doc.text)
         except ZeroDivisionError:
             # empty doc
             score = -1.0
