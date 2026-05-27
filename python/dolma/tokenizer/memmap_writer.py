@@ -74,6 +74,13 @@ class MemmapWriter:
         if self._metadata_file is None:
             raise RuntimeError("Metadata file is not open")
 
+        if len(output.tokens) >= self.max_tokens:
+            raise ValueError(
+                f"Sequence of length {len(output.tokens)} is larger than the maximum memmap capacity "
+                f"of {self.max_tokens} tokens. Please increase the maximum size/capacity of the tokenized "
+                f"files or check if your input documents have extremely long lines/sequences."
+            )
+
         if (len(output.tokens) + self._written_tokens) >= self.max_tokens:
             # return false if the memmap file is full
             return False
