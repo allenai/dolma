@@ -51,7 +51,7 @@ class CodeProseCompositionClassifier(BaseFastTextTagger):
         if len(line) > 3:
             labels, probabilities = self.classifier.predict(line, k=-1)
 
-            label = labels[0].lstrip("__label__")
+            label = labels[0].replace("__label__", "")
         return label, probabilities
 
     def predictions(
