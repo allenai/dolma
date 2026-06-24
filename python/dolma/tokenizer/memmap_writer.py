@@ -74,7 +74,17 @@ class MemmapWriter:
         if self._metadata_file is None:
             raise RuntimeError("Metadata file is not open")
 
-        if (len(output.tokens) + self._written_tokens) >= self.max_tokens:
+        token_slice = output.tokens[output.start : output.end]
+        token_len = len(token_slice)
+        if token_len == 0:
+            return True
+
+        if token_len > self.max_tokens:
+            raise ValueError(
+                f"Tokenized sequence length ({token_len}) exceeds memmap max_tokens ({self.max_tokens})."
+            )
+
+        if (token_len + self._written_tokens) >= self.max_tokens:
             # return false if the memmap file is full
             return False
 
@@ -83,10 +93,10 @@ class MemmapWriter:
             src=output.src,
             loc=output.loc,
             start=self._written_tokens,
-            end=self._written_tokens + output.end,
+            end=self._written_tokens + token_len,
         )
-        self._memmap_file[self._written_tokens : self._written_tokens + output.end] = output.tokens
-        self._written_tokens += output.end
+        self._memmap_file[self._written_tokens : self._written_tokens + token_len] = token_slice
+        self._written_tokens += token_len
 
         # self._metadata_file.write(msgspec.json.encode(metadata) + b"\n")
         self.metadata_writer.writerow(metadata)

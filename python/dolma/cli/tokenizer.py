@@ -131,7 +131,7 @@ class TokenizationConfig:
         help="Number of parallel processes to use.",
     )
     files_per_process: Optional[int] = field(
-        default=None,
+        default=1,
         help="Number of files to process per process.",
     )
     batch_size: int = field(
