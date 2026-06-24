@@ -50,6 +50,8 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
         max_size: int = kwargs.pop("max_size", None) or 1024 * 1024 * 1024
         dtype: np.dtype = np.dtype(kwargs.pop("dtype", None) or "uint16")
+        # max_size is configured in bytes; MemmapWriter expects a token count.
+        max_tokens = max_size // dtype.itemsize
         local_shuffle: int = kwargs.pop("local_shuffle", None) or 10_000
         ring_size: int = kwargs.pop("ring_size", None) or 8
         sample_ring_prop: bool = kwargs.pop("sample_ring_prop", None) or False
@@ -132,7 +134,7 @@ class MemMapParallelWriter(BaseParallelProcessor):
 
         with ExitStack() as stack:
             memwriter = stack.enter_context(
-                MemmapWriter(path=destination_path + f"-{mm_cnt:05d}", dtype=dtype, max_tokens=max_size)
+                MemmapWriter(path=destination_path + f"-{mm_cnt:05d}", dtype=dtype, max_tokens=max_tokens)
             )
             cls.increment_progressbar(queue, memmaps=1)
 
@@ -232,16 +234,19 @@ class MemMapParallelWriter(BaseParallelProcessor):
                         MemmapWriter(
                             path=destination_path + f"-{mm_cnt:05d}",
                             dtype=dtype,
-                            max_tokens=max_size,
+                            max_tokens=max_tokens,
                         )
                     )
                     cls.increment_progressbar(queue, memmaps=1)
 
-                    # shuffle the remaining sequences
                     random.shuffle(remaining)
 
-                    # finally, write the remaining sequences
                     remaining = memwriter.write_many(outputs=remaining, flush=True)
+                    if remaining and mm_cnt > 10_000:
+                        raise RuntimeError(
+                            "Exceeded memmap rollover limit while writing tokenized output. "
+                            "A single tokenized sequence may exceed max_size."
+                        )
 
                 # done writing, flush (triggers a write to disk)
                 memwriter.flush()
