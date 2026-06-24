@@ -30,7 +30,7 @@ class NotAlphanumParagraphV1(BaseTagger):
             if self.re_has_alphanum.search(para.text):
                 continue
 
-            if self.re_all_punctuation.search(para.text):
+            if self.re_all_punctuation.fullmatch(para.text):
                 spans.append(Span(start=para.start, end=para.end, type="all_punct", score=1))
 
         if not spans:
