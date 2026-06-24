@@ -24,7 +24,7 @@ from ..core.registry import TaggerRegistry
 
 @TaggerRegistry.add("code_composition")
 class CodeProseCompositionClassifier(BaseFastTextTagger):
-    MODEL_PATH = "hf://techarb/code-prose-composition/code-comment-prose-model.bin"  # noqa: E501
+    MODEL_PATH = "https://huggingface.co/techarb/code-prose-composition/resolve/main/code-comment-prose-model.bin"  # noqa: E501
 
     def __init__(self):
         super().__init__(model_path=self.MODEL_PATH, model_mode=self.DOCUMENT_LEVEL_TAGGER)
