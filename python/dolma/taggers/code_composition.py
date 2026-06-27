@@ -60,9 +60,13 @@ class CodeProseCompositionClassifier(BaseFastTextTagger):
         class_counts: Dict[str, int],
         prediction_distributions: Dict[str, List[List[float]]],
     ) -> Iterable[Prediction]:
+        total = sum(class_counts.values())
+        if total == 0:
+            return [Prediction(label="boundaries", score=code_prose_boundaries)]
+
         composition = {}
         for label, count in class_counts.items():
-            composition[label] = round((count / sum(class_counts.values())), 2)
+            composition[label] = round(count / total, 2)
 
         out = [Prediction(label="boundaries", score=code_prose_boundaries)]
 
