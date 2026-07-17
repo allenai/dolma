@@ -53,7 +53,8 @@ class CodeSecretsTagger(BaseTagger):
             line_number = secret.line_number - 1
             span = secret.secret_value
             span_line = text_lines[line_number]
-            line_start = text.find(span_line)
+            # Index by line number — find() hits the first duplicate line content.
+            line_start = sum(len(l) + 1 for l in text_lines[:line_number])
             start = line_start + span_line.find(span or "")
             end = start + len(span or "")
             assert text[start:end] == span
