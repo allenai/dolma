@@ -156,7 +156,7 @@ class CodeRedPajamaTaggers(BaseTagger):
         super().__init__()
 
     def _get_num_tokens(self, text: str) -> int:
-        return len(self.whitespace_regex.split(text))
+        return len(self.whitespace_regex.findall(text))
 
     def predict(self, doc: Document) -> DocResult:
         """Main runner."""
