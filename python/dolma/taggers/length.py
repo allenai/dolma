@@ -60,7 +60,7 @@ class WhitespaceLengthV1(BaseTagger):
     WHITESPACE_REGEX = regex.compile(r"\w+|[^\w\s]+")
 
     def predict(self, doc: Document) -> DocResult:
-        score = len(self.WHITESPACE_REGEX.split(doc.text))
+        score = len(self.WHITESPACE_REGEX.findall(doc.text))
         return DocResult(doc=doc, spans=[Span(start=0, end=len(doc.text), type="length", score=score)])
 
 
@@ -68,7 +68,7 @@ class WhitespaceLengthV1(BaseTagger):
 class WhitespaceLengthParagraphsV1(WhitespaceLengthV1):
     def predict(self, doc: Document) -> DocResult:
         spans = [
-            Span(start=p.start, end=p.end, type="paragraph", score=len(self.WHITESPACE_REGEX.split(p.text)))
+            Span(start=p.start, end=p.end, type="paragraph", score=len(self.WHITESPACE_REGEX.findall(p.text)))
             for p in split_paragraphs(doc.text)
         ]
         spans.append(Span(start=0, end=len(doc.text), type="document", score=sum(s.score for s in spans)))
