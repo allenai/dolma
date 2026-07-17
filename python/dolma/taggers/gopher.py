@@ -194,7 +194,7 @@ def get_attributes(text: str, ignore_empty_lines: bool = False) -> GopherAttribu
         )
         attrs.fraction_of_characters_in_duplicate_lines = sum(
             len(line) * count for line, count in line_counts.items() if count > 1
-        ) / max(character_count, 1)
+        ) / max(attrs.character_count, 1)
     except Exception as e:
         logging.exception(f"Error processing text {e}: {text[:200]}")
 
