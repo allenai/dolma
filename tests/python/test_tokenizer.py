@@ -5,7 +5,7 @@ import shutil
 from contextlib import ExitStack
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory, mkdtemp
-from typing import Optional
+from typing import Any, Dict, Optional
 from unittest import TestCase
 
 import numpy
@@ -14,30 +14,30 @@ from tokenizers import Tokenizer as BaseTokenizer
 from typing_extensions import TypedDict
 
 from dolma.cli.__main__ import main
-from dolma.tokenizer import Tokenizer, tokenize_in_parallel
+from dolma.tokenizer import Tokenizer, tokenize_file, tokenize_in_parallel
 
 TEST_DIR = Path(__file__).parent.parent.resolve()
 
 
-LLAMA_TOKENIZER = {
+LLAMA_TOKENIZER: Dict[str, Any] = {
     "filename": f"{TEST_DIR}/data/tokenizer/llama-test-tokenizer.json",
     "bos_token_id": 1,
     "eos_token_id": 2,
     "pad_token_id": None,
 }
-GPT_NEO_TOKENIZER = {
+GPT_NEO_TOKENIZER: Dict[str, Any] = {
     "filename": f"{TEST_DIR}/data/tokenizer/gpt-neo-test-tokenizer.json",
     "bos_token_id": None,
     "eos_token_id": 50279,
     "pad_token_id": 1,
 }
-LLAMA3_TOKENIZER = {
+LLAMA3_TOKENIZER: Dict[str, Any] = {
     "filename": f"{TEST_DIR}/data/tokenizer/llama3-test-tokenizer.json",
     "bos_token_id": 128000,
     "eos_token_id": 128001,
     "pad_token_id": None,
 }
-DOLMA2_TOKENIZER = {
+DOLMA2_TOKENIZER: Dict[str, Any] = {
     "filename": f"{TEST_DIR}/data/tokenizer/dolma2-test-tokenizer.json",
     "bos_token_id": None,
     "eos_token_id": 100257,
@@ -123,7 +123,9 @@ class TestTokenizer(TestCase):
 
 
 class TestTokenizerCli(TestCase):
-    def test_llama_segment_e2e(self, segment: bool = True, fast: bool = True, refresh: int = 0):
+    def test_llama_segment_e2e(
+        self, segment: bool = True, fast: bool = True, refresh: int = 0, backend: str = "hf"
+    ):
         config = {
             "destination": f"{TEST_DIR}/work/tokenizer/llama-segment",
             "documents": [
@@ -139,6 +141,7 @@ class TestTokenizerCli(TestCase):
                 "segment_before_tokenization": segment,
                 "refresh": refresh,
                 "fast": fast,
+                "backend": backend,
             },
             "debug": True,
         }
@@ -186,7 +189,7 @@ class TestTokenizerCli(TestCase):
             )
             self.assertEqual(special_tokens, 2)
 
-    def test_gpt_neo_e2e(self, segment: bool = True, fast: bool = True, refresh: int = 0):
+    def test_gpt_neo_e2e(self, segment: bool = True, fast: bool = True, refresh: int = 0, backend: str = "hf"):
         config = {
             "destination": f"{TEST_DIR}/work/tokenizer/gpt-neo-segment",
             "documents": [
@@ -202,6 +205,7 @@ class TestTokenizerCli(TestCase):
                 "segment_before_tokenization": segment,
                 "refresh": refresh,
                 "fast": fast,
+                "backend": backend,
             },
             "debug": True,
         }
@@ -247,7 +251,7 @@ class TestTokenizerCli(TestCase):
             )
             self.assertEqual(special_tokens, 1)
 
-    def test_llama3_e2e(self, segment: bool = True, fast: bool = True, refresh: int = 0):
+    def test_llama3_e2e(self, segment: bool = True, fast: bool = True, refresh: int = 0, backend: str = "hf"):
         config = {
             "destination": f"{TEST_DIR}/work/tokenizer/gpt-neo-segment",
             "documents": [
@@ -264,6 +268,7 @@ class TestTokenizerCli(TestCase):
                 "segment_before_tokenization": segment,
                 "refresh": refresh,
                 "fast": fast,
+                "backend": backend,
             },
             "debug": True,
         }
@@ -320,6 +325,15 @@ class TestTokenizerCli(TestCase):
 
     def test_gpt_neo_segment_e2e_refresh(self):
         self.test_gpt_neo_e2e(refresh=1)
+
+    def test_llama_segment_e2e_gigatoken(self):
+        self.test_llama_segment_e2e(backend="gt")
+
+    def test_gpt_neo_segment_e2e_gigatoken(self):
+        self.test_gpt_neo_e2e(backend="gt")
+
+    def test_llama3_e2e_gigatoken(self):
+        self.test_llama3_e2e(backend="gt")
 
 
 class TestShufflingTokenizer(TestCase):
@@ -397,9 +411,9 @@ class TestShufflingTokenizer(TestCase):
 
 
 class TestTokenizeSpecialTokens(TestCase):
-    def test_tokenize_special_tokens(self):
-        tokenizer_default = Tokenizer.from_file(**DOLMA2_TOKENIZER)
-        tokenizer_split = Tokenizer.from_file(**DOLMA2_TOKENIZER, encode_special_tokens=True)
+    def test_tokenize_special_tokens(self, backend: str = "hf"):
+        tokenizer_default = Tokenizer.from_file(**DOLMA2_TOKENIZER, backend=backend)
+        tokenizer_split = Tokenizer.from_file(**DOLMA2_TOKENIZER, encode_special_tokens=True, backend=backend)
 
         text = "This is a test document."
         tokens_default = tokenizer_default.encode(text)
@@ -423,6 +437,55 @@ class TestTokenizeSpecialTokens(TestCase):
         tokens_default = tokenizer_default.encode(text)
         tokens_split = tokenizer_split.encode(text)
         self.assertEqual(tokens_default, tokens_split)
+
+    def test_tokenize_special_tokens_gigatoken(self):
+        self.test_tokenize_special_tokens(backend="gt")
+
+
+class TestBatchedTokenizeFile(TestCase):
+    def test_batched_outputs_match_single_document_encoding(self, backend: str = "hf"):
+        documents = [
+            {"id": "one", "text": " first document "},
+            {"id": "empty", "text": " \n "},
+            {"id": "two", "text": "second document"},
+            {"id": "special", "text": "contains <|endoftext|> text"},
+            {"id": "large", "text": "x" * 100},
+        ]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "documents.jsonl.gz"
+            with smart_open.open(path, "wt") as output:
+                for document in documents[:2]:
+                    output.write(json.dumps(document) + "\n")
+                output.write("not json\n")
+                for document in documents[2:]:
+                    output.write(json.dumps(document) + "\n")
+
+            kwargs: Dict[str, Any] = {
+                "eos_token_id": DOLMA2_TOKENIZER["eos_token_id"],
+                "pad_token_id": DOLMA2_TOKENIZER["pad_token_id"],
+                "encode_special_tokens": True,
+                "backend": backend,
+            }
+            outputs = list(
+                tokenize_file(
+                    tokenizer_name_or_path=DOLMA2_TOKENIZER["filename"],
+                    path=str(path),
+                    batch_size=2,
+                    batch_max_bytes=32,
+                    **kwargs,
+                )
+            )
+
+            tokenizer = Tokenizer.from_file(DOLMA2_TOKENIZER["filename"], **kwargs)
+            expected = [
+                (document["id"], line, tokenizer.encode(document["text"].strip()))
+                for line, document in ((1, documents[0]), (4, documents[2]), (5, documents[3]), (6, documents[4]))
+            ]
+            self.assertEqual([(output.id, output.loc, output.tokens) for output in outputs], expected)
+            self.assertEqual([output.src for output in outputs], [str(path)] * len(expected))
+
+    def test_batched_outputs_match_single_document_encoding_gigatoken(self):
+        self.test_batched_outputs_match_single_document_encoding(backend="gt")
 
 
 class TestBosEosTokenAddition(TestCase):

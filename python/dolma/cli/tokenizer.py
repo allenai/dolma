@@ -6,7 +6,7 @@ from dolma.cli.shared import WorkDirConfig, make_workdirs
 from dolma.core.errors import DolmaConfigError
 from dolma.core.loggers import get_logger
 from dolma.core.paths import glob_path
-from dolma.tokenizer import tokenize_in_parallel
+from dolma.tokenizer import TokenizerBackend, tokenize_in_parallel
 
 
 @dataclass
@@ -46,13 +46,33 @@ class TokenizerConfig:
         default=True,
         help="Whether to use the fast tokenizer. If False, it requires the transformers library to be installed.",
     )
+    backend: str = field(
+        default="hf",
+        help=(
+            "Which fast tokenizer implementation to use: 'hf'/'huggingface' (default) or 'gt'/'gigatoken'. "
+            "Gigatoken is substantially faster but newer and less battle-tested; this flag makes it easy to "
+            "switch back to the HuggingFace implementation, or to profile the two against each other. "
+            "Has no effect if --tokenizer.fast is False."
+        ),
+    )
     encode_special_tokens: bool = field(
         default=False,
         help="Whether to encode special tokens in the tokenized output, e.g. splitting '<s>' into '<', 's', '>'.",
     )
+    batch_size: int = field(
+        default=64,
+        help="Maximum documents to send to the tokenizer in one batch.",
+    )
+    batch_max_bytes: int = field(
+        default=8 * 1024 * 1024,
+        help="Maximum UTF-8 text bytes to send to the tokenizer in one batch.",
+    )
 
     def __post__init__(self):
         logger = get_logger(__file__)
+
+        # fail fast on an unknown backend rather than deep inside a worker process
+        TokenizerBackend.parse(self.backend)
 
         if self.eos_token_id is None:
             logger.warning("NO EOS TOKEN PROVIDED. Are you sure this is what you want?")
@@ -229,7 +249,10 @@ class TokenizerCli(BaseCli):
                 debug=parsed_config.debug,
                 sample_ring_prop=parsed_config.sample_ring_prop,
                 use_fast_tokenizer=parsed_config.tokenizer.fast,
+                tokenizer_backend=parsed_config.tokenizer.backend,
                 refresh_tokenizer=parsed_config.tokenizer.refresh,
+                tokenizer_batch_size=parsed_config.tokenizer.batch_size,
+                tokenizer_batch_max_bytes=parsed_config.tokenizer.batch_max_bytes,
                 text_field_name=parsed_config.fields.text_field_name,
                 text_field_type=parsed_config.fields.text_field_type,
                 id_field_name=parsed_config.fields.id_field_name,
