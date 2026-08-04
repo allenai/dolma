@@ -3,6 +3,7 @@ import csv
 import io
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -25,12 +26,14 @@ from scripts.dolma3p5_resharding.workflow import (
     S3Object,
     _allocate_object_repetitions,
     _finalize_inventory,
+    _load_catalog,
     _parse_s5cmd_jsonl,
     _partition_object_uses,
     collect_inventory,
     plan_build,
     preflight_build,
     propose_configs,
+    refresh_inventory_details,
     validate_build,
     verify_output,
 )
@@ -160,45 +163,90 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             "storage_class": "STANDARD",
         }
 
-    def test_inventory_collector_hides_backend_selection(self):
+    def test_inventory_uses_s5cmd(self):
         self._plan()
         captured_command = []
 
-        def run_collector(command, *, stdout, **kwargs):
+        def run_collector(command, raw_output, environment, status):
             captured_command.extend(command)
-            for uri, size in self._inventory_objects().items():
-                stdout.write(json.dumps(self._inventory_record(uri, size)) + "\n")
-            return SimpleNamespace(returncode=0, stderr="")
+            self.assertIn("AWS_PROFILE", environment)
+            with raw_output.open("x") as stdout:
+                for uri, size in self._inventory_objects().items():
+                    stdout.write(
+                        json.dumps(self._inventory_record(uri, size)) + "\n"
+                    )
+            status("Running: 8 JSON records received, 1s elapsed")
+            return SimpleNamespace(
+                returncode=0,
+                stderr="",
+                output_records=len(self._inventory_objects()),
+                elapsed_seconds=1.0,
+            )
 
         session = MagicMock()
-        with (
-            patch(
-                "scripts.dolma3p5_resharding.workflow.shutil.which",
-                return_value="/usr/bin/s5cmd",
-            ),
-            patch(
-                "scripts.dolma3p5_resharding.workflow.subprocess.run",
-                side_effect=run_collector,
-            ),
-            patch(
-                "scripts.dolma3p5_resharding.workflow.boto3.Session",
-                return_value=session,
-            ),
-        ):
-            inventory_args = argparse.Namespace(
-                build=self.build,
-                profile="read-only",
-                region="us-west-2",
-                max_workers=2,
-            )
-            collect_inventory(inventory_args)
-            collect_inventory(inventory_args)
+        output = io.StringIO()
+        with redirect_stdout(output):
+            with (
+                patch(
+                    "scripts.dolma3p5_resharding.workflow.shutil.which",
+                    return_value="/usr/bin/s5cmd",
+                ),
+                patch(
+                    "scripts.dolma3p5_resharding.workflow._run_s5cmd_inventory",
+                    side_effect=run_collector,
+                ),
+                patch(
+                    "scripts.dolma3p5_resharding.workflow.boto3.Session",
+                    return_value=session,
+                ),
+            ):
+                inventory_args = argparse.Namespace(
+                    build=self.build,
+                    profile="read-only",
+                    region="us-west-2",
+                    max_workers=2,
+                )
+                collect_inventory(inventory_args)
+                collect_inventory(inventory_args)
 
         self.assertEqual(captured_command[0], "s5cmd")
         self.assertEqual(captured_command.count("s5cmd"), 2)
         collector = json.loads((self.build / "02-inventory/collector.json").read_text())
         self.assertEqual(collector["collector"], "s5cmd")
+        self.assertEqual(collector["output_records"], 8)
         self.assertTrue((self.build / "02-inventory/raw-listings.jsonl").is_file())
+        status_output = output.getvalue()
+        self.assertIn("[inventory 1/4] Bulk listing:", status_output)
+        self.assertIn("[inventory 1/4] Running:", status_output)
+        self.assertIn("[inventory 2/4] Resolving required objects:", status_output)
+        self.assertIn("[inventory 3/4] Validation:", status_output)
+        self.assertIn("[inventory 3/4] Estimated source tokens:", status_output)
+        self.assertIn("[inventory 4/4] PASS:", status_output)
+
+    def test_inventory_requires_s5cmd_without_replacing_existing_artifacts(self):
+        self._plan()
+        inventory_phase = self.build / "02-inventory"
+        inventory_phase.mkdir()
+        existing = inventory_phase / "keep.txt"
+        existing.write_text("existing inventory")
+
+        with (
+            patch(
+                "scripts.dolma3p5_resharding.workflow.shutil.which",
+                return_value=None,
+            ),
+            self.assertRaisesRegex(PreparationError, "s5cmd is required"),
+        ):
+            collect_inventory(
+                argparse.Namespace(
+                    build=self.build,
+                    profile=None,
+                    region=None,
+                    max_workers=None,
+                )
+            )
+
+        self.assertEqual(existing.read_text(), "existing inventory")
 
     def test_plan_reports_resolution_counts_without_chart_artifacts(self):
         output = io.StringIO()
@@ -216,15 +264,110 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             (self.build / "01-plan/plot-data/resolution-counts.csv").exists()
         )
 
+    def test_plan_command_builds_paths_and_inventory_together(self):
+        from scripts.dolma3p5_resharding import plan as plan_command
+
+        output = self.root / "combined-plan"
+        with (
+            patch.object(plan_command.shutil, "which", return_value="/usr/bin/s5cmd"),
+            patch.object(plan_command, "plan_build") as build_paths,
+            patch.object(plan_command, "collect_inventory") as inventory,
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "plan.py",
+                    "--mix",
+                    str(self.mix),
+                    "--catalog",
+                    str(self.catalog),
+                    "--output",
+                    str(output),
+                    "--profile",
+                    "read-only",
+                ],
+            ),
+        ):
+            plan_command.main()
+
+        build_paths.assert_called_once()
+        inventory.assert_called_once()
+        inventory_args = inventory.call_args.args[0]
+        self.assertEqual(inventory_args.build, output)
+        self.assertEqual(inventory_args.profile, "read-only")
+
+    def test_catalog_paths_are_decoded_to_literal_s3_keys(self):
+        catalog = self.root / "encoded-catalog.csv"
+        catalog.write_text(
+            "ai2-llm,preprocessed/the-stack-v2/C%2B%2B/0000.npy\n"
+        )
+
+        rows = _load_catalog(catalog)
+
+        self.assertEqual(
+            rows[0]["key"], "preprocessed/the-stack-v2/C++/0000.npy"
+        )
+
+    def test_s5cmd_listing_commands_use_literal_s3_keys(self):
+        mix = self.root / "encoded-mix.yaml"
+        catalog = self.root / "encoded-command-catalog.csv"
+        build = self.root / "encoded-command-build"
+        yaml_path = (
+            "dolma3p5_pool/the-stack-v2/C++/quality_p95/"
+            "allenai/dolma2-tokenizer/*.npy"
+        )
+        mix.write_text(
+            yaml.safe_dump(
+                {
+                    "mix": [
+                        {
+                            "name": "the-stack-v2:C++",
+                            "weight": 1.0,
+                            "categories": [
+                                {
+                                    "name": "high",
+                                    "weight": 1.0,
+                                    "paths": [yaml_path],
+                                    "repetition_factor": -1.0,
+                                }
+                            ],
+                        }
+                    ]
+                },
+                sort_keys=False,
+            )
+        )
+        catalog.write_text(
+            "ai2-llm,preprocessed/the-stack-v2/C%2B%2B/quality_p95/"
+            "allenai/dolma2-tokenizer/0000.npy\n"
+        )
+
+        plan_build(
+            argparse.Namespace(
+                mix=mix,
+                catalog=catalog,
+                settings=None,
+                output=build,
+            )
+        )
+
+        commands = (build / "01-plan/bulk-listing-commands.txt").read_text()
+        self.assertIn("/C++/quality_p95/", commands)
+        self.assertNotIn("%2B", commands)
+
     def test_end_to_end_preparation_phases_are_replaceable(self):
         mix_before = self.mix.read_bytes()
         catalog_before = self.catalog.read_bytes()
         self._plan()
         plan_report = (self.build / "01-plan/report.html").read_text()
-        self.assertIn("Dolma 3.5 Target Allocation and S3 Path Plan", plan_report)
+        self.assertIn(
+            "Dolma 3.5 Target Allocation and Source Path Plan", plan_report
+        )
         self.assertIn("Materialized output target:", plan_report)
         self.assertNotIn("S3 source volume:", plan_report)
-        self.assertIn('data-detail="plan-mix-detail-', plan_report)
+        self.assertIn('data-detail="plan-family-detail-', plan_report)
+        self.assertIn('class="subcategory-row', plan_report)
+        self.assertIn('class="subcategory-detail"', plan_report)
         self.assertIn('class="category-grid"', plan_report)
         self.assertIn("matched NPY", plan_report)
         self.assertIn("topic", plan_report)
@@ -253,17 +396,85 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(finder_metadata.read_bytes(), b"preserve benign metadata")
 
         self._write_inventory()
+        inventory_summary = json.loads(
+            (self.build / "02-inventory/inventory-summary.json").read_text()
+        )
+        self.assertEqual(inventory_summary["source_count"], 3)
+        self.assertEqual(inventory_summary["source_family_count"], 3)
+        self.assertEqual(inventory_summary["subcategory_count"], 3)
+        self.assertEqual(inventory_summary["category_count"], 4)
+        self.assertEqual(inventory_summary["lower_group_count"], 4)
+        self.assertEqual(inventory_summary["source_uint32_values"], 650)
+        self.assertEqual(inventory_summary["token_delta"], 13_999_999_999_350)
+        self.assertGreater(inventory_summary["sampling_ratio"], 1)
+        self.assertIn("upsample", inventory_summary["sampling_rate"])
+        self.assertEqual(
+            inventory_summary["details_artifact"], "inventory-details.json"
+        )
+        inventory_details = json.loads(
+            (self.build / "02-inventory/inventory-details.json").read_text()
+        )
+        self.assertEqual(inventory_details["source_uint32_values"], 650)
+        self.assertEqual(inventory_details["source_family_count"], 3)
+        self.assertEqual(inventory_details["subcategory_count"], 3)
+        catalog_source = next(
+            source
+            for source in inventory_details["sources"]
+            if source["mix_name"] == "catalog-source:topic"
+        )
+        self.assertEqual(catalog_source["source_uint32_values"], 150)
+        self.assertEqual(catalog_source["source_family"], "catalog-source")
+        self.assertEqual(catalog_source["subcategory_name"], "topic")
+        dropped_category = next(
+            category
+            for category in catalog_source["categories"]
+            if category["category_name"] == "dropped"
+        )
+        self.assertFalse(dropped_category["active"])
+        self.assertEqual(dropped_category["source_uint32_values"], 50)
+        self.assertAlmostEqual(
+            dropped_category["source_percent_of_parent"], 100 / 3
+        )
+        self.assertEqual(
+            dropped_category["lower_groups"][0]["lower_group"],
+            "vigintile_0000",
+        )
+        self.assertEqual(
+            dropped_category["lower_groups"][0]["source_percent_of_parent"],
+            100,
+        )
+        refreshed_summary = refresh_inventory_details(self.build)
+        self.assertEqual(refreshed_summary["source_count"], 3)
         inventory_plot = (
             self.build / "02-inventory/plots/available-by-mix.svg"
         ).read_text()
         self.assertIn("% ·", inventory_plot)
         self.assertIn("tokens", inventory_plot)
         inventory_report = (self.build / "02-inventory/report.html").read_text()
-        self.assertIn('data-detail="inventory-mix-detail-', inventory_report)
+        self.assertIn('data-detail="inventory-family-detail-', inventory_report)
+        self.assertIn('class="subcategory-row', inventory_report)
+        self.assertIn('class="subcategory-detail"', inventory_report)
+        self.assertIn("const setAccordionState", inventory_report)
+        self.assertIn(
+            "button.getAttribute('aria-expanded') !== 'true'", inventory_report
+        )
         self.assertIn('class="comparison-bars"', inventory_report)
+        self.assertIn('class="category-metrics"', inventory_report)
+        self.assertNotIn('class="category-counts"', inventory_report)
         self.assertIn('class="path-stat"', inventory_report)
-        self.assertIn("S3 source aggregate (NPY bytes ÷ 4):", inventory_report)
-        self.assertIn("original →", inventory_report)
+        self.assertIn('class="path-metric"', inventory_report)
+        self.assertIn('class="mix-metric-label">Sampling', inventory_report)
+        self.assertIn("Source Inventory and Sampling Plan", inventory_report)
+        self.assertIn('class="summary-metrics"', inventory_report)
+        self.assertIn('class="mix-metrics"', inventory_report)
+        self.assertIn("Overall sampling", inventory_report)
+        self.assertNotIn("S3", inventory_report)
+        self.assertNotIn("NPY bytes", inventory_report)
+        self.assertNotIn("(+", inventory_report)
+        self.assertNotIn("(−", inventory_report)
+        self.assertIn("source ", inventory_report)
+        self.assertIn("% of entry", inventory_report)
+        self.assertIn("% of category", inventory_report)
         self.assertIn("upsample", inventory_report)
         self.assertIn("downsample", inventory_report)
         self.assertIn("vigintile_0000", inventory_report)
@@ -275,7 +486,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         dropped = next(row for row in sampling_paths if row["lower_group"] == "vigintile_0000")
         self.assertEqual(dropped["original_uint32_values"], "50")
         self.assertEqual(dropped["implied_target_uint32_values"], "0")
-        self.assertIn("downsample", dropped["sampling_change"])
+        self.assertIn("downsample", dropped["sampling_rate"])
         with (self.build / "02-inventory/required-objects.csv").open() as f:
             self.assertNotIn("resolution_route", csv.DictReader(f).fieldnames)
         propose_configs(
@@ -348,14 +559,22 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("50.00% · 7T tokens", proposal_target_plot)
         proposal_report = (self.build / "03-proposal/report.html").read_text()
         self.assertIn("Pre-materialization Sampling Proposal", proposal_report)
-        self.assertIn(
-            "S3 source aggregate (inventoried NPY bytes ÷ 4):",
-            proposal_report,
-        )
+        self.assertIn('data-detail="proposal-family-detail-', proposal_report)
+        self.assertIn('class="subcategory-row', proposal_report)
+        self.assertIn('class="subcategory-detail"', proposal_report)
+        self.assertIn('class="summary-metrics"', proposal_report)
+        self.assertIn('class="mix-metrics"', proposal_report)
+        self.assertIn("Overall sampling", proposal_report)
+        self.assertNotIn("S3", proposal_report)
+        self.assertNotIn("NPY bytes", proposal_report)
+        self.assertNotIn("(+", proposal_report)
+        self.assertNotIn("(−", proposal_report)
         self.assertIn("source →", proposal_report)
         self.assertIn("proposed", proposal_report)
-        self.assertIn("token-change", proposal_report)
-        self.assertIn("effective repetitions", proposal_report)
+        self.assertIn("× upsample", proposal_report)
+        self.assertIn('class="category-metrics proposal-metrics"', proposal_report)
+        self.assertIn('class="path-metric"', proposal_report)
+        self.assertIn('class="path-use-summary"', proposal_report)
         self.assertIn("per-object repeats", proposal_report)
         self.assertIn("vigintile_0000", proposal_report)
         with (self.build / "03-proposal/category-allocation.csv").open() as f:

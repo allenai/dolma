@@ -1,4 +1,4 @@
-"""Collect the read-only S3 inventory for a Dolma 3.5 resharding plan."""
+"""Collect the read-only source inventory for a Dolma 3.5 resharding plan."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--max-workers",
         type=int,
-        help="override concurrent read-only fallback and exact-object requests",
+        help="override concurrent read-only exact-object requests",
     )
     return parser
 

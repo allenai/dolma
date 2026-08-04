@@ -19,13 +19,14 @@ import re
 import shlex
 import shutil
 import subprocess
+import time
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Sequence
+from typing import Any, Callable, Iterable, Iterator, Sequence
 from urllib.parse import unquote, urlparse
 
 import boto3
@@ -76,6 +77,14 @@ class S3Object:
     @property
     def uri(self) -> str:
         return f"s3://{self.bucket}/{self.key}"
+
+
+@dataclass(frozen=True)
+class S5cmdRunResult:
+    returncode: int
+    stderr: str
+    output_records: int
+    elapsed_seconds: float
 
 
 def _utc_now() -> str:
@@ -277,13 +286,14 @@ def _load_catalog(path: Path) -> list[dict[str, str]]:
                 raise PreparationError(
                     f"Catalog row {line_number} has fewer than two columns"
                 )
-            bucket, key = row[0].strip(), row[1].strip()
+            bucket, encoded_key = row[0].strip(), row[1].strip()
             if (
                 line_number == 1
                 and bucket.lower() == "bucket"
-                and key.lower() in {"key", "path"}
+                and encoded_key.lower() in {"key", "path"}
             ):
                 continue
+            key = unquote(encoded_key)
             if not bucket:
                 raise PreparationError(
                     f"Invalid catalog object on row {line_number}: {row[:2]}"
@@ -821,9 +831,71 @@ def _head_object(client: Any, bucket: str, key: str) -> S3Object:
     )
 
 
+def _inventory_status(step: int, message: str) -> None:
+    print(f"[inventory {step}/4] {message}", flush=True)
+
+
+def _count_newlines(path: Path, offset: int) -> tuple[int, int]:
+    count = 0
+    with path.open("rb") as f:
+        f.seek(offset)
+        while chunk := f.read(1024 * 1024):
+            count += chunk.count(b"\n")
+        return f.tell(), count
+
+
+def _run_s5cmd_inventory(
+    command: Sequence[str],
+    raw_output: Path,
+    environment: dict[str, str],
+    status: Callable[[str], None],
+    status_interval_seconds: float = 10.0,
+) -> S5cmdRunResult:
+    stderr_path = raw_output.with_name("collector-stderr.txt")
+    started = time.monotonic()
+    output_records = 0
+    output_offset = 0
+    with raw_output.open("x") as stdout, stderr_path.open("x") as stderr:
+        process = subprocess.Popen(
+            list(command),
+            text=True,
+            stdout=stdout,
+            stderr=stderr,
+            env=environment,
+        )
+        while True:
+            try:
+                returncode = process.wait(timeout=status_interval_seconds)
+                break
+            except subprocess.TimeoutExpired:
+                output_offset, new_records = _count_newlines(
+                    raw_output, output_offset
+                )
+                output_records += new_records
+                status(
+                    f"Running: {output_records:,} JSON records received, "
+                    f"{time.monotonic() - started:,.0f}s elapsed"
+                )
+    output_offset, new_records = _count_newlines(raw_output, output_offset)
+    output_records += new_records
+    del output_offset
+    stderr_text = stderr_path.read_text()
+    stderr_path.unlink()
+    return S5cmdRunResult(
+        returncode=returncode,
+        stderr=stderr_text,
+        output_records=output_records,
+        elapsed_seconds=time.monotonic() - started,
+    )
+
+
 def collect_inventory(args: argparse.Namespace) -> None:
     build = args.build.resolve()
     manifest = _load_build(build)
+    if shutil.which("s5cmd") is None:
+        raise PreparationError(
+            "s5cmd is required for inventory collection and was not found on PATH"
+        )
     phase = _reset_preparation_phase(
         build,
         "02-inventory",
@@ -840,109 +912,106 @@ def collect_inventory(args: argparse.Namespace) -> None:
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     listed: dict[tuple[str, str], S3Object] = {}
     errors: list[dict[str, str]] = []
-    collector = "s5cmd" if shutil.which("s5cmd") else "boto3"
-    if collector == "s5cmd":
-        raw_output = phase / "raw-listings.jsonl"
-        commands_path = build / "01-plan/bulk-listing-commands.txt"
-        command = [
-            "s5cmd",
-            "--json",
-            "--numworkers",
-            str(manifest["settings"]["s5cmd_numworkers"]),
-            "--retry-count",
-            str(manifest["settings"]["s5cmd_retry_count"]),
-            "run",
-            str(commands_path),
-        ]
-        environment = os.environ.copy()
-        if args.profile:
-            environment["AWS_PROFILE"] = args.profile
-        if args.region:
-            environment["AWS_REGION"] = args.region
-            environment["AWS_DEFAULT_REGION"] = args.region
-        with raw_output.open("x") as stdout:
-            result = subprocess.run(
-                command,
-                text=True,
-                stdout=stdout,
-                stderr=subprocess.PIPE,
-                env=environment,
-            )
-        _write_json(
-            phase / "collector.json",
-            {
-                "collector": collector,
-                "command": command,
-                "raw_output": raw_output.name,
-                "read_only": True,
-            },
-        )
-        if result.returncode != 0:
-            _write_text(phase / "collector-error.txt", result.stderr)
-            raise PreparationError(
-                f"Read-only S3 listing failed; inspect {phase / 'collector-error.txt'}"
-            )
-        listed, parse_errors = _parse_s5cmd_jsonl(raw_output)
-        errors.extend(
+    raw_output = phase / "raw-listings.jsonl"
+    commands_path = build / "01-plan/bulk-listing-commands.txt"
+    command = [
+        "s5cmd",
+        "--json",
+        "--numworkers",
+        str(manifest["settings"]["s5cmd_numworkers"]),
+        "--retry-count",
+        str(manifest["settings"]["s5cmd_retry_count"]),
+        "run",
+        str(commands_path),
+    ]
+    environment = os.environ.copy()
+    if args.profile:
+        environment["AWS_PROFILE"] = args.profile
+    if args.region:
+        environment["AWS_REGION"] = args.region
+        environment["AWS_DEFAULT_REGION"] = args.region
+    _inventory_status(
+        1,
+        f"Bulk listing: {len(listing_plan):,} commands, "
+        f"{int(manifest['settings']['s5cmd_numworkers']):,} s5cmd workers, "
+        f"{int(manifest['settings']['s5cmd_retry_count']):,} retries",
+    )
+    result = _run_s5cmd_inventory(
+        command,
+        raw_output,
+        environment,
+        lambda message: _inventory_status(1, message),
+    )
+    _write_json(
+        phase / "collector.json",
+        {
+            "collector": "s5cmd",
+            "command": command,
+            "command_count": len(listing_plan),
+            "output_records": result.output_records,
+            "elapsed_seconds": round(result.elapsed_seconds, 3),
+            "raw_output": raw_output.name,
+            "read_only": True,
+        },
+    )
+    listed, parse_errors = _parse_s5cmd_jsonl(raw_output)
+    errors.extend(
+        {
+            "operation": "parse",
+            "bucket": "",
+            "key": row["line"],
+            "error": row["error"],
+        }
+        for row in parse_errors
+    )
+    if listing_plan and not listed and not errors:
+        errors.append(
             {
                 "operation": "parse",
                 "bucket": "",
-                "key": row["line"],
-                "error": row["error"],
+                "key": str(raw_output),
+                "error": "collector returned no sized objects",
             }
-            for row in parse_errors
         )
-        if listing_plan and not listed and not errors:
-            errors.append(
-                {
-                    "operation": "parse",
-                    "bucket": "",
-                    "key": str(raw_output),
-                    "error": "collector returned no sized objects",
-                }
-            )
-    else:
-        _write_json(
-            phase / "collector.json",
-            {
-                "collector": collector,
-                "reason": "s5cmd executable was not found",
-                "max_workers": max_workers,
-                "read_only": True,
-            },
-        )
-        with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(
-                    _list_prefix, client, row["bucket"], row["listing_prefix"]
-                ): row
-                for row in listing_plan
-            }
-            for future in as_completed(futures):
-                row = futures[future]
-                try:
-                    for obj in future.result():
-                        listed[(obj.bucket, obj.key)] = obj
-                except Exception as exc:
-                    errors.append(
-                        {
-                            "operation": "list",
-                            "bucket": row["bucket"],
-                            "key": row["listing_prefix"],
-                            "error": repr(exc),
-                        }
-                    )
-    if errors:
+    if result.returncode != 0 or errors:
         _write_csv(
             phase / "inventory-errors.csv",
             errors,
             ["operation", "bucket", "key", "error"],
         )
+        if result.stderr:
+            _write_text(phase / "collector-error.txt", result.stderr)
+        _inventory_status(
+            1,
+            f"FAILED: s5cmd exit {result.returncode}; {len(errors):,} listing errors. "
+            f"Inspect {phase / 'inventory-errors.csv'} and {raw_output}",
+        )
         raise PreparationError(
             f"S3 listing failed; inspect {phase / 'inventory-errors.csv'}"
         )
-    _finalize_inventory(build, phase, listed, client=client, max_workers=max_workers)
-    print(f"Created read-only S3 inventory: {phase}")
+    _inventory_status(
+        1,
+        f"Complete: {len(listed):,} unique objects parsed in "
+        f"{result.elapsed_seconds:,.1f}s",
+    )
+    summary = _finalize_inventory(
+        build,
+        phase,
+        listed,
+        client=client,
+        max_workers=max_workers,
+        status=_inventory_status,
+    )
+    _inventory_status(
+        4,
+        f"PASS: {_human_token_count(summary['source_uint32_values'])} source "
+        f"→ {_human_token_count(summary['target_uint32_values'])} target; "
+        f"{summary['source_family_count']:,} source families, "
+        f"{summary['subcategory_count']:,} subcategories, "
+        f"{summary['category_count']:,} categories, "
+        f"{summary['lower_group_count']:,} lower groups. "
+        f"Report: {phase / 'report.html'}",
+    )
 
 
 def _walk_json(value: Any) -> Iterator[dict[str, Any]]:
@@ -1041,9 +1110,16 @@ def _finalize_inventory(
     listed: dict[tuple[str, str], S3Object],
     client: Any,
     max_workers: int,
-) -> None:
+    status: Callable[[int, str], None] | None = None,
+) -> dict[str, Any]:
+    emit = status or (lambda _step, _message: None)
     catalog_matches = _read_csv(build / "01-plan/catalog-matches.csv")
     direct_patterns = _read_csv(build / "01-plan/direct-s3-patterns.csv")
+    emit(
+        2,
+        f"Resolving required objects: {len(catalog_matches):,} catalog memberships, "
+        f"{len(direct_patterns):,} direct S3 patterns",
+    )
     membership: list[dict[str, Any]] = []
     resolution_failures: list[dict[str, str]] = []
 
@@ -1088,8 +1164,21 @@ def _finalize_inventory(
         required_keys.add((row["bucket"], _pair_metadata_key(row["key"])))
 
     missing = sorted(required_keys - set(listed))
+    emit(
+        2,
+        f"Resolved {len(membership):,} NPY memberships requiring "
+        f"{len(required_keys):,} unique NPY/metadata objects",
+    )
     head_errors: list[dict[str, str]] = []
     if missing:
+        head_total = len(missing)
+        completed_heads = 0
+        progress_interval = max(1, math.ceil(head_total / 10))
+        emit(
+            2,
+            f"Checking {head_total:,} objects absent from bulk results with "
+            f"{max_workers:,} concurrent HeadObject requests",
+        )
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
                 pool.submit(_head_object, client, bucket, key): (bucket, key)
@@ -1109,7 +1198,18 @@ def _finalize_inventory(
                             "error": repr(exc),
                         }
                     )
+                completed_heads += 1
+                if (
+                    completed_heads == head_total
+                    or completed_heads % progress_interval == 0
+                ):
+                    emit(
+                        2,
+                        f"Exact checks: {completed_heads:,}/{head_total:,} complete",
+                    )
         missing = sorted(required_keys - set(listed))
+    else:
+        emit(2, "All required objects were present in the bulk results")
 
     missing_rows = [
         {
@@ -1215,22 +1315,38 @@ def _finalize_inventory(
     normalized_mix = _read_csv(build / "01-plan/normalized-mix.csv")
     original_total = sum(sum(objects.values()) for objects in original_by_leaf.values())
     target_total = sum(int(row["target_uint32_values"]) for row in normalized_mix)
-    _write_json(
-        phase / "inventory-summary.json",
-        {
-            "created_at": _utc_now(),
-            "listed_objects": len(listed),
-            "required_membership_rows": len(required_rows),
-            "unique_required_objects_including_metadata": len(required_keys),
-            "missing_objects": len(missing),
-            "direct_resolution_failures": len(resolution_failures),
-            "invalid_npy_sizes": len(invalid_sizes),
-            "head_errors": len(head_errors),
-            "original_uint32_values": original_total,
-            "target_uint32_values": target_total,
-        },
+    _, _, sampling_ratio = _sampling_change(original_total, target_total)
+    sampling_rate, _ = _sampling_rate_label(original_total, target_total)
+    summary = {
+        "created_at": _utc_now(),
+        "listed_objects": len(listed),
+        "required_membership_rows": len(required_rows),
+        "unique_required_objects_including_metadata": len(required_keys),
+        "missing_objects": len(missing),
+        "direct_resolution_failures": len(resolution_failures),
+        "invalid_npy_sizes": len(invalid_sizes),
+        "head_errors": len(head_errors),
+        "source_uint32_values": original_total,
+        "original_uint32_values": original_total,
+        "target_uint32_values": target_total,
+        "token_delta": target_total - original_total,
+        "sampling_ratio": sampling_ratio,
+        "sampling_rate": sampling_rate,
+    }
+    emit(
+        3,
+        f"Validation: {len(required_rows):,} NPY memberships, "
+        f"{len(missing):,} missing objects, "
+        f"{len(resolution_failures):,} unresolved direct patterns, "
+        f"{len(invalid_sizes):,} invalid NPY sizes, {len(head_errors):,} HEAD errors",
     )
-    _render_inventory_report(
+    emit(
+        3,
+        f"Estimated source tokens: {_human_token_count(original_total)} "
+        f"({original_total:,} uint32 values)",
+    )
+    emit(4, f"Finalizing inventory report and summary in {phase}")
+    detail_metadata = _render_inventory_report(
         phase,
         normalized_mix=normalized_mix,
         normalized_paths=_read_csv(build / "01-plan/normalized-paths.csv"),
@@ -1240,10 +1356,20 @@ def _finalize_inventory(
         resolution_failures=resolution_failures,
         invalid_sizes=invalid_sizes,
     )
+    summary.update(detail_metadata)
+    _write_json(
+        phase / "inventory-summary.json",
+        summary,
+    )
     if resolution_failures or missing or invalid_sizes or head_errors:
+        emit(
+            4,
+            f"FAILED: inventory validation did not pass. Inspect {phase}",
+        )
         raise PreparationError(
             f"Inventory validation failed; inspect artifacts in {phase}"
         )
+    return summary
 
 
 def _allocate_object_repetitions(
@@ -1815,10 +1941,14 @@ def propose_configs(args: argparse.Namespace) -> None:
         config_index,
         category_execution_rows,
     )
-    inventoried_source = int(inventory_summary["original_uint32_values"])
+    inventoried_source = int(
+        inventory_summary["source_uint32_values"]
+        if "source_uint32_values" in inventory_summary
+        else inventory_summary["original_uint32_values"]
+    )
     if report_totals["source_uint32_values"] != inventoried_source:
         raise PreparationError(
-            "Proposal source total does not match the S3 inventory: "
+            "Proposal source total does not match the source inventory: "
             f"{report_totals['source_uint32_values']:,} != {inventoried_source:,}"
         )
     _write_json(
@@ -2434,7 +2564,7 @@ def verify_output(args: argparse.Namespace) -> None:
         phase / "report.html",
         '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 output validation</title></head><body>'
         "<h1>Post-materialization size validation</h1>"
-        "<p>Token counts are estimated as output NPY bytes divided by four. No arrays or metadata rows were read.</p>"
+        "<p>Token counts are estimated from output object sizes. No arrays or metadata rows were read.</p>"
         '<img src="plots/predicted-vs-actual.svg" alt="Predicted versus actual sizes">'
         '<img src="plots/output-status.svg" alt="Output validation status">'
         "</body></html>\n",
@@ -2508,31 +2638,19 @@ def _human_token_count(value: int) -> str:
 def _sampling_change(original: int, target: int) -> tuple[str, str, float | None]:
     if original <= 0:
         if target <= 0:
-            return "no tokens", "sampling-same", None
-        return "target has no inventoried source", "sampling-unknown", None
+            return "no source tokens", "sampling-same", None
+        return "no source tokens", "sampling-unknown", None
     ratio = target / original
     if math.isclose(ratio, 1.0, rel_tol=0.0, abs_tol=0.0005):
-        return "unchanged 1.00×", "sampling-same", ratio
-    if ratio > 1:
-        ratio_label = f"{ratio:,.0f}×" if ratio >= 100 else f"{ratio:.2f}×"
-        delta = 100 * (ratio - 1)
-        suffix = f" (+{delta:.1f}%)" if delta < 1_000 else ""
-        return f"upsample {ratio_label}{suffix}", "sampling-up", ratio
-    delta = 100 * (1 - ratio)
-    return f"downsample {ratio:.2f}× (−{delta:.1f}%)", "sampling-down", ratio
+        return "1.00× unchanged", "sampling-same", ratio
+    direction = "upsample" if ratio > 1 else "downsample"
+    css_class = "sampling-up" if ratio > 1 else "sampling-down"
+    return f"{_format_multiplier(ratio)} {direction}", css_class, ratio
 
 
-def _token_change_label(original: int, after: int) -> tuple[str, str]:
-    delta = after - original
-    _, css_class, _ = _sampling_change(original, after)
-    if delta == 0:
-        return "no token change", css_class
-    sign = "+" if delta > 0 else "−" if delta < 0 else "±"
-    percent = 100 * abs(delta) / original if original else 0.0
-    return (
-        f"{sign}{_human_token_count(abs(delta))} tokens ({sign}{percent:.1f}%)",
-        css_class,
-    )
+def _sampling_rate_label(original: int, target: int) -> tuple[str, str]:
+    label, css_class, _ = _sampling_change(original, target)
+    return label, css_class
 
 
 def _format_multiplier(value: float) -> str:
@@ -2574,6 +2692,16 @@ def _comparison_bars(original: int, target: int) -> str:
 def _mix_plot_value_label(value: int, total: int) -> str:
     percent = 100 * value / total if total else 0.0
     return f"{percent:.2f}% · {_human_token_count(value)} tokens"
+
+
+def _summary_metrics(metrics: Sequence[tuple[str, str]]) -> str:
+    return '<div class="summary-metrics">' + "".join(
+        '<div class="summary-metric">'
+        f'<span class="summary-label">{html.escape(label)}</span>'
+        f'<span class="summary-value">{html.escape(value)}</span>'
+        "</div>"
+        for label, value in metrics
+    ) + "</div>"
 
 
 def _svg_scatter(
@@ -2618,17 +2746,23 @@ def _path_subgroup(yaml_path: str) -> str:
     return unquote(candidates[-1]) if candidates else yaml_path
 
 
+def _split_mix_name(mix_name: str) -> tuple[str, str]:
+    source_family, separator, subcategory = mix_name.partition(":")
+    return source_family, subcategory if separator else "default"
+
+
 def _interactive_report_style() -> str:
     return """
 <style>
 :root{color-scheme:light dark;--muted:#536965;--surface-hover:#eaf3f1;--surface-selected:#dceeea;--detail:#edf6f4;--track:#d2e1de;--series:#14786f;--original:#71817e;--up:#14786f;--down:#a35f16;--same:#536965;--code:#e2efec}
 @media(prefers-color-scheme:dark){:root{--muted:#a7bbb7;--surface-hover:#172522;--surface-selected:#1b312d;--detail:#142420;--track:#2a403c;--series:#5cc8bb;--original:#91a29f;--up:#5cc8bb;--down:#e5a456;--same:#a7bbb7;--code:#1b312d}}
-*{box-sizing:border-box}body{font:14px/1.45 system-ui,sans-serif;max-width:1120px;margin:0 auto;padding:32px 24px 72px;color:CanvasText;background:Canvas}h1{margin:0;font-size:26px;line-height:1.2}h2{margin:0;font-size:20px;line-height:1.3;overflow-wrap:anywhere}.chart-total{margin:8px 0 24px;color:var(--muted);font-variant-numeric:tabular-nums}.mix-chart{display:grid;gap:2px}
-.mix-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;width:100%;padding:12px 10px;border:0;border-radius:8px;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}.mix-row:hover{background:var(--surface-hover)}.mix-row.is-selected{background:var(--surface-selected)}.mix-name{min-width:0;overflow-wrap:anywhere;font-weight:500}.mix-value{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}.bar-track{grid-column:1/-1;display:block;height:6px;overflow:hidden;background:var(--track);border-radius:999px}.bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}
-.mix-detail{padding:22px 18px 28px;border-radius:10px;background:var(--detail)}.detail-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;align-items:end;margin-bottom:20px}.detail-total{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}.category-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 32px}.category{min-width:0}.category-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:baseline}.category-name{font-weight:500;overflow-wrap:anywhere}.sampling{font-variant-numeric:tabular-nums;white-space:nowrap}.sampling-up{color:var(--up)}.sampling-down{color:var(--down)}.sampling-same,.sampling-unknown{color:var(--same)}.category-counts{display:flex;flex-wrap:wrap;gap:5px 12px;margin:4px 0 7px;color:var(--muted);font-variant-numeric:tabular-nums}.category-bar{height:4px;overflow:hidden;margin-top:7px;background:var(--track);border-radius:999px}.category-bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}.comparison-bars{display:grid;grid-template-rows:3px 3px;gap:3px}.comparison-track{display:block;overflow:hidden;background:var(--track);border-radius:999px}.original-fill,.target-fill{display:block;height:100%;border-radius:inherit}.original-fill{background:var(--original)}.target-fill{background:var(--series)}.path-list{display:grid;gap:2px;margin-top:8px}.path-detail summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;padding:8px 6px;border-radius:6px;cursor:pointer;list-style-position:inside}.path-detail summary:hover{background:var(--surface-hover)}.path-name{overflow-wrap:anywhere}.path-stat{color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.path-sampling{grid-column:1/-1;display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px 12px;color:var(--muted);font-variant-numeric:tabular-nums}.path-sampling .comparison-bars{flex:1 0 100%}.path-chevron{display:inline-block;margin-left:7px;transition:transform .12s ease}.path-detail[open] .path-chevron{transform:rotate(90deg)}.path-detail code{display:block;margin:2px 6px 10px;padding:9px 10px;border-radius:6px;background:var(--code);font:12px/1.45 ui-monospace,monospace;overflow-wrap:anywhere}.supporting-plots{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px}.supporting-plots img{display:block;width:100%;height:auto}
-.repetition-line{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px;color:var(--muted);font-variant-numeric:tabular-nums}.token-change{white-space:nowrap}
+*{box-sizing:border-box}body{font:14px/1.45 system-ui,sans-serif;max-width:1120px;margin:0 auto;padding:32px 24px 72px;color:CanvasText;background:Canvas}h1{margin:0;font-size:26px;line-height:1.2}h2{margin:0;font-size:20px;line-height:1.3;overflow-wrap:anywhere}.chart-total{margin:8px 0 24px;color:var(--muted);font-variant-numeric:tabular-nums}.summary-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 32px;margin:18px 10px 26px;font-variant-numeric:tabular-nums}.summary-label,.mix-metric-label{display:block;margin-bottom:2px;color:var(--muted)}.summary-value{display:block;font-size:18px;font-weight:500}.mix-chart{display:grid;gap:2px}
+.mix-row,.subcategory-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;width:100%;padding:12px 10px;border:0;border-radius:8px;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}.mix-row:hover,.subcategory-row:hover{background:var(--surface-hover)}.mix-row.is-selected,.subcategory-row.is-selected{background:var(--surface-selected)}.mix-name{min-width:0;overflow-wrap:anywhere;font-weight:500}.mix-value{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}.bar-track{grid-column:1/-1;display:block;height:6px;overflow:hidden;background:var(--track);border-radius:999px}.bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}
+.mix-row.has-metrics,.subcategory-row.has-metrics{grid-template-columns:1fr;gap:8px}.mix-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:5px 24px;color:var(--muted);font-variant-numeric:tabular-nums}.mix-metric-value{color:CanvasText}.subcategory-list{display:grid;gap:2px}.subcategory-detail{padding:20px 10px 26px}.subcategory-detail .detail-head{margin-bottom:18px}
+.mix-detail{padding:22px 18px 28px;border-radius:10px;background:var(--detail)}.mix-detail[hidden],.subcategory-detail[hidden]{display:none}.detail-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;align-items:end;margin-bottom:20px}.detail-total{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}.category-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 32px}.category{min-width:0}.category-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:baseline}.category-name{font-weight:500;overflow-wrap:anywhere}.sampling{font-variant-numeric:tabular-nums;white-space:nowrap}.sampling-up{color:var(--up)}.sampling-down{color:var(--down)}.sampling-same,.sampling-unknown{color:var(--same)}.category-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 24px;margin:4px 0 7px;color:var(--muted);font-variant-numeric:tabular-nums}.category-metrics.proposal-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.category-metric{min-width:0}.category-bar{height:4px;overflow:hidden;margin-top:7px;background:var(--track);border-radius:999px}.category-bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}.comparison-bars{display:grid;grid-template-rows:3px 3px;gap:3px}.comparison-track{display:block;overflow:hidden;background:var(--track);border-radius:999px}.original-fill,.target-fill{display:block;height:100%;border-radius:inherit}.original-fill{background:var(--original)}.target-fill{background:var(--series)}.path-list{display:grid;gap:2px;margin-top:8px}.path-detail summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;padding:8px 6px;border-radius:6px;cursor:pointer;list-style-position:inside}.path-detail summary:hover{background:var(--surface-hover)}.path-name{overflow-wrap:anywhere}.path-stat{color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.path-sampling{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 24px;color:var(--muted);font-variant-numeric:tabular-nums}.path-metric{min-width:0}.path-sampling .comparison-bars,.path-use-summary{grid-column:1/-1}.path-chevron{display:inline-block;margin-left:7px;transition:transform .12s ease}.path-detail[open] .path-chevron{transform:rotate(90deg)}.path-detail code{display:block;margin:2px 6px 10px;padding:9px 10px;border-radius:6px;background:var(--code);font:12px/1.45 ui-monospace,monospace;overflow-wrap:anywhere}.supporting-plots{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px}.supporting-plots img{display:block;width:100%;height:auto}
+.repetition-line{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px;color:var(--muted);font-variant-numeric:tabular-nums}
 @media(prefers-reduced-motion:reduce){.path-chevron{transition:none}}
-@media(max-width:760px){body{padding:24px 16px 48px}.mix-row{grid-template-columns:1fr;gap:7px}.mix-value{white-space:normal}.bar-track{grid-column:1}.detail-head{grid-template-columns:1fr}.detail-total{white-space:normal}.category-grid{grid-template-columns:1fr}.supporting-plots{grid-template-columns:1fr}}
+@media(max-width:760px){body{padding:24px 16px 48px}.summary-metrics{margin-left:6px;margin-right:6px}.mix-row,.subcategory-row{grid-template-columns:1fr;gap:7px}.mix-value{white-space:normal}.bar-track{grid-column:1}.detail-head{grid-template-columns:1fr}.detail-total{white-space:normal;text-align:left}.category-grid{grid-template-columns:1fr}.category-metrics,.category-metrics.proposal-metrics,.path-sampling{grid-template-columns:1fr}.supporting-plots{grid-template-columns:1fr}}
 </style>
 """
 
@@ -2639,6 +2773,7 @@ def _interactive_chart_rows(
     percent_field: str,
     detail_prefix: str,
     total: int,
+    row_class: str = "mix-row",
 ) -> str:
     maximum = max((float(row[percent_field]) for row in rows), default=1.0) or 1.0
     output: list[str] = []
@@ -2651,12 +2786,26 @@ def _interactive_chart_rows(
         value_label = str(
             row.get("value_label") or _mix_plot_value_label(tokens, total)
         )
+        metric_columns = row.get("metric_columns")
+        if metric_columns:
+            metrics = '<span class="mix-metrics">' + "".join(
+                '<span class="mix-metric">'
+                f'<span class="mix-metric-label">{html.escape(str(metric["label"]))}</span>'
+                f'<span class="mix-metric-value">{html.escape(str(metric["value"]))}</span>'
+                "</span>"
+                for metric in metric_columns
+            ) + "</span>"
+            rendered_row_class = f"{row_class} has-metrics"
+            value = metrics
+        else:
+            rendered_row_class = row_class
+            value = f'<span class="mix-value">{html.escape(value_label)}</span>'
         output.append(
-            f'<button type="button" class="mix-row" data-detail="{detail_id}" '
+            f'<button type="button" class="{rendered_row_class}" data-detail="{detail_id}" '
             f'aria-controls="{detail_id}" aria-expanded="false">'
-            f'<span class="mix-name">{html.escape(str(row["mix_name"]))}</span>'
-            f'<span class="mix-value">{html.escape(value_label)}</span>'
-            f'<span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:{relative_width:.8f}%"></span></span>'
+            f'<span class="mix-name">{html.escape(str(row.get("display_name", row["mix_name"])))}</span>'
+            + value
+            + f'<span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:{relative_width:.8f}%"></span></span>'
             "</button>"
         )
     return "".join(output)
@@ -2665,20 +2814,42 @@ def _interactive_chart_rows(
 def _interactive_report_script() -> str:
     return """
 <script>
+const setAccordionState = (button, detail, expanded) => {
+  button.classList.toggle('is-selected', expanded);
+  button.setAttribute('aria-expanded', String(expanded));
+  detail.hidden = !expanded;
+};
 document.querySelectorAll('.mix-row').forEach((button) => {
   button.addEventListener('click', () => {
     const target = document.getElementById(button.dataset.detail);
-    const opening = target.hidden;
-    document.querySelectorAll('.mix-detail').forEach((detail) => { detail.hidden = true; });
+    const opening = button.getAttribute('aria-expanded') !== 'true';
     document.querySelectorAll('.mix-row').forEach((row) => {
-      row.classList.remove('is-selected');
-      row.setAttribute('aria-expanded', 'false');
+      const detail = document.getElementById(row.dataset.detail);
+      if (detail) setAccordionState(row, detail, false);
+    });
+    document.querySelectorAll('.subcategory-row').forEach((row) => {
+      const detail = document.getElementById(row.dataset.detail);
+      if (detail) setAccordionState(row, detail, false);
     });
     if (opening) {
       button.insertAdjacentElement('afterend', target);
-      target.hidden = false;
-      button.classList.add('is-selected');
-      button.setAttribute('aria-expanded', 'true');
+      setAccordionState(button, target, true);
+      target.scrollIntoView({block: 'nearest'});
+    }
+  });
+});
+document.querySelectorAll('.subcategory-row').forEach((button) => {
+  button.addEventListener('click', () => {
+    const family = button.closest('.mix-detail');
+    const target = document.getElementById(button.dataset.detail);
+    const opening = button.getAttribute('aria-expanded') !== 'true';
+    family.querySelectorAll('.subcategory-row').forEach((row) => {
+      const detail = document.getElementById(row.dataset.detail);
+      if (detail) setAccordionState(row, detail, false);
+    });
+    if (opening) {
+      button.insertAdjacentElement('afterend', target);
+      setAccordionState(button, target, true);
       target.scrollIntoView({block: 'nearest'});
     }
   });
@@ -2712,23 +2883,81 @@ def _render_plan_report(
         }
         for name, value in sorted(
             target_by_mix.items(), key=lambda item: item[1], reverse=True
-        )[:40]
+        )
     ]
     _write_csv(
         plot_data / "target-mix.csv",
         target_rows,
         ["mix_name", "target_uint32_values", "target_percent"],
     )
+    subcategories_by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in target_rows:
+        source_family, subcategory = _split_mix_name(str(row["mix_name"]))
+        row["source_family"] = source_family
+        row["subcategory_name"] = subcategory
+        row["display_name"] = subcategory
+        subcategories_by_family[source_family].append(row)
+    family_rows: list[dict[str, Any]] = []
+    for source_family, subcategories in subcategories_by_family.items():
+        family_target = sum(
+            int(row["target_uint32_values"]) for row in subcategories
+        )
+        family_percent = 100 * family_target / target_total if target_total else 0.0
+        ordered_subcategories = sorted(
+            subcategories,
+            key=lambda row: (
+                int(row["target_uint32_values"]),
+                str(row["subcategory_name"]),
+            ),
+            reverse=True,
+        )
+        for row in ordered_subcategories:
+            sub_target = int(row["target_uint32_values"])
+            sub_percent = 100 * sub_target / family_target if family_target else 0.0
+            row["family_target_percent"] = f"{sub_percent:.8f}"
+            row["metric_columns"] = [
+                {
+                    "label": "Target",
+                    "value": (
+                        f"{_human_token_count(sub_target)} tokens · "
+                        f"{sub_percent:.2f}% of family"
+                    ),
+                }
+            ]
+        family_rows.append(
+            {
+                "mix_name": source_family,
+                "target_uint32_values": family_target,
+                "target_percent": f"{family_percent:.8f}",
+                "subcategories": ordered_subcategories,
+                "metric_columns": [
+                    {
+                        "label": "Target",
+                        "value": (
+                            f"{_human_token_count(family_target)} tokens · "
+                            f"{family_percent:.2f}%"
+                        ),
+                    }
+                ],
+            }
+        )
+    family_rows.sort(
+        key=lambda row: (
+            int(row["target_uint32_values"]),
+            str(row["mix_name"]),
+        ),
+        reverse=True,
+    )
     _write_text(
         plots / "target-mix.svg",
         _svg_bar_chart(
-            "Largest target mix entries by share of target",
-            [row["mix_name"] for row in target_rows],
-            [float(row["target_percent"]) for row in target_rows],
+            "Target allocation by source family",
+            [row["mix_name"] for row in family_rows],
+            [float(row["target_percent"]) for row in family_rows],
             "% of target",
             value_labels=[
                 _mix_plot_value_label(row["target_uint32_values"], target_total)
-                for row in target_rows
+                for row in family_rows
             ],
             summary=(
                 f"Total target: {_human_token_count(target_total)} tokens "
@@ -2737,12 +2966,21 @@ def _render_plan_report(
         ),
     )
     chart_rows = _interactive_chart_rows(
-        target_rows,
+        family_rows,
         "target_uint32_values",
         "target_percent",
-        "plan-mix-detail",
+        "plan-family-detail",
         target_total,
     )
+    for family_index, family_row in enumerate(family_rows):
+        family_row["subcategory_chart_rows"] = _interactive_chart_rows(
+            family_row["subcategories"],
+            "target_uint32_values",
+            "family_target_percent",
+            f"plan-subcategory-{family_index}",
+            int(family_row["target_uint32_values"]),
+            row_class="subcategory-row",
+        )
     paths_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in normalized_paths:
         paths_by_leaf[row["leaf_id"]].append(row)
@@ -2752,7 +2990,7 @@ def _render_plan_report(
     for row in normalized_mix:
         categories_by_mix[row["mix_name"]].append(row)
 
-    detail_sections: list[str] = []
+    subcategory_detail_by_mix: dict[str, str] = {}
     for target_row in target_rows:
         mix_name = str(target_row["mix_name"])
         mix_target = int(target_row["target_uint32_values"])
@@ -2797,10 +3035,10 @@ def _render_plan_report(
                 + "</div>"
                 + "</section>"
             )
-        detail_sections.append(
-            f'<section class="mix-detail" id="{target_row["detail_id"]}" hidden>'
+        subcategory_detail_by_mix[mix_name] = (
+            f'<section class="subcategory-detail" id="{target_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(mix_name)}</h2>'
+            f'<h2>{html.escape(str(target_row["subcategory_name"]))}</h2>'
             f'<div class="detail-total">{_human_token_count(mix_target)} tokens · '
             f'{float(target_row["target_percent"]):.2f}% of target</div></div>'
             '<div class="category-grid">'
@@ -2808,11 +3046,29 @@ def _render_plan_report(
             + "</div>"
             + "</section>"
         )
+    detail_sections: list[str] = []
+    for family_row in family_rows:
+        family_target = int(family_row["target_uint32_values"])
+        detail_sections.append(
+            f'<section class="mix-detail" id="{family_row["detail_id"]}" hidden>'
+            '<div class="detail-head">'
+            f'<h2>{html.escape(str(family_row["mix_name"]))}</h2>'
+            f'<div class="detail-total">{_human_token_count(family_target)} tokens · '
+            f'{float(family_row["target_percent"]):.2f}% of target</div></div>'
+            '<div class="subcategory-list">'
+            + str(family_row["subcategory_chart_rows"])
+            + "</div>"
+            + "".join(
+                subcategory_detail_by_mix[str(subcategory["mix_name"])]
+                for subcategory in family_row["subcategories"]
+            )
+            + "</section>"
+        )
     report_html = (
-        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 target allocation and S3 path plan</title>'
+        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 target allocation and source path plan</title>'
         + _interactive_report_style()
         + "</head><body>"
-        + "<h1>Dolma 3.5 Target Allocation and S3 Path Plan</h1>"
+        + "<h1>Dolma 3.5 Target Allocation and Source Path Plan</h1>"
         f'<div class="chart-total">Materialized output target: '
         f'{_human_token_count(target_total)} tokens ({target_total:,})</div>'
         f'<div class="mix-chart">{chart_rows}</div>'
@@ -2821,6 +3077,265 @@ def _render_plan_report(
         + "</body></html>\n"
     )
     _write_text(phase / "report.html", report_html)
+
+
+def _build_inventory_details(
+    normalized_mix: Sequence[dict[str, Any]],
+    normalized_paths: Sequence[dict[str, Any]],
+    required_rows: Sequence[dict[str, Any]],
+) -> dict[str, Any]:
+    rows_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    rows_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    paths_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    categories_by_mix: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in required_rows:
+        rows_by_leaf[row["leaf_id"]].append(row)
+        rows_by_path[row["path_id"]].append(row)
+    for row in normalized_paths:
+        paths_by_leaf[row["leaf_id"]].append(row)
+    for row in normalized_mix:
+        categories_by_mix[row["mix_name"]].append(row)
+
+    source_rows: list[dict[str, Any]] = []
+    for mix_name, categories in categories_by_mix.items():
+        source_family, subcategory_name = _split_mix_name(str(mix_name))
+        category_rows: list[dict[str, Any]] = []
+        source_object_uris: set[str] = set()
+        for category in sorted(
+            categories, key=lambda row: int(row["category_index"])
+        ):
+            leaf_id = category["leaf_id"]
+            category_objects = {
+                row["npy_uri"]: int(row["estimated_uint32_values"])
+                for row in rows_by_leaf[leaf_id]
+            }
+            source_object_uris.update(category_objects)
+            source_tokens = sum(category_objects.values())
+            target_tokens = int(category["target_uint32_values"])
+            path_definitions = sorted(
+                paths_by_leaf[leaf_id], key=lambda row: row["path_id"]
+            )
+            path_objects = [
+                {
+                    row["npy_uri"]: int(row["estimated_uint32_values"])
+                    for row in rows_by_path[path["path_id"]]
+                }
+                for path in path_definitions
+            ]
+            path_source_tokens = [sum(objects.values()) for objects in path_objects]
+            path_targets = _apportion_by_size(target_tokens, path_source_tokens)
+            lower_groups: list[dict[str, Any]] = []
+            for path, objects, path_source, path_target in zip(
+                path_definitions, path_objects, path_source_tokens, path_targets
+            ):
+                _, _, ratio = _sampling_change(path_source, path_target)
+                sampling_rate, _ = _sampling_rate_label(path_source, path_target)
+                lower_groups.append(
+                    {
+                        "path_id": path["path_id"],
+                        "lower_group": _path_subgroup(path["yaml_path"]),
+                        "active": path["active"] == "true",
+                        "yaml_path": path["yaml_path"],
+                        "source_uint32_values": path_source,
+                        "implied_target_uint32_values": path_target,
+                        "token_delta": path_target - path_source,
+                        "sampling_ratio": ratio,
+                        "sampling_rate": sampling_rate,
+                        "unique_npy_count": len(objects),
+                    }
+                )
+            _, _, ratio = _sampling_change(source_tokens, target_tokens)
+            sampling_rate, _ = _sampling_rate_label(source_tokens, target_tokens)
+            category_rows.append(
+                {
+                    "leaf_id": leaf_id,
+                    "category_name": category["category_name"],
+                    "active": category["active"] == "true",
+                    "source_uint32_values": source_tokens,
+                    "target_uint32_values": target_tokens,
+                    "token_delta": target_tokens - source_tokens,
+                    "sampling_ratio": ratio,
+                    "sampling_rate": sampling_rate,
+                    "unique_npy_count": len(category_objects),
+                    "lower_groups": lower_groups,
+                }
+            )
+        source_tokens = sum(row["source_uint32_values"] for row in category_rows)
+        target_tokens = sum(row["target_uint32_values"] for row in category_rows)
+        for category in category_rows:
+            category["source_percent_of_parent"] = (
+                100 * category["source_uint32_values"] / source_tokens
+                if source_tokens
+                else 0.0
+            )
+            category["target_percent_of_parent"] = (
+                100 * category["target_uint32_values"] / target_tokens
+                if target_tokens
+                else 0.0
+            )
+            for lower_group in category["lower_groups"]:
+                lower_group["source_percent_of_parent"] = (
+                    100
+                    * lower_group["source_uint32_values"]
+                    / category["source_uint32_values"]
+                    if category["source_uint32_values"]
+                    else 0.0
+                )
+                lower_group["implied_target_percent_of_parent"] = (
+                    100
+                    * lower_group["implied_target_uint32_values"]
+                    / category["target_uint32_values"]
+                    if category["target_uint32_values"]
+                    else 0.0
+                )
+        _, _, ratio = _sampling_change(source_tokens, target_tokens)
+        sampling_rate, _ = _sampling_rate_label(source_tokens, target_tokens)
+        source_rows.append(
+            {
+                "mix_name": mix_name,
+                "source_family": source_family,
+                "subcategory_name": subcategory_name,
+                "source_uint32_values": source_tokens,
+                "target_uint32_values": target_tokens,
+                "token_delta": target_tokens - source_tokens,
+                "sampling_ratio": ratio,
+                "sampling_rate": sampling_rate,
+                "unique_npy_count": len(source_object_uris),
+                "categories": category_rows,
+            }
+        )
+
+    source_total = sum(row["source_uint32_values"] for row in source_rows)
+    target_total = sum(row["target_uint32_values"] for row in source_rows)
+    for source in source_rows:
+        source["source_percent_of_total"] = (
+            100 * source["source_uint32_values"] / source_total
+            if source_total
+            else 0.0
+        )
+        source["target_percent_of_total"] = (
+            100 * source["target_uint32_values"] / target_total
+            if target_total
+            else 0.0
+        )
+        for category in source["categories"]:
+            category["source_percent_of_total"] = (
+                100 * category["source_uint32_values"] / source_total
+                if source_total
+                else 0.0
+            )
+            category["target_percent_of_total"] = (
+                100 * category["target_uint32_values"] / target_total
+                if target_total
+                else 0.0
+            )
+            for lower_group in category["lower_groups"]:
+                lower_group["source_percent_of_total"] = (
+                    100 * lower_group["source_uint32_values"] / source_total
+                    if source_total
+                    else 0.0
+                )
+                lower_group["implied_target_percent_of_total"] = (
+                    100
+                    * lower_group["implied_target_uint32_values"]
+                    / target_total
+                    if target_total
+                    else 0.0
+                )
+
+    source_rows.sort(
+        key=lambda row: (
+            row["target_uint32_values"],
+            row["source_uint32_values"],
+            row["mix_name"],
+        ),
+        reverse=True,
+    )
+    _, _, aggregate_ratio = _sampling_change(source_total, target_total)
+    aggregate_rate, _ = _sampling_rate_label(source_total, target_total)
+    return {
+        "schema_version": 1,
+        "source_uint32_values": source_total,
+        "target_uint32_values": target_total,
+        "token_delta": target_total - source_total,
+        "sampling_ratio": aggregate_ratio,
+        "sampling_rate": aggregate_rate,
+        "source_family_count": len(
+            {str(row["source_family"]) for row in source_rows}
+        ),
+        "subcategory_count": len(source_rows),
+        "source_count": len(source_rows),
+        "category_count": sum(len(row["categories"]) for row in source_rows),
+        "lower_group_count": sum(
+            len(category["lower_groups"])
+            for source in source_rows
+            for category in source["categories"]
+        ),
+        "sources": source_rows,
+    }
+
+
+def _replace_inventory_json(build: Path, path: Path, value: Any) -> None:
+    _validate_preparation_build(build)
+    phase = build / "02-inventory"
+    if path.parent != phase or path.name not in {
+        "inventory-summary.json",
+        "inventory-details.json",
+    }:
+        raise PreparationError(f"Refusing to replace non-inventory artifact: {path}")
+    if path.exists() and (path.is_symlink() or not path.is_file()):
+        raise PreparationError(f"Unsafe generated inventory artifact: {path}")
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    _write_json(temporary, value)
+    try:
+        os.replace(temporary, path)
+    except Exception:
+        if temporary.exists():
+            temporary.unlink()
+        raise
+
+
+def refresh_inventory_details(build: Path) -> dict[str, Any]:
+    build = build.resolve()
+    _validate_preparation_build(build)
+    phase = build / "02-inventory"
+    summary_path = phase / "inventory-summary.json"
+    if not summary_path.is_file() or summary_path.is_symlink():
+        raise PreparationError(f"Inventory summary is missing: {summary_path}")
+    with summary_path.open(encoding="utf-8") as f:
+        summary = json.load(f)
+    details = _build_inventory_details(
+        normalized_mix=_read_csv(build / "01-plan/normalized-mix.csv"),
+        normalized_paths=_read_csv(build / "01-plan/normalized-paths.csv"),
+        required_rows=_read_csv(phase / "required-objects.csv"),
+    )
+    summary_source = int(
+        summary["source_uint32_values"]
+        if "source_uint32_values" in summary
+        else summary["original_uint32_values"]
+    )
+    if summary_source != details["source_uint32_values"]:
+        raise PreparationError("Inventory detail source total does not match summary")
+    if int(summary["target_uint32_values"]) != details["target_uint32_values"]:
+        raise PreparationError("Inventory detail target total does not match summary")
+    metadata = {
+        "source_uint32_values": details["source_uint32_values"],
+        "token_delta": details["token_delta"],
+        "sampling_ratio": details["sampling_ratio"],
+        "sampling_rate": details["sampling_rate"],
+        "source_family_count": details["source_family_count"],
+        "subcategory_count": details["subcategory_count"],
+        "source_count": details["source_count"],
+        "category_count": details["category_count"],
+        "lower_group_count": details["lower_group_count"],
+        "details_artifact": "inventory-details.json",
+        "report_artifact": "report.html",
+    }
+    summary.pop("sampling_change", None)
+    summary.update(metadata)
+    _replace_inventory_json(build, phase / "inventory-details.json", details)
+    _replace_inventory_json(build, summary_path, summary)
+    return summary
 
 
 def _render_inventory_report(
@@ -2832,7 +3347,7 @@ def _render_inventory_report(
     missing_rows: Sequence[dict[str, Any]],
     resolution_failures: Sequence[dict[str, Any]],
     invalid_sizes: Sequence[dict[str, Any]],
-) -> None:
+) -> dict[str, Any]:
     plots = phase / "plots"
     plot_data = phase / "plot-data"
     plots.mkdir(exist_ok=False)
@@ -2878,29 +3393,138 @@ def _render_inventory_report(
     for name in mix_names:
         original = original_by_mix[name]
         target = target_by_mix[name]
-        change, change_class, ratio = _sampling_change(original, target)
+        source_percent = 100 * original / original_total if original_total else 0.0
+        target_percent = 100 * target / target_total if target_total else 0.0
+        _, change_class, ratio = _sampling_change(original, target)
+        sampling_rate, _ = _sampling_rate_label(original, target)
         comparison_rows.append(
             {
                 "mix_name": name,
                 "available_uint32_values": original,
-                "available_percent": f"{100 * original / original_total:.8f}"
-                if original_total
-                else "0",
+                "available_percent": f"{source_percent:.8f}",
                 "target_uint32_values": target,
-                "target_percent": f"{100 * target / target_total:.8f}"
-                if target_total
-                else "0",
+                "target_percent": f"{target_percent:.8f}",
                 "sampling_ratio": "" if ratio is None else f"{ratio:.12g}",
-                "sampling_change": change,
+                "sampling_rate": sampling_rate,
                 "sampling_class": change_class,
-                "value_label": (
-                    f"{_human_token_count(original)} original → "
-                    f"{_human_token_count(target)} target · {change}"
-                ),
+                "metric_columns": [
+                    {
+                        "label": "Source",
+                        "value": (
+                            f"{_human_token_count(original)} tokens · "
+                            f"{source_percent:.2f}%"
+                        ),
+                    },
+                    {
+                        "label": "Target",
+                        "value": (
+                            f"{_human_token_count(target)} tokens · "
+                            f"{target_percent:.2f}%"
+                        ),
+                    },
+                    {"label": "Sampling", "value": sampling_rate},
+                ],
             }
         )
+
+    subcategories_by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in comparison_rows:
+        source_family, subcategory = _split_mix_name(str(row["mix_name"]))
+        row["source_family"] = source_family
+        row["subcategory_name"] = subcategory
+        row["display_name"] = subcategory
+        subcategories_by_family[source_family].append(row)
+
+    family_rows: list[dict[str, Any]] = []
+    for source_family, subcategories in subcategories_by_family.items():
+        family_source = sum(
+            int(row["available_uint32_values"]) for row in subcategories
+        )
+        family_target = sum(
+            int(row["target_uint32_values"]) for row in subcategories
+        )
+        source_percent = (
+            100 * family_source / original_total if original_total else 0.0
+        )
+        target_percent = 100 * family_target / target_total if target_total else 0.0
+        sampling_rate, sampling_class = _sampling_rate_label(
+            family_source, family_target
+        )
+        ordered_subcategories = sorted(
+            subcategories,
+            key=lambda row: (
+                int(row["target_uint32_values"]),
+                int(row["available_uint32_values"]),
+                str(row["subcategory_name"]),
+            ),
+            reverse=True,
+        )
+        for row in ordered_subcategories:
+            sub_source = int(row["available_uint32_values"])
+            sub_target = int(row["target_uint32_values"])
+            sub_source_percent = (
+                100 * sub_source / family_source if family_source else 0.0
+            )
+            sub_target_percent = (
+                100 * sub_target / family_target if family_target else 0.0
+            )
+            row["family_target_percent"] = f"{sub_target_percent:.8f}"
+            row["metric_columns"] = [
+                {
+                    "label": "Source",
+                    "value": (
+                        f"{_human_token_count(sub_source)} tokens · "
+                        f"{sub_source_percent:.2f}% of source"
+                    ),
+                },
+                {
+                    "label": "Target",
+                    "value": (
+                        f"{_human_token_count(sub_target)} tokens · "
+                        f"{sub_target_percent:.2f}% of target"
+                    ),
+                },
+                {"label": "Sampling", "value": row["sampling_rate"]},
+            ]
+        family_rows.append(
+            {
+                "mix_name": source_family,
+                "available_uint32_values": family_source,
+                "available_percent": f"{source_percent:.8f}",
+                "target_uint32_values": family_target,
+                "target_percent": f"{target_percent:.8f}",
+                "sampling_rate": sampling_rate,
+                "sampling_class": sampling_class,
+                "subcategories": ordered_subcategories,
+                "metric_columns": [
+                    {
+                        "label": "Source",
+                        "value": (
+                            f"{_human_token_count(family_source)} tokens · "
+                            f"{source_percent:.2f}%"
+                        ),
+                    },
+                    {
+                        "label": "Target",
+                        "value": (
+                            f"{_human_token_count(family_target)} tokens · "
+                            f"{target_percent:.2f}%"
+                        ),
+                    },
+                    {"label": "Sampling", "value": sampling_rate},
+                ],
+            }
+        )
+    family_rows.sort(
+        key=lambda row: (
+            int(row["target_uint32_values"]),
+            int(row["available_uint32_values"]),
+            str(row["mix_name"]),
+        ),
+        reverse=True,
+    )
     available_rows = sorted(
-        comparison_rows,
+        family_rows,
         key=lambda row: int(row["available_uint32_values"]),
         reverse=True,
     )[:40]
@@ -2934,7 +3558,7 @@ def _render_inventory_report(
             "target_uint32_values",
             "target_percent",
             "sampling_ratio",
-            "sampling_change",
+            "sampling_rate",
         ],
     )
     _write_csv(
@@ -2945,7 +3569,7 @@ def _render_inventory_report(
     _write_text(
         plots / "coverage.svg",
         _svg_bar_chart(
-            "S3 inventory coverage",
+            "Source inventory coverage",
             [row["state"] for row in coverage_rows],
             [row["count"] for row in coverage_rows],
             "items",
@@ -2965,7 +3589,7 @@ def _render_inventory_report(
                 for row in available_rows
             ],
             summary=(
-                f"Original aggregate: {_human_token_count(original_total)} tokens "
+                f"Source aggregate: {_human_token_count(original_total)} tokens "
                 f"({original_total:,})"
             ),
         ),
@@ -2983,12 +3607,21 @@ def _render_inventory_report(
         ),
     )
     chart_rows = _interactive_chart_rows(
-        comparison_rows,
+        family_rows,
         "target_uint32_values",
         "target_percent",
-        "inventory-mix-detail",
+        "inventory-family-detail",
         target_total,
     )
+    for family_index, family_row in enumerate(family_rows):
+        family_row["subcategory_chart_rows"] = _interactive_chart_rows(
+            family_row["subcategories"],
+            "target_uint32_values",
+            "family_target_percent",
+            f"inventory-subcategory-{family_index}",
+            int(family_row["target_uint32_values"]),
+            row_class="subcategory-row",
+        )
     rows_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
     rows_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in required_rows:
@@ -3000,7 +3633,7 @@ def _render_inventory_report(
 
     category_comparisons: list[dict[str, Any]] = []
     path_comparisons: list[dict[str, Any]] = []
-    detail_sections: list[str] = []
+    subcategory_detail_by_mix: dict[str, str] = {}
     for mix_row in comparison_rows:
         mix_name = str(mix_row["mix_name"])
         mix_original = int(mix_row["available_uint32_values"])
@@ -3017,7 +3650,16 @@ def _render_inventory_report(
             }
             category_original = sum(category_objects.values())
             category_target = target_by_leaf[leaf_id]
-            category_change, category_class, category_ratio = _sampling_change(
+            category_source_percent = (
+                100 * category_original / mix_original if mix_original else 0.0
+            )
+            category_target_percent = (
+                100 * category_target / mix_target if mix_target else 0.0
+            )
+            _, category_class, category_ratio = _sampling_change(
+                category_original, category_target
+            )
+            category_sampling_rate, _ = _sampling_rate_label(
                 category_original, category_target
             )
             category_comparisons.append(
@@ -3026,11 +3668,13 @@ def _render_inventory_report(
                     "mix_name": mix_name,
                     "category_name": category["category_name"],
                     "original_uint32_values": category_original,
+                    "source_percent_of_parent": category_source_percent,
                     "target_uint32_values": category_target,
+                    "target_percent_of_parent": category_target_percent,
                     "sampling_ratio": ""
                     if category_ratio is None
                     else f"{category_ratio:.12g}",
-                    "sampling_change": category_change,
+                    "sampling_rate": category_sampling_rate,
                 }
             )
             path_definitions = sorted(
@@ -3050,8 +3694,19 @@ def _render_inventory_report(
             for path, objects, path_original, path_target in zip(
                 path_definitions, path_objects, path_originals, path_targets
             ):
-                path_change, path_class, path_ratio = _sampling_change(
+                _, path_class, path_ratio = _sampling_change(
                     path_original, path_target
+                )
+                path_sampling_rate, _ = _sampling_rate_label(
+                    path_original, path_target
+                )
+                path_source_percent = (
+                    100 * path_original / category_original
+                    if category_original
+                    else 0.0
+                )
+                path_target_percent = (
+                    100 * path_target / category_target if category_target else 0.0
                 )
                 path_comparisons.append(
                     {
@@ -3062,11 +3717,13 @@ def _render_inventory_report(
                         "lower_group": _path_subgroup(path["yaml_path"]),
                         "yaml_path": path["yaml_path"],
                         "original_uint32_values": path_original,
+                        "source_percent_of_parent": path_source_percent,
                         "implied_target_uint32_values": path_target,
+                        "implied_target_percent_of_parent": path_target_percent,
                         "sampling_ratio": ""
                         if path_ratio is None
                         else f"{path_ratio:.12g}",
-                        "sampling_change": path_change,
+                        "sampling_rate": path_sampling_rate,
                         "unique_npy_count": len(objects),
                     }
                 )
@@ -3076,12 +3733,18 @@ def _render_inventory_report(
                     f'<span class="path-stat">{_count_label(len(objects), "NPY")}'
                     '<span class="path-chevron" aria-hidden="true">›</span></span>'
                     '<span class="path-sampling">'
-                    f'<span>{_human_token_count(path_original)} original → '
-                    f'{_human_token_count(path_target)} implied target</span>'
-                    f'<span class="sampling {path_class}">{html.escape(path_change)}</span>'
+                    '<span class="path-metric"><span class="mix-metric-label">Source</span>'
+                    f'<span class="mix-metric-value">{_human_token_count(path_original)} tokens · '
+                    f'{path_source_percent:.2f}% of category</span></span>'
+                    '<span class="path-metric"><span class="mix-metric-label">Target</span>'
+                    f'<span class="mix-metric-value">{_human_token_count(path_target)} tokens · '
+                    f'{path_target_percent:.2f}% of category</span></span>'
+                    '<span class="path-metric"><span class="mix-metric-label">Sampling</span>'
+                    f'<span class="mix-metric-value sampling {path_class}">'
+                    f'{html.escape(path_sampling_rate)}</span></span>'
                     + _comparison_bars(path_original, path_target)
                     + "</span></summary>"
-                    f'<code>Original: {path_original:,} tokens · Implied target: '
+                    f'<code>Source: {path_original:,} tokens · Implied target: '
                     f'{path_target:,} tokens<br>{html.escape(path["yaml_path"])}</code>'
                     "</details>"
                 )
@@ -3089,27 +3752,55 @@ def _render_inventory_report(
                 '<section class="category">'
                 '<div class="category-head">'
                 f'<span class="category-name">{html.escape(category["category_name"])}</span>'
-                f'<span class="sampling {category_class}">{html.escape(category_change)}</span>'
                 "</div>"
-                '<div class="category-counts">'
-                f'<span>{_human_token_count(category_original)} original</span>'
-                f'<span>→ {_human_token_count(category_target)} target</span></div>'
+                '<div class="category-metrics">'
+                '<span class="category-metric"><span class="mix-metric-label">Source</span>'
+                f'<span class="mix-metric-value">{_human_token_count(category_original)} tokens · '
+                f'{category_source_percent:.2f}% of entry</span></span>'
+                '<span class="category-metric"><span class="mix-metric-label">Target</span>'
+                f'<span class="mix-metric-value">{_human_token_count(category_target)} tokens · '
+                f'{category_target_percent:.2f}% of entry</span></span>'
+                '<span class="category-metric"><span class="mix-metric-label">Sampling</span>'
+                f'<span class="mix-metric-value sampling {category_class}">'
+                f'{html.escape(category_sampling_rate)}</span></span></div>'
                 + _comparison_bars(category_original, category_target)
                 + '<div class="path-list">'
                 + "".join(path_rows)
                 + "</div></section>"
             )
-        detail_sections.append(
-            f'<section class="mix-detail" id="{mix_row["detail_id"]}" hidden>'
+        subcategory_detail_by_mix[mix_name] = (
+            f'<section class="subcategory-detail" id="{mix_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(mix_name)}</h2>'
-            f'<div class="detail-total">{_human_token_count(mix_original)} original → '
-            f'{_human_token_count(mix_target)} target<br>'
+            f'<h2>{html.escape(str(mix_row["subcategory_name"]))}</h2>'
+            f'<div class="detail-total">source {_human_token_count(mix_original)} → '
+            f'target {_human_token_count(mix_target)}<br>'
             f'<span class="sampling {mix_row["sampling_class"]}">'
-            f'{html.escape(str(mix_row["sampling_change"]))}</span></div></div>'
+            f'{html.escape(str(mix_row["sampling_rate"]))}</span></div></div>'
             '<div class="category-grid">'
             + "".join(category_sections)
             + "</div></section>"
+        )
+
+    detail_sections: list[str] = []
+    for family_row in family_rows:
+        family_source = int(family_row["available_uint32_values"])
+        family_target = int(family_row["target_uint32_values"])
+        detail_sections.append(
+            f'<section class="mix-detail" id="{family_row["detail_id"]}" hidden>'
+            '<div class="detail-head">'
+            f'<h2>{html.escape(str(family_row["mix_name"]))}</h2>'
+            f'<div class="detail-total">source {_human_token_count(family_source)} → '
+            f'target {_human_token_count(family_target)}<br>'
+            f'<span class="sampling {family_row["sampling_class"]}">'
+            f'{html.escape(str(family_row["sampling_rate"]))}</span></div></div>'
+            '<div class="subcategory-list">'
+            + str(family_row["subcategory_chart_rows"])
+            + "</div>"
+            + "".join(
+                subcategory_detail_by_mix[str(subcategory["mix_name"])]
+                for subcategory in family_row["subcategories"]
+            )
+            + "</section>"
         )
 
     _write_csv(
@@ -3120,9 +3811,11 @@ def _render_inventory_report(
             "mix_name",
             "category_name",
             "original_uint32_values",
+            "source_percent_of_parent",
             "target_uint32_values",
+            "target_percent_of_parent",
             "sampling_ratio",
-            "sampling_change",
+            "sampling_rate",
         ],
     )
     _write_csv(
@@ -3136,30 +3829,47 @@ def _render_inventory_report(
             "lower_group",
             "yaml_path",
             "original_uint32_values",
+            "source_percent_of_parent",
             "implied_target_uint32_values",
+            "implied_target_percent_of_parent",
             "sampling_ratio",
-            "sampling_change",
+            "sampling_rate",
             "unique_npy_count",
         ],
     )
-    aggregate_change, aggregate_class, _ = _sampling_change(
-        original_total, target_total
-    )
+    aggregate_rate, _ = _sampling_rate_label(original_total, target_total)
     report_html = (
         '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 sampling plan</title>'
         + _interactive_report_style()
-        + "</head><body><h1>Dolma 3.5 S3 Source Inventory and Sampling Plan</h1>"
-        f'<div class="chart-total">S3 source aggregate (NPY bytes ÷ 4): '
-        f'{_human_token_count(original_total)} tokens '
-        f'({original_total:,}) → target: {_human_token_count(target_total)} tokens '
-        f'({target_total:,}) · <span class="sampling {aggregate_class}">'
-        f'{html.escape(aggregate_change)}</span></div>'
-        f'<div class="mix-chart">{chart_rows}</div>'
+        + "</head><body><h1>Dolma 3.5 Source Inventory and Sampling Plan</h1>"
+        + _summary_metrics(
+            [
+                ("Source tokens", _human_token_count(original_total)),
+                ("Target tokens", _human_token_count(target_total)),
+                ("Overall sampling", aggregate_rate),
+            ]
+        )
+        + f'<div class="mix-chart">{chart_rows}</div>'
         + "".join(detail_sections)
         + _interactive_report_script()
         + "</body></html>\n"
     )
     _write_text(phase / "report.html", report_html)
+    details = _build_inventory_details(
+        normalized_mix=normalized_mix,
+        normalized_paths=normalized_paths,
+        required_rows=required_rows,
+    )
+    _write_json(phase / "inventory-details.json", details)
+    return {
+        "source_family_count": details["source_family_count"],
+        "subcategory_count": details["subcategory_count"],
+        "source_count": details["source_count"],
+        "category_count": details["category_count"],
+        "lower_group_count": details["lower_group_count"],
+        "details_artifact": "inventory-details.json",
+        "report_artifact": "report.html",
+    }
 
 
 def _render_report(
@@ -3458,43 +4168,194 @@ def _render_report(
         key=lambda item: (item[1]["planned"], item[1]["target"], item[0]),
         reverse=True,
     ):
-        change_label, change_class = _token_change_label(
-            totals["original"], totals["planned"]
-        )
         effective = (
             totals["planned"] / totals["original"] if totals["original"] else 0.0
+        )
+        source_percent = (
+            100 * totals["original"] / original_total if original_total else 0.0
+        )
+        planned_percent = (
+            100 * totals["planned"] / proposed_total if proposed_total else 0.0
+        )
+        target_percent = (
+            100 * totals["target"] / target_total if target_total else 0.0
+        )
+        sampling_rate, sampling_class = _sampling_rate_label(
+            totals["original"], totals["planned"]
         )
         comparison_rows.append(
             {
                 "mix_name": mix_name,
                 "planned_uint32_values": totals["planned"],
-                "planned_percent": f"{100 * totals['planned'] / proposed_total:.8f}"
-                if proposed_total
-                else "0",
-                "value_label": (
-                    f"{_human_token_count(totals['original'])} source → "
-                    f"{_human_token_count(totals['planned'])} proposed · "
-                    f"{change_label} · {_format_multiplier(effective)} effective repetitions"
-                ),
+                "planned_percent": f"{planned_percent:.8f}",
+                "metric_columns": [
+                    {
+                        "label": "Source",
+                        "value": (
+                            f"{_human_token_count(totals['original'])} tokens · "
+                            f"{source_percent:.2f}%"
+                        ),
+                    },
+                    {
+                        "label": "Proposed",
+                        "value": (
+                            f"{_human_token_count(totals['planned'])} tokens · "
+                            f"{planned_percent:.2f}%"
+                        ),
+                    },
+                    {
+                        "label": "Target",
+                        "value": (
+                            f"{_human_token_count(totals['target'])} tokens · "
+                            f"{target_percent:.2f}%"
+                        ),
+                    },
+                    {"label": "Sampling", "value": sampling_rate},
+                ],
                 "original": totals["original"],
                 "target": totals["target"],
                 "planned": totals["planned"],
-                "change_label": change_label,
-                "change_class": change_class,
+                "sampling_class": sampling_class,
                 "effective": effective,
+                "sampling_rate": sampling_rate,
             }
         )
+
+    subcategories_by_family: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in comparison_rows:
+        source_family, subcategory = _split_mix_name(str(row["mix_name"]))
+        row["source_family"] = source_family
+        row["subcategory_name"] = subcategory
+        row["display_name"] = subcategory
+        subcategories_by_family[source_family].append(row)
+
+    family_rows: list[dict[str, Any]] = []
+    for source_family, subcategories in subcategories_by_family.items():
+        family_source = sum(int(row["original"]) for row in subcategories)
+        family_proposed = sum(int(row["planned"]) for row in subcategories)
+        family_target = sum(int(row["target"]) for row in subcategories)
+        source_percent = (
+            100 * family_source / original_total if original_total else 0.0
+        )
+        proposed_percent = (
+            100 * family_proposed / proposed_total if proposed_total else 0.0
+        )
+        target_percent = 100 * family_target / target_total if target_total else 0.0
+        sampling_rate, sampling_class = _sampling_rate_label(
+            family_source, family_proposed
+        )
+        ordered_subcategories = sorted(
+            subcategories,
+            key=lambda row: (
+                int(row["planned"]),
+                int(row["target"]),
+                str(row["subcategory_name"]),
+            ),
+            reverse=True,
+        )
+        for row in ordered_subcategories:
+            sub_source = int(row["original"])
+            sub_proposed = int(row["planned"])
+            sub_target = int(row["target"])
+            sub_source_percent = (
+                100 * sub_source / family_source if family_source else 0.0
+            )
+            sub_proposed_percent = (
+                100 * sub_proposed / family_proposed if family_proposed else 0.0
+            )
+            sub_target_percent = (
+                100 * sub_target / family_target if family_target else 0.0
+            )
+            row["family_planned_percent"] = f"{sub_proposed_percent:.8f}"
+            row["metric_columns"] = [
+                {
+                    "label": "Source",
+                    "value": (
+                        f"{_human_token_count(sub_source)} tokens · "
+                        f"{sub_source_percent:.2f}% of source"
+                    ),
+                },
+                {
+                    "label": "Proposed",
+                    "value": (
+                        f"{_human_token_count(sub_proposed)} tokens · "
+                        f"{sub_proposed_percent:.2f}% of proposed"
+                    ),
+                },
+                {
+                    "label": "Target",
+                    "value": (
+                        f"{_human_token_count(sub_target)} tokens · "
+                        f"{sub_target_percent:.2f}% of target"
+                    ),
+                },
+                {"label": "Sampling", "value": row["sampling_rate"]},
+            ]
+        family_rows.append(
+            {
+                "mix_name": source_family,
+                "planned_uint32_values": family_proposed,
+                "planned_percent": f"{proposed_percent:.8f}",
+                "original": family_source,
+                "target": family_target,
+                "planned": family_proposed,
+                "sampling_rate": sampling_rate,
+                "sampling_class": sampling_class,
+                "subcategories": ordered_subcategories,
+                "metric_columns": [
+                    {
+                        "label": "Source",
+                        "value": (
+                            f"{_human_token_count(family_source)} tokens · "
+                            f"{source_percent:.2f}%"
+                        ),
+                    },
+                    {
+                        "label": "Proposed",
+                        "value": (
+                            f"{_human_token_count(family_proposed)} tokens · "
+                            f"{proposed_percent:.2f}%"
+                        ),
+                    },
+                    {
+                        "label": "Target",
+                        "value": (
+                            f"{_human_token_count(family_target)} tokens · "
+                            f"{target_percent:.2f}%"
+                        ),
+                    },
+                    {"label": "Sampling", "value": sampling_rate},
+                ],
+            }
+        )
+    family_rows.sort(
+        key=lambda row: (
+            int(row["planned"]),
+            int(row["target"]),
+            str(row["mix_name"]),
+        ),
+        reverse=True,
+    )
     chart_rows = _interactive_chart_rows(
-        comparison_rows,
+        family_rows,
         "planned_uint32_values",
         "planned_percent",
-        "proposal-mix-detail",
+        "proposal-family-detail",
         proposed_total,
     )
+    for family_index, family_row in enumerate(family_rows):
+        family_row["subcategory_chart_rows"] = _interactive_chart_rows(
+            family_row["subcategories"],
+            "planned_uint32_values",
+            "family_planned_percent",
+            f"proposal-subcategory-{family_index}",
+            int(family_row["planned"]),
+            row_class="subcategory-row",
+        )
 
     category_sampling_rows: list[dict[str, Any]] = []
     path_sampling_rows: list[dict[str, Any]] = []
-    detail_sections: list[str] = []
+    subcategory_detail_by_mix: dict[str, str] = {}
     for mix_row in comparison_rows:
         mix_name = str(mix_row["mix_name"])
         category_sections: list[str] = []
@@ -3527,8 +4388,7 @@ def _render_report(
                 dropped_object_count = int(allocation["dropped_object_count"])
                 repeated_object_count = int(allocation["repeated_object_count"])
             effective = planned / original if original else 0.0
-            change_label, change_class = _token_change_label(original, planned)
-            sampling_label, sampling_class, _ = _sampling_change(original, planned)
+            sampling_label, sampling_class = _sampling_rate_label(original, planned)
             category_sampling_rows.append(
                 {
                     "leaf_id": leaf_id,
@@ -3573,7 +4433,7 @@ def _render_report(
                 path_effective = (
                     path_planned / path_original if path_original else 0.0
                 )
-                path_change, path_change_class = _token_change_label(
+                path_sampling_rate, path_sampling_class = _sampling_rate_label(
                     path_original, path_planned
                 )
                 path_sampling_rows.append(
@@ -3608,12 +4468,15 @@ def _render_report(
                     f'<span class="path-stat">repeat {repeat_range}'
                     '<span class="path-chevron" aria-hidden="true">›</span></span>'
                     '<span class="path-sampling">'
-                    f'<span>{_human_token_count(path_original)} source → '
-                    f'{_human_token_count(path_planned)} proposed</span>'
-                    f'<span class="token-change {path_change_class}">{html.escape(path_change)}</span>'
-                    f'<span>{_format_multiplier(path_effective)} effective repetitions · '
-                    f'NPYs repeated: {path_repeated:,} · dropped: {path_dropped:,} · '
-                    f'{path_total_uses:,} total object uses</span>'
+                    '<span class="path-metric"><span class="mix-metric-label">Source</span>'
+                    f'<span class="mix-metric-value">{_human_token_count(path_original)} tokens</span></span>'
+                    '<span class="path-metric"><span class="mix-metric-label">Proposed</span>'
+                    f'<span class="mix-metric-value">{_human_token_count(path_planned)} tokens</span></span>'
+                    '<span class="path-metric"><span class="mix-metric-label">Sampling</span>'
+                    f'<span class="mix-metric-value sampling {path_sampling_class}">'
+                    f'{html.escape(path_sampling_rate)}</span></span>'
+                    f'<span class="path-use-summary">NPYs repeated: {path_repeated:,} · '
+                    f'dropped: {path_dropped:,} · {path_total_uses:,} total object uses</span>'
                     + _comparison_bars(path_original, path_planned)
                     + "</span></summary>"
                     f'<code>Source: {path_original:,} tokens · Proposed: '
@@ -3629,17 +4492,19 @@ def _render_report(
                 '<section class="category">'
                 '<div class="category-head">'
                 f'<span class="category-name">{html.escape(category["category_name"])}</span>'
-                f'<span class="sampling {sampling_class}">{html.escape(sampling_label)}</span>'
                 "</div>"
-                '<div class="category-counts">'
-                f'<span>{_human_token_count(original)} source</span>'
-                f'<span>→ {_human_token_count(planned)} proposed</span>'
-                f'<span>target {_human_token_count(target)}</span>'
-                f'<span class="token-change {change_class}">{html.escape(change_label)}</span>'
-                "</div>"
+                '<div class="category-metrics proposal-metrics">'
+                '<span class="category-metric"><span class="mix-metric-label">Source</span>'
+                f'<span class="mix-metric-value">{_human_token_count(original)} tokens</span></span>'
+                '<span class="category-metric"><span class="mix-metric-label">Proposed</span>'
+                f'<span class="mix-metric-value">{_human_token_count(planned)} tokens</span></span>'
+                '<span class="category-metric"><span class="mix-metric-label">Target</span>'
+                f'<span class="mix-metric-value">{_human_token_count(target)} tokens</span></span>'
+                '<span class="category-metric"><span class="mix-metric-label">Sampling</span>'
+                f'<span class="mix-metric-value sampling {sampling_class}">'
+                f'{html.escape(sampling_label)}</span></span></div>'
                 + _comparison_bars(original, planned)
                 + '<div class="repetition-line">'
-                f'<span>{_format_multiplier(effective)} effective repetitions</span>'
                 f'<span>per-object repeats {repeat_range}</span>'
                 f'<span>NPYs repeated: {repeated_object_count:,} · '
                 f'dropped: {dropped_object_count:,} · '
@@ -3649,18 +4514,39 @@ def _render_report(
                 + "".join(path_rows)
                 + "</div></section>"
             )
-        detail_sections.append(
-            f'<section class="mix-detail" id="{mix_row["detail_id"]}" hidden>'
+        subcategory_detail_by_mix[mix_name] = (
+            f'<section class="subcategory-detail" id="{mix_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(mix_name)}</h2>'
+            f'<h2>{html.escape(str(mix_row["subcategory_name"]))}</h2>'
             f'<div class="detail-total">{_human_token_count(int(mix_row["original"]))} source → '
             f'{_human_token_count(int(mix_row["planned"]))} proposed<br>'
             f'target {_human_token_count(int(mix_row["target"]))} · '
-            f'<span class="token-change {mix_row["change_class"]}">'
-            f'{html.escape(str(mix_row["change_label"]))}</span></div></div>'
+            f'<span class="sampling {mix_row["sampling_class"]}">'
+            f'{html.escape(str(mix_row["sampling_rate"]))}</span></div></div>'
             '<div class="category-grid">'
             + "".join(category_sections)
             + "</div></section>"
+        )
+
+    detail_sections: list[str] = []
+    for family_row in family_rows:
+        detail_sections.append(
+            f'<section class="mix-detail" id="{family_row["detail_id"]}" hidden>'
+            '<div class="detail-head">'
+            f'<h2>{html.escape(str(family_row["mix_name"]))}</h2>'
+            f'<div class="detail-total">{_human_token_count(int(family_row["original"]))} source → '
+            f'{_human_token_count(int(family_row["planned"]))} proposed<br>'
+            f'target {_human_token_count(int(family_row["target"]))} · '
+            f'<span class="sampling {family_row["sampling_class"]}">'
+            f'{html.escape(str(family_row["sampling_rate"]))}</span></div></div>'
+            '<div class="subcategory-list">'
+            + str(family_row["subcategory_chart_rows"])
+            + "</div>"
+            + "".join(
+                subcategory_detail_by_mix[str(subcategory["mix_name"])]
+                for subcategory in family_row["subcategories"]
+            )
+            + "</section>"
         )
 
     _write_csv(
@@ -3673,20 +4559,20 @@ def _render_report(
         path_sampling_rows,
         list(path_sampling_rows[0]) if path_sampling_rows else [],
     )
-    aggregate_change, aggregate_class = _token_change_label(
-        original_total, proposed_total
-    )
+    aggregate_rate, _ = _sampling_rate_label(original_total, proposed_total)
     report = (
         '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 sampling proposal</title>'
         + _interactive_report_style()
         + "</head><body><h1>Dolma 3.5 Pre-materialization Sampling Proposal</h1>"
-        f'<div class="chart-total">S3 source aggregate (inventoried NPY bytes ÷ 4): '
-        f'{_human_token_count(original_total)} tokens '
-        f'({original_total:,}) → proposed: {_human_token_count(proposed_total)} tokens '
-        f'({proposed_total:,}) · target: {_human_token_count(target_total)} tokens '
-        f'({target_total:,}) · <span class="token-change {aggregate_class}">'
-        f'{html.escape(aggregate_change)}</span></div>'
-        f'<div class="mix-chart">{chart_rows}</div>'
+        + _summary_metrics(
+            [
+                ("Source tokens", _human_token_count(original_total)),
+                ("Proposed tokens", _human_token_count(proposed_total)),
+                ("Target tokens", _human_token_count(target_total)),
+                ("Overall sampling", aggregate_rate),
+            ]
+        )
+        + f'<div class="mix-chart">{chart_rows}</div>'
         + "".join(detail_sections)
         + _interactive_report_script()
         + "</body></html>\n"

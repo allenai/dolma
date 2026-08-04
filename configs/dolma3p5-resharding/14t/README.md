@@ -4,45 +4,31 @@ Run every command from the repository root and complete the review gate before
 moving to the next step. Preparation artifacts are written to
 `runs/dolma3p5-resharding/14t/` by default.
 
-## 1. Build the path-resolution plan
+## 1. Build the inventory-backed sampling plan
 
 ```bash
-python scripts/dolma3p5_resharding/plan.py
-```
-
-This reads the checked-in mix inputs and settings. It makes no AWS requests and
-creates `runs/dolma3p5-resharding/14t/01-plan/`.
-
-Before continuing:
-
-- Open `01-plan/report.html`. Click each source bar and confirm its category
-  targets, lower groups (such as vigintiles), and resolved YAML paths.
-- Confirm `01-plan/resolution-failures.csv` is empty.
-- Confirm `01-plan/corrections.csv` and `01-plan/duplicate-paths.csv` contain
-  only changes you explicitly intend.
-- Inspect `01-plan/catalog-matches.csv` and `01-plan/direct-s3-patterns.csv` for
-  unexpected path translations.
-
-Do not inventory until every YAML path has the intended S3 resolution.
-
-## 2. Inventory the source objects
-
-Run with credentials that can list and head the source objects:
-
-```bash
-python scripts/dolma3p5_resharding/inventory.py \
+python scripts/dolma3p5_resharding/plan.py \
   --profile YOUR_READ_ONLY_PROFILE
 ```
 
-The collector uses `s5cmd` for bulk listings when available and falls back to
-concurrent boto3 requests. It only reads S3 metadata.
+This resolves the checked-in YAML paths, inventories their source objects with
+`s5cmd`, estimates token counts from uint32 file sizes, and builds the
+source-to-target sampling report. It makes only read-only metadata requests.
 
 Before continuing:
 
-- Open `02-inventory/report.html`. Click each source bar and confirm the
-  original-to-target token counts and sampling ratios for every category and
-  lower group.
-- In `02-inventory/inventory-summary.json`, confirm all four values are zero:
+- Open `02-inventory/report.html`. Review the source families, then click into
+  each subcategory and its categories/lower groups. Confirm the source and
+  target tokens, sampling ratio, and each level's distribution.
+- Inspect `02-inventory/inventory-details.json` for the same hierarchy and exact
+  numeric values in machine-readable form.
+- In `02-inventory/inventory-summary.json`, confirm the aggregate source,
+  target, token delta, sampling ratio, and source-family/subcategory/category/
+  lower-group counts.
+- Confirm `01-plan/resolution-failures.csv` is empty.
+- Confirm `01-plan/corrections.csv` and `01-plan/duplicate-paths.csv` contain
+  only changes you explicitly intend.
+- In the same summary, confirm all four values are zero:
   `missing_objects`, `direct_resolution_failures`, `invalid_npy_sizes`, and
   `head_errors`.
 - Spot-check `02-inventory/required-objects.csv`, including the NPY/metadata
@@ -51,7 +37,7 @@ Before continuing:
 Do not generate configs with missing objects, missing metadata partners, failed
 direct-prefix resolutions, or NPY sizes that are not divisible by four.
 
-## 3. Generate the distributed materialization proposal
+## 2. Generate the distributed materialization proposal
 
 Choose a new S3 destination, a real temporary-filesystem path on the workers,
 and a per-unit working-set limit:
@@ -73,12 +59,11 @@ This command creates configs and manifests but does not materialize data.
 
 Before continuing:
 
-- Open `03-proposal/report.html`. The source counts are the inventoried S3 NPY
-  bytes divided by four. Compare them with the exact proposed counts after
-  whole-object sampling and with the targets. Click each source and check every
-  category and lower group for its token change, effective repetition factor,
-  per-object repetition range, repeated and dropped NPY counts, and total
-  object uses.
+- Open `03-proposal/report.html`. Compare the inventoried source counts with the
+  exact proposed counts after whole-object sampling and with the targets. Click
+  through source family, subcategory, category, and lower group; check token
+  changes, effective repetition factors, per-object repetition ranges, repeated
+  and dropped NPY counts, and total object uses.
 - In `03-proposal/proposal-summary.json`, confirm the source, proposed, and
   target totals; token change from the source; destination; unit count; and
   largest working set are acceptable.
@@ -96,7 +81,7 @@ The materialization inputs are the exact files under
 `03-proposal/manifests/`; the runnable units are the executable files under
 `03-proposal/launcher-scripts/`.
 
-## 4. Validate the complete preparation build
+## 3. Validate the complete preparation build
 
 ```bash
 python scripts/dolma3p5_resharding/validate.py
@@ -109,7 +94,7 @@ Continue only if the printed result contains `"passed": true`. Also confirm
 Validation checks category coverage, unit totals, working-set limits, unique
 destinations, exact manifests, and executable launchers.
 
-## 5. Run the preflight immediately before materialization
+## 4. Run the preflight immediately before materialization
 
 ```bash
 python scripts/dolma3p5_resharding/preflight.py \
@@ -128,7 +113,7 @@ Before continuing:
 
 Do not launch if a source changed or any destination contains an object.
 
-## 6. Materialize the execution units
+## 5. Materialize the execution units
 
 Workers need:
 
@@ -170,7 +155,7 @@ Uploads use no-clobber semantics. If a failed unit wrote nothing, it can be
 retried after confirming its destination is still empty. Never blindly retry a
 partially written destination; investigate it and prepare a new destination.
 
-## 7. Verify the materialized dataset
+## 6. Verify the materialized dataset
 
 After every unit completes, run:
 
@@ -179,8 +164,9 @@ python scripts/dolma3p5_resharding/verify.py \
   --profile YOUR_READ_ONLY_PROFILE
 ```
 
-Verification lists output objects and compares NPY bytes divided by four with
-the proposal. It does not read array contents or modify S3.
+Verification lists output objects and estimates token counts from uint32 file
+sizes for comparison with the proposal. It does not read array contents or
+modify source data.
 
 Accept the dataset only when:
 
