@@ -44,18 +44,20 @@ import multiprocessing
 import os
 import random
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import threading
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from functools import partial
 from pathlib import Path
 from tempfile import mkdtemp
 from urllib.parse import urlparse
 
+import boto3
 import numpy as np
 import smart_open
 import yaml
@@ -66,6 +68,7 @@ from dolma.tokenizer.tokenizer import Tokenizer
 
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
+RESHARDING_MANIFEST_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -97,14 +100,23 @@ def merge_group(
 
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
 
-    target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
+    target_memmap = np.memmap(
+        npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype
+    )
 
     bytes_offset = row_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
         for path in paths:
             rw = csv.writer(f)
-            source_memmap = np.memmap(path.npy_path, mode="r", dtype=dtype, shape=(path.size // dtype.itemsize,))
-            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = source_memmap
+            source_memmap = np.memmap(
+                path.npy_path,
+                mode="r",
+                dtype=dtype,
+                shape=(path.size // dtype.itemsize,),
+            )
+            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = (
+                source_memmap
+            )
             target_memmap.flush()
 
             row_count = 0
@@ -112,7 +124,15 @@ def merge_group(
                 rd = csv.reader(g)
                 for row in rd:
                     start, end, id_, src, idx = row
-                    rw.writerow([int(start) + bytes_offset, int(end) + bytes_offset, id_, src, int(idx)])
+                    rw.writerow(
+                        [
+                            int(start) + bytes_offset,
+                            int(end) + bytes_offset,
+                            id_,
+                            src,
+                            int(idx),
+                        ]
+                    )
                     row_count += 1
 
             bytes_offset += source_memmap.shape[0]
@@ -127,7 +147,9 @@ def group_paths_by_max_size(
     """
     Group paths by max size.
     """
-    counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
+    counts: dict[TokensMetadataPaths, int] = {
+        p: int(c) for p, c in Counter(paths).items()
+    }
     logger.info(
         "Found %s unique paths from %s files; max repetition is %s",
         len(counts),
@@ -148,7 +170,11 @@ def group_paths_by_max_size(
                 grouped_paths[-1].append(path)
 
         # decrease counts, remove paths with 0 count.
-        counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
+        counts = {
+            path: new_count
+            for path, count in counts.items()
+            if (new_count := count - 1) > 0
+        }
 
     logger.info(
         "By size: organized %s files into %s groups of max %.2f GB",
@@ -185,7 +211,9 @@ def group_paths_by_max_num_files(
     )
 
     if (m := max(counts.values())) > max_num_files:
-        raise ValueError(f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}")
+        raise ValueError(
+            f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}"
+        )
 
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
     # Distribute each element across groups in round-robin fashion
@@ -274,7 +302,10 @@ def merge_all_npys(
         raise ValueError("Either max_size_bytes or max_num_files must be provided")
 
     logger.info(
-        "Organizing %s files into %s groups using %s workers...", len(paths), len(grouped_paths), max_workers
+        "Organizing %s files into %s groups using %s workers...",
+        len(paths),
+        len(grouped_paths),
+        max_workers,
     )
 
     init_fn = partial(_worker_init, seed=seed)
@@ -290,7 +321,9 @@ def merge_all_npys(
             )
             futures.append(future)
 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Merging files"):
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="Merging files"
+        ):
             try:
                 future.result()
             except Exception as e:
@@ -326,13 +359,15 @@ class ReshardingPrefixConfig:
             "s5cmd",
             "cp",
             "-sp",
-            "--if-source-newer",
+            "--no-clobber",
             f"{remote_prefix_no_star}/*",
             f"{local_prefix_no_trailing_slash}/",
         ]
 
         logger.info("Running command: %s", " ".join(cmd))
-        result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(
+            cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
 
         if result.returncode != 0:
             print(f"s5cmd failed with error: {result.stderr}")
@@ -368,10 +403,17 @@ class ReshardingPrefixConfig:
         # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
         # of same size, we can just take a random sample.
         if (residual_frac := self.sample_rate - repetition_rate) > 0:
-            new_paths.extend(random.sample(paths, max(1, round(residual_frac * len(paths)))))
+            new_paths.extend(
+                random.sample(paths, max(1, round(residual_frac * len(paths))))
+            )
 
         # sort by size
-        logger.info("Taking %s paths from %s using %s sample rate", len(new_paths), len(paths), self.sample_rate)
+        logger.info(
+            "Taking %s paths from %s using %s sample rate",
+            len(new_paths),
+            len(paths),
+            self.sample_rate,
+        )
         return new_paths
 
     def to_dict(self) -> dict:
@@ -382,46 +424,331 @@ class ReshardingPrefixConfig:
         return cls(**d)
 
 
+@dataclass(frozen=True)
+class ReshardingManifestEntry:
+    npy_uri: str
+    metadata_uri: str
+    repeat_count: int
+    npy_size_bytes: int | None = None
+    metadata_size_bytes: int | None = None
+    npy_etag: str = ""
+    metadata_etag: str = ""
+
+
+@dataclass(frozen=True)
+class ReshardingManifestConfig:
+    """An exact, locally stored manifest of token/metadata object pairs.
+
+    The CSV must contain ``npy_uri``, ``metadata_uri``, and ``repeat_count``.
+    Remote objects are downloaded exactly once into a run-owned directory;
+    repetition is represented in memory after download.
+    """
+
+    manifest: str | Path
+
+    def take(
+        self, local_prefix: str | Path, max_workers: int
+    ) -> list[TokensMetadataPaths]:
+        manifest = Path(self.manifest)
+        if not manifest.is_file():
+            raise FileNotFoundError(f"Resharding manifest does not exist: {manifest}")
+
+        local_prefix = Path(local_prefix)
+        local_prefix.mkdir(parents=True, exist_ok=False)
+        rows: list[ReshardingManifestEntry] = []
+        with manifest.open(newline="") as f:
+            reader = csv.DictReader(f)
+            expected = {"npy_uri", "metadata_uri", "repeat_count"}
+            if reader.fieldnames is None or not expected.issubset(reader.fieldnames):
+                raise ValueError(
+                    f"Manifest {manifest} must contain columns {sorted(expected)}"
+                )
+            for row_number, row in enumerate(reader, start=2):
+                npy_uri = row["npy_uri"].strip()
+                metadata_uri = row["metadata_uri"].strip()
+                try:
+                    repeat_count = int(row["repeat_count"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(
+                        f"Invalid repeat_count on {manifest}:{row_number}"
+                    ) from exc
+                if not npy_uri.endswith(".npy") or not metadata_uri.endswith(".csv.gz"):
+                    raise ValueError(f"Invalid object pair on {manifest}:{row_number}")
+                if any(ord(char) < 32 for char in npy_uri + metadata_uri):
+                    raise ValueError(
+                        f"Control character in object URI on {manifest}:{row_number}"
+                    )
+                if Path(npy_uri).stem != Path(Path(metadata_uri).stem).stem:
+                    raise ValueError(
+                        f"Mismatched object pair on {manifest}:{row_number}"
+                    )
+                if repeat_count <= 0:
+                    raise ValueError(
+                        f"repeat_count must be positive on {manifest}:{row_number}"
+                    )
+                try:
+                    npy_size_bytes = (
+                        int(row["npy_size_bytes"])
+                        if row.get("npy_size_bytes")
+                        else None
+                    )
+                    metadata_size_bytes = (
+                        int(row["metadata_size_bytes"])
+                        if row.get("metadata_size_bytes")
+                        else None
+                    )
+                except ValueError as exc:
+                    raise ValueError(
+                        f"Invalid expected size on {manifest}:{row_number}"
+                    ) from exc
+                if npy_size_bytes is not None and npy_size_bytes <= 0:
+                    raise ValueError(
+                        f"npy_size_bytes must be positive on {manifest}:{row_number}"
+                    )
+                if metadata_size_bytes is not None and metadata_size_bytes <= 0:
+                    raise ValueError(
+                        f"metadata_size_bytes must be positive on {manifest}:{row_number}"
+                    )
+                if urlparse(npy_uri).scheme == "s3" and (
+                    npy_size_bytes is None or metadata_size_bytes is None
+                ):
+                    raise ValueError(
+                        f"Remote manifest rows require npy_size_bytes and metadata_size_bytes on "
+                        f"{manifest}:{row_number}"
+                    )
+                rows.append(
+                    ReshardingManifestEntry(
+                        npy_uri=npy_uri,
+                        metadata_uri=metadata_uri,
+                        repeat_count=repeat_count,
+                        npy_size_bytes=npy_size_bytes,
+                        metadata_size_bytes=metadata_size_bytes,
+                        npy_etag=str(row.get("npy_etag", "")).strip('"'),
+                        metadata_etag=str(row.get("metadata_etag", "")).strip('"'),
+                    )
+                )
+
+        if not rows:
+            raise ValueError(f"Resharding manifest is empty: {manifest}")
+
+        remote_expectations: list[tuple[str, int, str]] = []
+        for row in rows:
+            if urlparse(row.npy_uri).scheme == "s3":
+                assert row.npy_size_bytes is not None
+                assert row.metadata_size_bytes is not None
+                remote_expectations.extend(
+                    [
+                        (row.npy_uri, row.npy_size_bytes, row.npy_etag),
+                        (row.metadata_uri, row.metadata_size_bytes, row.metadata_etag),
+                    ]
+                )
+        if remote_expectations:
+            client = boto3.client("s3")
+
+            def verify_remote(expectation: tuple[str, int, str]) -> None:
+                uri, expected_size, expected_etag = expectation
+                parsed = urlparse(uri)
+                response = client.head_object(
+                    Bucket=parsed.netloc, Key=parsed.path.lstrip("/")
+                )
+                actual_size = int(response["ContentLength"])
+                actual_etag = str(response.get("ETag", "")).strip('"')
+                if actual_size != expected_size:
+                    raise RuntimeError(
+                        f"Source object size changed before download: {uri}; "
+                        f"expected {expected_size}, found {actual_size}"
+                    )
+                if expected_etag and actual_etag != expected_etag:
+                    raise RuntimeError(
+                        f"Source object ETag changed before download: {uri}; "
+                        f"expected {expected_etag}, found {actual_etag}"
+                    )
+
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                futures = [
+                    pool.submit(verify_remote, expectation)
+                    for expectation in remote_expectations
+                ]
+                for future in as_completed(futures):
+                    future.result()
+
+        paths: list[TokensMetadataPaths] = []
+        downloaded_pairs: list[tuple[Path, Path, int | None, int | None]] = []
+        remote_commands: list[str] = []
+        for index, row in enumerate(rows):
+            npy_uri = row.npy_uri
+            metadata_uri = row.metadata_uri
+            row_dir = local_prefix / f"{index:06d}"
+            row_dir.mkdir(exist_ok=False)
+            local_npy = row_dir / "tokens.npy"
+            local_metadata = row_dir / "tokens.csv.gz"
+
+            npy_scheme = urlparse(npy_uri).scheme
+            metadata_scheme = urlparse(metadata_uri).scheme
+            if npy_scheme == "s3" and metadata_scheme == "s3":
+                remote_commands.extend(
+                    [
+                        f"cp --raw --no-clobber {shlex.quote(npy_uri)} {shlex.quote(str(local_npy))}",
+                        f"cp --raw --no-clobber {shlex.quote(metadata_uri)} {shlex.quote(str(local_metadata))}",
+                    ]
+                )
+            elif npy_scheme in {"", "file"} and metadata_scheme in {"", "file"}:
+                local_npy = Path(
+                    urlparse(npy_uri).path if npy_scheme == "file" else npy_uri
+                )
+                local_metadata = Path(
+                    urlparse(metadata_uri).path
+                    if metadata_scheme == "file"
+                    else metadata_uri
+                )
+                if not local_npy.is_file() or not local_metadata.is_file():
+                    raise FileNotFoundError(
+                        f"Manifest object pair does not exist: {npy_uri}, {metadata_uri}"
+                    )
+            else:
+                raise ValueError(
+                    f"Manifest row mixes unsupported URI schemes: {npy_uri}, {metadata_uri}"
+                )
+
+            downloaded_pairs.append(
+                (local_npy, local_metadata, row.npy_size_bytes, row.metadata_size_bytes)
+            )
+            paths.extend(
+                [TokensMetadataPaths(str(local_npy), str(local_metadata))]
+                * row.repeat_count
+            )
+
+        if remote_commands:
+            commands_path = local_prefix / "s5cmd-download-commands.txt"
+            with commands_path.open("x") as f:
+                f.write("\n".join(remote_commands) + "\n")
+            cmd = ["s5cmd", "--numworkers", str(max_workers), "run", str(commands_path)]
+            logger.info("Downloading exact manifest objects with s5cmd")
+            result = subprocess.run(
+                cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"s5cmd manifest download failed: {result.stderr}")
+
+            missing = [
+                (npy_path, metadata_path)
+                for npy_path, metadata_path, _, _ in downloaded_pairs
+                if not npy_path.is_file() or not metadata_path.is_file()
+            ]
+            if missing:
+                raise RuntimeError(
+                    f"s5cmd completed without creating {len(missing)} manifest object pairs"
+                )
+
+        for (
+            npy_path,
+            metadata_path,
+            expected_npy_size,
+            expected_metadata_size,
+        ) in downloaded_pairs:
+            if (
+                expected_npy_size is not None
+                and npy_path.stat().st_size != expected_npy_size
+            ):
+                raise RuntimeError(
+                    f"Downloaded NPY size does not match manifest: {npy_path}; "
+                    f"expected {expected_npy_size}, found {npy_path.stat().st_size}"
+                )
+            if (
+                expected_metadata_size is not None
+                and metadata_path.stat().st_size != expected_metadata_size
+            ):
+                raise RuntimeError(
+                    f"Downloaded metadata size does not match manifest: {metadata_path}; "
+                    f"expected {expected_metadata_size}, found {metadata_path.stat().st_size}"
+                )
+
+        return paths
+
+    def to_dict(self) -> dict:
+        return {"manifest": str(self.manifest)}
+
+    @classmethod
+    def from_dict(
+        cls, d: dict, base_dir: Path | None = None
+    ) -> "ReshardingManifestConfig":
+        path = Path(d["manifest"])
+        if base_dir is not None and not path.is_absolute():
+            path = base_dir / path
+        return cls(manifest=path)
+
+
 @dataclass
 class ReshardingConfig:
     """Base configuration for resharding."""
 
-    source_prefixes: list[ReshardingPrefixConfig]
     destination_prefix: str
+    source_prefixes: list[ReshardingPrefixConfig] = field(default_factory=list)
+    source_manifests: list[ReshardingManifestConfig] = field(default_factory=list)
     local_tempdir: str | Path | None = None
     max_size_bytes: int | None = None
     max_num_files: int | None = None
     max_workers: int = os.cpu_count() or 1
     random_seed: int = 42
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer"
+    allow_existing_destination: bool = False
 
     def __post_init__(self):
         if self.max_size_bytes is not None and self.max_num_files is not None:
             raise ValueError("Cannot provide both max_size_bytes and max_num_files")
         if self.max_size_bytes is None and self.max_num_files is None:
             raise ValueError("Either max_size_bytes or max_num_files must be provided")
+        if not self.source_prefixes and not self.source_manifests:
+            raise ValueError(
+                "At least one source_prefix or source_manifest must be provided"
+            )
+        if self.allow_existing_destination:
+            raise ValueError("Overwriting an existing destination is not supported")
+        if self.max_workers <= 0:
+            raise ValueError("max_workers must be positive")
 
         if self.local_tempdir is None:
             logging.warning("No local tempdir provided; using a temporary directory")
-            self.local_tempdir = Path(mkdtemp())
         else:
             self.local_tempdir = Path(self.local_tempdir)
 
     def to_dict(self) -> dict:
         source_prefixes_dict = [p.to_dict() for p in self.source_prefixes]
-        return {**asdict(self), "source_prefixes": source_prefixes_dict}
+        source_manifests_dict = [m.to_dict() for m in self.source_manifests]
+        return {
+            **asdict(self),
+            "source_prefixes": source_prefixes_dict,
+            "source_manifests": source_manifests_dict,
+        }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "ReshardingConfig":
-        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
+    def from_dict(cls, d: dict, base_dir: Path | None = None) -> "ReshardingConfig":
+        source_prefixes = [
+            ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])
+        ]
+        source_manifests = [
+            ReshardingManifestConfig.from_dict(m, base_dir=base_dir)
+            for m in d.get("source_manifests", [])
+        ]
         return cls(
-            source_prefixes=source_prefixes,
             destination_prefix=str(d["destination_prefix"]),
-            local_tempdir=(Path(p) if (p := d.get("local_tempdir")) is not None else None),
-            max_size_bytes=(int(s) if (s := d.get("max_size_bytes")) is not None else None),
-            max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
+            source_prefixes=source_prefixes,
+            source_manifests=source_manifests,
+            local_tempdir=(
+                Path(p) if (p := d.get("local_tempdir")) is not None else None
+            ),
+            max_size_bytes=(
+                int(s) if (s := d.get("max_size_bytes")) is not None else None
+            ),
+            max_num_files=(
+                int(n) if (n := d.get("max_num_files")) is not None else None
+            ),
             max_workers=int(d.get("max_workers", 1)),
             random_seed=int(d.get("random_seed", 42)),
+            tokenizer_name_or_path=str(
+                d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer")
+            ),
+            allow_existing_destination=bool(d.get("allow_existing_destination", False)),
         )
 
     @classmethod
@@ -429,8 +756,9 @@ class ReshardingConfig:
         if file_path == "-":
             return cls.from_dict(yaml.safe_load(sys.stdin))
 
-        with open(file_path, "r") as f:
-            return cls.from_dict(yaml.safe_load(f))
+        path = Path(file_path)
+        with path.open("r") as f:
+            return cls.from_dict(yaml.safe_load(f), base_dir=path.parent)
 
 
 def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int):
@@ -442,38 +770,92 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
 
     local_prefix_no_star = re.sub(r"(/|/\*)$", "", str(local_prefix))
     remote_prefix_no_trailing_slash = str(remote_prefix).rstrip("/")
-    cmd = ["s5cmd", "cp", "-sp", f"{local_prefix_no_star}/*", f"{remote_prefix_no_trailing_slash}/"]
-    result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    cmd = [
+        "s5cmd",
+        "--numworkers",
+        str(max_workers),
+        "cp",
+        "--no-clobber",
+        "-sp",
+        f"{local_prefix_no_star}/*",
+        f"{remote_prefix_no_trailing_slash}/",
+    ]
+    result = subprocess.run(
+        cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
 
     if result.returncode != 0:
         print(f"s5cmd failed with error: {result.stderr}")
         raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
 
 
+def destination_has_objects(destination: str | Path) -> bool:
+    """Return whether a destination already contains data.
+
+    S3 is queried with a read-only, one-key ``ListObjectsV2`` request. Local
+    destinations are considered occupied when the path exists at all; this
+    deliberately refuses even an empty pre-created directory.
+    """
+
+    destination = str(destination)
+    parsed = urlparse(destination)
+    if parsed.scheme == "s3":
+        prefix = parsed.path.lstrip("/").rstrip("/")
+        if not parsed.netloc or not prefix:
+            raise ValueError("Refusing to materialize into an S3 bucket root")
+        response = boto3.client("s3").list_objects_v2(
+            Bucket=parsed.netloc, Prefix=f"{prefix}/", MaxKeys=1
+        )
+        return bool(response.get("Contents"))
+    if parsed.scheme not in {"", "file"}:
+        raise ValueError(f"Unsupported destination protocol: {parsed.scheme}")
+    path = Path(parsed.path if parsed.scheme == "file" else destination)
+    return os.path.lexists(path)
+
+
 def reshard(config: ReshardingConfig):
     random.seed(config.random_seed)
 
+    if destination_has_objects(config.destination_prefix):
+        raise FileExistsError(
+            f"Refusing to use existing destination: {config.destination_prefix}"
+        )
+
+    run_tempdir: Path | None = None
     try:
-        local_tempdir = Path(config.local_tempdir or mkdtemp())
-        local_tempdir.mkdir(parents=True, exist_ok=True)
+        if config.local_tempdir is None:
+            run_tempdir = Path(mkdtemp(prefix="dolma-reshard-"))
+        else:
+            temp_base = Path(config.local_tempdir)
+            temp_base.mkdir(parents=True, exist_ok=True)
+            run_tempdir = Path(mkdtemp(prefix="dolma-reshard-", dir=temp_base))
 
         local_output_dir = (
-            local_tempdir / "output"
+            run_tempdir / "output"
             if urlparse(config.destination_prefix).scheme == "s3"
             else Path(config.destination_prefix)
         )
 
         # download the files
         source_prefixes = [
-            source_prefix.download(local_tempdir / f"input/{i:06d}")
+            source_prefix.download(run_tempdir / f"prefix-input/{i:06d}")
             for i, source_prefix in enumerate(config.source_prefixes)
         ]
 
         # get repetition aware samples
-        source_paths = [path for source_prefix in source_prefixes for path in source_prefix.take()]
+        source_paths = [
+            path for source_prefix in source_prefixes for path in source_prefix.take()
+        ]
+        for i, source_manifest in enumerate(config.source_manifests):
+            source_paths.extend(
+                source_manifest.take(
+                    run_tempdir / f"manifest-input/{i:06d}",
+                    max_workers=config.max_workers,
+                )
+            )
 
         # make destination directory
-        local_output_dir.mkdir(parents=True, exist_ok=True)
+        local_output_dir.mkdir(parents=True, exist_ok=False)
 
         # merge the files
         merge_all_npys(
@@ -494,7 +876,8 @@ def reshard(config: ReshardingConfig):
         )
 
     finally:
-        shutil.rmtree(local_tempdir)
+        if run_tempdir is not None:
+            shutil.rmtree(run_tempdir)
 
 
 def main():

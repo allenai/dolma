@@ -1,0 +1,23 @@
+# Preparation-only defaults for the Dolma 3.5 14T mix.
+#
+# This file contains no destination. A new, sufficiently deep S3 destination
+# must be supplied explicitly to the `propose` command.
+target_uint32_values: 14000000000000
+direct_s3_bucket: ai2-llm
+
+# Inventory concurrency. Inventory operations are read-only.
+s5cmd_numworkers: 64
+s5cmd_retry_count: 10
+inventory_max_workers: 32
+
+# Catalog-backed objects are grouped under narrow common prefixes. Groups that
+# exceed either limit are split into smaller listings.
+max_listing_catalog_objects: 5000
+max_listing_overfetch_ratio: 8.0
+minimum_catalog_prefix_components: 4
+
+# Deterministic per-execution-unit config values. Worker storage is deliberately
+# not defaulted here; propose.py requires an explicit planning budget.
+random_seed: 42
+max_workers_per_reshard: 8
+tokenizer_name_or_path: allenai/dolma2-tokenizer
