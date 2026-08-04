@@ -1,9 +1,11 @@
 import argparse
 import csv
+import io
 import json
 import subprocess
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -22,7 +24,6 @@ from scripts.dolma3p5_resharding.workflow import (
     PreparationError,
     S3Object,
     _allocate_object_repetitions,
-    _exclusive_directory,
     _finalize_inventory,
     _parse_s5cmd_jsonl,
     _partition_object_uses,
@@ -54,7 +55,15 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                                 "dolma3p5_pool/catalog-source/topic/allenai/tokenizer/*.npy"
                             ],
                             "repetition_factor": -1.0,
-                        }
+                        },
+                        {
+                            "name": "dropped",
+                            "weight": 0.0,
+                            "paths": [
+                                "dolma3p5_pool/catalog-source/topic/vigintile_0000/allenai/tokenizer/*.npy"
+                            ],
+                            "repetition_factor": -1.0,
+                        },
                     ],
                 },
                 {
@@ -92,6 +101,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.catalog.write_text(
             "ai2-llm,preprocessed/catalog-source/topic/allenai/tokenizer/0000.npy\n"
             "ai2-llm,preprocessed/catalog-source/topic/allenai/tokenizer/0000.csv.gz\n"
+            "ai2-llm,preprocessed/catalog-source/topic/vigintile_0000/allenai/tokenizer/0000.npy\n"
             "ai2-llm,preprocessed/the-stack-v2/data/Tcl/quality_p95/allenai/tokenizer/0000.npy\n"
         )
         self.build = self.root / "build"
@@ -115,7 +125,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             for uri, size in self._inventory_objects().items():
                 f.write(json.dumps(self._inventory_record(uri, size)) + "\n")
         phase = self.build / "02-inventory"
-        _exclusive_directory(phase)
+        phase.mkdir()
         objects, errors = _parse_s5cmd_jsonl(listing)
         self.assertFalse(errors)
         _finalize_inventory(
@@ -131,6 +141,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         return {
             "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/tokenizer/0000.npy": 400,
             "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/tokenizer/0000.csv.gz": 20,
+            "s3://ai2-llm/preprocessed/catalog-source/topic/vigintile_0000/allenai/tokenizer/0000.npy": 200,
+            "s3://ai2-llm/preprocessed/catalog-source/topic/vigintile_0000/allenai/tokenizer/0000.csv.gz": 16,
             "s3://ai2-llm/preprocessed/the-stack-v2/data/Tcl/quality_p95/allenai/tokenizer/0000.npy": 800,
             "s3://ai2-llm/preprocessed/the-stack-v2/data/Tcl/quality_p95/allenai/tokenizer/0000.csv.gz": 24,
             "s3://ai2-llm/preprocessed/direct-source/allenai/tokenizer/0000.npy": 1200,
@@ -173,22 +185,59 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 return_value=session,
             ),
         ):
-            collect_inventory(
-                argparse.Namespace(
-                    build=self.build,
-                    profile="read-only",
-                    region="us-west-2",
-                    max_workers=2,
-                )
+            inventory_args = argparse.Namespace(
+                build=self.build,
+                profile="read-only",
+                region="us-west-2",
+                max_workers=2,
             )
+            collect_inventory(inventory_args)
+            collect_inventory(inventory_args)
 
         self.assertEqual(captured_command[0], "s5cmd")
+        self.assertEqual(captured_command.count("s5cmd"), 2)
         collector = json.loads((self.build / "02-inventory/collector.json").read_text())
         self.assertEqual(collector["collector"], "s5cmd")
         self.assertTrue((self.build / "02-inventory/raw-listings.jsonl").is_file())
 
-    def test_end_to_end_preparation_is_create_only(self):
+    def test_plan_reports_resolution_counts_without_chart_artifacts(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            self._plan()
+        self.assertIn(
+            "Plan summary: 3 catalog NPY matches, 1 direct S3 pattern, "
+            "1 correction, 0 blocking failures",
+            output.getvalue(),
+        )
+        self.assertFalse(
+            (self.build / "01-plan/plots/resolution-counts.svg").exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/plot-data/resolution-counts.csv").exists()
+        )
+
+    def test_end_to_end_preparation_phases_are_replaceable(self):
+        mix_before = self.mix.read_bytes()
+        catalog_before = self.catalog.read_bytes()
         self._plan()
+        plan_report = (self.build / "01-plan/report.html").read_text()
+        self.assertIn("Dolma 3.5 Target Allocation and S3 Path Plan", plan_report)
+        self.assertIn("Materialized output target:", plan_report)
+        self.assertNotIn("S3 source volume:", plan_report)
+        self.assertIn('data-detail="plan-mix-detail-', plan_report)
+        self.assertIn('class="category-grid"', plan_report)
+        self.assertIn("matched NPY", plan_report)
+        self.assertIn("topic", plan_report)
+        with (self.build / "01-plan/normalized-paths.csv").open() as f:
+            self.assertNotIn("resolution_route", csv.DictReader(f).fieldnames)
+        with (self.build / "01-plan/listing-plan.csv").open() as f:
+            self.assertNotIn("resolution_routes", csv.DictReader(f).fieldnames)
+        plan_target_plot = (self.build / "01-plan/plots/target-mix.svg").read_text()
+        self.assertIn(
+            "Total target: 14T tokens (14,000,000,000,000)", plan_target_plot
+        )
+        self.assertIn("50.00% · 7T tokens", plan_target_plot)
+        self.assertNotIn('text-anchor="end"', plan_target_plot)
         with (self.build / "01-plan/corrections.csv").open() as f:
             corrections = list(csv.DictReader(f))
         self.assertEqual(len(corrections), 1)
@@ -196,10 +245,39 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with (self.build / "01-plan/direct-s3-patterns.csv").open() as f:
             direct = list(csv.DictReader(f))
         self.assertEqual(len(direct), 1)
-        with self.assertRaises(PreparationError):
-            self._plan()
+        finder_metadata = self.build / ".DS_Store"
+        finder_metadata.write_bytes(b"preserve benign metadata")
+        self._plan()
+        self.assertEqual(self.mix.read_bytes(), mix_before)
+        self.assertEqual(self.catalog.read_bytes(), catalog_before)
+        self.assertEqual(finder_metadata.read_bytes(), b"preserve benign metadata")
 
         self._write_inventory()
+        inventory_plot = (
+            self.build / "02-inventory/plots/available-by-mix.svg"
+        ).read_text()
+        self.assertIn("% ·", inventory_plot)
+        self.assertIn("tokens", inventory_plot)
+        inventory_report = (self.build / "02-inventory/report.html").read_text()
+        self.assertIn('data-detail="inventory-mix-detail-', inventory_report)
+        self.assertIn('class="comparison-bars"', inventory_report)
+        self.assertIn('class="path-stat"', inventory_report)
+        self.assertIn("S3 source aggregate (NPY bytes ÷ 4):", inventory_report)
+        self.assertIn("original →", inventory_report)
+        self.assertIn("upsample", inventory_report)
+        self.assertIn("downsample", inventory_report)
+        self.assertIn("vigintile_0000", inventory_report)
+        sampling_path = (
+            self.build / "02-inventory/plot-data/sampling-by-lower-group.csv"
+        )
+        with sampling_path.open() as f:
+            sampling_paths = list(csv.DictReader(f))
+        dropped = next(row for row in sampling_paths if row["lower_group"] == "vigintile_0000")
+        self.assertEqual(dropped["original_uint32_values"], "50")
+        self.assertEqual(dropped["implied_target_uint32_values"], "0")
+        self.assertIn("downsample", dropped["sampling_change"])
+        with (self.build / "02-inventory/required-objects.csv").open() as f:
+            self.assertNotIn("resolution_route", csv.DictReader(f).fieldnames)
         propose_configs(
             argparse.Namespace(
                 build=self.build,
@@ -264,6 +342,63 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             )
         for plot in (self.build / "03-proposal/plots").glob("*.svg"):
             ElementTree.parse(plot)
+        proposal_target_plot = (
+            self.build / "03-proposal/plots/target-mix.svg"
+        ).read_text()
+        self.assertIn("50.00% · 7T tokens", proposal_target_plot)
+        proposal_report = (self.build / "03-proposal/report.html").read_text()
+        self.assertIn("Pre-materialization Sampling Proposal", proposal_report)
+        self.assertIn(
+            "S3 source aggregate (inventoried NPY bytes ÷ 4):",
+            proposal_report,
+        )
+        self.assertIn("source →", proposal_report)
+        self.assertIn("proposed", proposal_report)
+        self.assertIn("token-change", proposal_report)
+        self.assertIn("effective repetitions", proposal_report)
+        self.assertIn("per-object repeats", proposal_report)
+        self.assertIn("vigintile_0000", proposal_report)
+        with (self.build / "03-proposal/category-allocation.csv").open() as f:
+            allocation_rows = list(csv.DictReader(f))
+        catalog_allocation = next(
+            row
+            for row in allocation_rows
+            if row["mix_name"] == "catalog-source:topic"
+        )
+        self.assertEqual(catalog_allocation["available_uint32_values"], "100")
+        self.assertEqual(
+            int(catalog_allocation["planned_uint32_values"])
+            - int(catalog_allocation["available_uint32_values"]),
+            int(catalog_allocation["token_change_from_original"]),
+        )
+        self.assertEqual(
+            catalog_allocation["minimum_repetition"],
+            catalog_allocation["maximum_repetition"],
+        )
+        self.assertGreater(int(catalog_allocation["maximum_repetition"]), 1)
+        with (
+            self.build
+            / "03-proposal/plot-data/proposed-sampling-by-lower-group.csv"
+        ).open() as f:
+            proposed_paths = list(csv.DictReader(f))
+        dropped_proposal = next(
+            row for row in proposed_paths if row["lower_group"] == "vigintile_0000"
+        )
+        self.assertEqual(dropped_proposal["original_uint32_values"], "50")
+        self.assertEqual(dropped_proposal["proposed_uint32_values"], "0")
+        self.assertEqual(dropped_proposal["token_change_from_original"], "-50")
+        self.assertEqual(dropped_proposal["minimum_repetition"], "0")
+        self.assertEqual(dropped_proposal["maximum_repetition"], "0")
+        self.assertEqual(dropped_proposal["dropped_object_count"], "1")
+        self.assertEqual(dropped_proposal["repeated_object_count"], "0")
+        proposal_summary = json.loads(
+            (self.build / "03-proposal/proposal-summary.json").read_text()
+        )
+        self.assertEqual(proposal_summary["source_uint32_values"], 650)
+        self.assertEqual(
+            proposal_summary["token_change_from_source"],
+            proposal_summary["planned_uint32_values"] - 650,
+        )
 
         with (self.build / "02-inventory/normalized-s3-inventory.csv").open() as f:
             inventory_rows = [
@@ -337,15 +472,27 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 )
             )
         validate_build(argparse.Namespace(build=self.build))
-        with self.assertRaises(PreparationError):
-            propose_configs(
-                argparse.Namespace(
-                    build=self.build,
-                    destination_root="s3://test-bucket/new-datasets/dolma3p5",
-                    local_temp_root=str(self.root / "temp-base"),
-                    max_unit_working_bytes=20_000_000_000_000,
-                )
+        propose_configs(
+            argparse.Namespace(
+                build=self.build,
+                destination_root="s3://test-bucket/new-datasets/dolma3p5",
+                local_temp_root=str(self.root / "temp-base"),
+                max_unit_working_bytes=20_000_000_000_000,
             )
+        )
+        self.assertTrue((self.build / "03-proposal/proposal-summary.json").is_file())
+        self.assertFalse((self.build / "04-preflight").exists())
+        self.assertFalse((self.build / "05-output-validation").exists())
+
+    def test_plan_refuses_to_replace_unknown_files_in_a_build(self):
+        self._plan()
+        critical_file = self.build / "source-tokens.npy"
+        critical_file.write_bytes(b"do not replace")
+
+        with self.assertRaisesRegex(PreparationError, "unknown top-level entries"):
+            self._plan()
+
+        self.assertEqual(critical_file.read_bytes(), b"do not replace")
 
     def test_allocation_is_deterministic_and_size_based(self):
         first = _allocate_object_repetitions(26, [8, 12, 20])

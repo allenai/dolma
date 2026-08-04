@@ -38,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         type=Path,
         default=DEFAULT_BUILD_PATH,
-        help="local build directory; must not already exist",
+        help="local preparation build directory",
     )
     return parser
 

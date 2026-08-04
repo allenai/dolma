@@ -36,6 +36,14 @@ UINT32_BYTES = 4
 DEFAULT_TARGET = 14_000_000_000_000
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BUILD_PATH = REPOSITORY_ROOT / "runs/dolma3p5-resharding/14t"
+PREPARATION_PHASES = (
+    "01-plan",
+    "02-inventory",
+    "03-proposal",
+    "04-preflight",
+    "05-output-validation",
+)
+PRESERVED_BUILD_METADATA = {".DS_Store"}
 DEFAULT_SETTINGS: dict[str, Any] = {
     "target_uint32_values": DEFAULT_TARGET,
     "direct_s3_bucket": "ai2-llm",
@@ -94,6 +102,11 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _count_label(value: int, singular: str, plural: str | None = None) -> str:
+    label = singular if value == 1 else plural or f"{singular}s"
+    return f"{value:,} {label}"
+
+
 def _slug(value: str, max_length: int = 96) -> str:
     value = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-.").lower()
     if not value:
@@ -102,13 +115,103 @@ def _slug(value: str, max_length: int = 96) -> str:
     return f"{value[: max_length - 9]}-{suffix}"
 
 
-def _exclusive_directory(path: Path) -> None:
-    try:
-        path.mkdir(parents=True, exist_ok=False)
-    except FileExistsError as exc:
+def _validate_preparation_build(path: Path) -> dict[str, Any]:
+    """Verify that an existing directory is owned by this preparation workflow."""
+
+    if path.is_symlink() or not path.is_dir():
+        raise PreparationError(f"Preparation build is not a real directory: {path}")
+    manifest_path = path / "build.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
         raise PreparationError(
-            f"Refusing to replace existing output directory: {path}"
+            "Refusing to replace an unrecognized directory. Expected this "
+            f"workflow's build.json marker in: {path}"
+        )
+    try:
+        with manifest_path.open(encoding="utf-8") as f:
+            manifest = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PreparationError(
+            f"Invalid preparation build marker: {manifest_path}"
         ) from exc
+    build_id = manifest.get("build_id")
+    mix_sha256 = manifest.get("mix_sha256")
+    catalog_sha256 = manifest.get("catalog_sha256")
+    hashes_are_valid = all(
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+        for value in (mix_sha256, catalog_sha256)
+    )
+    expected_build_id = ""
+    if hashes_are_valid:
+        seed = f"{mix_sha256}:{catalog_sha256}".encode()
+        expected_build_id = f"dolma3p5-14t-{hashlib.sha256(seed).hexdigest()[:12]}"
+    if (
+        manifest.get("schema_version") != 1
+        or not isinstance(build_id, str)
+        or build_id != expected_build_id
+    ):
+        raise PreparationError(
+            f"Refusing to replace an unrecognized preparation build: {path}"
+        )
+    unknown = sorted(
+        child.name
+        for child in path.iterdir()
+        if child.name
+        not in {"build.json", *PREPARATION_PHASES, *PRESERVED_BUILD_METADATA}
+    )
+    if unknown:
+        raise PreparationError(
+            "Refusing to reset a preparation build containing unknown top-level "
+            f"entries: {', '.join(unknown)}"
+        )
+    for phase_name in PREPARATION_PHASES:
+        phase = path / phase_name
+        if phase.exists() and (phase.is_symlink() or not phase.is_dir()):
+            raise PreparationError(
+                f"Refusing to replace an unsafe preparation phase path: {phase}"
+            )
+    return manifest
+
+
+def _remove_generated_phase(path: Path) -> None:
+    if not path.exists():
+        return
+    if path.is_symlink() or not path.is_dir():
+        raise PreparationError(
+            f"Refusing to replace an unsafe preparation phase path: {path}"
+        )
+    shutil.rmtree(path)
+
+
+def _reset_preparation_build(path: Path) -> None:
+    """Reset only a recognized local preparation build, never source/token data."""
+
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=False)
+        return
+    if path.is_symlink() or not path.is_dir():
+        raise PreparationError(f"Preparation output is not a real directory: {path}")
+    if not any(path.iterdir()):
+        return
+    _validate_preparation_build(path)
+    for phase_name in PREPARATION_PHASES:
+        _remove_generated_phase(path / phase_name)
+    (path / "build.json").unlink()
+
+
+def _reset_preparation_phase(
+    build: Path, phase_name: str, *downstream_phase_names: str
+) -> Path:
+    """Replace generated local phases after verifying the build ownership marker."""
+
+    _validate_preparation_build(build)
+    names = (phase_name, *downstream_phase_names)
+    if any(name not in PREPARATION_PHASES for name in names):
+        raise ValueError(f"Unknown preparation phase: {names}")
+    for name in names:
+        _remove_generated_phase(build / name)
+    phase = build / phase_name
+    phase.mkdir(exist_ok=False)
+    return phase
 
 
 def _write_text(path: Path, value: str) -> None:
@@ -261,9 +364,6 @@ def plan_build(args: argparse.Namespace) -> None:
     catalog_path = args.catalog.resolve()
     output = args.output.resolve()
     settings = _load_settings(args.settings.resolve() if args.settings else None)
-    _exclusive_directory(output)
-    phase = output / "01-plan"
-    _exclusive_directory(phase)
 
     with mix_path.open(encoding="utf-8") as f:
         document = yaml.safe_load(f)
@@ -392,12 +492,9 @@ def plan_build(args: argparse.Namespace) -> None:
                         "category_index": category_index,
                         "category_name": category_name,
                         "active": str(active).lower(),
-                        "resolution_route": resolution_route,
                         "yaml_path": yaml_path,
                     }
                 )
-                if not active:
-                    continue
                 if resolution_route == "catalog":
                     pattern = _catalog_pattern(yaml_path)
                     matched = [
@@ -421,6 +518,7 @@ def plan_build(args: argparse.Namespace) -> None:
                                 "mix_name": mix_name,
                                 "category_index": category_index,
                                 "category_name": category_name,
+                                "active": str(active).lower(),
                                 "yaml_path": yaml_path,
                                 "bucket": match["bucket"],
                                 "key": match["key"],
@@ -439,6 +537,7 @@ def plan_build(args: argparse.Namespace) -> None:
                             "mix_name": mix_name,
                             "category_index": category_index,
                             "category_name": category_name,
+                            "active": str(active).lower(),
                             "yaml_path": yaml_path,
                             "bucket": bucket,
                             "key_pattern": pattern,
@@ -517,11 +616,9 @@ def plan_build(args: argparse.Namespace) -> None:
                     {
                         "bucket": bucket,
                         "listing_prefix": final_prefix,
-                        "resolution_routes": set(),
                         "leaf_ids": set(),
                     },
                 )
-                entry["resolution_routes"].add("catalog")
                 entry["leaf_ids"].update(row["leaf_id"] for row in final_group)
 
     for row in direct_patterns:
@@ -531,11 +628,9 @@ def plan_build(args: argparse.Namespace) -> None:
             {
                 "bucket": row["bucket"],
                 "listing_prefix": row["listing_prefix"],
-                "resolution_routes": set(),
                 "leaf_ids": set(),
             },
         )
-        entry["resolution_routes"].add("direct_s3")
         entry["leaf_ids"].add(row["leaf_id"])
 
     listing_plan: list[dict[str, Any]] = []
@@ -555,7 +650,6 @@ def plan_build(args: argparse.Namespace) -> None:
                 "listing_id": listing_id,
                 "bucket": bucket,
                 "listing_prefix": prefix,
-                "resolution_routes": ";".join(sorted(entry["resolution_routes"])),
                 "leaf_ids": ";".join(sorted(entry["leaf_ids"])),
                 "required_catalog_npy_count": len(required),
                 "estimated_catalog_npy_count": estimated,
@@ -585,6 +679,9 @@ def plan_build(args: argparse.Namespace) -> None:
             "failures": len(failures),
         },
     }
+    _reset_preparation_build(output)
+    phase = output / "01-plan"
+    phase.mkdir(exist_ok=False)
     _write_json(output / "build.json", manifest)
     _write_csv(phase / "normalized-mix.csv", normalized_mix, list(normalized_mix[0]))
     _write_csv(
@@ -600,6 +697,7 @@ def plan_build(args: argparse.Namespace) -> None:
             "mix_name",
             "category_index",
             "category_name",
+            "active",
             "yaml_path",
             "bucket",
             "key",
@@ -616,6 +714,7 @@ def plan_build(args: argparse.Namespace) -> None:
             "mix_name",
             "category_index",
             "category_name",
+            "active",
             "yaml_path",
             "bucket",
             "key_pattern",
@@ -652,24 +751,24 @@ def plan_build(args: argparse.Namespace) -> None:
         phase / "bulk-listing-commands.txt",
         "\n".join(commands) + ("\n" if commands else ""),
     )
-    inventory_command = "python scripts/dolma3p5_resharding/inventory.py"
-    if output != DEFAULT_BUILD_PATH.resolve():
-        inventory_command += f" --build {shlex.quote(str(output))}"
-    _write_text(
-        phase / "NEXT-STEPS.txt",
-        "This phase made no AWS calls.\n\n"
-        "Run the read-only inventory collector from the repository root:\n"
-        f"  {inventory_command}\n",
-    )
     _render_plan_report(
         phase,
         normalized_mix=normalized_mix,
+        normalized_paths=normalized_paths,
         catalog_matches=catalog_matches,
         direct_patterns=direct_patterns,
-        failures=failures,
-        corrections=corrections,
     )
 
+    catalog_summary = _count_label(
+        len(catalog_matches), "catalog NPY match", "catalog NPY matches"
+    )
+    pattern_summary = _count_label(len(direct_patterns), "direct S3 pattern")
+    correction_summary = _count_label(len(corrections), "correction")
+    failure_summary = _count_label(len(failures), "blocking failure")
+    print(
+        f"Plan summary: {catalog_summary}, {pattern_summary}, "
+        f"{correction_summary}, {failure_summary}"
+    )
     if failures:
         raise PreparationError(
             f"Plan contains {len(failures)} validation failure(s); inspect {phase / 'resolution-failures.csv'}"
@@ -725,8 +824,13 @@ def _head_object(client: Any, bucket: str, key: str) -> S3Object:
 def collect_inventory(args: argparse.Namespace) -> None:
     build = args.build.resolve()
     manifest = _load_build(build)
-    phase = build / "02-inventory"
-    _exclusive_directory(phase)
+    phase = _reset_preparation_phase(
+        build,
+        "02-inventory",
+        "03-proposal",
+        "04-preflight",
+        "05-output-validation",
+    )
     listing_plan = _read_csv(build / "01-plan/listing-plan.csv")
 
     session = (
@@ -944,7 +1048,7 @@ def _finalize_inventory(
     resolution_failures: list[dict[str, str]] = []
 
     for row in catalog_matches:
-        membership.append({**row, "resolution_route": "catalog"})
+        membership.append(row)
     for pattern in direct_patterns:
         matches = [
             obj
@@ -970,11 +1074,11 @@ def _finalize_inventory(
                     "mix_name": pattern["mix_name"],
                     "category_index": pattern["category_index"],
                     "category_name": pattern["category_name"],
+                    "active": pattern["active"],
                     "yaml_path": pattern["yaml_path"],
                     "bucket": obj.bucket,
                     "key": obj.key,
                     "catalog_line": "",
-                    "resolution_route": "direct_s3",
                 }
             )
 
@@ -1067,8 +1171,8 @@ def _finalize_inventory(
         "mix_name",
         "category_index",
         "category_name",
+        "active",
         "yaml_path",
-        "resolution_route",
         "bucket",
         "key",
         "npy_uri",
@@ -1103,6 +1207,14 @@ def _finalize_inventory(
     _write_csv(
         phase / "head-errors.csv", head_errors, ["operation", "bucket", "key", "error"]
     )
+    original_by_leaf: dict[str, dict[str, int]] = defaultdict(dict)
+    for row in required_rows:
+        original_by_leaf[row["leaf_id"]][row["npy_uri"]] = int(
+            row["estimated_uint32_values"]
+        )
+    normalized_mix = _read_csv(build / "01-plan/normalized-mix.csv")
+    original_total = sum(sum(objects.values()) for objects in original_by_leaf.values())
+    target_total = sum(int(row["target_uint32_values"]) for row in normalized_mix)
     _write_json(
         phase / "inventory-summary.json",
         {
@@ -1114,10 +1226,14 @@ def _finalize_inventory(
             "direct_resolution_failures": len(resolution_failures),
             "invalid_npy_sizes": len(invalid_sizes),
             "head_errors": len(head_errors),
+            "original_uint32_values": original_total,
+            "target_uint32_values": target_total,
         },
     )
     _render_inventory_report(
         phase,
+        normalized_mix=normalized_mix,
+        normalized_paths=_read_csv(build / "01-plan/normalized-paths.csv"),
         required_rows=required_rows,
         all_objects=all_objects,
         missing_rows=missing_rows,
@@ -1345,8 +1461,9 @@ def propose_configs(args: argparse.Namespace) -> None:
     if blocking:
         raise PreparationError("Inventory contains blocking validation failures")
 
-    phase = build / "03-proposal"
-    _exclusive_directory(phase)
+    phase = _reset_preparation_phase(
+        build, "03-proposal", "04-preflight", "05-output-validation"
+    )
     configs_dir = phase / "config"
     manifests_dir = phase / "manifests"
     plots_dir = phase / "plots"
@@ -1368,6 +1485,8 @@ def propose_configs(args: argparse.Namespace) -> None:
     by_leaf: dict[str, dict[tuple[str, str], dict[str, str]]] = defaultdict(dict)
     memberships: dict[tuple[str, str], set[str]] = defaultdict(set)
     for row in inventory:
+        if row["active"] != "true":
+            continue
         object_id = (row["bucket"], row["key"])
         by_leaf[row["leaf_id"]][object_id] = row
         memberships[object_id].add(row["leaf_id"])
@@ -1438,12 +1557,19 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "target_uint32_values": target,
                 "available_uint32_values": available,
                 "planned_uint32_values": planned,
+                "token_change_from_original": planned - available,
+                "token_change_percent_from_original": f"{(planned - available) / available:.12g}",
                 "ideal_sample_rate": f"{target / available:.12g}",
                 "effective_sample_rate": f"{planned / available:.12g}",
                 "absolute_error": planned - target,
                 "absolute_error_bps_of_total": f"{10_000 * (planned - target) / int(settings['target_uint32_values']):.12g}",
                 "relative_error": f"{(planned - target) / target:.12g}",
                 "unique_object_count": len(objects),
+                "selected_object_count": sum(value > 0 for value in repetitions),
+                "dropped_object_count": sum(value == 0 for value in repetitions),
+                "repeated_object_count": sum(value > 1 for value in repetitions),
+                "total_object_uses": sum(repetitions),
+                "minimum_repetition": min(repetitions),
                 "maximum_repetition": max(repetitions),
             }
         )
@@ -1455,6 +1581,9 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "mix_name": mix_name,
                 "category_index": category_index,
                 "category_name": category_name,
+                "path_id": obj["path_id"],
+                "lower_group": _path_subgroup(obj["yaml_path"]),
+                "yaml_path": obj["yaml_path"],
                 "npy_uri": obj["npy_uri"],
                 "metadata_uri": obj["metadata_uri"],
                 "npy_size_bytes": obj["npy_size_bytes"],
@@ -1607,12 +1736,19 @@ def propose_configs(args: argparse.Namespace) -> None:
         "target_uint32_values",
         "available_uint32_values",
         "planned_uint32_values",
+        "token_change_from_original",
+        "token_change_percent_from_original",
         "ideal_sample_rate",
         "effective_sample_rate",
         "absolute_error",
         "absolute_error_bps_of_total",
         "relative_error",
         "unique_object_count",
+        "selected_object_count",
+        "dropped_object_count",
+        "repeated_object_count",
+        "total_object_uses",
+        "minimum_repetition",
         "maximum_repetition",
     ]
     _write_csv(phase / "category-allocation.csv", allocation_rows, allocation_fields)
@@ -1670,7 +1806,7 @@ def propose_configs(args: argparse.Namespace) -> None:
     )
 
     _validate_proposal(build, phase, config_index, allocation_rows, object_use_rows)
-    _render_report(
+    report_totals = _render_report(
         build,
         phase,
         allocation_rows,
@@ -1679,6 +1815,12 @@ def propose_configs(args: argparse.Namespace) -> None:
         config_index,
         category_execution_rows,
     )
+    inventoried_source = int(inventory_summary["original_uint32_values"])
+    if report_totals["source_uint32_values"] != inventoried_source:
+        raise PreparationError(
+            "Proposal source total does not match the S3 inventory: "
+            f"{report_totals['source_uint32_values']:,} != {inventoried_source:,}"
+        )
     _write_json(
         phase / "proposal-summary.json",
         {
@@ -1693,7 +1835,10 @@ def propose_configs(args: argparse.Namespace) -> None:
                 int(row["estimated_peak_local_bytes"]) for row in config_index
             ),
             "target_uint32_values": int(settings["target_uint32_values"]),
+            "source_uint32_values": report_totals["source_uint32_values"],
             "planned_uint32_values": total_planned,
+            "token_change_from_source": total_planned
+            - report_totals["source_uint32_values"],
             "absolute_error": total_planned - int(settings["target_uint32_values"]),
             "materialization_executed": False,
         },
@@ -1774,6 +1919,7 @@ def _validate_proposal(
     required_uses = {
         (row["leaf_id"], row["npy_uri"])
         for row in _read_csv(build / "02-inventory/required-objects.csv")
+        if row["active"] == "true"
     }
     for leaf_id, uri in sorted(required_uses - planned_uses):
         failures.append(
@@ -1805,8 +1951,7 @@ def preflight_build(args: argparse.Namespace) -> None:
     proposal_summary = build / "03-proposal/proposal-summary.json"
     if not proposal_summary.is_file():
         raise PreparationError("Proposal is missing; run propose first")
-    phase = build / "04-preflight"
-    _exclusive_directory(phase)
+    phase = _reset_preparation_phase(build, "04-preflight", "05-output-validation")
     listing_plan = _read_csv(build / "01-plan/listing-plan.csv")
     approved_inventory = _read_csv(build / "02-inventory/normalized-s3-inventory.csv")
     approved = {
@@ -2022,8 +2167,7 @@ def verify_output(args: argparse.Namespace) -> None:
     config_index = _read_csv(build / "03-proposal/config-index.csv")
     if not config_index:
         raise PreparationError("Proposal config index is empty or missing")
-    phase = build / "05-output-validation"
-    _exclusive_directory(phase)
+    phase = _reset_preparation_phase(build, "05-output-validation")
     session = (
         boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
     )
@@ -2261,10 +2405,10 @@ def verify_output(args: argparse.Namespace) -> None:
     _write_text(
         plots / "predicted-vs-actual.svg",
         _svg_scatter(
-            "Predicted versus actual materialized sizes",
+            "Predicted versus actual materialized token counts",
             points,
-            "Predicted (B uint32)",
-            "Actual (B uint32)",
+            "Predicted (billions of tokens)",
+            "Actual (billions of tokens)",
         ),
     )
     failed_rows = [row for row in validation_rows if row["status"] != "passed"]
@@ -2290,7 +2434,7 @@ def verify_output(args: argparse.Namespace) -> None:
         phase / "report.html",
         '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 output validation</title></head><body>'
         "<h1>Post-materialization size validation</h1>"
-        "<p>Actual quantities are output NPY bytes divided by four. No arrays or metadata rows were read.</p>"
+        "<p>Token counts are estimated as output NPY bytes divided by four. No arrays or metadata rows were read.</p>"
         '<img src="plots/predicted-vs-actual.svg" alt="Predicted versus actual sizes">'
         '<img src="plots/output-status.svg" alt="Output validation status">'
         "</body></html>\n",
@@ -2308,10 +2452,15 @@ def _svg_bar_chart(
     values: Sequence[float],
     unit: str,
     width: int = 1100,
+    value_labels: Sequence[str] | None = None,
+    summary: str | None = None,
 ) -> str:
+    if value_labels is not None and len(value_labels) != len(values):
+        raise ValueError("value_labels must have the same length as values")
     row_height = 24
-    margin_left = 360
-    margin_right = 140
+    label_x = 12
+    margin_left = 390
+    margin_right = 240 if value_labels is not None else 140
     height = 70 + row_height * len(labels)
     plot_width = width - margin_left - margin_right
     maximum = max(values, default=1.0) or 1.0
@@ -2319,18 +2468,112 @@ def _svg_bar_chart(
     for index, (label, value) in enumerate(zip(labels, values)):
         y = 50 + index * row_height
         bar_width = max(0.0, plot_width * value / maximum)
+        displayed_value = (
+            value_labels[index]
+            if value_labels is not None
+            else f"{value:.4g} {unit}"
+        )
         rows.append(
-            f'<text x="{margin_left - 8}" y="{y + 14}" text-anchor="end">{html.escape(label[:52])}</text>'
+            f'<text x="{label_x}" y="{y + 14}">{html.escape(label[:52])}</text>'
             f'<rect x="{margin_left}" y="{y}" width="{bar_width:.2f}" height="16" />'
-            f'<text x="{margin_left + bar_width + 6:.2f}" y="{y + 14}">{value:.4g} {html.escape(unit)}</text>'
+            f'<text x="{margin_left + plot_width + 8}" y="{y + 14}">{html.escape(displayed_value)}</text>'
         )
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" role="img" '
         f'aria-label="{html.escape(title)}"><title>{html.escape(title)}</title><style>'
-        "text{font:12px sans-serif;fill:#222}rect{fill:#356cb6}</style>"
+        "text{font:12px sans-serif;fill:#222}rect{fill:#356cb6}"
+        ".summary{font-size:14px;font-weight:600}</style>"
+        + (
+            f'<text class="summary" x="{label_x}" y="24">{html.escape(summary)}</text>'
+            if summary
+            else ""
+        )
         + "".join(rows)
         + "</svg>\n"
     )
+
+
+def _human_token_count(value: int) -> str:
+    for scale, suffix in (
+        (1_000_000_000_000, "T"),
+        (1_000_000_000, "B"),
+        (1_000_000, "M"),
+        (1_000, "K"),
+    ):
+        if abs(value) >= scale:
+            return f"{value / scale:.3g}{suffix}"
+    return f"{value:,}"
+
+
+def _sampling_change(original: int, target: int) -> tuple[str, str, float | None]:
+    if original <= 0:
+        if target <= 0:
+            return "no tokens", "sampling-same", None
+        return "target has no inventoried source", "sampling-unknown", None
+    ratio = target / original
+    if math.isclose(ratio, 1.0, rel_tol=0.0, abs_tol=0.0005):
+        return "unchanged 1.00×", "sampling-same", ratio
+    if ratio > 1:
+        ratio_label = f"{ratio:,.0f}×" if ratio >= 100 else f"{ratio:.2f}×"
+        delta = 100 * (ratio - 1)
+        suffix = f" (+{delta:.1f}%)" if delta < 1_000 else ""
+        return f"upsample {ratio_label}{suffix}", "sampling-up", ratio
+    delta = 100 * (1 - ratio)
+    return f"downsample {ratio:.2f}× (−{delta:.1f}%)", "sampling-down", ratio
+
+
+def _token_change_label(original: int, after: int) -> tuple[str, str]:
+    delta = after - original
+    _, css_class, _ = _sampling_change(original, after)
+    if delta == 0:
+        return "no token change", css_class
+    sign = "+" if delta > 0 else "−" if delta < 0 else "±"
+    percent = 100 * abs(delta) / original if original else 0.0
+    return (
+        f"{sign}{_human_token_count(abs(delta))} tokens ({sign}{percent:.1f}%)",
+        css_class,
+    )
+
+
+def _format_multiplier(value: float) -> str:
+    if value >= 100:
+        return f"{value:,.0f}×"
+    if value >= 10:
+        return f"{value:.1f}×"
+    return f"{value:.2f}×"
+
+
+def _apportion_by_size(total: int, sizes: Sequence[int]) -> list[int]:
+    denominator = sum(sizes)
+    if total <= 0 or denominator <= 0:
+        return [0 for _ in sizes]
+    apportioned = [total * size // denominator for size in sizes]
+    remainder = total - sum(apportioned)
+    order = sorted(
+        range(len(sizes)),
+        key=lambda index: (-(total * sizes[index] % denominator), index),
+    )
+    for index in order[:remainder]:
+        apportioned[index] += 1
+    return apportioned
+
+
+def _comparison_bars(original: int, target: int) -> str:
+    maximum = max(original, target, 1)
+    original_width = 100 * original / maximum
+    target_width = 100 * target / maximum
+    return (
+        '<span class="comparison-bars" aria-hidden="true">'
+        '<span class="comparison-track"><span class="original-fill" '
+        f'style="width:{original_width:.8f}%"></span></span>'
+        '<span class="comparison-track"><span class="target-fill" '
+        f'style="width:{target_width:.8f}%"></span></span></span>'
+    )
+
+
+def _mix_plot_value_label(value: int, total: int) -> str:
+    percent = 100 * value / total if total else 0.0
+    return f"{percent:.2f}% · {_human_token_count(value)} tokens"
 
 
 def _svg_scatter(
@@ -2362,13 +2605,94 @@ def _svg_scatter(
 </svg>\n"""
 
 
+def _path_subgroup(yaml_path: str) -> str:
+    parts = [part for part in yaml_path.split("/") if part]
+    for index, part in enumerate(parts):
+        if part == "allenai" and index:
+            return unquote(parts[index - 1])
+    candidates = [
+        part
+        for part in parts
+        if "*" not in part and not part.endswith((".npy", ".csv.gz"))
+    ]
+    return unquote(candidates[-1]) if candidates else yaml_path
+
+
+def _interactive_report_style() -> str:
+    return """
+<style>
+:root{color-scheme:light dark;--muted:#536965;--surface-hover:#eaf3f1;--surface-selected:#dceeea;--detail:#edf6f4;--track:#d2e1de;--series:#14786f;--original:#71817e;--up:#14786f;--down:#a35f16;--same:#536965;--code:#e2efec}
+@media(prefers-color-scheme:dark){:root{--muted:#a7bbb7;--surface-hover:#172522;--surface-selected:#1b312d;--detail:#142420;--track:#2a403c;--series:#5cc8bb;--original:#91a29f;--up:#5cc8bb;--down:#e5a456;--same:#a7bbb7;--code:#1b312d}}
+*{box-sizing:border-box}body{font:14px/1.45 system-ui,sans-serif;max-width:1120px;margin:0 auto;padding:32px 24px 72px;color:CanvasText;background:Canvas}h1{margin:0;font-size:26px;line-height:1.2}h2{margin:0;font-size:20px;line-height:1.3;overflow-wrap:anywhere}.chart-total{margin:8px 0 24px;color:var(--muted);font-variant-numeric:tabular-nums}.mix-chart{display:grid;gap:2px}
+.mix-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;width:100%;padding:12px 10px;border:0;border-radius:8px;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}.mix-row:hover{background:var(--surface-hover)}.mix-row.is-selected{background:var(--surface-selected)}.mix-name{min-width:0;overflow-wrap:anywhere;font-weight:500}.mix-value{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}.bar-track{grid-column:1/-1;display:block;height:6px;overflow:hidden;background:var(--track);border-radius:999px}.bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}
+.mix-detail{padding:22px 18px 28px;border-radius:10px;background:var(--detail)}.detail-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;align-items:end;margin-bottom:20px}.detail-total{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}.category-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 32px}.category{min-width:0}.category-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:baseline}.category-name{font-weight:500;overflow-wrap:anywhere}.sampling{font-variant-numeric:tabular-nums;white-space:nowrap}.sampling-up{color:var(--up)}.sampling-down{color:var(--down)}.sampling-same,.sampling-unknown{color:var(--same)}.category-counts{display:flex;flex-wrap:wrap;gap:5px 12px;margin:4px 0 7px;color:var(--muted);font-variant-numeric:tabular-nums}.category-bar{height:4px;overflow:hidden;margin-top:7px;background:var(--track);border-radius:999px}.category-bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}.comparison-bars{display:grid;grid-template-rows:3px 3px;gap:3px}.comparison-track{display:block;overflow:hidden;background:var(--track);border-radius:999px}.original-fill,.target-fill{display:block;height:100%;border-radius:inherit}.original-fill{background:var(--original)}.target-fill{background:var(--series)}.path-list{display:grid;gap:2px;margin-top:8px}.path-detail summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;padding:8px 6px;border-radius:6px;cursor:pointer;list-style-position:inside}.path-detail summary:hover{background:var(--surface-hover)}.path-name{overflow-wrap:anywhere}.path-stat{color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.path-sampling{grid-column:1/-1;display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px 12px;color:var(--muted);font-variant-numeric:tabular-nums}.path-sampling .comparison-bars{flex:1 0 100%}.path-chevron{display:inline-block;margin-left:7px;transition:transform .12s ease}.path-detail[open] .path-chevron{transform:rotate(90deg)}.path-detail code{display:block;margin:2px 6px 10px;padding:9px 10px;border-radius:6px;background:var(--code);font:12px/1.45 ui-monospace,monospace;overflow-wrap:anywhere}.supporting-plots{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px}.supporting-plots img{display:block;width:100%;height:auto}
+.repetition-line{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px;color:var(--muted);font-variant-numeric:tabular-nums}.token-change{white-space:nowrap}
+@media(prefers-reduced-motion:reduce){.path-chevron{transition:none}}
+@media(max-width:760px){body{padding:24px 16px 48px}.mix-row{grid-template-columns:1fr;gap:7px}.mix-value{white-space:normal}.bar-track{grid-column:1}.detail-head{grid-template-columns:1fr}.detail-total{white-space:normal}.category-grid{grid-template-columns:1fr}.supporting-plots{grid-template-columns:1fr}}
+</style>
+"""
+
+
+def _interactive_chart_rows(
+    rows: Sequence[dict[str, Any]],
+    value_field: str,
+    percent_field: str,
+    detail_prefix: str,
+    total: int,
+) -> str:
+    maximum = max((float(row[percent_field]) for row in rows), default=1.0) or 1.0
+    output: list[str] = []
+    for index, row in enumerate(rows):
+        detail_id = f"{detail_prefix}-{index}"
+        row["detail_id"] = detail_id
+        percent = float(row[percent_field])
+        relative_width = 100 * percent / maximum
+        tokens = int(row[value_field])
+        value_label = str(
+            row.get("value_label") or _mix_plot_value_label(tokens, total)
+        )
+        output.append(
+            f'<button type="button" class="mix-row" data-detail="{detail_id}" '
+            f'aria-controls="{detail_id}" aria-expanded="false">'
+            f'<span class="mix-name">{html.escape(str(row["mix_name"]))}</span>'
+            f'<span class="mix-value">{html.escape(value_label)}</span>'
+            f'<span class="bar-track" aria-hidden="true"><span class="bar-fill" style="width:{relative_width:.8f}%"></span></span>'
+            "</button>"
+        )
+    return "".join(output)
+
+
+def _interactive_report_script() -> str:
+    return """
+<script>
+document.querySelectorAll('.mix-row').forEach((button) => {
+  button.addEventListener('click', () => {
+    const target = document.getElementById(button.dataset.detail);
+    const opening = target.hidden;
+    document.querySelectorAll('.mix-detail').forEach((detail) => { detail.hidden = true; });
+    document.querySelectorAll('.mix-row').forEach((row) => {
+      row.classList.remove('is-selected');
+      row.setAttribute('aria-expanded', 'false');
+    });
+    if (opening) {
+      button.insertAdjacentElement('afterend', target);
+      target.hidden = false;
+      button.classList.add('is-selected');
+      button.setAttribute('aria-expanded', 'true');
+      target.scrollIntoView({block: 'nearest'});
+    }
+  });
+});
+</script>
+"""
+
+
 def _render_plan_report(
     phase: Path,
     normalized_mix: Sequence[dict[str, Any]],
+    normalized_paths: Sequence[dict[str, Any]],
     catalog_matches: Sequence[dict[str, Any]],
     direct_patterns: Sequence[dict[str, Any]],
-    failures: Sequence[dict[str, Any]],
-    corrections: Sequence[dict[str, Any]],
 ) -> None:
     plots = phase / "plots"
     plot_data = phase / "plot-data"
@@ -2377,55 +2701,132 @@ def _render_plan_report(
     target_by_mix: dict[str, int] = defaultdict(int)
     for row in normalized_mix:
         target_by_mix[row["mix_name"]] += int(row["target_uint32_values"])
+    target_total = sum(target_by_mix.values())
     target_rows = [
-        {"mix_name": name, "target_uint32_values": value}
+        {
+            "mix_name": name,
+            "target_uint32_values": value,
+            "target_percent": f"{100 * value / target_total:.8f}"
+            if target_total
+            else "0",
+        }
         for name, value in sorted(
             target_by_mix.items(), key=lambda item: item[1], reverse=True
         )[:40]
     ]
-    resolution_rows = [
-        {"state": "catalog-resolved NPYs", "count": len(catalog_matches)},
-        {"state": "direct S3 patterns", "count": len(direct_patterns)},
-        {"state": "explicit corrections", "count": len(corrections)},
-        {"state": "blocking failures", "count": len(failures)},
-    ]
     _write_csv(
         plot_data / "target-mix.csv",
         target_rows,
-        ["mix_name", "target_uint32_values"],
+        ["mix_name", "target_uint32_values", "target_percent"],
     )
-    _write_csv(plot_data / "resolution-counts.csv", resolution_rows, ["state", "count"])
     _write_text(
         plots / "target-mix.svg",
         _svg_bar_chart(
-            "Largest target mix entries",
+            "Largest target mix entries by share of target",
             [row["mix_name"] for row in target_rows],
-            [row["target_uint32_values"] / 1e9 for row in target_rows],
-            "B uint32",
+            [float(row["target_percent"]) for row in target_rows],
+            "% of target",
+            value_labels=[
+                _mix_plot_value_label(row["target_uint32_values"], target_total)
+                for row in target_rows
+            ],
+            summary=(
+                f"Total target: {_human_token_count(target_total)} tokens "
+                f"({target_total:,})"
+            ),
         ),
     )
-    _write_text(
-        plots / "resolution-counts.svg",
-        _svg_bar_chart(
-            "Path-resolution planning counts",
-            [row["state"] for row in resolution_rows],
-            [row["count"] for row in resolution_rows],
-            "items",
-        ),
+    chart_rows = _interactive_chart_rows(
+        target_rows,
+        "target_uint32_values",
+        "target_percent",
+        "plan-mix-detail",
+        target_total,
     )
-    _write_text(
-        phase / "report.html",
-        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 path plan</title></head><body>'
-        "<h1>Path-resolution checkpoint</h1>"
-        "<p>The YAML defines membership. Catalog counts include only active YAML matches; direct S3 patterns remain pending live inventory.</p>"
-        '<img src="plots/target-mix.svg" alt="Largest target mix entries">'
-        '<img src="plots/resolution-counts.svg" alt="Path resolution counts">'
-        "</body></html>\n",
+    paths_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in normalized_paths:
+        paths_by_leaf[row["leaf_id"]].append(row)
+    catalog_counts = Counter(row["path_id"] for row in catalog_matches)
+    direct_path_ids = {row["path_id"] for row in direct_patterns}
+    categories_by_mix: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in normalized_mix:
+        categories_by_mix[row["mix_name"]].append(row)
+
+    detail_sections: list[str] = []
+    for target_row in target_rows:
+        mix_name = str(target_row["mix_name"])
+        mix_target = int(target_row["target_uint32_values"])
+        category_sections: list[str] = []
+        for category in sorted(
+            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
+        ):
+            category_target = int(category["target_uint32_values"])
+            category_percent = 100 * category_target / mix_target if mix_target else 0
+            path_rows: list[str] = []
+            for path in sorted(
+                paths_by_leaf[category["leaf_id"]], key=lambda row: row["path_id"]
+            ):
+                active = path["active"] == "true"
+                if not active:
+                    matched = "inactive"
+                elif path["path_id"] in direct_path_ids:
+                    matched = "pending inventory"
+                else:
+                    matched = _count_label(
+                        catalog_counts[path["path_id"]], "matched NPY"
+                    )
+                path_rows.append(
+                    '<details class="path-detail"><summary>'
+                    f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
+                    f'<span class="path-stat">{html.escape(matched)}'
+                    '<span class="path-chevron" aria-hidden="true">›</span></span>'
+                    "</summary>"
+                    f'<code>{html.escape(path["yaml_path"])}</code>'
+                    "</details>"
+                )
+            category_sections.append(
+                '<section class="category">'
+                '<div class="category-head">'
+                f'<span class="category-name">{html.escape(category["category_name"])}</span>'
+                f'<span class="category-value">{html.escape(_human_token_count(category_target))} tokens · {category_percent:.2f}%</span>'
+                "</div>"
+                '<div class="category-bar" aria-hidden="true">'
+                f'<span class="category-bar-fill" style="width:{category_percent:.8f}%"></span></div>'
+                '<div class="path-list">'
+                + "".join(path_rows)
+                + "</div>"
+                + "</section>"
+            )
+        detail_sections.append(
+            f'<section class="mix-detail" id="{target_row["detail_id"]}" hidden>'
+            '<div class="detail-head">'
+            f'<h2>{html.escape(mix_name)}</h2>'
+            f'<div class="detail-total">{_human_token_count(mix_target)} tokens · '
+            f'{float(target_row["target_percent"]):.2f}% of target</div></div>'
+            '<div class="category-grid">'
+            + "".join(category_sections)
+            + "</div>"
+            + "</section>"
+        )
+    report_html = (
+        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 target allocation and S3 path plan</title>'
+        + _interactive_report_style()
+        + "</head><body>"
+        + "<h1>Dolma 3.5 Target Allocation and S3 Path Plan</h1>"
+        f'<div class="chart-total">Materialized output target: '
+        f'{_human_token_count(target_total)} tokens ({target_total:,})</div>'
+        f'<div class="mix-chart">{chart_rows}</div>'
+        + "".join(detail_sections)
+        + _interactive_report_script()
+        + "</body></html>\n"
     )
+    _write_text(phase / "report.html", report_html)
 
 
 def _render_inventory_report(
     phase: Path,
+    normalized_mix: Sequence[dict[str, Any]],
+    normalized_paths: Sequence[dict[str, Any]],
     required_rows: Sequence[dict[str, Any]],
     all_objects: Sequence[dict[str, Any]],
     missing_rows: Sequence[dict[str, Any]],
@@ -2450,20 +2851,59 @@ def _render_inventory_report(
         {"state": "direct pattern failures", "count": len(resolution_failures)},
         {"state": "invalid NPY sizes", "count": len(invalid_sizes)},
     ]
-    by_mix: dict[str, int] = defaultdict(int)
+    original_by_mix: dict[str, int] = defaultdict(int)
     seen: set[tuple[str, str]] = set()
     for row in required_rows:
         identity = (row["leaf_id"], row["npy_uri"])
         if identity in seen:
             continue
         seen.add(identity)
-        by_mix[row["mix_name"]] += int(row["estimated_uint32_values"])
-    available_rows = [
-        {"mix_name": name, "available_uint32_values": value}
-        for name, value in sorted(
-            by_mix.items(), key=lambda item: item[1], reverse=True
-        )[:40]
-    ]
+        original_by_mix[row["mix_name"]] += int(row["estimated_uint32_values"])
+    target_by_mix: dict[str, int] = defaultdict(int)
+    categories_by_mix: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    target_by_leaf: dict[str, int] = {}
+    for row in normalized_mix:
+        target = int(row["target_uint32_values"])
+        target_by_mix[row["mix_name"]] += target
+        target_by_leaf[row["leaf_id"]] = target
+        categories_by_mix[row["mix_name"]].append(row)
+    original_total = sum(original_by_mix.values())
+    target_total = sum(target_by_mix.values())
+    mix_names = sorted(
+        set(original_by_mix) | set(target_by_mix),
+        key=lambda name: (target_by_mix[name], original_by_mix[name], name),
+        reverse=True,
+    )
+    comparison_rows: list[dict[str, Any]] = []
+    for name in mix_names:
+        original = original_by_mix[name]
+        target = target_by_mix[name]
+        change, change_class, ratio = _sampling_change(original, target)
+        comparison_rows.append(
+            {
+                "mix_name": name,
+                "available_uint32_values": original,
+                "available_percent": f"{100 * original / original_total:.8f}"
+                if original_total
+                else "0",
+                "target_uint32_values": target,
+                "target_percent": f"{100 * target / target_total:.8f}"
+                if target_total
+                else "0",
+                "sampling_ratio": "" if ratio is None else f"{ratio:.12g}",
+                "sampling_change": change,
+                "sampling_class": change_class,
+                "value_label": (
+                    f"{_human_token_count(original)} original → "
+                    f"{_human_token_count(target)} target · {change}"
+                ),
+            }
+        )
+    available_rows = sorted(
+        comparison_rows,
+        key=lambda row: int(row["available_uint32_values"]),
+        reverse=True,
+    )[:40]
     unique_sizes = {
         row["key"]: int(row["size_bytes"])
         for row in all_objects
@@ -2486,8 +2926,16 @@ def _render_inventory_report(
     _write_csv(plot_data / "coverage.csv", coverage_rows, ["state", "count"])
     _write_csv(
         plot_data / "available-by-mix.csv",
-        available_rows,
-        ["mix_name", "available_uint32_values"],
+        comparison_rows,
+        [
+            "mix_name",
+            "available_uint32_values",
+            "available_percent",
+            "target_uint32_values",
+            "target_percent",
+            "sampling_ratio",
+            "sampling_change",
+        ],
     )
     _write_csv(
         plot_data / "object-size-bins.csv",
@@ -2506,10 +2954,20 @@ def _render_inventory_report(
     _write_text(
         plots / "available-by-mix.svg",
         _svg_bar_chart(
-            "Largest available mix entries",
+            "Largest available mix entries by share of available tokens",
             [row["mix_name"] for row in available_rows],
-            [row["available_uint32_values"] / 1e9 for row in available_rows],
-            "B uint32",
+            [float(row["available_percent"]) for row in available_rows],
+            "% of available tokens",
+            value_labels=[
+                _mix_plot_value_label(
+                    row["available_uint32_values"], original_total
+                )
+                for row in available_rows
+            ],
+            summary=(
+                f"Original aggregate: {_human_token_count(original_total)} tokens "
+                f"({original_total:,})"
+            ),
         ),
     )
     _write_text(
@@ -2524,16 +2982,184 @@ def _render_inventory_report(
             "objects",
         ),
     )
-    _write_text(
-        phase / "report.html",
-        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 inventory</title></head><body>'
-        "<h1>S3 inventory checkpoint</h1>"
-        "<p>All available quantities are NPY bytes divided by four. Metadata sizes are excluded.</p>"
-        '<img src="plots/coverage.svg" alt="Inventory coverage">'
-        '<img src="plots/available-by-mix.svg" alt="Available values by mix">'
-        '<img src="plots/object-size-histogram.svg" alt="NPY object size histogram">'
-        "</body></html>\n",
+    chart_rows = _interactive_chart_rows(
+        comparison_rows,
+        "target_uint32_values",
+        "target_percent",
+        "inventory-mix-detail",
+        target_total,
     )
+    rows_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    rows_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in required_rows:
+        rows_by_leaf[row["leaf_id"]].append(row)
+        rows_by_path[row["path_id"]].append(row)
+    paths_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in normalized_paths:
+        paths_by_leaf[row["leaf_id"]].append(row)
+
+    category_comparisons: list[dict[str, Any]] = []
+    path_comparisons: list[dict[str, Any]] = []
+    detail_sections: list[str] = []
+    for mix_row in comparison_rows:
+        mix_name = str(mix_row["mix_name"])
+        mix_original = int(mix_row["available_uint32_values"])
+        mix_target = int(mix_row["target_uint32_values"])
+        category_sections: list[str] = []
+        for category in sorted(
+            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
+        ):
+            leaf_id = category["leaf_id"]
+            leaf_rows = rows_by_leaf[leaf_id]
+            category_objects = {
+                row["npy_uri"]: int(row["estimated_uint32_values"])
+                for row in leaf_rows
+            }
+            category_original = sum(category_objects.values())
+            category_target = target_by_leaf[leaf_id]
+            category_change, category_class, category_ratio = _sampling_change(
+                category_original, category_target
+            )
+            category_comparisons.append(
+                {
+                    "leaf_id": leaf_id,
+                    "mix_name": mix_name,
+                    "category_name": category["category_name"],
+                    "original_uint32_values": category_original,
+                    "target_uint32_values": category_target,
+                    "sampling_ratio": ""
+                    if category_ratio is None
+                    else f"{category_ratio:.12g}",
+                    "sampling_change": category_change,
+                }
+            )
+            path_definitions = sorted(
+                paths_by_leaf[leaf_id], key=lambda row: row["path_id"]
+            )
+            path_objects: list[dict[str, int]] = []
+            for path in path_definitions:
+                path_objects.append(
+                    {
+                        row["npy_uri"]: int(row["estimated_uint32_values"])
+                        for row in rows_by_path[path["path_id"]]
+                    }
+                )
+            path_originals = [sum(objects.values()) for objects in path_objects]
+            path_targets = _apportion_by_size(category_target, path_originals)
+            path_rows: list[str] = []
+            for path, objects, path_original, path_target in zip(
+                path_definitions, path_objects, path_originals, path_targets
+            ):
+                path_change, path_class, path_ratio = _sampling_change(
+                    path_original, path_target
+                )
+                path_comparisons.append(
+                    {
+                        "path_id": path["path_id"],
+                        "leaf_id": leaf_id,
+                        "mix_name": mix_name,
+                        "category_name": category["category_name"],
+                        "lower_group": _path_subgroup(path["yaml_path"]),
+                        "yaml_path": path["yaml_path"],
+                        "original_uint32_values": path_original,
+                        "implied_target_uint32_values": path_target,
+                        "sampling_ratio": ""
+                        if path_ratio is None
+                        else f"{path_ratio:.12g}",
+                        "sampling_change": path_change,
+                        "unique_npy_count": len(objects),
+                    }
+                )
+                path_rows.append(
+                    '<details class="path-detail"><summary>'
+                    f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
+                    f'<span class="path-stat">{_count_label(len(objects), "NPY")}'
+                    '<span class="path-chevron" aria-hidden="true">›</span></span>'
+                    '<span class="path-sampling">'
+                    f'<span>{_human_token_count(path_original)} original → '
+                    f'{_human_token_count(path_target)} implied target</span>'
+                    f'<span class="sampling {path_class}">{html.escape(path_change)}</span>'
+                    + _comparison_bars(path_original, path_target)
+                    + "</span></summary>"
+                    f'<code>Original: {path_original:,} tokens · Implied target: '
+                    f'{path_target:,} tokens<br>{html.escape(path["yaml_path"])}</code>'
+                    "</details>"
+                )
+            category_sections.append(
+                '<section class="category">'
+                '<div class="category-head">'
+                f'<span class="category-name">{html.escape(category["category_name"])}</span>'
+                f'<span class="sampling {category_class}">{html.escape(category_change)}</span>'
+                "</div>"
+                '<div class="category-counts">'
+                f'<span>{_human_token_count(category_original)} original</span>'
+                f'<span>→ {_human_token_count(category_target)} target</span></div>'
+                + _comparison_bars(category_original, category_target)
+                + '<div class="path-list">'
+                + "".join(path_rows)
+                + "</div></section>"
+            )
+        detail_sections.append(
+            f'<section class="mix-detail" id="{mix_row["detail_id"]}" hidden>'
+            '<div class="detail-head">'
+            f'<h2>{html.escape(mix_name)}</h2>'
+            f'<div class="detail-total">{_human_token_count(mix_original)} original → '
+            f'{_human_token_count(mix_target)} target<br>'
+            f'<span class="sampling {mix_row["sampling_class"]}">'
+            f'{html.escape(str(mix_row["sampling_change"]))}</span></div></div>'
+            '<div class="category-grid">'
+            + "".join(category_sections)
+            + "</div></section>"
+        )
+
+    _write_csv(
+        plot_data / "sampling-by-category.csv",
+        category_comparisons,
+        [
+            "leaf_id",
+            "mix_name",
+            "category_name",
+            "original_uint32_values",
+            "target_uint32_values",
+            "sampling_ratio",
+            "sampling_change",
+        ],
+    )
+    _write_csv(
+        plot_data / "sampling-by-lower-group.csv",
+        path_comparisons,
+        [
+            "path_id",
+            "leaf_id",
+            "mix_name",
+            "category_name",
+            "lower_group",
+            "yaml_path",
+            "original_uint32_values",
+            "implied_target_uint32_values",
+            "sampling_ratio",
+            "sampling_change",
+            "unique_npy_count",
+        ],
+    )
+    aggregate_change, aggregate_class, _ = _sampling_change(
+        original_total, target_total
+    )
+    report_html = (
+        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 sampling plan</title>'
+        + _interactive_report_style()
+        + "</head><body><h1>Dolma 3.5 S3 Source Inventory and Sampling Plan</h1>"
+        f'<div class="chart-total">S3 source aggregate (NPY bytes ÷ 4): '
+        f'{_human_token_count(original_total)} tokens '
+        f'({original_total:,}) → target: {_human_token_count(target_total)} tokens '
+        f'({target_total:,}) · <span class="sampling {aggregate_class}">'
+        f'{html.escape(aggregate_change)}</span></div>'
+        f'<div class="mix-chart">{chart_rows}</div>'
+        + "".join(detail_sections)
+        + _interactive_report_script()
+        + "</body></html>\n"
+    )
+    _write_text(phase / "report.html", report_html)
 
 
 def _render_report(
@@ -2544,7 +3170,7 @@ def _render_report(
     inventory: Sequence[dict[str, str]],
     execution_units: Sequence[dict[str, Any]],
     category_execution: Sequence[dict[str, Any]],
-) -> None:
+) -> dict[str, int]:
     plots = phase / "plots"
     plot_data = phase / "plot-data"
     plot_data.mkdir(exist_ok=False)
@@ -2627,18 +3253,40 @@ def _render_report(
         }
         for name, values in top_targets
     ]
+    target_total = sum(values["target"] for values in by_mix.values())
+    for row in target_rows:
+        row["target_percent"] = (
+            f"{100 * int(row['target_uint32_values']) / target_total:.8f}"
+            if target_total
+            else "0"
+        )
     _write_csv(
         plot_data / "target-by-mix.csv",
         target_rows,
-        ["mix_name", "target_uint32_values", "planned_uint32_values"],
+        [
+            "mix_name",
+            "target_uint32_values",
+            "planned_uint32_values",
+            "target_percent",
+        ],
     )
     _write_text(
         plots / "target-mix.svg",
         _svg_bar_chart(
-            "Largest target mix entries",
+            "Largest target mix entries by share of target",
             [name for name, _ in top_targets],
-            [values["target"] / 1e9 for _, values in top_targets],
-            "B uint32",
+            [float(row["target_percent"]) for row in target_rows],
+            "% of target",
+            value_labels=[
+                _mix_plot_value_label(
+                    int(row["target_uint32_values"]), target_total
+                )
+                for row in target_rows
+            ],
+            summary=(
+                f"Total target: {_human_token_count(target_total)} tokens "
+                f"({target_total:,})"
+            ),
         ),
     )
     points = [
@@ -2672,7 +3320,10 @@ def _render_report(
     _write_text(
         plots / "target-vs-proposed.svg",
         _svg_scatter(
-            "Target versus proposed", points, "Target (B uint32)", "Proposed (B uint32)"
+            "Target versus proposed",
+            points,
+            "Target (billions of tokens)",
+            "Proposed (billions of tokens)",
         ),
     )
     residuals = sorted(
@@ -2697,7 +3348,7 @@ def _render_report(
             "Largest absolute allocation residuals",
             [f"{row['mix_name']} / {row['category_name']}" for row in residuals],
             [abs(int(row["absolute_error"])) / 1e6 for row in residuals],
-            "M uint32",
+            "millions of tokens",
         ),
     )
     pressure = sorted(
@@ -2759,31 +3410,293 @@ def _render_report(
             ),
         )
 
-    report_rows = "".join(
-        "<tr>"
-        f"<td>{html.escape(row['mix_name'])}</td><td>{html.escape(row['category_name'])}</td>"
-        f"<td>{int(row['target_uint32_values']):,}</td><td>{int(row['available_uint32_values']):,}</td>"
-        f"<td>{int(row['planned_uint32_values']):,}</td><td>{int(row['absolute_error']):,}</td>"
-        f"<td>{float(row['ideal_sample_rate']):.4f}×</td></tr>"
-        for row in sorted(
-            allocations, key=lambda item: abs(int(item["absolute_error"])), reverse=True
-        )
+    normalized_mix = _read_csv(build / "01-plan/normalized-mix.csv")
+    normalized_paths = _read_csv(build / "01-plan/normalized-paths.csv")
+    allocation_by_leaf = {row["leaf_id"]: row for row in allocations}
+    inventory_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    inventory_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in inventory:
+        inventory_by_leaf[row["leaf_id"]].append(row)
+        inventory_by_path[row["path_id"]].append(row)
+    uses_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    uses_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in object_uses:
+        uses_by_leaf[row["leaf_id"]].append(row)
+        uses_by_path[row["path_id"]].append(row)
+    categories_by_mix: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    paths_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in normalized_mix:
+        categories_by_mix[row["mix_name"]].append(row)
+    for row in normalized_paths:
+        paths_by_leaf[row["leaf_id"]].append(row)
+
+    source_totals: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"original": 0, "target": 0, "planned": 0}
     )
-    report = f"""<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 14T proposal</title>
-<style>body{{font:14px system-ui,sans-serif;max-width:1200px;margin:24px auto;padding:0 16px}}img{{max-width:100%;height:auto}}table{{border-collapse:collapse;width:100%}}th,td{{border-bottom:1px solid #ccc;padding:6px;text-align:right}}th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){{text-align:left}}</style></head><body>
-<h1>Dolma 3.5 14T pre-materialization proposal</h1>
-<p>All quantities are estimated from NPY byte sizes divided by four. No arrays were opened and no content-level counts were performed.</p>
-<p>The dataset is materialized as {len(execution_units):,} independent execution units across {len(category_execution):,} active categories. No worker is assigned the full dataset.</p>
-<h2>Largest execution units</h2><img src="plots/largest-execution-units.svg" alt="Largest estimated execution-unit working sets">
-<h2>Units per category</h2><img src="plots/execution-units-per-category.svg" alt="Most partitioned categories">
-<h2>Target mix</h2><img src="plots/target-mix.svg" alt="Largest target mix entries">
-<h2>Target versus proposed</h2><img src="plots/target-vs-proposed.svg" alt="Target versus proposed scatter plot">
-<h2>Largest residuals</h2><img src="plots/largest-absolute-residuals.svg" alt="Largest absolute residuals">
-<h2>Upsampling pressure</h2><img src="plots/upsampling-pressure.svg" alt="Largest upsampling ratios">
-<h2>Object sizes</h2><img src="plots/object-size-histogram.svg" alt="NPY object size histogram">
-<h2>Category details</h2><table><thead><tr><th>Mix</th><th>Category</th><th>Target</th><th>Available</th><th>Proposed</th><th>Error</th><th>Requested/available</th></tr></thead><tbody>{report_rows}</tbody></table>
-</body></html>\n"""
+    original_by_leaf: dict[str, int] = {}
+    for category in normalized_mix:
+        leaf_id = category["leaf_id"]
+        original_objects = {
+            row["npy_uri"]: int(row["estimated_uint32_values"])
+            for row in inventory_by_leaf[leaf_id]
+        }
+        original = sum(original_objects.values())
+        planned = sum(
+            int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id]
+        )
+        original_by_leaf[leaf_id] = original
+        entry = source_totals[category["mix_name"]]
+        entry["original"] += original
+        entry["target"] += int(category["target_uint32_values"])
+        entry["planned"] += planned
+
+    original_total = sum(entry["original"] for entry in source_totals.values())
+    proposed_total = sum(entry["planned"] for entry in source_totals.values())
+    comparison_rows: list[dict[str, Any]] = []
+    for mix_name, totals in sorted(
+        source_totals.items(),
+        key=lambda item: (item[1]["planned"], item[1]["target"], item[0]),
+        reverse=True,
+    ):
+        change_label, change_class = _token_change_label(
+            totals["original"], totals["planned"]
+        )
+        effective = (
+            totals["planned"] / totals["original"] if totals["original"] else 0.0
+        )
+        comparison_rows.append(
+            {
+                "mix_name": mix_name,
+                "planned_uint32_values": totals["planned"],
+                "planned_percent": f"{100 * totals['planned'] / proposed_total:.8f}"
+                if proposed_total
+                else "0",
+                "value_label": (
+                    f"{_human_token_count(totals['original'])} source → "
+                    f"{_human_token_count(totals['planned'])} proposed · "
+                    f"{change_label} · {_format_multiplier(effective)} effective repetitions"
+                ),
+                "original": totals["original"],
+                "target": totals["target"],
+                "planned": totals["planned"],
+                "change_label": change_label,
+                "change_class": change_class,
+                "effective": effective,
+            }
+        )
+    chart_rows = _interactive_chart_rows(
+        comparison_rows,
+        "planned_uint32_values",
+        "planned_percent",
+        "proposal-mix-detail",
+        proposed_total,
+    )
+
+    category_sampling_rows: list[dict[str, Any]] = []
+    path_sampling_rows: list[dict[str, Any]] = []
+    detail_sections: list[str] = []
+    for mix_row in comparison_rows:
+        mix_name = str(mix_row["mix_name"])
+        category_sections: list[str] = []
+        for category in sorted(
+            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
+        ):
+            leaf_id = category["leaf_id"]
+            original = original_by_leaf[leaf_id]
+            target = int(category["target_uint32_values"])
+            planned = sum(
+                int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id]
+            )
+            allocation = allocation_by_leaf.get(leaf_id)
+            if allocation is None:
+                minimum_repetition = 0
+                maximum_repetition = 0
+                total_object_uses = 0
+                unique_object_count = len(
+                    {row["npy_uri"] for row in inventory_by_leaf[leaf_id]}
+                )
+                selected_object_count = 0
+                dropped_object_count = unique_object_count
+                repeated_object_count = 0
+            else:
+                minimum_repetition = int(allocation["minimum_repetition"])
+                maximum_repetition = int(allocation["maximum_repetition"])
+                total_object_uses = int(allocation["total_object_uses"])
+                unique_object_count = int(allocation["unique_object_count"])
+                selected_object_count = int(allocation["selected_object_count"])
+                dropped_object_count = int(allocation["dropped_object_count"])
+                repeated_object_count = int(allocation["repeated_object_count"])
+            effective = planned / original if original else 0.0
+            change_label, change_class = _token_change_label(original, planned)
+            sampling_label, sampling_class, _ = _sampling_change(original, planned)
+            category_sampling_rows.append(
+                {
+                    "leaf_id": leaf_id,
+                    "mix_name": mix_name,
+                    "category_name": category["category_name"],
+                    "original_uint32_values": original,
+                    "target_uint32_values": target,
+                    "proposed_uint32_values": planned,
+                    "token_change_from_original": planned - original,
+                    "effective_repetitions": f"{effective:.12g}",
+                    "minimum_repetition": minimum_repetition,
+                    "maximum_repetition": maximum_repetition,
+                    "total_object_uses": total_object_uses,
+                    "unique_object_count": unique_object_count,
+                    "selected_object_count": selected_object_count,
+                    "dropped_object_count": dropped_object_count,
+                    "repeated_object_count": repeated_object_count,
+                }
+            )
+            path_rows: list[str] = []
+            for path in sorted(
+                paths_by_leaf[leaf_id], key=lambda row: row["path_id"]
+            ):
+                path_original_objects = {
+                    row["npy_uri"]: int(row["estimated_uint32_values"])
+                    for row in inventory_by_path[path["path_id"]]
+                }
+                path_original = sum(path_original_objects.values())
+                path_uses = uses_by_path[path["path_id"]]
+                path_planned = sum(
+                    int(row["planned_uint32_values"]) for row in path_uses
+                )
+                path_repetitions = [int(row["repeat_count"]) for row in path_uses]
+                if not path_repetitions:
+                    path_repetitions = [0 for _ in path_original_objects]
+                path_minimum = min(path_repetitions, default=0)
+                path_maximum = max(path_repetitions, default=0)
+                path_total_uses = sum(path_repetitions)
+                path_selected = sum(value > 0 for value in path_repetitions)
+                path_dropped = sum(value == 0 for value in path_repetitions)
+                path_repeated = sum(value > 1 for value in path_repetitions)
+                path_effective = (
+                    path_planned / path_original if path_original else 0.0
+                )
+                path_change, path_change_class = _token_change_label(
+                    path_original, path_planned
+                )
+                path_sampling_rows.append(
+                    {
+                        "path_id": path["path_id"],
+                        "leaf_id": leaf_id,
+                        "mix_name": mix_name,
+                        "category_name": category["category_name"],
+                        "lower_group": _path_subgroup(path["yaml_path"]),
+                        "yaml_path": path["yaml_path"],
+                        "original_uint32_values": path_original,
+                        "proposed_uint32_values": path_planned,
+                        "token_change_from_original": path_planned - path_original,
+                        "effective_repetitions": f"{path_effective:.12g}",
+                        "minimum_repetition": path_minimum,
+                        "maximum_repetition": path_maximum,
+                        "total_object_uses": path_total_uses,
+                        "unique_object_count": len(path_original_objects),
+                        "selected_object_count": path_selected,
+                        "dropped_object_count": path_dropped,
+                        "repeated_object_count": path_repeated,
+                    }
+                )
+                repeat_range = (
+                    f"{path_minimum}×"
+                    if path_minimum == path_maximum
+                    else f"{path_minimum}–{path_maximum}×"
+                )
+                path_rows.append(
+                    '<details class="path-detail"><summary>'
+                    f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
+                    f'<span class="path-stat">repeat {repeat_range}'
+                    '<span class="path-chevron" aria-hidden="true">›</span></span>'
+                    '<span class="path-sampling">'
+                    f'<span>{_human_token_count(path_original)} source → '
+                    f'{_human_token_count(path_planned)} proposed</span>'
+                    f'<span class="token-change {path_change_class}">{html.escape(path_change)}</span>'
+                    f'<span>{_format_multiplier(path_effective)} effective repetitions · '
+                    f'NPYs repeated: {path_repeated:,} · dropped: {path_dropped:,} · '
+                    f'{path_total_uses:,} total object uses</span>'
+                    + _comparison_bars(path_original, path_planned)
+                    + "</span></summary>"
+                    f'<code>Source: {path_original:,} tokens · Proposed: '
+                    f'{path_planned:,} tokens · Repeats: {repeat_range}<br>'
+                    f'{html.escape(path["yaml_path"])}</code></details>'
+                )
+            repeat_range = (
+                f"{minimum_repetition}×"
+                if minimum_repetition == maximum_repetition
+                else f"{minimum_repetition}–{maximum_repetition}×"
+            )
+            category_sections.append(
+                '<section class="category">'
+                '<div class="category-head">'
+                f'<span class="category-name">{html.escape(category["category_name"])}</span>'
+                f'<span class="sampling {sampling_class}">{html.escape(sampling_label)}</span>'
+                "</div>"
+                '<div class="category-counts">'
+                f'<span>{_human_token_count(original)} source</span>'
+                f'<span>→ {_human_token_count(planned)} proposed</span>'
+                f'<span>target {_human_token_count(target)}</span>'
+                f'<span class="token-change {change_class}">{html.escape(change_label)}</span>'
+                "</div>"
+                + _comparison_bars(original, planned)
+                + '<div class="repetition-line">'
+                f'<span>{_format_multiplier(effective)} effective repetitions</span>'
+                f'<span>per-object repeats {repeat_range}</span>'
+                f'<span>NPYs repeated: {repeated_object_count:,} · '
+                f'dropped: {dropped_object_count:,} · '
+                f'{total_object_uses:,} total object uses across '
+                f'{unique_object_count:,} source NPYs</span></div>'
+                '<div class="path-list">'
+                + "".join(path_rows)
+                + "</div></section>"
+            )
+        detail_sections.append(
+            f'<section class="mix-detail" id="{mix_row["detail_id"]}" hidden>'
+            '<div class="detail-head">'
+            f'<h2>{html.escape(mix_name)}</h2>'
+            f'<div class="detail-total">{_human_token_count(int(mix_row["original"]))} source → '
+            f'{_human_token_count(int(mix_row["planned"]))} proposed<br>'
+            f'target {_human_token_count(int(mix_row["target"]))} · '
+            f'<span class="token-change {mix_row["change_class"]}">'
+            f'{html.escape(str(mix_row["change_label"]))}</span></div></div>'
+            '<div class="category-grid">'
+            + "".join(category_sections)
+            + "</div></section>"
+        )
+
+    _write_csv(
+        plot_data / "proposed-sampling-by-category.csv",
+        category_sampling_rows,
+        list(category_sampling_rows[0]) if category_sampling_rows else [],
+    )
+    _write_csv(
+        plot_data / "proposed-sampling-by-lower-group.csv",
+        path_sampling_rows,
+        list(path_sampling_rows[0]) if path_sampling_rows else [],
+    )
+    aggregate_change, aggregate_class = _token_change_label(
+        original_total, proposed_total
+    )
+    report = (
+        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 sampling proposal</title>'
+        + _interactive_report_style()
+        + "</head><body><h1>Dolma 3.5 Pre-materialization Sampling Proposal</h1>"
+        f'<div class="chart-total">S3 source aggregate (inventoried NPY bytes ÷ 4): '
+        f'{_human_token_count(original_total)} tokens '
+        f'({original_total:,}) → proposed: {_human_token_count(proposed_total)} tokens '
+        f'({proposed_total:,}) · target: {_human_token_count(target_total)} tokens '
+        f'({target_total:,}) · <span class="token-change {aggregate_class}">'
+        f'{html.escape(aggregate_change)}</span></div>'
+        f'<div class="mix-chart">{chart_rows}</div>'
+        + "".join(detail_sections)
+        + _interactive_report_script()
+        + "</body></html>\n"
+    )
     _write_text(phase / "report.html", report)
+    return {
+        "source_uint32_values": original_total,
+        "proposed_uint32_values": proposed_total,
+        "target_uint32_values": target_total,
+    }
 
 
 def validate_build(args: argparse.Namespace) -> None:
