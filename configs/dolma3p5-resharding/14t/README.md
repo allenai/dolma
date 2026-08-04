@@ -39,15 +39,25 @@ direct-prefix resolutions, or NPY sizes that are not divisible by four.
 
 ## 2. Generate the distributed materialization proposal
 
-Choose a new S3 destination, a real temporary-filesystem path on the workers,
-and a per-unit working-set limit:
+This concrete proposal uses a new build-specific prefix below
+`s3://ai2-llm/preprocessed/dolma3p5-14t/materialized`, the worker's local NVMe
+instance store mounted at `/mnt/dolma`, and a 1.5 TB per-unit working-set
+ceiling:
 
 ```bash
 python scripts/dolma3p5_resharding/propose.py \
-  --destination-root s3://YOUR-BUCKET/datasets/dolma3p5-14t \
-  --local-temp-root /WORKER/TEMP/dolma3p5-resharding \
-  --max-unit-working-bytes WORKER_BUDGET_BYTES
+  --destination-root s3://ai2-llm/preprocessed/dolma3p5-14t/materialized \
+  --local-temp-root /mnt/dolma/dolma3p5-resharding \
+  --max-unit-working-bytes 1500000000000
+
+open runs/dolma3p5-resharding/14t/03-proposal/report.html
+python -m json.tool \
+  runs/dolma3p5-resharding/14t/03-proposal/proposal-summary.json
 ```
+
+The destination is not written by this command. Change it before proposal if
+that is not the intended materialized dataset root. The build ID is appended to
+the destination automatically, and every unit gets a unique prefix below it.
 
 The working-set estimate includes unique input files and planned output files,
 including metadata. Set the limit below usable worker storage so the OS,
@@ -85,6 +95,9 @@ The materialization inputs are the exact files under
 
 ```bash
 python scripts/dolma3p5_resharding/validate.py
+
+python -m json.tool \
+  runs/dolma3p5-resharding/14t/03-proposal/validation-summary.json
 ```
 
 Continue only if the printed result contains `"passed": true`. Also confirm
@@ -97,8 +110,10 @@ destinations, exact manifests, and executable launchers.
 ## 4. Run the preflight immediately before materialization
 
 ```bash
-python scripts/dolma3p5_resharding/preflight.py \
-  --profile YOUR_READ_ONLY_PROFILE
+python scripts/dolma3p5_resharding/preflight.py
+
+python -m json.tool \
+  runs/dolma3p5-resharding/14t/04-preflight/preflight-summary.json
 ```
 
 Preflight repeats the approved source inventory and checks every proposed
@@ -123,32 +138,154 @@ Workers need:
   resharder. A generic published Dolma install may not contain it.
 - A writable `--local-temp-root` with enough headroom for the largest unit.
 
-For example, create and prepare a poormanray cluster:
+The command below is the single-device baseline: 128 `i4i.2xlarge` workers.
+Each worker has one 1.875 TB NVMe instance-store device; the 200 GB EBS root
+volume is only for the OS, Python environment, logs, and status files. The
+current inventory produces about 680 independently scheduled units with the
+1.5 TB ceiling.
+
+Before production, decide whether this baseline or a multi-NVMe i4i topology is
+the better execution shape. RAID0 can increase per-worker local throughput even
+when one device has enough capacity. Evaluate it together with worker count and
+per-host concurrency: `pmr map` runs a worker's assigned scripts sequentially,
+so a larger RAID-backed host does not automatically run more units at once. If
+concurrency is added, the combined working sets of simultaneous units must stay
+below the array's measured usable capacity.
 
 ```bash
-pmr create \
-  --name YOUR_CLUSTER@YOUR_PROJECT \
-  --number WORKER_COUNT \
-  --instance-type INSTANCE_TYPE \
-  --storage-size WORKER_DISK_GB \
-  --region AWS_REGION
+PMR_REGION=$(aws s3api get-bucket-location \
+  --bucket ai2-llm \
+  --query LocationConstraint \
+  --output text)
+case "$PMR_REGION" in
+  None|null|"") PMR_REGION=us-east-1 ;;
+esac
 
-pmr wait --name YOUR_CLUSTER@YOUR_PROJECT
-pmr setup-dolma-python --name YOUR_CLUSTER@YOUR_PROJECT
+pmr create \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --number 128 \
+  --instance-type i4i.2xlarge \
+  --storage-type gp3 \
+  --storage-size 200
+
+pmr wait \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION"
 ```
 
-Install the exact reviewed Dolma revision and `s5cmd` on every worker, then map
-the reviewed unit scripts:
+Inspect the detected instance-store devices on every new worker before allowing
+any format or RAID operation. The setup script identifies devices by the AWS
+`EC2 NVMe Instance Storage` model and refuses mounted devices, child mappings,
+and existing filesystem or RAID signatures. Like poormanray's `setup-d2tk`, it
+supports both a direct mount and RAID0. Capacity is not the only consideration:
+RAID0 over multiple local devices may increase per-worker I/O throughput. When
+multiple devices are present, the script requires an explicit `single` or
+`raid0` choice instead of inferring the layout from capacity. It also avoids
+assuming that the root disk is always `nvme0`.
 
 ```bash
+pmr transfer \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --source scripts/dolma3p5_resharding/setup_worker_storage.sh:/home/ec2-user/setup_worker_storage.sh
+
+pmr run \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --command 'bash /home/ec2-user/setup_worker_storage.sh --check --layout single'
+```
+
+Review every worker's output. For `i4i.2xlarge`, each should report exactly one
+1.875 TB instance-store device and a direct XFS mount plan; a RAID array is not
+possible on that shape. Evaluating RAID0 requires a multi-NVMe shape. If the
+production cluster is changed to one, inspect both plans after transferring the
+setup script and compare local I/O throughput before choosing the layout:
+
+```bash
+pmr run \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --command 'bash /home/ec2-user/setup_worker_storage.sh --check --layout single'
+
+pmr run \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --command 'bash /home/ec2-user/setup_worker_storage.sh --check --layout raid0'
+```
+
+The production `--apply` command must name the reviewed layout. The selected
+`i4i.2xlarge` plan uses `single`; replace it with `raid0` only if the cluster was
+changed to a reviewed multi-device shape:
+
+```bash
+pmr run \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --command 'bash /home/ec2-user/setup_worker_storage.sh --apply --layout single'
+
+pmr run \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --command 'findmnt /mnt/dolma; df -h /mnt/dolma; test -w /mnt/dolma/dolma3p5-resharding'
+```
+
+The instance store is ephemeral: stopping, terminating, or losing a worker
+discards its local data. That is acceptable here because the approved source
+objects and completed destination units are remote, and every unit can be
+reconstructed from its reviewed manifest.
+
+Install Dolma and `s5cmd` after storage preparation:
+
+```bash
+pmr setup-dolma-python \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION"
+```
+
+`setup-dolma-python` installs the base package and `s5cmd`. Replace its
+resharding module with the reviewed manifest-aware module from this checkout,
+then verify every worker before dispatch:
+
+```bash
+pmr transfer \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --source python/dolma/tokenizer/reshard.py:/home/ec2-user/.venv/lib/python3.12/site-packages/dolma/tokenizer/reshard.py
+
+pmr run \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --command '$HOME/.venv/bin/python -c "from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 1; print(\"manifest resharder: ready\")" && s5cmd version'
+```
+
+Run preflight again immediately before dispatch, then map the reviewed unit
+scripts:
+
+```bash
+python scripts/dolma3p5_resharding/preflight.py
+
 pmr map \
-  --name YOUR_CLUSTER@YOUR_PROJECT \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
   --script runs/dolma3p5-resharding/14t/03-proposal/launcher-scripts
 ```
 
 `pmr map` distributes scripts across workers; each worker processes its
-assigned units sequentially. Confirm every execution unit completes before
-verification.
+assigned units sequentially and returns after dispatch. Each unit records
+`running`, `succeeded`, or `failed EXIT_CODE` in
+`~/dolma3p5-resharding-status/`. Check aggregate worker status with:
+
+```bash
+pmr run \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --command 'echo "$(hostname)"; find "$HOME/dolma3p5-resharding-status" -maxdepth 1 -name "*.status" -type f -exec cat {} \; 2>/dev/null | sort | uniq -c; pgrep -af "dolma.tokenizer.reshard" || true'
+```
+
+Do not verify until the total `succeeded` count equals the execution-unit count
+in `03-proposal/proposal-summary.json`, with no `running` or `failed` statuses.
+Per-unit logs are beside the status files with a `.log` suffix.
 
 Each unit rechecks its source objects and refuses an occupied destination.
 Uploads use no-clobber semantics. If a failed unit wrote nothing, it can be
@@ -160,8 +297,12 @@ partially written destination; investigate it and prepare a new destination.
 After every unit completes, run:
 
 ```bash
-python scripts/dolma3p5_resharding/verify.py \
-  --profile YOUR_READ_ONLY_PROFILE
+python scripts/dolma3p5_resharding/verify.py
+
+python -m json.tool \
+  runs/dolma3p5-resharding/14t/05-output-validation/output-summary.json
+
+open runs/dolma3p5-resharding/14t/05-output-validation/report.html
 ```
 
 Verification lists output objects and estimates token counts from uint32 file

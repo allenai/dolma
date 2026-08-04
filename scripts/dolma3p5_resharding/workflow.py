@@ -1517,12 +1517,34 @@ def _self_contained_launcher(
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
+python_bin="${{DOLMA_PYTHON:-$HOME/.venv/bin/python}}"
+if [[ ! -x "$python_bin" ]]; then
+  python_bin=$(command -v python3.12 || command -v python3 || command -v python)
+fi
+
+status_root="${{DOLMA_STATUS_ROOT:-$HOME/dolma3p5-resharding-status}}"
+mkdir -p "$status_root"
+status_path="$status_root/{unit_id}.status"
+log_path="$status_root/{unit_id}.log"
+exec > >(tee -a "$log_path") 2>&1
+
 unit_root=$(mktemp -d "${{TMPDIR:-/tmp}}/dolma3p5-{unit_id}.XXXXXX")
-cleanup() {{ rm -rf -- "$unit_root"; }}
-trap cleanup EXIT
+finish() {{
+  exit_code=$?
+  rm -rf -- "$unit_root"
+  if [[ $exit_code -eq 0 ]]; then
+    printf 'succeeded\n' > "$status_path"
+  else
+    printf 'failed %s\n' "$exit_code" > "$status_path"
+  fi
+  trap - EXIT
+  exit "$exit_code"
+}}
+trap finish EXIT
+printf 'running\n' > "$status_path"
 mkdir -p "$unit_root/config" "$unit_root/manifests"
 
-python - <<'PY'
+"$python_bin" - <<'PY'
 from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION
 
 if RESHARDING_MANIFEST_SCHEMA_VERSION != 1:
@@ -1531,7 +1553,7 @@ if RESHARDING_MANIFEST_SCHEMA_VERSION != 1:
     )
 PY
 
-python - "$unit_root/config/{config_name}" "$unit_root/manifests/{manifest_name}" <<'PY'
+"$python_bin" - "$unit_root/config/{config_name}" "$unit_root/manifests/{manifest_name}" <<'PY'
 import base64
 import pathlib
 import sys
@@ -1540,7 +1562,7 @@ pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode("{config_payload}", valid
 pathlib.Path(sys.argv[2]).write_bytes(base64.b64decode("{manifest_payload}", validate=True))
 PY
 
-python -m dolma.tokenizer.reshard "$unit_root/config/{config_name}"
+"$python_bin" -m dolma.tokenizer.reshard "$unit_root/config/{config_name}"
 """
 
 
@@ -1900,9 +1922,11 @@ def propose_configs(args: argparse.Namespace) -> None:
     )
     _write_text(
         phase / "DISTRIBUTED-LAUNCH.txt",
-        "# INERT EXAMPLE. Review the execution-unit plan and preflight before launching.\n"
+        "# INERT COMMAND. Review the execution-unit plan and preflight before launching.\n"
         "# launcher-scripts contains only self-contained executable unit scripts.\n"
-        f"pmr map --name YOUR_CLUSTER@YOUR_PROJECT --script {shlex.quote(str(launcher_dir))}\n",
+        "# Set PMR_REGION to the ai2-llm bucket region first.\n"
+        f"pmr map --name dolma3p5-14t --region \"$PMR_REGION\" "
+        f"--script {shlex.quote(str(launcher_dir))}\n",
     )
     _write_json(
         phase / "dataset-layout.json",
@@ -2746,6 +2770,14 @@ def _path_subgroup(yaml_path: str) -> str:
     return unquote(candidates[-1]) if candidates else yaml_path
 
 
+def _source_uri_details(source_uris: Iterable[str], empty_message: str) -> str:
+    resolved_sources = sorted(set(source_uris)) or [empty_message]
+    return "".join(
+        f'<span class="path-detail-uri">{html.escape(uri)}</span>'
+        for uri in resolved_sources
+    )
+
+
 def _split_mix_name(mix_name: str) -> tuple[str, str]:
     source_family, separator, subcategory = mix_name.partition(":")
     return source_family, subcategory if separator else "default"
@@ -2759,7 +2791,7 @@ def _interactive_report_style() -> str:
 *{box-sizing:border-box}body{font:14px/1.45 system-ui,sans-serif;max-width:1120px;margin:0 auto;padding:32px 24px 72px;color:CanvasText;background:Canvas}h1{margin:0;font-size:26px;line-height:1.2}h2{margin:0;font-size:20px;line-height:1.3;overflow-wrap:anywhere}.chart-total{margin:8px 0 24px;color:var(--muted);font-variant-numeric:tabular-nums}.summary-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 32px;margin:18px 10px 26px;font-variant-numeric:tabular-nums}.summary-label,.mix-metric-label{display:block;margin-bottom:2px;color:var(--muted)}.summary-value{display:block;font-size:18px;font-weight:500}.mix-chart{display:grid;gap:2px}
 .mix-row,.subcategory-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;width:100%;padding:12px 10px;border:0;border-radius:8px;background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}.mix-row:hover,.subcategory-row:hover{background:var(--surface-hover)}.mix-row.is-selected,.subcategory-row.is-selected{background:var(--surface-selected)}.mix-name{min-width:0;overflow-wrap:anywhere;font-weight:500}.mix-value{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}.bar-track{grid-column:1/-1;display:block;height:6px;overflow:hidden;background:var(--track);border-radius:999px}.bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}
 .mix-row.has-metrics,.subcategory-row.has-metrics{grid-template-columns:1fr;gap:8px}.mix-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:5px 24px;color:var(--muted);font-variant-numeric:tabular-nums}.mix-metric-value{color:CanvasText}.subcategory-list{display:grid;gap:2px}.subcategory-detail{padding:20px 10px 26px}.subcategory-detail .detail-head{margin-bottom:18px}
-.mix-detail{padding:22px 18px 28px;border-radius:10px;background:var(--detail)}.mix-detail[hidden],.subcategory-detail[hidden]{display:none}.detail-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;align-items:end;margin-bottom:20px}.detail-total{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}.category-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 32px}.category{min-width:0}.category-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:baseline}.category-name{font-weight:500;overflow-wrap:anywhere}.sampling{font-variant-numeric:tabular-nums;white-space:nowrap}.sampling-up{color:var(--up)}.sampling-down{color:var(--down)}.sampling-same,.sampling-unknown{color:var(--same)}.category-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 24px;margin:4px 0 7px;color:var(--muted);font-variant-numeric:tabular-nums}.category-metrics.proposal-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.category-metric{min-width:0}.category-bar{height:4px;overflow:hidden;margin-top:7px;background:var(--track);border-radius:999px}.category-bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}.comparison-bars{display:grid;grid-template-rows:3px 3px;gap:3px}.comparison-track{display:block;overflow:hidden;background:var(--track);border-radius:999px}.original-fill,.target-fill{display:block;height:100%;border-radius:inherit}.original-fill{background:var(--original)}.target-fill{background:var(--series)}.path-list{display:grid;gap:2px;margin-top:8px}.path-detail summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;padding:8px 6px;border-radius:6px;cursor:pointer;list-style-position:inside}.path-detail summary:hover{background:var(--surface-hover)}.path-name{overflow-wrap:anywhere}.path-stat{color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.path-sampling{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 24px;color:var(--muted);font-variant-numeric:tabular-nums}.path-metric{min-width:0}.path-sampling .comparison-bars,.path-use-summary{grid-column:1/-1}.path-chevron{display:inline-block;margin-left:7px;transition:transform .12s ease}.path-detail[open] .path-chevron{transform:rotate(90deg)}.path-detail code{display:block;margin:2px 6px 10px;padding:9px 10px;border-radius:6px;background:var(--code);font:12px/1.45 ui-monospace,monospace;overflow-wrap:anywhere}.supporting-plots{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px}.supporting-plots img{display:block;width:100%;height:auto}
+.mix-detail{padding:22px 18px 28px;border-radius:10px;background:var(--detail)}.mix-detail[hidden],.subcategory-detail[hidden]{display:none}.detail-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 20px;align-items:end;margin-bottom:20px}.detail-total{color:var(--muted);font-variant-numeric:tabular-nums;text-align:right}.category-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px 32px}.category{min-width:0}.category-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:baseline}.category-name{font-weight:500;overflow-wrap:anywhere}.sampling{font-variant-numeric:tabular-nums;white-space:nowrap}.sampling-up{color:var(--up)}.sampling-down{color:var(--down)}.sampling-same,.sampling-unknown{color:var(--same)}.category-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 24px;margin:4px 0 7px;color:var(--muted);font-variant-numeric:tabular-nums}.category-metrics.proposal-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.category-metric{min-width:0}.category-bar{height:4px;overflow:hidden;margin-top:7px;background:var(--track);border-radius:999px}.category-bar-fill{display:block;height:100%;background:var(--series);border-radius:inherit}.comparison-bars{display:grid;grid-template-rows:3px 3px;gap:3px}.comparison-track{display:block;overflow:hidden;background:var(--track);border-radius:999px}.original-fill,.target-fill{display:block;height:100%;border-radius:inherit}.original-fill{background:var(--original)}.target-fill{background:var(--series)}.path-list{display:grid;gap:2px;margin-top:8px}.path-detail summary{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;padding:8px 6px;border-radius:6px;cursor:pointer;list-style-position:inside}.path-detail summary:hover{background:var(--surface-hover)}.path-name{overflow-wrap:anywhere}.path-stat{color:var(--muted);text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.path-sampling{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px 24px;color:var(--muted);font-variant-numeric:tabular-nums}.path-metric{min-width:0}.path-sampling .comparison-bars,.path-use-summary{grid-column:1/-1}.path-chevron{display:inline-block;margin-left:7px;transition:transform .12s ease}.path-detail[open] .path-chevron{transform:rotate(90deg)}.path-detail code{display:block;margin:2px 6px 10px;padding:11px 12px;border-radius:6px;background:var(--code);font:12px/1.45 ui-monospace,monospace;overflow-wrap:anywhere}.path-detail-metrics{display:flex;flex-wrap:wrap;gap:3px 24px}.path-detail-metric{white-space:nowrap}.path-detail-uri{display:block;margin-top:7px}.supporting-plots{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:32px}.supporting-plots img{display:block;width:100%;height:auto}
 .repetition-line{display:flex;flex-wrap:wrap;gap:5px 12px;margin-top:7px;color:var(--muted);font-variant-numeric:tabular-nums}
 @media(prefers-reduced-motion:reduce){.path-chevron{transition:none}}
 @media(max-width:760px){body{padding:24px 16px 48px}.summary-metrics{margin-left:6px;margin-right:6px}.mix-row,.subcategory-row{grid-template-columns:1fr;gap:7px}.mix-value{white-space:normal}.bar-track{grid-column:1}.detail-head{grid-template-columns:1fr}.detail-total{white-space:normal;text-align:left}.category-grid{grid-template-columns:1fr}.category-metrics,.category-metrics.proposal-metrics,.path-sampling{grid-template-columns:1fr}.supporting-plots{grid-template-columns:1fr}}
@@ -2985,7 +3017,15 @@ def _render_plan_report(
     for row in normalized_paths:
         paths_by_leaf[row["leaf_id"]].append(row)
     catalog_counts = Counter(row["path_id"] for row in catalog_matches)
-    direct_path_ids = {row["path_id"] for row in direct_patterns}
+    catalog_sources_by_path: dict[str, list[str]] = defaultdict(list)
+    for row in catalog_matches:
+        catalog_sources_by_path[row["path_id"]].append(
+            f's3://{row["bucket"]}/{row["key"]}'
+        )
+    direct_sources_by_path = {
+        row["path_id"]: f's3://{row["bucket"]}/{row["key_pattern"]}'
+        for row in direct_patterns
+    }
     categories_by_mix: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in normalized_mix:
         categories_by_mix[row["mix_name"]].append(row)
@@ -3005,21 +3045,28 @@ def _render_plan_report(
                 paths_by_leaf[category["leaf_id"]], key=lambda row: row["path_id"]
             ):
                 active = path["active"] == "true"
+                source_uris = sorted(set(catalog_sources_by_path[path["path_id"]]))
+                direct_source = direct_sources_by_path.get(path["path_id"])
+                if direct_source is not None:
+                    source_uris.append(direct_source)
                 if not active:
                     matched = "inactive"
-                elif path["path_id"] in direct_path_ids:
+                elif direct_source is not None:
                     matched = "pending inventory"
                 else:
                     matched = _count_label(
                         catalog_counts[path["path_id"]], "matched NPY"
                     )
+                source_details = _source_uri_details(
+                    source_uris, "No resolved S3 source"
+                )
                 path_rows.append(
                     '<details class="path-detail"><summary>'
                     f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
                     f'<span class="path-stat">{html.escape(matched)}'
                     '<span class="path-chevron" aria-hidden="true">›</span></span>'
                     "</summary>"
-                    f'<code>{html.escape(path["yaml_path"])}</code>'
+                    f'<code>{source_details}</code>'
                     "</details>"
                 )
             category_sections.append(
@@ -3727,10 +3774,13 @@ def _render_inventory_report(
                         "unique_npy_count": len(objects),
                     }
                 )
+                source_details = _source_uri_details(
+                    objects, "No source NPYs resolved"
+                )
                 path_rows.append(
                     '<details class="path-detail"><summary>'
                     f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
-                    f'<span class="path-stat">{_count_label(len(objects), "NPY")}'
+                    f'<span class="path-stat">{_count_label(len(objects), "file")}'
                     '<span class="path-chevron" aria-hidden="true">›</span></span>'
                     '<span class="path-sampling">'
                     '<span class="path-metric"><span class="mix-metric-label">Source</span>'
@@ -3744,8 +3794,10 @@ def _render_inventory_report(
                     f'{html.escape(path_sampling_rate)}</span></span>'
                     + _comparison_bars(path_original, path_target)
                     + "</span></summary>"
-                    f'<code>Source: {path_original:,} tokens · Implied target: '
-                    f'{path_target:,} tokens<br>{html.escape(path["yaml_path"])}</code>'
+                    '<code><span class="path-detail-metrics">'
+                    f'<span class="path-detail-metric">Source: {path_original:,} tokens</span>'
+                    f'<span class="path-detail-metric">Implied target: {path_target:,} tokens</span>'
+                    f"</span>{source_details}</code>"
                     "</details>"
                 )
             category_sections.append(
@@ -4462,6 +4514,14 @@ def _render_report(
                     if path_minimum == path_maximum
                     else f"{path_minimum}–{path_maximum}×"
                 )
+                source_details = _source_uri_details(
+                    (
+                        row["npy_uri"]
+                        for row in path_uses
+                        if int(row["repeat_count"]) > 0
+                    ),
+                    "No source NPYs selected for materialization",
+                )
                 path_rows.append(
                     '<details class="path-detail"><summary>'
                     f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
@@ -4479,9 +4539,11 @@ def _render_report(
                     f'dropped: {path_dropped:,} · {path_total_uses:,} total object uses</span>'
                     + _comparison_bars(path_original, path_planned)
                     + "</span></summary>"
-                    f'<code>Source: {path_original:,} tokens · Proposed: '
-                    f'{path_planned:,} tokens · Repeats: {repeat_range}<br>'
-                    f'{html.escape(path["yaml_path"])}</code></details>'
+                    '<code><span class="path-detail-metrics">'
+                    f'<span class="path-detail-metric">Source: {path_original:,} tokens</span>'
+                    f'<span class="path-detail-metric">Proposed: {path_planned:,} tokens</span>'
+                    f'<span class="path-detail-metric">Repeats: {repeat_range}</span>'
+                    f"</span>{source_details}</code></details>"
                 )
             repeat_range = (
                 f"{minimum_repetition}×"

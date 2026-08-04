@@ -2,6 +2,7 @@ import argparse
 import csv
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,11 @@ from unittest.mock import MagicMock, patch
 from xml.etree import ElementTree
 
 import yaml
+
+WORKER_STORAGE_SCRIPT = (
+    Path(__file__).resolve().parents[2]
+    / "scripts/dolma3p5_resharding/setup_worker_storage.sh"
+)
 
 from dolma.tokenizer.reshard import (
     ReshardingConfig,
@@ -371,6 +377,19 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn('class="category-grid"', plan_report)
         self.assertIn("matched NPY", plan_report)
         self.assertIn("topic", plan_report)
+        self.assertIn(
+            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/"
+            "tokenizer/0000.npy",
+            plan_report,
+        )
+        self.assertIn(
+            "s3://ai2-llm/preprocessed/direct-source/allenai/tokenizer/*.npy",
+            plan_report,
+        )
+        self.assertNotIn(
+            "dolma3p5_pool/catalog-source/topic/allenai/tokenizer/*.npy",
+            plan_report,
+        )
         with (self.build / "01-plan/normalized-paths.csv").open() as f:
             self.assertNotIn("resolution_route", csv.DictReader(f).fieldnames)
         with (self.build / "01-plan/listing-plan.csv").open() as f:
@@ -462,7 +481,20 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn('class="category-metrics"', inventory_report)
         self.assertNotIn('class="category-counts"', inventory_report)
         self.assertIn('class="path-stat"', inventory_report)
+        self.assertIn('<span class="path-stat">1 file', inventory_report)
+        self.assertNotIn('<span class="path-stat">1 NPY', inventory_report)
         self.assertIn('class="path-metric"', inventory_report)
+        self.assertIn('class="path-detail-metrics"', inventory_report)
+        self.assertIn('class="path-detail-uri"', inventory_report)
+        self.assertIn(
+            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/"
+            "tokenizer/0000.npy",
+            inventory_report,
+        )
+        self.assertNotIn(
+            "dolma3p5_pool/catalog-source/topic/allenai/tokenizer/*.npy",
+            inventory_report,
+        )
         self.assertIn('class="mix-metric-label">Sampling', inventory_report)
         self.assertIn("Source Inventory and Sampling Plan", inventory_report)
         self.assertIn('class="summary-metrics"', inventory_report)
@@ -504,9 +536,23 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         self.assertEqual(len(launcher_scripts), 4)
         self.assertTrue(all(path.stat().st_mode & 0o100 for path in launcher_scripts))
+        distributed_launch = (
+            self.build / "03-proposal/DISTRIBUTED-LAUNCH.txt"
+        ).read_text()
+        self.assertIn("pmr map --name dolma3p5-14t", distributed_launch)
+        self.assertNotIn("YOUR_CLUSTER", distributed_launch)
         self.assertTrue(
             all(
-                "python -m dolma.tokenizer.reshard" in path.read_text()
+                '"$python_bin" -m dolma.tokenizer.reshard' in path.read_text()
+                for path in launcher_scripts
+            )
+        )
+        self.assertTrue(
+            all(
+                "dolma3p5-resharding-status" in path.read_text()
+                and "printf 'running" in path.read_text()
+                and "printf 'succeeded" in path.read_text()
+                and "printf 'failed" in path.read_text()
                 for path in launcher_scripts
             )
         )
@@ -574,6 +620,17 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("× upsample", proposal_report)
         self.assertIn('class="category-metrics proposal-metrics"', proposal_report)
         self.assertIn('class="path-metric"', proposal_report)
+        self.assertIn('class="path-detail-metrics"', proposal_report)
+        self.assertIn('class="path-detail-uri"', proposal_report)
+        self.assertIn(
+            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/"
+            "tokenizer/0000.npy",
+            proposal_report,
+        )
+        self.assertNotIn(
+            "dolma3p5_pool/catalog-source/topic/allenai/tokenizer/*.npy",
+            proposal_report,
+        )
         self.assertIn('class="path-use-summary"', proposal_report)
         self.assertIn("per-object repeats", proposal_report)
         self.assertIn("vigintile_0000", proposal_report)
@@ -861,6 +918,128 @@ class TestReshardingSafety(unittest.TestCase):
         client.list_objects_v2.return_value = {"Contents": [{"Key": "existing"}]}
         with patch("dolma.tokenizer.reshard.boto3.client", return_value=client):
             self.assertTrue(destination_has_objects("s3://test-bucket/new/prefix"))
+
+    def test_worker_storage_setup_is_valid_and_defaults_to_no_action(self):
+        syntax = subprocess.run(
+            ["bash", "-n", str(WORKER_STORAGE_SCRIPT)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(syntax.returncode, 0, syntax.stderr)
+
+        help_result = subprocess.run(
+            ["bash", str(WORKER_STORAGE_SCRIPT), "--help"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(help_result.returncode, 0, help_result.stderr)
+        self.assertIn("--check", help_result.stdout)
+        self.assertIn("--apply", help_result.stdout)
+
+        no_mode = subprocess.run(
+            ["bash", str(WORKER_STORAGE_SCRIPT)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(no_mode.returncode, 2)
+
+    def test_worker_storage_setup_only_selects_instance_store_devices(self):
+        script = WORKER_STORAGE_SCRIPT.read_text()
+        self.assertIn("EC2 NVMe Instance Storage", script)
+        self.assertIn('sudo wipefs -n "$device"', script)
+        self.assertIn('if [[ "$mode" == "--check" ]]', script)
+        self.assertNotIn("/dev/nvme1n1", script)
+
+    def test_worker_storage_check_plans_direct_mount_or_raid0(self):
+        fake_bin = self.root / "fake-bin"
+        fake_bin.mkdir()
+        fake_lsblk = fake_bin / "lsblk"
+        fake_lsblk.write_text(
+            """#!/usr/bin/env bash
+set -euo pipefail
+if [[ "$*" == "-dpno NAME,TYPE" ]]; then
+  echo "/dev/nvme0n1 disk"
+  for ((i = 1; i <= FAKE_NVME_COUNT; i++)); do
+    echo "/dev/nvme${i}n1 disk"
+  done
+elif [[ "$1" == "-dno" && "$2" == "MODEL" ]]; then
+  if [[ "$3" == "/dev/nvme0n1" ]]; then
+    echo "Amazon Elastic Block Store"
+  else
+    echo "Amazon EC2 NVMe Instance Storage"
+  fi
+elif [[ "$1" == "-bdno" && "$2" == "SIZE" ]]; then
+  echo "$FAKE_NVME_SIZE_BYTES"
+elif [[ "$1" == "-nrpo" && "$2" == "NAME,TYPE" ]]; then
+  echo "$3 disk"
+elif [[ "$1" == "-nrpo" && "$2" == "MOUNTPOINT" ]]; then
+  echo
+else
+  echo "unexpected lsblk arguments: $*" >&2
+  exit 97
+fi
+"""
+        )
+        fake_sudo = fake_bin / "sudo"
+        fake_sudo.write_text(
+            """#!/usr/bin/env bash
+if [[ "$1" == "wipefs" && "$2" == "-n" ]]; then
+  exit 0
+fi
+echo "unexpected sudo arguments: $*" >&2
+exit 97
+"""
+        )
+        fake_findmnt = fake_bin / "findmnt"
+        fake_findmnt.write_text("#!/usr/bin/env bash\nexit 1\n")
+        for command in (fake_lsblk, fake_sudo, fake_findmnt):
+            command.chmod(0o755)
+
+        environment = os.environ.copy()
+        environment["PATH"] = f"{fake_bin}:{environment['PATH']}"
+        for device_count, device_size, layout, expected in (
+            (1, 1_875_000_000_000, "auto", "Plan: format /dev/nvme1n1 as XFS"),
+            (2, 1_875_000_000_000, "auto", "Layout decision required"),
+            (2, 1_875_000_000_000, "single", "Plan: format /dev/nvme1n1 as XFS"),
+            (2, 1_875_000_000_000, "raid0", "create RAID0 across 2 devices"),
+        ):
+            environment["FAKE_NVME_COUNT"] = str(device_count)
+            environment["FAKE_NVME_SIZE_BYTES"] = str(device_size)
+            result = subprocess.run(
+                [
+                    "bash",
+                    str(WORKER_STORAGE_SCRIPT),
+                    "--check",
+                    "--layout",
+                    layout,
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                env=environment,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(
+                f"Detected {device_count} EC2 instance-store device(s)",
+                result.stdout,
+            )
+            self.assertIn(expected, result.stdout)
+            self.assertIn("no storage changes were made", result.stdout)
+
+        environment["FAKE_NVME_COUNT"] = "2"
+        environment["FAKE_NVME_SIZE_BYTES"] = "1875000000000"
+        implicit_apply = subprocess.run(
+            ["bash", str(WORKER_STORAGE_SCRIPT), "--apply"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env=environment,
+        )
+        self.assertEqual(implicit_apply.returncode, 1)
+        self.assertIn("Refusing to apply an implicit layout", implicit_apply.stderr)
 
 
 if __name__ == "__main__":
