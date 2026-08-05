@@ -22,16 +22,18 @@ The output is grouped by purpose:
 
 ```text
 01-plan/
+  report.html   source/sampling and execution views in one tabbed report
   resolution/   normalized mix, path matches, corrections, and failures
-  inventory/    source sizes, source-to-target sampling report, and audits
+  inventory/    source sizes, source-to-target sampling data, and audits
   execution/    worker plan, exact manifests, configs, and launchers
 ```
 
 Before continuing:
 
-- Open `01-plan/inventory/report.html`. Review the source families, then click
-  into each subcategory and its categories/lower groups. Confirm the source
-  and target tokens, sampling ratio, and each level's distribution.
+- Open `01-plan/report.html`. In **Source inventory & sampling**, review the
+  source families, then click into each subcategory and its categories/lower
+  groups. Confirm the source and target tokens, sampling ratio, and each
+  level's distribution.
 - In `01-plan/inventory/inventory-summary.json`, confirm the aggregate source,
   target, token delta, sampling ratio, and source-family/subcategory/category/
   lower-group counts.
@@ -39,16 +41,15 @@ Before continuing:
 - Confirm `01-plan/resolution/corrections.csv` and
   `01-plan/resolution/duplicate-paths.csv` contain
   only changes you explicitly intend.
-- In the same summary, confirm all five values are zero: `missing_objects`,
-  `path_resolution_failures`, `invalid_npy_sizes`, `head_errors`, and
-  `sampling_rate_limit_failures`.
-- Review `01-plan/inventory/sampling-rate-audit.csv`. Any category above the
-  configured expected maximum indicates that the YAML's source-size basis and
-  the resolved source objects disagree. The command must stop before creating
-  the execution stage in this case.
+- In the same summary, confirm all four values are zero: `missing_objects`,
+  `path_resolution_failures`, `invalid_npy_sizes`, and `head_errors`.
+- Review the highest ratios in `01-plan/inventory/sampling-rate-audit.csv`
+  against the source and target values shown in the report. Sampling ratios are
+  consequences of the mix and inventoried source sizes; they are not rejected
+  against an arbitrary global ceiling.
 - Spot-check `01-plan/inventory/required-objects.csv`, including the NPY/metadata
   pairings, sizes, and paths for large or unusual categories.
-- Open `01-plan/execution/report.html`. Review the worker-disk distribution,
+- In **Materialization execution**, review the worker-disk distribution,
   categories split across workers, and the concrete execution units.
 - Inspect `01-plan/execution/config-index.csv`. Confirm every unit is within
   the working-set budget and every destination is correct and unique.

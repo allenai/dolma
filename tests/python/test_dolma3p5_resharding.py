@@ -582,8 +582,11 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         self.assertEqual(
             {path.name for path in (self.build / "01-plan").iterdir()},
-            {"resolution", "inventory", "execution"},
+            {"resolution", "inventory", "execution", "report.html"},
         )
+        self.assertFalse((self.build / "01-plan/resolution/report.html").exists())
+        self.assertFalse((self.build / "01-plan/inventory/report.html").exists())
+        self.assertFalse((self.build / "01-plan/execution/report.html").exists())
         self.assertFalse((self.build / "02-inventory").exists())
         self.assertFalse((self.build / "03-proposal").exists())
         configs = list((self.build / "01-plan/execution/config").glob("*.yaml"))
@@ -653,7 +656,15 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertFalse((self.build / "01-plan/execution/plots/target-vs-proposed.svg").exists())
         self.assertFalse((self.build / "01-plan/execution/plot-data/upsampling-pressure.csv").exists())
         self.assertFalse((self.build / "01-plan/execution/plots/upsampling-pressure.svg").exists())
-        proposal_report = (self.build / "01-plan/execution/report.html").read_text()
+        proposal_report = (self.build / "01-plan/report.html").read_text()
+        self.assertIn("Source inventory &amp; sampling", proposal_report)
+        self.assertIn("Materialization execution", proposal_report)
+        self.assertIn('role="tablist"', proposal_report)
+        self.assertIn('id="source-report-document"', proposal_report)
+        self.assertIn('id="execution-report-document"', proposal_report)
+        self.assertIn('<base href="inventory/">', proposal_report)
+        self.assertIn('<base href="execution/">', proposal_report)
+        self.assertIn("Source Inventory and Sampling Plan", proposal_report)
         self.assertIn("Materialization Execution Proposal", proposal_report)
         self.assertIn('class="execution-metrics"', proposal_report)
         self.assertIn("Execution units", proposal_report)

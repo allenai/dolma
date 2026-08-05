@@ -43,6 +43,7 @@ PREPARATION_PHASES = (
     "03-output-validation",
 )
 PLAN_STAGES = ("resolution", "inventory", "execution")
+PLAN_ROOT_ARTIFACTS = {"report.html"}
 LEGACY_PREPARATION_PHASES = (
     "02-inventory",
     "03-proposal",
@@ -223,13 +224,21 @@ def _reset_plan_stage(build: Path, stage_name: str, *downstream_stage_names: str
     if plan_root.is_symlink() or not plan_root.is_dir():
         raise PreparationError(f"Plan output is not a real directory: {plan_root}")
     unknown = sorted(
-        child.name for child in plan_root.iterdir() if child.name not in {*PLAN_STAGES, *PRESERVED_BUILD_METADATA}
+        child.name
+        for child in plan_root.iterdir()
+        if child.name not in {*PLAN_STAGES, *PLAN_ROOT_ARTIFACTS, *PRESERVED_BUILD_METADATA}
     )
     if unknown:
         raise PreparationError("Refusing to reset a plan containing unknown entries: " + ", ".join(unknown))
     names = (stage_name, *downstream_stage_names)
     if any(name not in PLAN_STAGES for name in names):
         raise ValueError(f"Unknown plan stage: {names}")
+    for artifact_name in PLAN_ROOT_ARTIFACTS:
+        artifact = plan_root / artifact_name
+        if artifact.exists():
+            if artifact.is_symlink() or not artifact.is_file():
+                raise PreparationError(f"Refusing to replace an unsafe plan artifact: {artifact}")
+            artifact.unlink()
     for name in names:
         _remove_generated_phase(plan_root / name)
     for phase_name in ("02-preflight", "03-output-validation"):
@@ -981,8 +990,7 @@ def collect_inventory(args: argparse.Namespace) -> None:
         f"{summary['source_family_count']:,} source families, "
         f"{summary['subcategory_count']:,} subcategories, "
         f"{summary['category_count']:,} categories, "
-        f"{summary['lower_group_count']:,} lower groups. "
-        f"Report: {phase / 'report.html'}",
+        f"{summary['lower_group_count']:,} lower groups.",
     )
 
 
@@ -1356,14 +1364,15 @@ def _finalize_inventory(
         "sampling_ratio": sampling_ratio,
         "sampling_rate": sampling_rate,
     }
-    emit(
-        3,
+    validation_details = (
         f"Validation: {len(required_rows):,} NPY memberships, "
         f"{len(missing):,} missing objects, "
         f"{len(resolution_failures):,} unresolved YAML patterns, "
-        f"{len(invalid_sizes):,} invalid NPY sizes, {len(head_errors):,} HEAD errors, "
-        f"{sampling_rate_limit_failures:,} sampling-rate violations",
+        f"{len(invalid_sizes):,} invalid NPY sizes, {len(head_errors):,} HEAD errors"
     )
+    if maximum_expected_upsample_rate is not None:
+        validation_details += f", {sampling_rate_limit_failures:,} sampling-rate violations"
+    emit(3, validation_details)
     emit(
         3,
         f"Estimated source tokens: {_human_token_count(original_total)} " f"({original_total:,} uint32 values)",
@@ -1386,11 +1395,7 @@ def _finalize_inventory(
         summary,
     )
     if resolution_failures or missing or invalid_sizes or head_errors or sampling_rate_limit_failures:
-        emit(
-            4,
-            "FAILED: inventory validation did not pass. "
-            f"Inspect {phase / 'sampling-rate-audit.csv'} and {phase}",
-        )
+        emit(4, f"FAILED: inventory validation did not pass. Inspect {phase}")
         raise PreparationError(f"Inventory validation failed; inspect artifacts in {phase}")
     return summary
 
@@ -2041,14 +2046,16 @@ def propose_configs(args: argparse.Namespace) -> None:
                 settings["max_materialized_total_target_residual_fraction"]
             ),
             "materialization_executed": False,
+            "report_artifact": "../report.html",
         },
     )
+    _combine_plan_reports(build)
     print(
         f"Execution plan ready: {_human_token_count(total_planned)} tokens across "
         f"{len(config_index):,} execution units; "
         f"{whole_document_sample_count:,} whole-document shard samples; "
         f"target residual: {target_residual:,} tokens.\n"
-        f"Review: {phase / 'report.html'}"
+        f"Review: {build / '01-plan/report.html'}"
     )
 
 
@@ -3169,6 +3176,109 @@ def _render_execution_proposal_html(
     )
 
 
+def _report_document_with_base(document: str, relative_base: str) -> str:
+    marker = "<head>"
+    if marker not in document:
+        raise PreparationError("Generated report is missing its HTML head")
+    return document.replace(marker, f'<head><base href="{html.escape(relative_base, quote=True)}">', 1)
+
+
+def _combine_plan_reports(build: Path) -> None:
+    """Embed the sampling and execution reports in one tabbed, self-contained file."""
+
+    plan_root = build / "01-plan"
+    resolution_report_path = plan_root / "resolution/report.html"
+    inventory_report_path = plan_root / "inventory/report.html"
+    execution_report_path = plan_root / "execution/report.html"
+    for report_path in (inventory_report_path, execution_report_path):
+        if report_path.is_symlink() or not report_path.is_file():
+            raise PreparationError(f"Cannot compose missing or unsafe report: {report_path}")
+
+    inventory_document = _report_document_with_base(
+        inventory_report_path.read_text(encoding="utf-8"),
+        "inventory/",
+    )
+    execution_document = _report_document_with_base(
+        execution_report_path.read_text(encoding="utf-8"),
+        "execution/",
+    )
+    combined = f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dolma 3.5 Resharding Plan</title>
+<style>
+:root{{color-scheme:light dark;--shell:#f4f8f7;--tab:#e1ece9;--selected:#14786f;--muted:#536965;--line:#cbdad7}}
+@media(prefers-color-scheme:dark){{:root{{--shell:#0e1715;--tab:#172522;--selected:#5cc8bb;--muted:#a7bbb7;--line:#2a403c}}}}
+*{{box-sizing:border-box}}html,body{{height:100%;margin:0}}body{{overflow:hidden;background:var(--shell);color:CanvasText;font:14px/1.4 system-ui,sans-serif}}
+.report-shell{{display:grid;height:100%;grid-template-rows:auto minmax(0,1fr)}}
+.report-tabs{{display:flex;gap:8px;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--shell)}}
+.report-tab{{padding:9px 14px;border:0;border-radius:7px;background:transparent;color:var(--muted);font:inherit;font-weight:650;cursor:pointer}}
+.report-tab:hover{{background:var(--tab);color:CanvasText}}.report-tab[aria-selected="true"]{{background:var(--tab);color:var(--selected)}}
+.report-panel{{min-height:0}}.report-panel[hidden]{{display:none}}.report-frame{{display:block;width:100%;height:100%;border:0;background:Canvas}}
+@media(max-width:620px){{.report-tabs{{padding:8px}}.report-tab{{flex:1;padding:9px 8px}}}}
+</style>
+</head>
+<body>
+<template id="source-report-document">{inventory_document}</template>
+<template id="execution-report-document">{execution_document}</template>
+<main class="report-shell">
+  <nav class="report-tabs" role="tablist" aria-label="Plan report views">
+    <button class="report-tab" id="source-report-tab" type="button" role="tab" aria-controls="source-report-panel" aria-selected="true" data-report="source">Source inventory &amp; sampling</button>
+    <button class="report-tab" id="execution-report-tab" type="button" role="tab" aria-controls="execution-report-panel" aria-selected="false" data-report="execution">Materialization execution</button>
+  </nav>
+  <section class="report-panel" id="source-report-panel" role="tabpanel" aria-labelledby="source-report-tab">
+    <iframe class="report-frame" id="source-report-frame" title="Source inventory and sampling report"></iframe>
+  </section>
+  <section class="report-panel" id="execution-report-panel" role="tabpanel" aria-labelledby="execution-report-tab" hidden>
+    <iframe class="report-frame" id="execution-report-frame" title="Materialization execution report"></iframe>
+  </section>
+</main>
+<script>
+const reportNames = ['source', 'execution'];
+reportNames.forEach((name) => {{
+  const template = document.getElementById(`${{name}}-report-document`);
+  document.getElementById(`${{name}}-report-frame`).srcdoc = template.innerHTML;
+}});
+const reportTabs = Array.from(document.querySelectorAll('.report-tab'));
+function selectReport(name, updateHash = true) {{
+  reportTabs.forEach((tab) => {{
+    const selected = tab.dataset.report === name;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    document.getElementById(`${{tab.dataset.report}}-report-panel`).hidden = !selected;
+  }});
+  if (updateHash) history.replaceState(null, '', `#${{name}}`);
+}}
+reportTabs.forEach((tab, index) => {{
+  tab.addEventListener('click', () => selectReport(tab.dataset.report));
+  tab.addEventListener('keydown', (event) => {{
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    const offset = event.key === 'ArrowRight' ? 1 : -1;
+    const next = reportTabs[(index + offset + reportTabs.length) % reportTabs.length];
+    selectReport(next.dataset.report);
+    next.focus();
+  }});
+}});
+selectReport(location.hash === '#execution' ? 'execution' : 'source', false);
+</script>
+</body>
+</html>
+"""
+    _write_text(plan_root / "report.html", combined)
+    for stage_report_path in (
+        resolution_report_path,
+        inventory_report_path,
+        execution_report_path,
+    ):
+        if stage_report_path.exists():
+            if stage_report_path.is_symlink() or not stage_report_path.is_file():
+                raise PreparationError(f"Refusing to remove an unsafe stage report: {stage_report_path}")
+            stage_report_path.unlink()
+
+
 def _render_plan_report(
     phase: Path,
     normalized_mix: Sequence[dict[str, Any]],
@@ -3584,7 +3694,7 @@ def refresh_inventory_details(build: Path) -> dict[str, Any]:
         "category_count": details["category_count"],
         "lower_group_count": details["lower_group_count"],
         "details_artifact": "inventory-details.json",
-        "report_artifact": "report.html",
+        "report_artifact": "../report.html",
     }
     summary.pop("sampling_change", None)
     summary.update(metadata)
@@ -4046,7 +4156,7 @@ def _render_inventory_report(
         "category_count": details["category_count"],
         "lower_group_count": details["lower_group_count"],
         "details_artifact": "inventory-details.json",
-        "report_artifact": "report.html",
+        "report_artifact": "../report.html",
     }
 
 
@@ -4585,6 +4695,17 @@ def validate_build(args: argparse.Namespace) -> None:
         with validation_path.open() as f:
             proposal = json.load(f)
         checks.append(("execution_passed", bool(proposal["passed"]), str(proposal)))
+    combined_report_path = build / "01-plan/report.html"
+    checks.append(("combined_plan_report_exists", combined_report_path.is_file(), str(combined_report_path)))
+    checks.append(
+        (
+            "stage_reports_consolidated",
+            not (build / "01-plan/resolution/report.html").exists()
+            and not (build / "01-plan/inventory/report.html").exists()
+            and not (build / "01-plan/execution/report.html").exists(),
+            "individual stage reports must not remain after composition",
+        )
+    )
     preflight_path = build / "02-preflight/preflight-summary.json"
     if preflight_path.is_file():
         with preflight_path.open() as f:

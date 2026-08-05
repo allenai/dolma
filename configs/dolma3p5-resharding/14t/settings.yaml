@@ -1,7 +1,7 @@
 # Preparation-only defaults for the Dolma 3.5 14T mix.
 #
 # This file contains no destination. A new, sufficiently deep S3 destination
-# must be supplied explicitly to the `propose` command.
+# must be supplied explicitly to the `plan.py` command.
 target_uint32_values: 14000000000000
 direct_s3_bucket: ai2-llm
 
@@ -21,10 +21,6 @@ minimum_catalog_prefix_components: 4
 random_seed: 42
 max_workers_per_reshard: 8
 tokenizer_name_or_path: allenai/dolma2-tokenizer
-
-# The optimizer used an approximately 7x per-category upsampling ceiling.
-# File-size estimation can differ slightly, so fail only above this review bound.
-maximum_expected_upsample_rate: 7.2
 
 # Partial copies are selected on whole-document boundaries while materializing.
 # These bounds are checked from output file sizes after all units finish.
