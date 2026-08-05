@@ -10,7 +10,12 @@ import numpy as np
 import smart_open
 from dolma.cli.__main__ import main as cli_main
 from dolma.tokenizer import Tokenizer
-from dolma.tokenizer.reshard import ReshardingConfig, reshard
+from dolma.tokenizer.reshard import (
+    ReshardingConfig,
+    TokensMetadataPaths,
+    group_paths_by_max_num_files,
+    reshard,
+)
 
 from scripts.resharding.dispatch import (
     build_poormanray_create_command,
@@ -22,6 +27,24 @@ DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2
 
 
 class TestReshardDispatch(unittest.TestCase):
+    def test_merge_input_log_distinguishes_full_and_selected_views(self):
+        full = TokensMetadataPaths("source.npy", "source.csv.gz")
+        selected = TokensMetadataPaths(
+            "source.npy",
+            "source.csv.gz",
+            selection_path="selection.csv.gz",
+            selected_uint32_values=10,
+        )
+
+        with self.assertLogs(level="INFO") as captured:
+            group_paths_by_max_num_files([full, selected], max_num_files=2)
+
+        message = "\n".join(captured.output)
+        self.assertIn(
+            "Merge inputs: 2 uses · 2 distinct inputs · max uses of any input: 1×",
+            message,
+        )
+
     def test_poormanray_lifecycle_commands_scope_work_to_selected_instances(self):
         create = build_poormanray_create_command(
             cluster="resharding",

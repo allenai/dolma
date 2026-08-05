@@ -10,9 +10,10 @@ from __future__ import annotations
 import csv
 import gzip
 import hashlib
+import time
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 import smart_open
 
@@ -115,6 +116,8 @@ def create_document_selection(
     source_uint32_values: int,
     target_uint32_values: int,
     seed: int,
+    progress: Callable[[str, int, int], None] | None = None,
+    progress_interval_seconds: float = 10.0,
 ) -> DocumentSelectionResult:
     """Select a deterministic hash-ranked prefix of whole documents.
 
@@ -136,10 +139,16 @@ def create_document_selection(
     bucket_values = [0] * DOCUMENT_HASH_BUCKETS
     source_document_count = 0
     largest_document = 0
+    last_progress_at = time.monotonic()
     for row in _iter_metadata_rows(metadata_path, source_uint32_values):
         bucket_values[_hash_bucket(_document_hash(row, seed))] += row.token_count
         source_document_count += 1
         largest_document = max(largest_document, row.token_count)
+        if progress is not None and time.monotonic() - last_progress_at >= progress_interval_seconds:
+            progress("pass 1/2", source_document_count, row.end)
+            last_progress_at = time.monotonic()
+    if progress is not None:
+        progress("pass 1/2", source_document_count, source_uint32_values)
 
     below_threshold_values = 0
     threshold_bucket = -1
@@ -157,9 +166,12 @@ def create_document_selection(
     selected_documents = 0
     threshold_rows: list[tuple[int, DocumentMetadataRow]] = []
     selection_path.parent.mkdir(parents=True, exist_ok=True)
+    second_pass_documents = 0
+    last_progress_at = time.monotonic()
     with gzip.open(selection_path, "xt", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         for row in _iter_metadata_rows(metadata_path, source_uint32_values):
+            second_pass_documents += 1
             hash_value = _document_hash(row, seed)
             bucket = _hash_bucket(hash_value)
             if bucket < threshold_bucket:
@@ -167,6 +179,12 @@ def create_document_selection(
                 selected_documents += 1
             elif bucket == threshold_bucket:
                 threshold_rows.append((hash_value, row))
+            if progress is not None and time.monotonic() - last_progress_at >= progress_interval_seconds:
+                progress("pass 2/2", second_pass_documents, row.end)
+                last_progress_at = time.monotonic()
+
+        if progress is not None:
+            progress("pass 2/2", second_pass_documents, source_uint32_values)
 
         threshold_rows.sort(
             key=lambda item: (

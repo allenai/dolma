@@ -49,8 +49,10 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
 from dataclasses import asdict, dataclass, field
 from functools import partial
 from pathlib import Path
@@ -61,7 +63,6 @@ import boto3
 import numpy as np
 import smart_open
 import yaml
-from tqdm import tqdm
 
 from dolma.core.loggers import get_logger
 from dolma.tokenizer.document_selection import (
@@ -73,6 +74,115 @@ from dolma.tokenizer.tokenizer import Tokenizer
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
 RESHARDING_MANIFEST_SCHEMA_VERSION = 2
+PROGRESS_INTERVAL_SECONDS = 10.0
+
+
+def _human_count(value: int, unit: str = "") -> str:
+    for scale, suffix in ((10**12, "T"), (10**9, "B"), (10**6, "M"), (10**3, "K")):
+        if abs(value) >= scale:
+            rendered = f"{value / scale:.3g}{suffix}"
+            return f"{rendered} {unit}".rstrip()
+    return f"{value:,} {unit}".rstrip()
+
+
+def _human_bytes(value: int) -> str:
+    for scale, suffix in ((1024**4, "TiB"), (1024**3, "GiB"), (1024**2, "MiB"), (1024, "KiB")):
+        if value >= scale:
+            return f"{value / scale:.3g} {suffix}"
+    return f"{value:,} B"
+
+
+def _elapsed(started_at: float) -> str:
+    seconds = max(0, round(time.monotonic() - started_at))
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {seconds:02d}s"
+    if minutes:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
+
+
+def _local_progress(expectations: list[tuple[Path, int]]) -> tuple[int, int]:
+    completed = 0
+    current_bytes = 0
+    for path, expected_size in expectations:
+        try:
+            size = path.stat().st_size
+        except FileNotFoundError:
+            continue
+        current_bytes += min(size, expected_size)
+        completed += size == expected_size
+    return completed, current_bytes
+
+
+def _s3_progress(client, bucket: str, prefix: str) -> tuple[int, int]:
+    object_count = 0
+    size_bytes = 0
+    continuation_token: str | None = None
+    while True:
+        request = {"Bucket": bucket, "Prefix": prefix}
+        if continuation_token:
+            request["ContinuationToken"] = continuation_token
+        response = client.list_objects_v2(**request)
+        contents = response.get("Contents", [])
+        object_count += len(contents)
+        size_bytes += sum(int(obj["Size"]) for obj in contents)
+        if not response.get("IsTruncated"):
+            return object_count, size_bytes
+        continuation_token = response.get("NextContinuationToken")
+        if not continuation_token:
+            raise RuntimeError("S3 listing was truncated without a continuation token")
+
+
+def _run_with_progress(
+    command: list[str],
+    *,
+    phase: str,
+    expected_objects: int,
+    expected_bytes: int,
+    progress: Callable[[], tuple[int, int]],
+    interval_seconds: float = PROGRESS_INTERVAL_SECONDS,
+) -> None:
+    """Run a command while reporting object and byte progress at a fixed interval."""
+
+    started_at = time.monotonic()
+    logger.info(
+        "%s started: %s objects · %s · command=%s",
+        phase,
+        expected_objects,
+        _human_bytes(expected_bytes),
+        shlex.join(command),
+    )
+    process = subprocess.Popen(command)
+    while True:
+        try:
+            return_code = process.wait(timeout=interval_seconds)
+        except subprocess.TimeoutExpired:
+            return_code = None
+        try:
+            completed, current_bytes = progress()
+        except Exception as exc:
+            logger.warning("%s progress check failed: %s", phase, exc)
+            completed, current_bytes = 0, 0
+        percent = 100 * current_bytes / expected_bytes if expected_bytes else 100.0
+        elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
+        logger.info(
+            "%s progress: %s/%s objects · %s/%s · %.1f%% · %s/s · elapsed %s",
+            phase,
+            completed,
+            expected_objects,
+            _human_bytes(current_bytes),
+            _human_bytes(expected_bytes),
+            percent,
+            _human_bytes(round(current_bytes / elapsed_seconds)),
+            _elapsed(started_at),
+        )
+        if return_code is not None:
+            break
+    if return_code:
+        raise RuntimeError(f"{phase} failed with exit code {return_code}; inspect the worker log")
+    logger.info("%s complete in %s", phase, _elapsed(started_at))
 
 
 @dataclass(frozen=True)
@@ -178,12 +288,7 @@ def group_paths_by_max_size(
     Group paths by max size.
     """
     counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
-    logger.info(
-        "Found %s unique paths from %s files; max repetition is %s",
-        len(counts),
-        len(paths),
-        max(counts.values()),
-    )
+    _log_merge_input_views(counts, len(paths))
 
     grouped_paths: list[list[TokensMetadataPaths]] = []
     while len(counts) > 0:
@@ -201,7 +306,7 @@ def group_paths_by_max_size(
         counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
 
     logger.info(
-        "By size: organized %s files into %s groups of max %.2f GB",
+        "Grouped %s merge input uses into %s output shards capped at %.2f GiB",
         len(paths),
         len(grouped_paths),
         max_size_bytes / 1024**3,
@@ -227,15 +332,13 @@ def group_paths_by_max_num_files(
     Group paths by max number of files.
     """
     counts = Counter(paths)
-    logger.info(
-        "Found %s unique paths from %s files; max repetition is %s",
-        len(counts),
-        len(paths),
-        max(counts.values()),
-    )
+    _log_merge_input_views(counts, len(paths))
 
     if (m := max(counts.values())) > max_num_files:
-        raise ValueError(f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}")
+        raise ValueError(
+            f"One or more identical merge input views are used {m} times, "
+            f"exceeding max_num_files={max_num_files}"
+        )
 
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
     # Distribute each element across groups in round-robin fashion
@@ -255,6 +358,18 @@ def group_paths_by_max_num_files(
     grouped_paths = [group for group in grouped_paths if len(group) > 0]
 
     return grouped_paths
+
+
+def _log_merge_input_views(
+    counts: Counter[TokensMetadataPaths],
+    total_uses: int,
+) -> None:
+    logger.info(
+        "Merge inputs: %s uses · %s distinct inputs · max uses of any input: %s×",
+        total_uses,
+        len(counts),
+        max(counts.values()),
+    )
 
 
 def _get_worker_rank() -> int:
@@ -323,17 +438,20 @@ def merge_all_npys(
     else:
         raise ValueError("Either max_size_bytes or max_num_files must be provided")
 
+    total_bytes = sum(path.size for path in paths)
     logger.info(
-        "Organizing %s files into %s groups using %s workers...",
+        "Merge started: %s merge input uses · %s output shards · %s · %s workers",
         len(paths),
         len(grouped_paths),
+        _human_bytes(total_bytes),
         max_workers,
     )
 
     init_fn = partial(_worker_init, seed=seed)
+    started_at = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=max_workers, initializer=init_fn) as pool:
-        futures = []
+        future_sizes = {}
         for i, group in enumerate(grouped_paths):
             future = pool.submit(
                 merge_group,
@@ -341,17 +459,42 @@ def merge_all_npys(
                 destination=destination / f"{i:06d}.npy",
                 dtype=tokenizer.dtype,
             )
-            futures.append(future)
+            future_sizes[future] = sum(path.size for path in group)
 
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Merging files"):
-            try:
-                future.result()
-            except Exception as e:
-                for future in futures:
-                    future.cancel()
-                raise e
+        pending = set(future_sizes)
+        completed_shards = 0
+        completed_bytes = 0
+        while pending:
+            done, pending = wait(
+                pending,
+                timeout=PROGRESS_INTERVAL_SECONDS,
+                return_when=FIRST_COMPLETED,
+            )
+            for future in done:
+                try:
+                    future.result()
+                except Exception:
+                    for pending_future in pending:
+                        pending_future.cancel()
+                    raise
+                completed_shards += 1
+                completed_bytes += future_sizes[future]
+            logger.info(
+                "Merge progress: %s/%s output shards · %s/%s · %s active · elapsed %s",
+                completed_shards,
+                len(grouped_paths),
+                _human_bytes(completed_bytes),
+                _human_bytes(total_bytes),
+                len(pending),
+                _elapsed(started_at),
+            )
 
-        logger.info("Done merging NumPy memmaps.")
+    logger.info(
+        "Merge complete: %s output shards · %s · %s",
+        len(grouped_paths),
+        _human_bytes(total_bytes),
+        _elapsed(started_at),
+    )
 
 
 @dataclass
@@ -555,6 +698,25 @@ class ReshardingManifestConfig:
         if not rows:
             raise ValueError(f"Resharding manifest is empty: {manifest}")
 
+        known_source_bytes = sum(
+            (entry.npy_size_bytes or 0) + (entry.metadata_size_bytes or 0)
+            for entry in rows
+        )
+        planned_uint32_values = sum(
+            (entry.npy_size_bytes or 0) // np.dtype(np.uint32).itemsize * entry.repeat_count
+            + entry.partial_target_uint32_values
+            for entry in rows
+        )
+        logger.info(
+            "Manifest loaded: %s source shards · %s objects · %s source data · "
+            "%s planned uint32 values · %s partial selections",
+            len(rows),
+            len(rows) * 2,
+            _human_bytes(known_source_bytes),
+            _human_count(planned_uint32_values),
+            sum(entry.partial_target_uint32_values > 0 for entry in rows),
+        )
+
         remote_expectations: list[tuple[str, int, str]] = []
         for entry in rows:
             if urlparse(entry.npy_uri).scheme == "s3":
@@ -572,6 +734,11 @@ class ReshardingManifestConfig:
                 )
         if remote_expectations:
             client = boto3.client("s3")
+            validation_started_at = time.monotonic()
+            logger.info(
+                "Source validation started: checking size and ETag for %s objects",
+                len(remote_expectations),
+            )
 
             def verify_remote(expectation: tuple[str, int, str]) -> None:
                 uri, expected_size, expected_etag = expectation
@@ -592,8 +759,16 @@ class ReshardingManifestConfig:
 
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
                 futures = [pool.submit(verify_remote, expectation) for expectation in remote_expectations]
-                for future in as_completed(futures):
+                checkpoint = max(1, len(futures) // 10)
+                for completed, future in enumerate(as_completed(futures), start=1):
                     future.result()
+                    if completed == len(futures) or completed % checkpoint == 0:
+                        logger.info(
+                            "Source validation progress: %s/%s objects · elapsed %s",
+                            completed,
+                            len(futures),
+                            _elapsed(validation_started_at),
+                        )
 
         paths: list[TokensMetadataPaths] = []
         downloaded_pairs: list[
@@ -648,10 +823,23 @@ class ReshardingManifestConfig:
             with commands_path.open("x") as f:
                 f.write("\n".join(remote_commands) + "\n")
             cmd = ["s5cmd", "--numworkers", str(max_workers), "run", str(commands_path)]
-            logger.info("Downloading exact manifest objects with s5cmd")
-            result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            if result.returncode != 0:
-                raise RuntimeError(f"s5cmd manifest download failed: {result.stderr}")
+            download_expectations = [
+                (path, expected_size)
+                for entry, npy_path, metadata_path, _, expected_npy_size, expected_metadata_size in downloaded_pairs
+                if urlparse(entry.npy_uri).scheme == "s3"
+                for path, expected_size in (
+                    (npy_path, expected_npy_size),
+                    (metadata_path, expected_metadata_size),
+                )
+                if expected_size is not None
+            ]
+            _run_with_progress(
+                cmd,
+                phase="Source download",
+                expected_objects=len(download_expectations),
+                expected_bytes=sum(size for _, size in download_expectations),
+                progress=lambda: _local_progress(download_expectations),
+            )
 
             missing = [
                 (npy_path, metadata_path)
@@ -684,12 +872,28 @@ class ReshardingManifestConfig:
             paths.extend([full_path] * entry.repeat_count)
             if entry.partial_target_uint32_values:
                 source_values = npy_path.stat().st_size // np.dtype(np.uint32).itemsize
+
+                def selection_progress(
+                    pass_name: str,
+                    document_count: int,
+                    covered_values: int,
+                    source_total: int = source_values,
+                ) -> None:
+                    logger.info(
+                        "Document selection %s: %s documents · %s/%s uint32 values scanned",
+                        pass_name,
+                        _human_count(document_count),
+                        _human_count(covered_values),
+                        _human_count(source_total),
+                    )
+
                 selection = create_document_selection(
                     metadata_path=metadata_path,
                     selection_path=selection_path,
                     source_uint32_values=source_values,
                     target_uint32_values=entry.partial_target_uint32_values,
                     seed=entry.selection_seed,
+                    progress=selection_progress,
                 )
                 logger.info(
                     "Selected %s uint32 values from %s for a %s-value quota " "(residual %+d; %s documents)",
@@ -711,6 +915,15 @@ class ReshardingManifestConfig:
 
         if not paths:
             raise RuntimeError(f"Manifest document selections produced no output: {manifest}")
+        selected_bytes = sum(path.size for path in paths)
+        logger.info(
+            "Manifest ready: %s merge input uses from %s source shards · %s planned output "
+            "(%s uint32 values)",
+            len(paths),
+            len(rows),
+            _human_bytes(selected_bytes),
+            _human_count(selected_bytes // np.dtype(np.uint32).itemsize),
+        )
         return paths
 
     def to_dict(self) -> dict:
@@ -813,11 +1026,18 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
         f"{local_prefix_no_star}/*",
         f"{remote_prefix_no_trailing_slash}/",
     ]
-    result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    if result.returncode != 0:
-        print(f"s5cmd failed with error: {result.stderr}")
-        raise Exception(f"Failed to upload files using s5cmd: {result.stderr}")
+    local_files = [path for path in Path(local_prefix).rglob("*") if path.is_file()]
+    expected_bytes = sum(path.stat().st_size for path in local_files)
+    parsed = urlparse(remote_prefix)
+    client = boto3.client("s3")
+    remote_key_prefix = parsed.path.lstrip("/").rstrip("/") + "/"
+    _run_with_progress(
+        cmd,
+        phase="Output upload",
+        expected_objects=len(local_files),
+        expected_bytes=expected_bytes,
+        progress=lambda: _s3_progress(client, parsed.netloc, remote_key_prefix),
+    )
 
 
 def destination_has_objects(destination: str | Path) -> bool:
@@ -844,6 +1064,14 @@ def destination_has_objects(destination: str | Path) -> bool:
 
 def reshard(config: ReshardingConfig):
     random.seed(config.random_seed)
+    started_at = time.monotonic()
+    logger.info(
+        "Reshard started: %s source manifests · %s source prefixes · %s workers · destination=%s",
+        len(config.source_manifests),
+        len(config.source_prefixes),
+        config.max_workers,
+        config.destination_prefix,
+    )
 
     if destination_has_objects(config.destination_prefix):
         raise FileExistsError(f"Refusing to use existing destination: {config.destination_prefix}")
@@ -857,13 +1085,21 @@ def reshard(config: ReshardingConfig):
             temp_base.mkdir(parents=True, exist_ok=True)
             run_tempdir = Path(mkdtemp(prefix="dolma-reshard-", dir=temp_base))
 
+        disk = shutil.disk_usage(run_tempdir)
+        logger.info(
+            "Working directory ready: %s · %s free of %s",
+            run_tempdir,
+            _human_bytes(disk.free),
+            _human_bytes(disk.total),
+        )
+
         local_output_dir = (
             run_tempdir / "output"
             if urlparse(config.destination_prefix).scheme == "s3"
             else Path(config.destination_prefix)
         )
 
-        # download the files
+        logger.info("Source preparation started")
         source_prefixes = [
             source_prefix.download(run_tempdir / f"prefix-input/{i:06d}")
             for i, source_prefix in enumerate(config.source_prefixes)
@@ -879,10 +1115,20 @@ def reshard(config: ReshardingConfig):
                 )
             )
 
+        planned_bytes = sum(path.size for path in source_paths)
+        logger.info(
+            "Source preparation complete: %s merge input uses · %s distinct token/metadata "
+            "views · %s planned output (%s uint32 values) · elapsed %s",
+            len(source_paths),
+            len(set(source_paths)),
+            _human_bytes(planned_bytes),
+            _human_count(planned_bytes // np.dtype(np.uint32).itemsize),
+            _elapsed(started_at),
+        )
+
         # make destination directory
         local_output_dir.mkdir(parents=True, exist_ok=False)
 
-        # merge the files
         merge_all_npys(
             source_paths,
             destination=local_output_dir,
@@ -893,15 +1139,30 @@ def reshard(config: ReshardingConfig):
             seed=config.random_seed,
         )
 
-        # upload the files
+        output_files = [path for path in local_output_dir.rglob("*") if path.is_file()]
+        output_bytes = sum(path.stat().st_size for path in output_files)
+        logger.info(
+            "Local output ready: %s files · %s · elapsed %s",
+            len(output_files),
+            _human_bytes(output_bytes),
+            _elapsed(started_at),
+        )
+
         upload_to_s3(
             local_prefix=local_output_dir,
             remote_prefix=config.destination_prefix,
             max_workers=config.max_workers,
         )
+        logger.info(
+            "Reshard complete: %s files · %s · total elapsed %s",
+            len(output_files),
+            _human_bytes(output_bytes),
+            _elapsed(started_at),
+        )
 
     finally:
         if run_tempdir is not None:
+            logger.info("Removing run working directory: %s", run_tempdir)
             shutil.rmtree(run_tempdir)
 
 

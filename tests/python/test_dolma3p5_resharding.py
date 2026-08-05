@@ -11,7 +11,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 from xml.etree import ElementTree
 
 import numpy as np
@@ -31,10 +31,18 @@ from dolma.tokenizer.reshard import (
 
 from scripts.dolma3p5_resharding.materialize import (
     ClusterInstance,
+    _map_command,
     _prepare_workers,
     _print_dispatch,
+    _retag_cluster_instances,
     _run_compact_process,
     _safe_path_launcher_payload,
+    _status_detail,
+    _verify_materialized_units,
+    _wait_command,
+    _wait_for_workers_to_stop,
+    _worker_log_command,
+    _worker_log_snapshots,
 )
 from scripts.dolma3p5_resharding.materialize import (
     build_parser as build_materialize_parser,
@@ -87,7 +95,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 False,
             )
         rendered = output.getvalue()
-        self.assertIn("dry-run selection=category-example categories=1 units=1 workers=1", rendered)
+        self.assertIn("Dry run", rendered)
+        self.assertIn("Selection", rendered)
+        self.assertIn("example", rendered)
+        self.assertIn("1 category · 1 unit · 1 worker", rendered)
         self.assertIn("commands:\npmr create --number 1", rendered)
         self.assertNotIn("Worker lifecycle", rendered)
         self.assertNotIn("create missing workers:", rendered)
@@ -110,9 +121,21 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 [("create missing workers", ["pmr", "create", "--number", "1"])],
                 1,
                 True,
+                cluster="dolma3p5-14t",
+                project="oe-other",
+                region="us-east-1",
             )
         rendered = output.getvalue()
-        self.assertIn("execute selection=category-example categories=1 units=1 workers=1", rendered)
+        self.assertIn("Execution", rendered)
+        self.assertIn("Selection", rendered)
+        self.assertIn("1 category · 1 unit · 1 worker", rendered)
+        self.assertIn("Cluster", rendered)
+        self.assertIn("dolma3p5-14t", rendered)
+        self.assertIn("Project", rendered)
+        self.assertIn("oe-other", rendered)
+        self.assertIn("Region", rendered)
+        self.assertIn("us-east-1", rendered)
+        self.assertNotIn("category-example", rendered)
         self.assertNotIn("commands:", rendered)
         self.assertNotIn("pmr create", rendered)
         self.assertNotIn("units:", rendered)
@@ -140,6 +163,17 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertNotIn("Waiting for instances", rendered)
         self.assertNotIn("worker-0000", rendered)
 
+    def test_compact_process_streams_child_output_when_verbose(self):
+        output = io.StringIO()
+        return_code = _run_compact_process(
+            "prepare local NVMe",
+            [sys.executable, "-c", "print('worker setup detail')"],
+            console=Console(file=output, force_terminal=False, color_system=None),
+            verbose=True,
+        )
+        self.assertEqual(return_code, 0)
+        self.assertIn("worker setup detail", output.getvalue())
+
     def test_compact_process_bounds_and_redacts_failure_output(self):
         output = io.StringIO()
         console = Console(file=output, force_terminal=False, color_system=None)
@@ -166,6 +200,171 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("aws_secret_access_key=<redacted>", rendered)
         self.assertNotIn("do-not-print", rendered)
 
+    def test_compact_status_hides_poormanray_cluster_log_mislabeled_as_project(self):
+        self.assertIsNone(
+            _status_detail(
+                "prepare local NVMe",
+                "[INFO][21:31:31] Running command on instances with "
+                "project=dolma3p5-14t in region us-east-1 (aws)",
+            )
+        )
+        self.assertEqual(
+            _status_detail(
+                "submit materialization",
+                "[INFO][21:31:36] Job 123 started on 2 instances.",
+            ),
+            "accepted by 2 workers",
+        )
+
+    def test_materialize_waits_for_worker_spindown(self):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            profile=None,
+            completion_poll_seconds=30,
+            verbose=True,
+        )
+        describe = MagicMock(
+            side_effect=[
+                [
+                    ClusterInstance("i-first", "running", "i4i.2xlarge", "oe-other"),
+                    ClusterInstance("i-second", "stopping", "i4i.2xlarge", "oe-other"),
+                ],
+                [
+                    ClusterInstance("i-first", "running", "i4i.2xlarge", "oe-other"),
+                    ClusterInstance("i-second", "running", "i4i.2xlarge", "oe-other"),
+                ],
+                [
+                    ClusterInstance("i-first", "stopped", "i4i.2xlarge", "oe-other"),
+                    ClusterInstance("i-second", "stopped", "i4i.2xlarge", "oe-other"),
+                ],
+            ]
+        )
+        sleep = MagicMock()
+        output = io.StringIO()
+        with patch(
+            "scripts.dolma3p5_resharding.materialize._worker_log_snapshots",
+            side_effect=[
+                {
+                    "i-first": {
+                        "statuses": {"00000000": "running"},
+                        "logs": {
+                            "00000000.log": ("Downloading exact manifest objects",),
+                        },
+                    }
+                },
+                {
+                    "i-first": {
+                        "statuses": {"00000000": "running"},
+                        "logs": {
+                            "00000000.log": (
+                                "Downloading exact manifest objects",
+                                "Merge progress: 1/2 output shards",
+                            ),
+                        },
+                    },
+                    "i-second": {
+                        "statuses": {"00000001": "running"},
+                        "logs": {
+                            "00000001.log": ("Other worker progress",),
+                        },
+                    },
+                },
+            ],
+        ):
+            _wait_for_workers_to_stop(
+                args,
+                ["i-first", "i-second"],
+                2,
+                "test-run",
+                describe=describe,
+                sleep=sleep,
+                console=Console(file=output, force_terminal=False, color_system=None),
+            )
+        self.assertEqual(sleep.call_args_list, [call(30), call(30)])
+        rendered = output.getvalue()
+        self.assertIn("2 units · 1 running · 1 stopping · 0 stopped", rendered)
+        self.assertIn("[worker 01 · i-first] 00000000 · running", rendered)
+        self.assertIn("[worker 01 · i-first] 00000000.log", rendered)
+        self.assertIn("Downloading exact manifest objects", rendered)
+        self.assertEqual(rendered.count("Downloading exact manifest objects"), 1)
+        self.assertIn("Merge progress: 1/2 output shards", rendered)
+        self.assertIn("[worker 02 · i-second] Other worker progress", rendered)
+        self.assertIn("materialization workers stopped", rendered)
+
+    @patch("scripts.dolma3p5_resharding.materialize.subprocess.run")
+    def test_verbose_worker_logs_are_complete_for_every_worker(self, run):
+        run.return_value = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                "Instance i-first:\n"
+                "stdout: @@DOLMA_STATUS@@\t00000000\trunning\n"
+                "@@DOLMA_LOG_BEGIN@@\t00000000.log\n"
+                "first line\nsecond line\n"
+                "@@DOLMA_LOG_END@@\t00000000.log\n"
+                "stderr:\n\n"
+                "Instance i-second:\n"
+                "stdout: @@DOLMA_STATUS@@\t00000001\tsucceeded\n"
+                "@@DOLMA_LOG_BEGIN@@\t00000001.log\n"
+                "other worker line\n"
+                "@@DOLMA_LOG_END@@\t00000001.log\n"
+                "stderr:\n"
+            ),
+            stderr="",
+        )
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=2,
+            ssh_key_path=None,
+        )
+        snapshots = _worker_log_snapshots(
+            args,
+            ["i-first", "i-second"],
+            "test-run",
+        )
+        self.assertEqual(
+            snapshots["i-first"]["logs"]["00000000.log"],
+            ("first line", "second line"),
+        )
+        self.assertEqual(
+            snapshots["i-second"]["logs"]["00000001.log"],
+            ("other worker line",),
+        )
+
+    def test_materialize_verifies_selected_output_sizes_and_metadata(self):
+        args = SimpleNamespace(
+            profile=None,
+            region="us-east-1",
+            parallelism=2,
+        )
+        row = {
+            "unit_id": "00000000",
+            "destination_prefix": "s3://bucket/output/00000000",
+            "planned_uint32_values": "10",
+            "allowed_materialized_target_residual_uint32_values": "0",
+        }
+        objects = [
+            S3Object("bucket", "output/00000000/000000.npy", 40),
+            S3Object("bucket", "output/00000000/000000.csv.gz", 20),
+        ]
+        output = io.StringIO()
+        with patch(
+            "scripts.dolma3p5_resharding.materialize._list_prefix",
+            return_value=objects,
+        ):
+            checks = _verify_materialized_units(
+                args,
+                [row],
+                client=MagicMock(),
+                console=Console(file=output, force_terminal=False, color_system=None),
+            )
+        self.assertEqual(checks[0].actual_uint32_values, 10)
+        self.assertEqual(checks[0].metadata_count, 1)
+        self.assertIn("materialization verified  1/1 units", output.getvalue())
+
     def test_generated_materialize_launcher_uses_safe_import_directory(self):
         launcher = _self_contained_launcher(
             unit_id="00000000",
@@ -185,9 +384,11 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             launcher = Path(temp_dir) / "unit.sh"
             launcher.write_text("#!/usr/bin/env bash\nset -euo pipefail\npython -m dolma\n")
-            payload = _safe_path_launcher_payload(launcher).decode()
+            payload = _safe_path_launcher_payload(launcher, "123-test-run").decode()
+        self.assertIn("export PYTHONSAFEPATH=1", payload)
+        self.assertIn("cd /tmp", payload)
         self.assertIn(
-            "set -euo pipefail\n\nexport PYTHONSAFEPATH=1\ncd /tmp\n",
+            'export DOLMA_STATUS_ROOT="$HOME/dolma3p5-resharding-status/123-test-run"',
             payload,
         )
 
@@ -198,10 +399,15 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(args.parallelism, 128)
         self.assertEqual(args.instance_type, "i4i.2xlarge")
         self.assertEqual(args.storage_layout, "single")
+        self.assertEqual(args.completion_poll_seconds, 30)
+        self.assertFalse(args.verbose)
 
+    @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
-    def test_materialize_creates_and_waits_for_the_exact_worker_count(self, describe, run):
+    def test_materialize_creates_and_waits_for_the_exact_worker_count(
+        self, describe, run, retag
+    ):
         args = SimpleNamespace(
             cluster="dolma3p5-14t",
             project="oe-other",
@@ -227,10 +433,118 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             ["create workers", "wait for workers"],
         )
         create_command = run.call_args_list[0].args[1]
+        self.assertEqual(create_command[create_command.index("--name") + 1], "dolma3p5-14t")
         self.assertIn("--number", create_command)
         self.assertEqual(create_command[create_command.index("--number") + 1], "2")
         wait_command = run.call_args_list[1].args[1]
+        self.assertEqual(wait_command[wait_command.index("--name") + 1], "oe-other")
         self.assertEqual(wait_command.count("--instance-id"), 2)
+        retag.assert_called_once_with(
+            args,
+            ["i-first", "i-second"],
+            names={
+                "i-first": "dolma3p5-14t-0000",
+                "i-second": "dolma3p5-14t-0001",
+            },
+        )
+
+    @patch("scripts.dolma3p5_resharding.materialize.boto3.Session")
+    def test_materialize_retags_project_and_cluster_before_dispatch(self, session):
+        client = session.return_value.client.return_value
+        client.describe_instances.return_value = {
+            "Reservations": [
+                {
+                    "Instances": [
+                        {
+                            "InstanceId": "i-first",
+                            "Tags": [
+                                {"Key": "project", "Value": "oe-other"},
+                                {"Key": "ai2-project", "Value": "oe-other"},
+                                {"Key": "cluster", "Value": "dolma3p5-14t"},
+                                {"Key": "Name", "Value": "dolma3p5-14t-0000"},
+                            ],
+                        }
+                    ]
+                }
+            ]
+        }
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            profile=None,
+        )
+
+        _retag_cluster_instances(
+            args,
+            ["i-first"],
+            names={"i-first": "dolma3p5-14t-0000"},
+        )
+
+        self.assertEqual(
+            client.create_tags.call_args_list[0],
+            call(
+                Resources=["i-first"],
+                Tags=[
+                    {"Key": "project", "Value": "oe-other"},
+                    {"Key": "ai2-project", "Value": "oe-other"},
+                    {"Key": "cluster", "Value": "dolma3p5-14t"},
+                ],
+            ),
+        )
+
+    @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
+    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
+    def test_materialize_retags_reused_worker_before_resume(self, describe, run, retag):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=8,
+            instance_type="i4i.2xlarge",
+            root_storage_type="gp3",
+            root_storage_size=200,
+            ssh_key_path=None,
+            profile=None,
+        )
+        describe.return_value = [
+            ClusterInstance(
+                "i-reused",
+                "stopped",
+                "i4i.2xlarge",
+                "oe-other",
+                "dolma3p5-14t-0003",
+            )
+        ]
+
+        self.assertEqual(_prepare_workers(args, 1), ["i-reused"])
+
+        retag.assert_called_once_with(args, ["i-reused"])
+        self.assertEqual(
+            [call.args[0] for call in run.call_args_list],
+            ["resume workers", "wait for workers"],
+        )
+        for lifecycle_call in run.call_args_list:
+            command = lifecycle_call.args[1]
+            self.assertEqual(command[command.index("--name") + 1], "oe-other")
+            self.assertEqual(command[command.index("--instance-id") + 1], "i-reused")
+
+    def test_existing_worker_commands_use_project_selector_and_explicit_ids(self):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=8,
+            ssh_key_path=None,
+        )
+        wait_command = _wait_command(args, ["i-first"])
+        map_command = _map_command(args, Path("/tmp/launchers"), ["i-first"])
+        log_command = _worker_log_command(args, ["i-first"], "test-run")
+        for command in (wait_command, map_command, log_command):
+            self.assertEqual(command[command.index("--name") + 1], "oe-other")
+            self.assertEqual(command[command.index("--project") + 1], "oe-other")
+            self.assertEqual(command[command.index("--instance-id") + 1], "i-first")
 
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
     def test_materialize_refuses_to_share_a_cluster_with_active_work(self, describe):
@@ -1421,8 +1735,10 @@ class TestReshardingSafety(unittest.TestCase):
         self.assertEqual([path.name for path in temp_base.iterdir()], ["keep-me"])
 
     def test_upload_always_uses_no_clobber(self):
-        completed = MagicMock(returncode=0, stdout="", stderr="")
-        with patch("dolma.tokenizer.reshard.subprocess.run", return_value=completed) as run:
+        with (
+            patch("dolma.tokenizer.reshard.boto3.client"),
+            patch("dolma.tokenizer.reshard._run_with_progress") as run,
+        ):
             upload_to_s3(self.root, "s3://test-bucket/new/prefix", max_workers=3)
         command = run.call_args.args[0]
         self.assertIn("--no-clobber", command)

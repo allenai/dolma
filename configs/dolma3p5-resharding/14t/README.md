@@ -70,7 +70,7 @@ Do not launch if a source changed or a destination is occupied.
 
 `materialize.py` manages the worker lifecycle. It creates or resumes the
 required poormanray workers, waits for them, prepares local NVMe, installs
-Dolma and `s5cmd`, installs the reviewed resharding modules from this checkout,
+Dolma and `s5cmd`, installs the resharding runtime from this checkout,
 validates the runtime, dispatches the selected units, and stops each worker
 after its assigned units finish.
 
@@ -117,24 +117,32 @@ The important worker options are:
 
 - `--parallelism` is the maximum number of concurrent workers. The actual
   count is the smaller of this value and the selected execution-unit count.
-- `--cluster` defaults to `dolma3p5-14t`.
-- `--project` defaults to `oe-other`.
+- `--cluster` defaults to `dolma3p5-14t` and sets the worker `cluster` tag.
+- `--project` defaults to `oe-other` and sets the worker `project` tag.
 - `--region` defaults to `us-east-1` and can be overridden directly or with
   `PMR_REGION`.
+- `--verbose` streams poormanray output and every new resharding-log line from
+  active workers. Worker logs report source
+  validation, object/byte download progress, document-selection passes, merge
+  completion by output shard, and output-upload progress.
+- `--completion-poll-seconds` controls the worker-state and log polling
+  interval; it defaults to 30 seconds.
 - `--profile` selects the AWS profile used for provisioning and worker setup.
 - `--instance-type` defaults to `i4i.2xlarge`.
 - `--root-storage-type` and `--root-storage-size` default to a 200 GiB gp3 root
   volume. Materialization data uses local NVMe, not the root volume.
 - `--storage-layout single` is the default for the one-NVMe baseline. Use
-  `--storage-layout raid0` only with a reviewed multi-NVMe instance type.
+  `--storage-layout raid0` only with a multi-NVMe instance type.
 
 At execution time, the materializer refuses a cluster containing active or
 transitioning workers. Compatible stopped workers are reused; missing workers
 are created. Every setup and dispatch command is scoped to the exact selected
 instance IDs so unrelated stopped workers cannot be resumed or assigned work.
 If setup or dispatch fails, the materializer attempts to pause the workers it
-started. A successful dispatch uses poormanray's `--spindown`, so workers stop
-after their assigned launchers complete.
+started. The command does not treat poormanray's detached job submission as
+completion: it waits for every selected worker to stop, then verifies the NPY
+sizes and metadata pairs at every selected destination. Only that verification
+produces the final success message.
 
 Each unit refuses an occupied destination and uploads with no-clobber
 semantics. Do not retry a partially written destination. Investigate it and
@@ -145,7 +153,10 @@ prepare a new destination instead.
 After every selected unit has completed:
 
 ```bash
-python scripts/dolma3p5_resharding/verify.py
+python scripts/dolma3p5_resharding/verify.py \
+  --category 'dolma3_finemath_v3:finemath::default'
+
+python scripts/dolma3p5_resharding/verify.py --all
 
 python -m json.tool \
   runs/dolma3p5-resharding/14t/03-output-validation/output-summary.json

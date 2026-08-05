@@ -1645,7 +1645,7 @@ from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION
 
 if RESHARDING_MANIFEST_SCHEMA_VERSION != 2:
     raise RuntimeError(
-        "Worker Dolma runtime does not match the reviewed manifest-resharding schema"
+        "Worker Dolma runtime does not match the expected manifest-resharding schema"
     )
 PY
 
@@ -2658,6 +2658,15 @@ def verify_output(args: argparse.Namespace) -> None:
     config_index = _read_csv(build / "01-plan/execution/config-index.csv")
     if not config_index:
         raise PreparationError("Proposal config index is empty or missing")
+    category = getattr(args, "category", None)
+    unit = getattr(args, "unit", None)
+    selection_scope = "all"
+    if category:
+        config_index = _filter_execution_units(config_index, category=category)
+        selection_scope = f"category:{category}"
+    elif unit:
+        config_index = _filter_execution_units(config_index, unit=unit)
+        selection_scope = f"unit:{unit}"
     phase = _reset_preparation_phase(build, "03-output-validation")
     session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
     client = session.client("s3", region_name=region)
@@ -2843,6 +2852,8 @@ def verify_output(args: argparse.Namespace) -> None:
         phase / "output-summary.json",
         {
             "created_at": _utc_now(),
+            "selection_scope": selection_scope,
+            "selected_unit_ids_sha256": _unit_selection_digest(config_index),
             "destinations_expected": len(config_index),
             "destinations_checked": len(validation_rows),
             "failed_destinations": failed,

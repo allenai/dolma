@@ -26,6 +26,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="AWS region; override when the destination store is in another region",
     )
     parser.add_argument("--max-workers", type=int)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument(
+        "--all",
+        action="store_true",
+        help="verify every execution unit; this is also the default selection",
+    )
+    selection.add_argument(
+        "--category",
+        help="verify one exact mix name, leaf ID, or MIX_NAME::CATEGORY_NAME selector",
+    )
+    selection.add_argument(
+        "--unit",
+        help="verify one exact execution-unit ID",
+    )
     return parser
 
 
