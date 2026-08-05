@@ -1,27 +1,196 @@
-"""Build and validate poormanray dispatches for resharding jobs."""
+"""Build poormanray commands for a complete resharding worker lifecycle."""
 
 from __future__ import annotations
 
-import re
-import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 
 
-class PoormanrayDispatchError(RuntimeError):
-    """A poormanray dispatch cannot safely run as configured."""
+def _base_command(
+    action: str,
+    *,
+    cluster: str,
+    region: str | None,
+    project: str | None,
+    runner: Sequence[str] | None = None,
+) -> list[str]:
+    if not cluster.strip():
+        raise ValueError("cluster must not be empty")
+    command = [*(runner or ("pmr",)), action, "--name", cluster]
+    if project:
+        command.extend(("--project", project))
+    if region:
+        command.extend(("--region", region))
+    return command
 
 
-ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
-POORMANRAY_RUNNER = [
-    "uv",
-    "run",
-    "--isolated",
-    "--no-project",
-    "--with",
-    "poormanray",
-    "--",
-    "pmr",
-]
+def _add_instance_options(
+    command: list[str],
+    *,
+    instance_ids: Sequence[str] = (),
+    parallelism: int | None = None,
+    ssh_key_path: str | Path | None = None,
+) -> list[str]:
+    for instance_id in instance_ids:
+        if not instance_id.strip():
+            raise ValueError("instance IDs must not be empty")
+        command.extend(("--instance-id", instance_id))
+    if parallelism is not None:
+        if parallelism <= 0:
+            raise ValueError("parallelism must be positive")
+        command.extend(("--parallelism", str(parallelism)))
+    if ssh_key_path is not None:
+        command.extend(("--ssh-key-path", str(ssh_key_path)))
+    return command
+
+
+def build_poormanray_create_command(
+    *,
+    cluster: str,
+    project: str,
+    region: str,
+    number: int,
+    instance_type: str,
+    storage_type: str,
+    storage_size_gib: int,
+    parallelism: int | None = None,
+    ssh_key_path: str | Path | None = None,
+    runner: Sequence[str] | None = None,
+) -> list[str]:
+    """Build the command that creates missing workers for a cluster."""
+
+    if number <= 0:
+        raise ValueError("number must be positive")
+    if storage_size_gib <= 0:
+        raise ValueError("storage_size_gib must be positive")
+    command = _base_command(
+        "create", cluster=cluster, project=project, region=region, runner=runner
+    )
+    command.extend(
+        (
+            "--number",
+            str(number),
+            "--instance-type",
+            instance_type,
+            "--storage-type",
+            storage_type,
+            "--storage-size",
+            str(storage_size_gib),
+        )
+    )
+    return _add_instance_options(
+        command,
+        parallelism=parallelism,
+        ssh_key_path=ssh_key_path,
+    )
+
+
+def build_poormanray_instance_command(
+    action: str,
+    *,
+    cluster: str,
+    project: str,
+    region: str,
+    instance_ids: Sequence[str],
+    parallelism: int | None = None,
+    ssh_key_path: str | Path | None = None,
+    runner: Sequence[str] | None = None,
+) -> list[str]:
+    """Build a wait, resume, or pause command scoped to explicit workers."""
+
+    if action not in {"wait", "resume", "pause"}:
+        raise ValueError(f"unsupported instance action: {action}")
+    command = _base_command(
+        action, cluster=cluster, project=project, region=region, runner=runner
+    )
+    return _add_instance_options(
+        command,
+        instance_ids=instance_ids,
+        parallelism=parallelism if action != "wait" else None,
+        ssh_key_path=ssh_key_path if action == "wait" else None,
+    )
+
+
+def build_poormanray_transfer_command(
+    *,
+    cluster: str,
+    project: str,
+    region: str,
+    transfers: Sequence[tuple[str | Path, str]],
+    instance_ids: Sequence[str] = (),
+    parallelism: int | None = None,
+    ssh_key_path: str | Path | None = None,
+    runner: Sequence[str] | None = None,
+) -> list[str]:
+    """Build a transfer command for worker bootstrap files."""
+
+    if not transfers:
+        raise ValueError("at least one transfer is required")
+    command = _base_command(
+        "transfer", cluster=cluster, project=project, region=region, runner=runner
+    )
+    for source, destination in transfers:
+        command.extend(("--source", f"{source}:{destination}"))
+    return _add_instance_options(
+        command,
+        instance_ids=instance_ids,
+        parallelism=parallelism,
+        ssh_key_path=ssh_key_path,
+    )
+
+
+def build_poormanray_run_command(
+    *,
+    cluster: str,
+    project: str,
+    region: str,
+    remote_command: str,
+    instance_ids: Sequence[str] = (),
+    parallelism: int | None = None,
+    ssh_key_path: str | Path | None = None,
+    runner: Sequence[str] | None = None,
+) -> list[str]:
+    """Build a synchronous command to run on selected workers."""
+
+    if not remote_command.strip():
+        raise ValueError("remote_command must not be empty")
+    command = _base_command(
+        "run", cluster=cluster, project=project, region=region, runner=runner
+    )
+    command.extend(("--command", remote_command))
+    return _add_instance_options(
+        command,
+        instance_ids=instance_ids,
+        parallelism=parallelism,
+        ssh_key_path=ssh_key_path,
+    )
+
+
+def build_poormanray_setup_dolma_command(
+    *,
+    cluster: str,
+    project: str,
+    region: str,
+    instance_ids: Sequence[str] = (),
+    parallelism: int | None = None,
+    ssh_key_path: str | Path | None = None,
+    runner: Sequence[str] | None = None,
+) -> list[str]:
+    """Build the command that installs Dolma and s5cmd on selected workers."""
+
+    command = _base_command(
+        "setup-dolma-python",
+        cluster=cluster,
+        project=project,
+        region=region,
+        runner=runner,
+    )
+    return _add_instance_options(
+        command,
+        instance_ids=instance_ids,
+        parallelism=parallelism,
+        ssh_key_path=ssh_key_path,
+    )
 
 
 def build_poormanray_map_command(
@@ -31,70 +200,22 @@ def build_poormanray_map_command(
     region: str | None = None,
     project: str | None = None,
     spindown: bool,
+    instance_ids: Sequence[str] = (),
+    parallelism: int | None = None,
+    ssh_key_path: str | Path | None = None,
+    runner: Sequence[str] | None = None,
 ) -> list[str]:
-    """Build a poormanray command that maps executable scripts over a cluster."""
+    """Build a poormanray command that maps scripts over selected workers."""
 
-    if not cluster.strip():
-        raise ValueError("cluster must not be empty")
-    command = [*POORMANRAY_RUNNER, "map", "--name", cluster]
-    if project:
-        command.extend(("--project", project))
-    if region:
-        command.extend(("--region", region))
+    command = _base_command(
+        "map", cluster=cluster, project=project, region=region, runner=runner
+    )
     command.extend(("--script", str(script_dir)))
     if spindown:
         command.append("--spindown")
-    return command
-
-
-def require_spindown_coverage(
-    *,
-    cluster: str,
-    region: str,
-    script_count: int,
-    project: str | None = None,
-    cloud: str = "aws",
-    gcp_project: str | None = None,
-) -> int:
-    """Require every active cluster instance to receive at least one script."""
-
-    if script_count <= 0:
-        raise ValueError("script_count must be positive")
-    if cloud not in {"aws", "gcp"}:
-        raise ValueError(f"Unsupported poormanray cloud: {cloud}")
-
-    command = [*POORMANRAY_RUNNER, "list", "--name", cluster, "--region", region]
-    if project:
-        command.extend(("--project", project))
-    if cloud != "aws":
-        command.extend(("--cloud", cloud))
-    if gcp_project:
-        command.extend(("--gcp-project", gcp_project))
-    result = subprocess.run(command, check=False, capture_output=True, text=True)
-    if result.returncode:
-        detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
-        raise PoormanrayDispatchError(f"Could not inspect poormanray cluster {cluster!r}: {detail}")
-
-    active_instances = 0
-    current_instance = False
-    for raw_line in result.stdout.splitlines():
-        line = ANSI_ESCAPE.sub("", raw_line).strip()
-        if line.startswith("Id: ") or line.startswith("Id/Name: "):
-            current_instance = True
-        elif current_instance and line.startswith("State:"):
-            state = line.removeprefix("State:").strip().casefold()
-            if re.search(r"\b(?:pending|running)\b", state):
-                active_instances += 1
-            current_instance = False
-
-    if not active_instances:
-        raise PoormanrayDispatchError(
-            f"No active poormanray instances found for cluster {cluster!r} in {region}"
-        )
-    if active_instances > script_count:
-        raise PoormanrayDispatchError(
-            f"Cluster {cluster!r} has {active_instances:,} active instances but this dispatch has "
-            f"only {script_count:,} scripts. poormanray does not apply --spindown to instances "
-            "that receive no script. Use a cluster with no more instances than scripts."
-        )
-    return active_instances
+    return _add_instance_options(
+        command,
+        instance_ids=instance_ids,
+        parallelism=parallelism,
+        ssh_key_path=ssh_key_path,
+    )

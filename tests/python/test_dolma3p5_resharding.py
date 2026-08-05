@@ -27,6 +27,14 @@ from dolma.tokenizer.reshard import (
     reshard,
     upload_to_s3,
 )
+
+from scripts.dolma3p5_resharding.materialize import (
+    ClusterInstance,
+    _prepare_workers,
+)
+from scripts.dolma3p5_resharding.materialize import (
+    build_parser as build_materialize_parser,
+)
 from scripts.dolma3p5_resharding.workflow import (
     DEFAULT_REGION,
     EXECUTION_UNIT_INDEX_WIDTH,
@@ -43,17 +51,77 @@ from scripts.dolma3p5_resharding.workflow import (
     _unit_selection_digest,
     _validate_execution_layout,
     collect_inventory,
+    normalize_region,
     plan_build,
     preflight_build,
     propose_configs,
     refresh_inventory_details,
-    normalize_region,
     validate_build,
     verify_output,
 )
 
 
 class TestDolma35ReshardingPreparation(unittest.TestCase):
+    def test_materialize_defaults_to_a_complete_oe_other_worker_lifecycle(self):
+        args = build_materialize_parser().parse_args(["--all"])
+        self.assertEqual(args.project, "oe-other")
+        self.assertEqual(args.region, "us-east-1")
+        self.assertEqual(args.parallelism, 128)
+        self.assertEqual(args.instance_type, "i4i.2xlarge")
+        self.assertEqual(args.storage_layout, "single")
+
+    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
+    def test_materialize_creates_and_waits_for_the_exact_worker_count(self, describe, run):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=8,
+            instance_type="i4i.2xlarge",
+            root_storage_type="gp3",
+            root_storage_size=200,
+            ssh_key_path=None,
+            profile=None,
+        )
+        describe.side_effect = [
+            [],
+            [
+                ClusterInstance("i-second", "running", "i4i.2xlarge", "oe-other"),
+                ClusterInstance("i-first", "running", "i4i.2xlarge", "oe-other"),
+            ],
+        ]
+
+        self.assertEqual(_prepare_workers(args, 2), ["i-first", "i-second"])
+        self.assertEqual(
+            [call.args[0] for call in run.call_args_list],
+            ["create workers", "wait for workers"],
+        )
+        create_command = run.call_args_list[0].args[1]
+        self.assertIn("--number", create_command)
+        self.assertEqual(create_command[create_command.index("--number") + 1], "2")
+        wait_command = run.call_args_list[1].args[1]
+        self.assertEqual(wait_command.count("--instance-id"), 2)
+
+    @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
+    def test_materialize_refuses_to_share_a_cluster_with_active_work(self, describe):
+        describe.return_value = [
+            ClusterInstance("i-busy", "running", "i4i.2xlarge", "oe-other")
+        ]
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=8,
+            instance_type="i4i.2xlarge",
+            root_storage_type="gp3",
+            root_storage_size=200,
+            ssh_key_path=None,
+            profile=None,
+        )
+        with self.assertRaisesRegex(PreparationError, "already has active"):
+            _prepare_workers(args, 1)
+
     def test_region_defaults_to_us_east_1_and_allows_override(self):
         self.assertEqual(normalize_region(None), DEFAULT_REGION)
         self.assertEqual(normalize_region(""), DEFAULT_REGION)

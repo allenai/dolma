@@ -1,97 +1,109 @@
 import csv
 import json
 import shutil
-import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from typing import NamedTuple
-from unittest.mock import patch
 
 import numpy as np
 import smart_open
-
 from dolma.cli.__main__ import main as cli_main
 from dolma.tokenizer import Tokenizer
 from dolma.tokenizer.reshard import ReshardingConfig, reshard
-from scripts.resharding.dispatch import build_poormanray_map_command, require_spindown_coverage
+
+from scripts.resharding.dispatch import (
+    build_poormanray_create_command,
+    build_poormanray_map_command,
+    build_poormanray_run_command,
+)
 
 DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2-test-tokenizer.json"
 
 
 class TestReshardDispatch(unittest.TestCase):
-    def test_poormanray_map_command_can_require_worker_spindown(self):
+    def test_poormanray_lifecycle_commands_scope_work_to_selected_instances(self):
+        create = build_poormanray_create_command(
+            cluster="resharding",
+            project="oe-other",
+            region="us-east-1",
+            number=2,
+            instance_type="i4i.2xlarge",
+            storage_type="gp3",
+            storage_size_gib=200,
+            parallelism=2,
+        )
+        self.assertEqual(
+            create,
+            [
+                "pmr",
+                "create",
+                "--name",
+                "resharding",
+                "--project",
+                "oe-other",
+                "--region",
+                "us-east-1",
+                "--number",
+                "2",
+                "--instance-type",
+                "i4i.2xlarge",
+                "--storage-type",
+                "gp3",
+                "--storage-size",
+                "200",
+                "--parallelism",
+                "2",
+            ],
+        )
+
+        run = build_poormanray_run_command(
+            cluster="resharding",
+            project="oe-other",
+            region="us-east-1",
+            remote_command="true",
+            instance_ids=("i-first", "i-second"),
+            parallelism=2,
+        )
+        self.assertEqual(
+            run[-6:],
+            [
+                "--instance-id",
+                "i-first",
+                "--instance-id",
+                "i-second",
+                "--parallelism",
+                "2",
+            ],
+        )
+
         command = build_poormanray_map_command(
             cluster="resharding",
-            project=None,
+            project="oe-other",
             region="us-east-1",
             script_dir="/tmp/dispatch",
             spindown=True,
+            instance_ids=("i-first", "i-second"),
         )
         self.assertEqual(
             command,
             [
-                "uv",
-                "run",
-                "--isolated",
-                "--no-project",
-                "--with",
-                "poormanray",
-                "--",
                 "pmr",
                 "map",
                 "--name",
                 "resharding",
+                "--project",
+                "oe-other",
                 "--region",
                 "us-east-1",
                 "--script",
                 "/tmp/dispatch",
                 "--spindown",
+                "--instance-id",
+                "i-first",
+                "--instance-id",
+                "i-second",
             ],
-        )
-
-    @patch("scripts.resharding.dispatch.subprocess.run")
-    def test_spindown_coverage_uses_isolated_pmr_cli(self, run):
-        run.return_value = subprocess.CompletedProcess(
-            args=[],
-            returncode=0,
-            stdout=(
-                "Id:      i-active\n"
-                "Name:    worker-0\n"
-                "State:   running\n\n"
-                "Id:      i-stopped\n"
-                "Name:    worker-1\n"
-                "State:   stopped\n"
-            ),
-            stderr="",
-        )
-        self.assertEqual(
-            require_spindown_coverage(
-                cluster="resharding",
-                region="us-east-1",
-                script_count=1,
-            ),
-            1,
-        )
-        run.assert_called_once_with(
-            [
-                "uv",
-                "run",
-                "--isolated",
-                "--no-project",
-                "--with",
-                "poormanray",
-                "--",
-                "pmr",
-                "list",
-                "--name",
-                "resharding",
-                "--region",
-                "us-east-1",
-            ],
-            check=False,
-            capture_output=True,
-            text=True,
         )
 
 

@@ -1,4 +1,13 @@
-"""Select and dispatch reviewed Dolma 3.5 materialization units with poormanray."""
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "boto3",
+#   "poormanray",
+#   "PyYAML",
+# ]
+# ///
+
+"""Provision workers and materialize reviewed Dolma 3.5 execution units."""
 
 from __future__ import annotations
 
@@ -12,17 +21,25 @@ import shutil
 import subprocess
 import sys
 from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
+
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 scripts_root = Path(__file__).resolve().parents[1]
 if str(scripts_root) not in sys.path:
     sys.path.insert(0, str(scripts_root))
 
 from resharding.dispatch import (
-    PoormanrayDispatchError,
+    build_poormanray_create_command,
+    build_poormanray_instance_command,
     build_poormanray_map_command,
-    require_spindown_coverage,
+    build_poormanray_run_command,
+    build_poormanray_setup_dolma_command,
+    build_poormanray_transfer_command,
 )
 
 try:
@@ -30,9 +47,9 @@ try:
         DEFAULT_BUILD_PATH,
         DEFAULT_REGION,
         PreparationError,
+        _filter_execution_units,
         _human_byte_count,
         _human_token_count,
-        _filter_execution_units,
         _unit_selection_digest,
         _validate_execution_layout,
         _validate_preparation_build,
@@ -43,9 +60,9 @@ except ImportError:
         DEFAULT_BUILD_PATH,
         DEFAULT_REGION,
         PreparationError,
+        _filter_execution_units,
         _human_byte_count,
         _human_token_count,
-        _filter_execution_units,
         _unit_selection_digest,
         _validate_execution_layout,
         _validate_preparation_build,
@@ -95,22 +112,269 @@ def build_parser() -> argparse.ArgumentParser:
         default=os.environ.get("PMR_REGION") or DEFAULT_REGION,
         help="poormanray region; PMR_REGION overrides the us-east-1 default",
     )
+    parser.add_argument("--profile", help="AWS profile used for the worker lifecycle")
     parser.add_argument(
         "--project",
-        help="optional poormanray project tag",
+        default="oe-other",
+        help="Ai2 project tag for poormanray dispatch",
+    )
+    parser.add_argument(
+        "-j",
+        "--parallelism",
+        type=lambda value: _positive_integer(value, "parallelism"),
+        default=128,
+        help="maximum number of workers to provision and run concurrently",
+    )
+    parser.add_argument(
+        "--instance-type",
+        default="i4i.2xlarge",
+        help="worker EC2 instance type",
+    )
+    parser.add_argument(
+        "--root-storage-type",
+        default="gp3",
+        help="worker root-volume type",
+    )
+    parser.add_argument(
+        "--root-storage-size",
+        type=lambda value: _positive_integer(value, "root-storage-size"),
+        default=200,
+        metavar="GIB",
+        help="worker root-volume size in GiB",
+    )
+    parser.add_argument(
+        "--storage-layout",
+        choices=("single", "raid0"),
+        default="single",
+        help="local NVMe layout prepared on every worker",
+    )
+    parser.add_argument(
+        "--ssh-key-path",
+        type=Path,
+        help="SSH private key passed to poormanray; its normal default is used when omitted",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--dry-run",
         action="store_true",
-        help="stage and print the exact dispatch without invoking poormanray",
+        help="stage and print the complete worker lifecycle without invoking poormanray",
     )
     mode.add_argument(
         "--execute",
         action="store_true",
-        help="invoke poormanray after requiring a passing preflight; otherwise the command is a dry run",
+        help="provision, prepare, and dispatch poormanray workers after a passing preflight",
     )
     return parser
+
+
+def _positive_integer(value: str, name: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{name} must be an integer") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError(f"{name} must be positive")
+    return parsed
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+WORKER_STORAGE_SCRIPT = Path(__file__).with_name("setup_worker_storage.sh")
+RESHARD_MODULE = REPOSITORY_ROOT / "python/dolma/tokenizer/reshard.py"
+DOCUMENT_SELECTION_MODULE = REPOSITORY_ROOT / "python/dolma/tokenizer/document_selection.py"
+REMOTE_STORAGE_SCRIPT = "/tmp/dolma3p5-setup-worker-storage.sh"
+REMOTE_RESHARD_MODULE = "/tmp/dolma3p5-runtime/reshard.py"
+REMOTE_DOCUMENT_SELECTION_MODULE = "/tmp/dolma3p5-runtime/document_selection.py"
+
+
+@dataclass(frozen=True)
+class ClusterInstance:
+    instance_id: str
+    state: str
+    instance_type: str
+    project: str | None
+
+
+def _describe_cluster_instances(
+    cluster: str, region: str, profile: str | None = None
+) -> list[ClusterInstance]:
+    """Return every unterminated AWS instance bearing the poormanray cluster tag."""
+
+    session = boto3.Session(profile_name=profile, region_name=region)
+    client = session.client("ec2", region_name=region)
+    descriptions: dict[str, dict[str, Any]] = {}
+    states = ["pending", "running", "stopping", "stopped"]
+    for tag_name in ("project", "Project"):
+        paginator = client.get_paginator("describe_instances")
+        for page in paginator.paginate(
+            Filters=[
+                {"Name": "instance-state-name", "Values": states},
+                {"Name": f"tag:{tag_name}", "Values": [cluster]},
+            ]
+        ):
+            for reservation in page.get("Reservations", []):
+                for description in reservation.get("Instances", []):
+                    instance_id = description.get("InstanceId")
+                    if isinstance(instance_id, str):
+                        descriptions[instance_id] = description
+
+    instances = []
+    for instance_id, description in descriptions.items():
+        tags = {
+            str(tag.get("Key")): str(tag.get("Value"))
+            for tag in description.get("Tags", [])
+            if tag.get("Key") is not None and tag.get("Value") is not None
+        }
+        instances.append(
+            ClusterInstance(
+                instance_id=instance_id,
+                state=str(description.get("State", {}).get("Name", "unknown")),
+                instance_type=str(description.get("InstanceType", "unknown")),
+                project=tags.get("ai2-project"),
+            )
+        )
+    return sorted(instances, key=lambda instance: instance.instance_id)
+
+
+def _run_lifecycle_command(stage: str, command: Sequence[str]) -> None:
+    print(f"\n[{stage}]")
+    print(shlex.join(command), flush=True)
+    result = subprocess.run(command, check=False)
+    if result.returncode:
+        raise PreparationError(f"{stage} failed with exit code {result.returncode}")
+
+
+def _instance_options(args: argparse.Namespace, instance_ids: Sequence[str]) -> dict[str, Any]:
+    return {
+        "cluster": args.cluster,
+        "project": args.project,
+        "region": args.region,
+        "instance_ids": instance_ids,
+        "parallelism": (
+            min(args.parallelism, len(instance_ids)) if instance_ids else args.parallelism
+        ),
+        "ssh_key_path": args.ssh_key_path,
+    }
+
+
+def _create_command(args: argparse.Namespace, number: int) -> list[str]:
+    return build_poormanray_create_command(
+        cluster=args.cluster,
+        project=args.project,
+        region=args.region,
+        number=number,
+        instance_type=args.instance_type,
+        storage_type=args.root_storage_type,
+        storage_size_gib=args.root_storage_size,
+        parallelism=min(args.parallelism, number),
+        ssh_key_path=args.ssh_key_path,
+    )
+
+
+def _wait_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
+    return build_poormanray_instance_command(
+        "wait",
+        cluster=args.cluster,
+        project=args.project,
+        region=args.region,
+        instance_ids=instance_ids,
+        ssh_key_path=args.ssh_key_path,
+    )
+
+
+def _resume_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
+    options = _instance_options(args, instance_ids)
+    options.pop("ssh_key_path")
+    return build_poormanray_instance_command("resume", **options)
+
+
+def _pause_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
+    options = _instance_options(args, instance_ids)
+    options.pop("ssh_key_path")
+    return build_poormanray_instance_command("pause", **options)
+
+
+def _worker_minimum_available_bytes(rows: Sequence[dict[str, str]]) -> int:
+    largest_working_set = max(int(row["estimated_peak_local_bytes"]) for row in rows)
+    return (largest_working_set * 11 + 9) // 10
+
+
+def _storage_transfer_command(
+    args: argparse.Namespace, instance_ids: Sequence[str]
+) -> list[str]:
+    return build_poormanray_transfer_command(
+        transfers=((WORKER_STORAGE_SCRIPT, REMOTE_STORAGE_SCRIPT),),
+        **_instance_options(args, instance_ids),
+    )
+
+
+def _storage_setup_command(
+    args: argparse.Namespace,
+    instance_ids: Sequence[str],
+    rows: Sequence[dict[str, str]],
+) -> list[str]:
+    minimum_bytes = _worker_minimum_available_bytes(rows)
+    remote_command = (
+        f"DOLMA_MIN_AVAILABLE_BYTES={minimum_bytes} "
+        f"bash {shlex.quote(REMOTE_STORAGE_SCRIPT)} --apply --layout {args.storage_layout}"
+    )
+    return build_poormanray_run_command(
+        remote_command=remote_command,
+        **_instance_options(args, instance_ids),
+    )
+
+
+def _runtime_setup_command(
+    args: argparse.Namespace, instance_ids: Sequence[str]
+) -> list[str]:
+    return build_poormanray_setup_dolma_command(**_instance_options(args, instance_ids))
+
+
+def _runtime_transfer_command(
+    args: argparse.Namespace, instance_ids: Sequence[str]
+) -> list[str]:
+    return build_poormanray_transfer_command(
+        transfers=(
+            (RESHARD_MODULE, REMOTE_RESHARD_MODULE),
+            (DOCUMENT_SELECTION_MODULE, REMOTE_DOCUMENT_SELECTION_MODULE),
+        ),
+        **_instance_options(args, instance_ids),
+    )
+
+
+def _runtime_validation_command(
+    args: argparse.Namespace, instance_ids: Sequence[str]
+) -> list[str]:
+    remote_command = """set -euo pipefail
+python_bin="$HOME/.venv/bin/python"
+module_dir=$(
+  "$python_bin" -c 'import pathlib, dolma.tokenizer; print(pathlib.Path(dolma.tokenizer.__file__).parent)'
+)
+install -m 0644 /tmp/dolma3p5-runtime/reshard.py "$module_dir/reshard.py"
+install -m 0644 /tmp/dolma3p5-runtime/document_selection.py "$module_dir/document_selection.py"
+"$python_bin" -c 'from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2'
+s5cmd version
+findmnt /mnt/dolma
+test -w /mnt/dolma/dolma3p5-resharding"""
+    return build_poormanray_run_command(
+        remote_command=remote_command,
+        **_instance_options(args, instance_ids),
+    )
+
+
+def _map_command(
+    args: argparse.Namespace,
+    script_dir: Path,
+    instance_ids: Sequence[str] = (),
+) -> list[str]:
+    return build_poormanray_map_command(
+        cluster=args.cluster,
+        project=args.project,
+        region=args.region,
+        script_dir=script_dir,
+        spindown=True,
+        instance_ids=instance_ids,
+        ssh_key_path=args.ssh_key_path,
+    )
 
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
@@ -287,28 +551,129 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
     return str(summary.get("created_at", "unknown"))
 
 
-def _require_every_cluster_node_has_work(
-    args: argparse.Namespace,
-    selected: Sequence[dict[str, str]],
-) -> None:
-    """Prevent poormanray from leaving unassigned cluster nodes running."""
+def _pause_workers_after_failure(args: argparse.Namespace, instance_ids: Sequence[str]) -> None:
+    if not instance_ids:
+        return
+    command = _pause_command(args, instance_ids)
+    print("\n[cleanup: pause workers after failure]", file=sys.stderr)
+    print(shlex.join(command), file=sys.stderr, flush=True)
+    result = subprocess.run(command, check=False)
+    if result.returncode:
+        print(
+            f"WARNING: worker cleanup failed with exit code {result.returncode}; "
+            f"pause cluster {args.cluster!r} immediately",
+            file=sys.stderr,
+        )
+
+
+def _prepare_workers(args: argparse.Namespace, worker_count: int) -> list[str]:
+    """Resume stopped compatible workers and create any remaining workers."""
 
     try:
-        require_spindown_coverage(
-            cluster=args.cluster,
-            region=args.region,
-            script_count=len(selected),
-            project=args.project,
+        before = _describe_cluster_instances(args.cluster, args.region, args.profile)
+    except Exception as exc:
+        raise PreparationError(
+            f"Could not inspect poormanray cluster {args.cluster!r} in {args.region}: {exc}"
+        ) from exc
+
+    busy = [instance for instance in before if instance.state != "stopped"]
+    if busy:
+        states = ", ".join(
+            f"{instance.instance_id}={instance.state}" for instance in busy
         )
-    except PoormanrayDispatchError as exc:
-        raise PreparationError(str(exc)) from exc
+        raise PreparationError(
+            f"Cluster {args.cluster!r} already has active or transitioning workers ({states}); "
+            "refusing to mix this materialization with another lifecycle"
+        )
+
+    reusable = [
+        instance
+        for instance in before
+        if instance.state == "stopped"
+        and instance.instance_type == args.instance_type
+        and instance.project == args.project
+    ][:worker_count]
+    selected_ids = [instance.instance_id for instance in reusable]
+    before_ids = {instance.instance_id for instance in before}
+
+    try:
+        if selected_ids:
+            _run_lifecycle_command("resume workers", _resume_command(args, selected_ids))
+
+        missing = worker_count - len(selected_ids)
+        if missing:
+            _run_lifecycle_command("create workers", _create_command(args, missing))
+            after = _describe_cluster_instances(args.cluster, args.region, args.profile)
+            created = [
+                instance
+                for instance in after
+                if instance.instance_id not in before_ids
+                and instance.state in {"pending", "running"}
+                and instance.instance_type == args.instance_type
+                and instance.project == args.project
+            ]
+            if len(created) != missing:
+                selected_ids.extend(instance.instance_id for instance in created)
+                raise PreparationError(
+                    f"Expected poormanray to create {missing:,} worker(s), but found "
+                    f"{len(created):,} new matching worker(s)"
+                )
+            selected_ids.extend(instance.instance_id for instance in created)
+
+        if len(selected_ids) != worker_count:
+            raise PreparationError(
+                f"Worker lifecycle selected {len(selected_ids):,} workers; expected {worker_count:,}"
+            )
+        _run_lifecycle_command("wait for workers", _wait_command(args, selected_ids))
+        return sorted(selected_ids)
+    except BaseException:
+        if len(selected_ids) < worker_count:
+            try:
+                after_failure = _describe_cluster_instances(
+                    args.cluster, args.region, args.profile
+                )
+                selected_ids.extend(
+                    instance.instance_id
+                    for instance in after_failure
+                    if instance.instance_id not in before_ids
+                    and instance.state in {"pending", "running"}
+                    and instance.project == args.project
+                )
+            except (BotoCoreError, ClientError) as cleanup_exc:
+                print(
+                    f"WARNING: could not discover partially created workers for cleanup: {cleanup_exc}",
+                    file=sys.stderr,
+                )
+        _pause_workers_after_failure(args, sorted(set(selected_ids)))
+        raise
+
+
+def _dry_run_lifecycle_commands(
+    args: argparse.Namespace,
+    rows: Sequence[dict[str, str]],
+    script_dir: Path,
+    worker_count: int,
+) -> list[tuple[str, list[str]]]:
+    """Show the create path; execute may resume compatible stopped workers instead."""
+
+    return [
+        ("create missing workers", _create_command(args, worker_count)),
+        ("wait for selected workers", _wait_command(args, ())),
+        ("upload storage setup", _storage_transfer_command(args, ())),
+        ("prepare local NVMe", _storage_setup_command(args, (), rows)),
+        ("install Dolma and s5cmd", _runtime_setup_command(args, ())),
+        ("upload reviewed resharder", _runtime_transfer_command(args, ())),
+        ("install and validate reviewed resharder", _runtime_validation_command(args, ())),
+        ("dispatch and stop workers when done", _map_command(args, script_dir)),
+    ]
 
 
 def _print_dispatch(
     label: str,
     rows: Sequence[dict[str, str]],
     script_dir: Path,
-    command: Sequence[str],
+    lifecycle_commands: Sequence[tuple[str, Sequence[str]]],
+    worker_count: int,
     execute: bool,
 ) -> None:
     category_count = len({row["leaf_id"] for row in rows})
@@ -318,11 +683,14 @@ def _print_dispatch(
     print(f"Selection: {label}")
     print(f"Categories: {category_count:,}")
     print(f"Execution units: {len(rows):,}")
+    print(f"Workers: {worker_count:,}")
     print(f"Planned output: {_human_token_count(planned_tokens)} tokens")
     print(f"Largest local working set: {_human_byte_count(largest_unit)}")
     print(f"Staged launchers: {script_dir}")
-    print("\nCommand:")
-    print(shlex.join(command))
+    print("\nWorker lifecycle:")
+    for stage, command in lifecycle_commands:
+        print(f"\n{stage}:")
+        print(shlex.join(command))
     print("\nUnits:")
     for row in sorted(rows, key=lambda item: item["unit_id"]):
         print(
@@ -345,25 +713,66 @@ def main() -> None:
 
         label, selected = _select_units(args, rows)
         script_dir = _stage_selection(build, label, selected)
-        command = build_poormanray_map_command(
-            cluster=args.cluster,
-            project=args.project,
-            region=args.region,
-            script_dir=script_dir,
-            spindown=True,
+        worker_count = min(len(selected), args.parallelism)
+        lifecycle_commands = _dry_run_lifecycle_commands(
+            args,
+            selected,
+            script_dir,
+            worker_count,
         )
-        _print_dispatch(label, selected, script_dir, command, args.execute)
+        _print_dispatch(
+            label,
+            selected,
+            script_dir,
+            lifecycle_commands,
+            worker_count,
+            args.execute,
+        )
         if not args.execute:
             return
         preflight_created_at = _require_preflight(build, selected)
-        if shutil.which("uv") is None:
-            raise PreparationError("uv is required for --execute and was not found on PATH")
-        _require_every_cluster_node_has_work(args, selected)
+        if shutil.which("pmr") is None:
+            raise PreparationError(
+                "pmr is unavailable; run materialize.py with uv so its inline dependencies are installed"
+            )
+        for required_path in (
+            WORKER_STORAGE_SCRIPT,
+            RESHARD_MODULE,
+            DOCUMENT_SELECTION_MODULE,
+        ):
+            if required_path.is_symlink() or not required_path.is_file():
+                raise PreparationError(f"Required reviewed worker file is missing or unsafe: {required_path}")
+        if args.profile:
+            os.environ["AWS_PROFILE"] = args.profile
         print(f"\nPreflight passed: {preflight_created_at}")
-        result = subprocess.run(command, check=False)
-        if result.returncode:
-            raise PreparationError(f"poormanray dispatch failed with exit code {result.returncode}")
-        print(f"Dispatched {len(selected):,} execution unit(s); monitor worker status before verification")
+        worker_ids = _prepare_workers(args, worker_count)
+        try:
+            _run_lifecycle_command(
+                "upload storage setup", _storage_transfer_command(args, worker_ids)
+            )
+            _run_lifecycle_command(
+                "prepare local NVMe", _storage_setup_command(args, worker_ids, selected)
+            )
+            _run_lifecycle_command(
+                "install Dolma and s5cmd", _runtime_setup_command(args, worker_ids)
+            )
+            _run_lifecycle_command(
+                "upload reviewed resharder", _runtime_transfer_command(args, worker_ids)
+            )
+            _run_lifecycle_command(
+                "install and validate reviewed resharder",
+                _runtime_validation_command(args, worker_ids),
+            )
+            _run_lifecycle_command(
+                "dispatch materialization", _map_command(args, script_dir, worker_ids)
+            )
+        except BaseException:
+            _pause_workers_after_failure(args, worker_ids)
+            raise
+        print(
+            f"Dispatched {len(selected):,} execution unit(s) across {worker_count:,} worker(s); "
+            "each worker will stop after its assigned units finish"
+        )
     except PreparationError as exc:
         parser.exit(2, f"error: {exc}\n")
 
