@@ -8,6 +8,7 @@ from typing import NamedTuple
 
 import numpy as np
 import smart_open
+
 from dolma.cli.__main__ import main as cli_main
 from dolma.tokenizer import Tokenizer
 from dolma.tokenizer.reshard import (
@@ -16,7 +17,6 @@ from dolma.tokenizer.reshard import (
     group_paths_by_max_num_files,
     reshard,
 )
-
 from scripts.resharding.dispatch import (
     build_poormanray_create_command,
     build_poormanray_map_command,
@@ -27,23 +27,59 @@ DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2
 
 
 class TestReshardDispatch(unittest.TestCase):
-    def test_merge_input_log_distinguishes_full_and_selected_views(self):
-        full = TokensMetadataPaths("source.npy", "source.csv.gz")
-        selected = TokensMetadataPaths(
-            "source.npy",
-            "source.csv.gz",
-            selection_path="selection.csv.gz",
-            selected_uint32_values=10,
-        )
+    def test_repeated_inputs_stay_within_fixed_output_shard_cap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            npy_path = Path(temp_dir) / "source.npy"
+            npy_path.write_bytes(b"\0" * 4)
+            source = TokensMetadataPaths(str(npy_path), str(npy_path.with_suffix(".csv.gz")))
 
-        with self.assertLogs(level="INFO") as captured:
-            group_paths_by_max_num_files([full, selected], max_num_files=2)
+            groups = group_paths_by_max_num_files([source] * 21, max_num_files=4)
+
+            self.assertEqual(len(groups), 4)
+            self.assertEqual(sum(len(group) for group in groups), 21)
+            self.assertLessEqual(
+                max(len(group) for group in groups) - min(len(group) for group in groups),
+                1,
+            )
+
+    def test_merge_input_log_distinguishes_full_and_selected_views(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            npy_path = Path(temp_dir) / "source.npy"
+            npy_path.write_bytes(b"\0" * 4)
+            metadata_path = npy_path.with_suffix(".csv.gz")
+            full = TokensMetadataPaths(str(npy_path), str(metadata_path))
+            selected = TokensMetadataPaths(
+                str(npy_path),
+                str(metadata_path),
+                selection_path=str(Path(temp_dir) / "selection.csv.gz"),
+                selected_uint32_values=10,
+            )
+
+            with self.assertLogs(level="INFO") as captured:
+                group_paths_by_max_num_files([full, selected], max_num_files=2)
 
         message = "\n".join(captured.output)
         self.assertIn(
             "Merge inputs: 2 uses · 2 distinct inputs · max uses of any input: 1×",
             message,
         )
+
+    def test_output_groups_are_balanced_by_bytes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = []
+            for index, size in enumerate((100, 90, 20, 10)):
+                npy_path = Path(temp_dir) / f"{index:06d}.npy"
+                npy_path.write_bytes(b"\0" * size)
+                paths.append(
+                    TokensMetadataPaths(
+                        str(npy_path),
+                        str(npy_path.with_suffix(".csv.gz")),
+                    )
+                )
+
+            groups = group_paths_by_max_num_files(paths, max_num_files=2)
+
+            self.assertEqual([sum(path.size for path in group) for group in groups], [110, 110])
 
     def test_poormanray_lifecycle_commands_scope_work_to_selected_instances(self):
         create = build_poormanray_create_command(

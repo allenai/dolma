@@ -393,15 +393,6 @@ def group_paths_by_max_size(
     return grouped_paths
 
 
-def weighted_bucket_sample(values: list, count: int, weights: list[float]) -> list[int]:
-    """Sample bucket indices with optional weights."""
-
-    # Use the weighted sampling approach
-    keys = [random.random() * (w / sum(weights)) for w in weights]
-    indices = sorted(range(len(values)), key=lambda i: keys[i], reverse=True)[:count]
-    return indices
-
-
 def group_paths_by_max_num_files(
     paths: list[TokensMetadataPaths],
     max_num_files: int,
@@ -412,25 +403,20 @@ def group_paths_by_max_num_files(
     counts = Counter(paths)
     _log_merge_input_views(counts, len(paths))
 
-    if (m := max(counts.values())) > max_num_files:
-        raise ValueError(
-            f"One or more identical merge input views are used {m} times, "
-            f"exceeding max_num_files={max_num_files}"
-        )
-
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
-    # Distribute each element across groups in round-robin fashion
-    for element, count in counts.items():
-        # sample count buckets out of max_num_files where we could put the element
-        # we sample with weights proportional to the number of elements in the bucket,
-        # so that we are more likely to sample buckets with fewer elements.
-        buckets = weighted_bucket_sample(
-            values=list(range(max_num_files)),
-            count=count,
-            weights=[1 / (len(grouped_paths[i]) + 1) for i in range(max_num_files)],
-        )
-        for bucket in buckets:
-            grouped_paths[bucket].append(element)
+    grouped_sizes = [0] * max_num_files
+    # Use largest-first bin packing so the bounded number of final output shards
+    # remain close in size. Shuffle before sorting to randomize equal-sized views
+    # under the configured deterministic seed.
+    expanded_paths = [element for element, count in counts.items() for _ in range(count)]
+    random.shuffle(expanded_paths)
+    expanded_paths.sort(key=lambda path: path.size, reverse=True)
+    for element in expanded_paths:
+        minimum_size = min(grouped_sizes)
+        candidates = [index for index, size in enumerate(grouped_sizes) if size == minimum_size]
+        bucket = random.choice(candidates)
+        grouped_paths[bucket].append(element)
+        grouped_sizes[bucket] += element.size
 
     # there is still a change that some buckets might be empty; we remove them.
     grouped_paths = [group for group in grouped_paths if len(group) > 0]

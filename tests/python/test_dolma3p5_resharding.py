@@ -32,10 +32,10 @@ from dolma.tokenizer.reshard import (
     reshard,
     upload_to_s3,
 )
-
 from scripts.dolma3p5_resharding.materialize import (
     ClusterInstance,
     _map_command,
+    _planned_worker_groups,
     _prepare_workers,
     _print_dispatch,
     _retag_cluster_instances,
@@ -59,11 +59,14 @@ from scripts.dolma3p5_resharding.workflow import (
     S3Object,
     _allocate_object_sampling,
     _category_output_directory,
+    _execution_unit_work,
     _filter_execution_units,
     _finalize_inventory,
     _load_catalog,
     _parse_s5cmd_jsonl,
     _partition_object_uses,
+    _planned_output_shards,
+    _select_worker_instance,
     _self_contained_launcher,
     _source_relative_directory,
     _unit_selection_digest,
@@ -80,6 +83,108 @@ from scripts.dolma3p5_resharding.workflow import (
 
 
 class TestDolma35ReshardingPreparation(unittest.TestCase):
+    def test_output_shard_planning_is_size_based_and_bounded(self):
+        target = 64 * 1024**3
+        self.assertEqual(
+            _planned_output_shards(
+                output_npy_bytes=target // 2,
+                input_view_count=20,
+                target_output_shard_bytes=target,
+                max_output_shards_per_unit=8,
+            ),
+            1,
+        )
+        self.assertEqual(
+            _planned_output_shards(
+                output_npy_bytes=target * 3,
+                input_view_count=20,
+                target_output_shard_bytes=target,
+                max_output_shards_per_unit=8,
+            ),
+            3,
+        )
+        self.assertEqual(
+            _planned_output_shards(
+                output_npy_bytes=target * 20,
+                input_view_count=20,
+                target_output_shard_bytes=target,
+                max_output_shards_per_unit=8,
+            ),
+            8,
+        )
+        self.assertEqual(
+            _planned_output_shards(
+                output_npy_bytes=target * 3,
+                input_view_count=2,
+                target_output_shard_bytes=target,
+                max_output_shards_per_unit=8,
+            ),
+            2,
+        )
+
+    def test_execution_work_and_worker_grid_account_for_cpu_and_disk(self):
+        rows = [
+            {
+                "estimated_uint32_values": 100,
+                "repeat_count": 1,
+                "partial_target_uint32_values": 30,
+            }
+        ]
+        work = _execution_unit_work(rows, document_selection_work_passes=2)
+        self.assertEqual(work["planned_uint32_values"], 130)
+        self.assertEqual(work["document_selection_source_uint32_values"], 100)
+        self.assertEqual(work["estimated_work_uint32_values"], 330)
+
+        grid = [
+            {
+                "instance_type": "i4i.2xlarge",
+                "vcpus": 8,
+                "local_nvme_devices": 1,
+                "local_nvme_bytes": 1_875,
+                "max_estimated_work_uint32_values": 150,
+            },
+            {
+                "instance_type": "i4i.4xlarge",
+                "vcpus": 16,
+                "local_nvme_devices": 1,
+                "local_nvme_bytes": 3_750,
+                "max_estimated_work_uint32_values": 300,
+            },
+            {
+                "instance_type": "i4i.8xlarge",
+                "vcpus": 32,
+                "local_nvme_devices": 2,
+                "local_nvme_bytes": 7_500,
+                "max_estimated_work_uint32_values": None,
+            },
+        ]
+        self.assertEqual(
+            _select_worker_instance(
+                grid,
+                estimated_peak_local_bytes=1_000,
+                estimated_work_uint32_values=100,
+                disk_headroom_ratio=1.1,
+            )["instance_type"],
+            "i4i.2xlarge",
+        )
+        self.assertEqual(
+            _select_worker_instance(
+                grid,
+                estimated_peak_local_bytes=2_000,
+                estimated_work_uint32_values=100,
+                disk_headroom_ratio=1.1,
+            )["instance_type"],
+            "i4i.4xlarge",
+        )
+        largest = _select_worker_instance(
+            grid,
+            estimated_peak_local_bytes=1_000,
+            estimated_work_uint32_values=330,
+            disk_headroom_ratio=1.1,
+        )
+        self.assertEqual(largest["instance_type"], "i4i.8xlarge")
+        self.assertEqual(largest["storage_layout"], "raid0")
+
     def test_materialize_dry_run_uses_terse_cli_output(self):
         output = io.StringIO()
         with redirect_stdout(output):
@@ -90,6 +195,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                         "leaf_id": "000:example",
                         "unit_id": "00000000",
                         "planned_uint32_values": "1000000000",
+                        "planned_output_shard_count": "1",
                         "estimated_peak_local_bytes": "2000000000",
                         "destination_prefix": "s3://bucket/output/00000000",
                     }
@@ -118,6 +224,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                         "leaf_id": "000:example",
                         "unit_id": "00000000",
                         "planned_uint32_values": "1000000000",
+                        "planned_output_shard_count": "1",
                         "estimated_peak_local_bytes": "2000000000",
                         "destination_prefix": "s3://bucket/output/00000000",
                     }
@@ -377,6 +484,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             "unit_id": "00000000",
             "destination_prefix": "s3://bucket/output/00000000",
             "planned_uint32_values": "10",
+            "planned_output_shard_count": "1",
             "allowed_materialized_target_residual_uint32_values": "0",
         }
         objects = [
@@ -434,10 +542,34 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(args.project, "oe-other")
         self.assertEqual(args.region, "us-east-1")
         self.assertEqual(args.parallelism, 128)
-        self.assertEqual(args.instance_type, "i4i.2xlarge")
-        self.assertEqual(args.storage_layout, "single")
+        self.assertIsNone(args.instance_type)
+        self.assertEqual(args.storage_layout, "auto")
         self.assertEqual(args.completion_poll_seconds, 30)
         self.assertFalse(args.verbose)
+
+    def test_materialize_groups_units_by_planned_worker(self):
+        args = build_materialize_parser().parse_args(["--all"])
+        rows = [
+            {
+                "unit_id": "00000000",
+                "worker_instance_type": "i4i.2xlarge",
+                "worker_storage_layout": "single",
+                "worker_vcpus": "8",
+            },
+            {
+                "unit_id": "00000001",
+                "worker_instance_type": "i4i.8xlarge",
+                "worker_storage_layout": "raid0",
+                "worker_vcpus": "32",
+            },
+        ]
+
+        groups = _planned_worker_groups(args, rows)
+
+        self.assertEqual(
+            [(group.instance_type, group.storage_layout) for group in groups],
+            [("i4i.2xlarge", "single"), ("i4i.8xlarge", "raid0")],
+        )
 
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
@@ -656,17 +788,13 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                         {
                             "name": "default",
                             "weight": 1.0,
-                            "paths": [
-                                "dolma3p5_pool/catalog-source/topic/allenai/tokenizer/*.npy"
-                            ],
+                            "paths": ["dolma3p5_pool/catalog-source/topic/allenai/tokenizer/*.npy"],
                             "repetition_factor": -1.0,
                         },
                         {
                             "name": "dropped",
                             "weight": 0.0,
-                            "paths": [
-                                "dolma3p5_pool/catalog-source/topic/vigintile_0000/allenai/tokenizer/*.npy"
-                            ],
+                            "paths": ["dolma3p5_pool/catalog-source/topic/vigintile_0000/allenai/tokenizer/*.npy"],
                             "repetition_factor": -1.0,
                         },
                     ],
@@ -693,9 +821,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                         {
                             "name": "default",
                             "weight": 1.0,
-                            "paths": [
-                                "preprocessed/direct-source/allenai/tokenizer/*.npy"
-                            ],
+                            "paths": ["preprocessed/direct-source/allenai/tokenizer/*.npy"],
                             "repetition_factor": -1.0,
                         }
                     ],
@@ -709,6 +835,23 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             "ai2-llm,preprocessed/catalog-source/topic/vigintile_0000/allenai/tokenizer/0000.npy\n"
             "ai2-llm,preprocessed/the-stack-v2/data/Tcl/quality_p95/allenai/tokenizer/0000.npy\n"
         )
+        self.settings = self.root / "settings.yaml"
+        self.settings.write_text(
+            yaml.safe_dump(
+                {
+                    "worker_instance_grid": [
+                        {
+                            "instance_type": "i4i.32xlarge",
+                            "vcpus": 128,
+                            "local_nvme_devices": 8,
+                            "local_nvme_bytes": 30_000_000_000_000,
+                            "max_estimated_work_uint32_values": None,
+                        }
+                    ]
+                },
+                sort_keys=False,
+            )
+        )
         self.build = self.root / "build"
 
     def tearDown(self):
@@ -719,7 +862,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             argparse.Namespace(
                 mix=self.mix,
                 catalog=self.catalog,
-                settings=None,
+                settings=self.settings,
                 output=self.build,
             )
         )
@@ -1116,9 +1259,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             self.assertNotIn("resolution_route", csv.DictReader(f).fieldnames)
         with (self.build / "01-plan/resolution/listing-plan.csv").open() as f:
             self.assertNotIn("resolution_routes", csv.DictReader(f).fieldnames)
-        plan_target_plot = (
-            self.build / "01-plan/resolution/plots/target-mix.svg"
-        ).read_text()
+        plan_target_plot = (self.build / "01-plan/resolution/plots/target-mix.svg").read_text()
         self.assertIn("Total target: 14T tokens (14,000,000,000,000)", plan_target_plot)
         self.assertIn("50.00% · 7T tokens", plan_target_plot)
         self.assertNotIn('text-anchor="end"', plan_target_plot)
@@ -1141,9 +1282,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertFalse(legacy_proposal.exists())
 
         self._write_inventory()
-        inventory_summary = json.loads(
-            (self.build / "01-plan/inventory/inventory-summary.json").read_text()
-        )
+        inventory_summary = json.loads((self.build / "01-plan/inventory/inventory-summary.json").read_text())
         self.assertEqual(inventory_summary["source_count"], 3)
         self.assertEqual(inventory_summary["source_family_count"], 3)
         self.assertEqual(inventory_summary["subcategory_count"], 3)
@@ -1153,27 +1292,19 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(inventory_summary["token_delta"], 13_999_999_999_350)
         self.assertGreater(inventory_summary["sampling_ratio"], 1)
         self.assertIn("upsample", inventory_summary["sampling_rate"])
-        self.assertEqual(
-            inventory_summary["details_artifact"], "inventory-details.json"
-        )
-        inventory_details = json.loads(
-            (self.build / "01-plan/inventory/inventory-details.json").read_text()
-        )
+        self.assertEqual(inventory_summary["details_artifact"], "inventory-details.json")
+        inventory_details = json.loads((self.build / "01-plan/inventory/inventory-details.json").read_text())
         self.assertEqual(inventory_details["source_uint32_values"], 650)
         self.assertEqual(inventory_details["source_family_count"], 3)
         self.assertEqual(inventory_details["subcategory_count"], 3)
         catalog_source = next(
-            source
-            for source in inventory_details["sources"]
-            if source["mix_name"] == "catalog-source:topic"
+            source for source in inventory_details["sources"] if source["mix_name"] == "catalog-source:topic"
         )
         self.assertEqual(catalog_source["source_uint32_values"], 150)
         self.assertEqual(catalog_source["source_family"], "catalog-source")
         self.assertEqual(catalog_source["subcategory_name"], "topic")
         dropped_category = next(
-            category
-            for category in catalog_source["categories"]
-            if category["category_name"] == "dropped"
+            category for category in catalog_source["categories"] if category["category_name"] == "dropped"
         )
         self.assertFalse(dropped_category["active"])
         self.assertEqual(dropped_category["source_uint32_values"], 50)
@@ -1188,25 +1319,17 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         refreshed_summary = refresh_inventory_details(self.build)
         self.assertEqual(refreshed_summary["source_count"], 3)
-        inventory_plot = (
-            self.build / "01-plan/inventory/plots/available-by-mix.svg"
-        ).read_text()
+        inventory_plot = (self.build / "01-plan/inventory/plots/available-by-mix.svg").read_text()
         self.assertIn("% ·", inventory_plot)
         self.assertIn("tokens", inventory_plot)
-        self.assertFalse(
-            (self.build / "01-plan/inventory/plot-data/object-size-bins.csv").exists()
-        )
-        self.assertFalse(
-            (self.build / "01-plan/inventory/plots/object-size-histogram.svg").exists()
-        )
+        self.assertFalse((self.build / "01-plan/inventory/plot-data/object-size-bins.csv").exists())
+        self.assertFalse((self.build / "01-plan/inventory/plots/object-size-histogram.svg").exists())
         inventory_report = (self.build / "01-plan/inventory/report.html").read_text()
         self.assertIn('data-detail="inventory-family-detail-', inventory_report)
         self.assertIn('class="subcategory-row', inventory_report)
         self.assertIn('class="subcategory-detail"', inventory_report)
         self.assertIn("const setAccordionState", inventory_report)
-        self.assertIn(
-            "button.getAttribute('aria-expanded') !== 'true'", inventory_report
-        )
+        self.assertIn("button.getAttribute('aria-expanded') !== 'true'", inventory_report)
         self.assertIn('class="comparison-bars"', inventory_report)
         self.assertIn('class="category-metrics"', inventory_report)
         self.assertNotIn('class="category-counts"', inventory_report)
@@ -1239,14 +1362,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("upsample", inventory_report)
         self.assertIn("downsample", inventory_report)
         self.assertIn("vigintile_0000", inventory_report)
-        sampling_path = (
-            self.build / "01-plan/inventory/plot-data/sampling-by-lower-group.csv"
-        )
+        sampling_path = self.build / "01-plan/inventory/plot-data/sampling-by-lower-group.csv"
         with sampling_path.open() as f:
             sampling_paths = list(csv.DictReader(f))
-        dropped = next(
-            row for row in sampling_paths if row["lower_group"] == "vigintile_0000"
-        )
+        dropped = next(row for row in sampling_paths if row["lower_group"] == "vigintile_0000")
         self.assertEqual(dropped["original_uint32_values"], "50")
         self.assertEqual(dropped["implied_target_uint32_values"], "0")
         self.assertIn("downsample", dropped["sampling_rate"])
@@ -1271,9 +1390,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertFalse((self.build / "03-proposal").exists())
         configs = list((self.build / "01-plan/execution/config").glob("*.yaml"))
         self.assertEqual(len(configs), 4)
-        launcher_scripts = list(
-            (self.build / "01-plan/execution/launcher-scripts").glob("*.sh")
-        )
+        launcher_scripts = list((self.build / "01-plan/execution/launcher-scripts").glob("*.sh"))
         self.assertEqual(len(launcher_scripts), 4)
         self.assertTrue(all(path.stat().st_mode & 0o100 for path in launcher_scripts))
         self.assertTrue(
@@ -1293,12 +1410,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 for path in launcher_scripts
             )
         )
-        self.assertTrue(
-            all(
-                "RESHARDING_MANIFEST_SCHEMA_VERSION" in path.read_text()
-                for path in launcher_scripts
-            )
-        )
+        self.assertTrue(all("RESHARDING_MANIFEST_SCHEMA_VERSION" in path.read_text() for path in launcher_scripts))
         for path in launcher_scripts:
             self.assertEqual(
                 subprocess.run(["bash", "-n", path], check=False).returncode,
@@ -1308,21 +1420,31 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             execution_units = list(csv.DictReader(f))
         self.assertEqual(
             [row["unit_id"] for row in execution_units],
-            [
-                f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}"
-                for index in range(len(execution_units))
-            ],
+            [f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}" for index in range(len(execution_units))],
         )
         self.assertTrue(
             all(
-                int(row["estimated_peak_local_bytes"])
-                <= int(row["max_unit_working_bytes"])
+                int(row["estimated_peak_local_bytes"]) <= int(row["max_unit_working_bytes"])
                 for row in execution_units
             )
         )
-        dataset_layout = json.loads(
-            (self.build / "01-plan/execution/dataset-layout.json").read_text()
+        self.assertTrue(
+            all(
+                1 <= int(row["planned_output_shard_count"]) <= 8
+                and int(row["max_num_files"]) == int(row["planned_output_shard_count"])
+                and int(row["average_output_shard_bytes"])
+                == (
+                    int(row["output_npy_bytes"])
+                    + int(row["planned_output_shard_count"])
+                    - 1
+                )
+                // int(row["planned_output_shard_count"])
+                for row in execution_units
+            )
         )
+        self.assertTrue(all(row["worker_instance_type"] == "i4i.32xlarge" for row in execution_units))
+        self.assertTrue(all(int(row["max_workers"]) == 32 for row in execution_units))
+        dataset_layout = json.loads((self.build / "01-plan/execution/dataset-layout.json").read_text())
         self.assertEqual(dataset_layout["category_count"], 3)
         self.assertEqual(dataset_layout["execution_unit_count"], 4)
         self.assertEqual(dataset_layout["schema_version"], 1)
@@ -1331,19 +1453,21 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             r"^s3://test-bucket/new-datasets/dolma3p5/dolma3p5-14t-[0-9a-f]{12}$",
         )
         self.assertEqual(dataset_layout["layout"], "build-scoped-category-output-v1")
+        self.assertEqual(dataset_layout["execution_unit_index_width"], EXECUTION_UNIT_INDEX_WIDTH)
+        self.assertEqual(dataset_layout["execution_unit_id_width"], EXECUTION_UNIT_INDEX_WIDTH)
         self.assertEqual(
-            dataset_layout["execution_unit_index_width"], EXECUTION_UNIT_INDEX_WIDTH
+            dataset_layout["planned_output_shard_count"],
+            sum(int(row["planned_output_shard_count"]) for row in execution_units),
         )
         self.assertEqual(
-            dataset_layout["execution_unit_id_width"], EXECUTION_UNIT_INDEX_WIDTH
+            dataset_layout["planned_output_file_count"],
+            dataset_layout["planned_output_shard_count"] * 2,
         )
+        self.assertEqual(dataset_layout["target_output_shard_bytes"], 64 * 1024**3)
+        self.assertEqual(dataset_layout["max_output_shards_per_unit"], 8)
         self.assertEqual(_validate_execution_layout(self.build), dataset_layout)
-        runtime_requirements = json.loads(
-            (self.build / "01-plan/execution/runtime-requirements.json").read_text()
-        )
-        self.assertEqual(
-            runtime_requirements["required_resharding_manifest_schema_version"], 2
-        )
+        runtime_requirements = json.loads((self.build / "01-plan/execution/runtime-requirements.json").read_text())
+        self.assertEqual(runtime_requirements["required_resharding_manifest_schema_version"], 2)
         for config_path in configs:
             config = yaml.safe_load(config_path.read_text())
             self.assertFalse(config["allow_existing_destination"])
@@ -1361,9 +1485,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             self.assertNotIn("/categories/", destination)
             self.assertNotIn("/unit-", destination)
         for row in execution_units:
-            expected_suffix = (
-                f"/{row['source_layout_prefix']}/{row['destination_index']}"
-            )
+            expected_suffix = f"/{row['source_layout_prefix']}/{row['destination_index']}"
             self.assertIn(expected_suffix, row["destination_prefix"])
         for manifest_path in (self.build / "01-plan/execution/manifests").glob("*.csv"):
             with manifest_path.open() as handle:
@@ -1374,51 +1496,20 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         for plot in (self.build / "01-plan/execution/plots").glob("*.svg"):
             ElementTree.parse(plot)
         self.assertFalse(
-            (
-                self.build
-                / "01-plan/execution/plot-data/category-execution-unit-distribution.csv"
-            ).exists()
+            (self.build / "01-plan/execution/plot-data/category-execution-unit-distribution.csv").exists()
         )
-        self.assertFalse(
-            (
-                self.build / "01-plan/execution/plot-data/most-split-categories.csv"
-            ).exists()
-        )
-        self.assertFalse(
-            (
-                self.build / "01-plan/execution/plots/execution-units-per-category.svg"
-            ).exists()
-        )
-        self.assertFalse(
-            (self.build / "01-plan/execution/plot-data/object-size-bins.csv").exists()
-        )
-        self.assertFalse(
-            (self.build / "01-plan/execution/plots/object-size-histogram.svg").exists()
-        )
-        self.assertFalse(
-            (self.build / "01-plan/execution/plot-data/source-vs-target.csv").exists()
-        )
-        self.assertFalse(
-            (self.build / "01-plan/execution/plots/source-vs-target.svg").exists()
-        )
-        proposal_target_plot = (
-            self.build / "01-plan/execution/plots/target-mix.svg"
-        ).read_text()
+        self.assertFalse((self.build / "01-plan/execution/plot-data/most-split-categories.csv").exists())
+        self.assertFalse((self.build / "01-plan/execution/plots/execution-units-per-category.svg").exists())
+        self.assertFalse((self.build / "01-plan/execution/plot-data/object-size-bins.csv").exists())
+        self.assertFalse((self.build / "01-plan/execution/plots/object-size-histogram.svg").exists())
+        self.assertFalse((self.build / "01-plan/execution/plot-data/source-vs-target.csv").exists())
+        self.assertFalse((self.build / "01-plan/execution/plots/source-vs-target.svg").exists())
+        proposal_target_plot = (self.build / "01-plan/execution/plots/target-mix.svg").read_text()
         self.assertIn("50.00% · 7T tokens", proposal_target_plot)
-        self.assertFalse(
-            (self.build / "01-plan/execution/plot-data/target-vs-proposed.csv").exists()
-        )
-        self.assertFalse(
-            (self.build / "01-plan/execution/plots/target-vs-proposed.svg").exists()
-        )
-        self.assertFalse(
-            (
-                self.build / "01-plan/execution/plot-data/upsampling-pressure.csv"
-            ).exists()
-        )
-        self.assertFalse(
-            (self.build / "01-plan/execution/plots/upsampling-pressure.svg").exists()
-        )
+        self.assertFalse((self.build / "01-plan/execution/plot-data/target-vs-proposed.csv").exists())
+        self.assertFalse((self.build / "01-plan/execution/plots/target-vs-proposed.svg").exists())
+        self.assertFalse((self.build / "01-plan/execution/plot-data/upsampling-pressure.csv").exists())
+        self.assertFalse((self.build / "01-plan/execution/plots/upsampling-pressure.svg").exists())
         proposal_report = (self.build / "01-plan/report.html").read_text()
         self.assertIn("Source inventory &amp; sampling", proposal_report)
         self.assertIn("Materialization execution", proposal_report)
@@ -1431,11 +1522,16 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("Materialization Execution Proposal", proposal_report)
         self.assertIn('class="execution-metrics"', proposal_report)
         self.assertIn("Execution units", proposal_report)
-        self.assertIn("Worker storage", proposal_report)
-        self.assertIn("Worker disk budget", proposal_report)
+        self.assertIn("Output shards", proposal_report)
+        self.assertIn("Output files", proposal_report)
+        self.assertIn("Planned worker fleet", proposal_report)
+        self.assertIn('class="worker-grid"', proposal_report)
+        self.assertIn("Local NVMe", proposal_report)
         self.assertIn("Median unit", proposal_report)
         self.assertIn("P95 unit", proposal_report)
         self.assertIn("Largest unit", proposal_report)
+        self.assertIn("Median output shard", proposal_report)
+        self.assertIn("P95 output shard", proposal_report)
         self.assertNotIn("concurrent units on the same worker", proposal_report)
         self.assertEqual(
             proposal_report.count('class="execution-unit"'),
@@ -1447,27 +1543,27 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("Selection indexes", proposal_report)
         self.assertIn("Source shard downloads", proposal_report)
         self.assertIn("Source shards using document selection", proposal_report)
-        self.assertIn("Output shard cap", proposal_report)
+        self.assertIn("Reshard concurrency", proposal_report)
+        self.assertIn("Output layout", proposal_report)
+        self.assertIn("shards ·", proposal_report)
         self.assertIn("Only categories with multiple units", proposal_report)
         self.assertIn('href="config/', proposal_report)
         self.assertIn('href="manifests/', proposal_report)
         self.assertIn('href="launcher-scripts/', proposal_report)
         self.assertIn("/new-datasets/dolma3p5/", proposal_report)
-        self.assertNotIn("Overall sampling", proposal_report)
-        self.assertNotIn("full copies per object", proposal_report)
-        self.assertNotIn("NPYs repeated", proposal_report)
-        self.assertNotIn("total object uses", proposal_report)
-        self.assertNotIn('class="path-use-summary"', proposal_report)
-        self.assertNotIn('class="subcategory-detail"', proposal_report)
+        execution_report = proposal_report.split('<template id="execution-report-document">', 1)[1]
+        self.assertNotIn("Overall sampling", execution_report)
+        self.assertNotIn("full copies per object", execution_report)
+        self.assertNotIn("NPYs repeated", execution_report)
+        self.assertNotIn("total object uses", execution_report)
+        self.assertNotIn('class="path-use-summary"', execution_report)
+        self.assertNotIn('class="subcategory-detail"', execution_report)
         with (self.build / "01-plan/execution/category-allocation.csv").open() as f:
             allocation_rows = list(csv.DictReader(f))
-        catalog_allocation = next(
-            row for row in allocation_rows if row["mix_name"] == "catalog-source:topic"
-        )
+        catalog_allocation = next(row for row in allocation_rows if row["mix_name"] == "catalog-source:topic")
         self.assertEqual(catalog_allocation["available_uint32_values"], "100")
         self.assertEqual(
-            int(catalog_allocation["planned_uint32_values"])
-            - int(catalog_allocation["available_uint32_values"]),
+            int(catalog_allocation["planned_uint32_values"]) - int(catalog_allocation["available_uint32_values"]),
             int(catalog_allocation["token_change_from_original"]),
         )
         self.assertEqual(
@@ -1476,14 +1572,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         self.assertGreater(int(catalog_allocation["maximum_repetition"]), 1)
         self.assertEqual(int(catalog_allocation["target_residual_uint32_values"]), 0)
-        with (
-            self.build
-            / "01-plan/execution/plot-data/proposed-sampling-by-lower-group.csv"
-        ).open() as f:
+        with (self.build / "01-plan/execution/plot-data/proposed-sampling-by-lower-group.csv").open() as f:
             proposed_paths = list(csv.DictReader(f))
-        dropped_proposal = next(
-            row for row in proposed_paths if row["lower_group"] == "vigintile_0000"
-        )
+        dropped_proposal = next(row for row in proposed_paths if row["lower_group"] == "vigintile_0000")
         self.assertEqual(dropped_proposal["original_uint32_values"], "50")
         self.assertEqual(dropped_proposal["proposed_uint32_values"], "0")
         self.assertEqual(dropped_proposal["token_change_from_original"], "-50")
@@ -1491,9 +1582,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(dropped_proposal["maximum_repetition"], "0")
         self.assertEqual(dropped_proposal["dropped_object_count"], "1")
         self.assertEqual(dropped_proposal["repeated_object_count"], "0")
-        proposal_summary = json.loads(
-            (self.build / "01-plan/execution/proposal-summary.json").read_text()
-        )
+        proposal_summary = json.loads((self.build / "01-plan/execution/proposal-summary.json").read_text())
         self.assertEqual(proposal_summary["source_uint32_values"], 650)
         self.assertEqual(
             proposal_summary["token_change_from_source"],
@@ -1501,14 +1590,20 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         self.assertEqual(proposal_summary["target_residual_uint32_values"], 0)
         self.assertEqual(
+            proposal_summary["planned_output_shard_count"],
+            dataset_layout["planned_output_shard_count"],
+        )
+        self.assertEqual(
+            proposal_summary["planned_output_file_count"],
+            dataset_layout["planned_output_file_count"],
+        )
+        self.assertEqual(
             proposal_summary["document_selection_algorithm"],
             "document_hash_bucket_v1",
         )
 
         with (self.build / "01-plan/inventory/normalized-s3-inventory.csv").open() as f:
-            inventory_rows = [
-                row for row in csv.DictReader(f) if row["required"] == "true"
-            ]
+            inventory_rows = [row for row in csv.DictReader(f) if row["required"] == "true"]
         source_objects = [
             S3Object(
                 bucket=row["bucket"],
@@ -1558,10 +1653,26 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 and int(row["allowed_materialized_target_residual_uint32_values"]) >= 1
                 else 0
             )
-            planned_bytes = (int(row["planned_uint32_values"]) + boundary_residual) * 4
+            planned_values = int(row["planned_uint32_values"]) + boundary_residual
+            shard_count = int(row["planned_output_shard_count"])
+            base_values, extra_values = divmod(planned_values, shard_count)
             output_by_prefix[(bucket, prefix)] = [
-                S3Object(bucket, prefix + "000000.npy", planned_bytes, "output-etag"),
-                S3Object(bucket, prefix + "000000.csv.gz", 24, "metadata-etag"),
+                obj
+                for shard_index in range(shard_count)
+                for obj in (
+                    S3Object(
+                        bucket,
+                        prefix + f"{shard_index:06d}.npy",
+                        (base_values + (shard_index < extra_values)) * 4,
+                        "output-etag",
+                    ),
+                    S3Object(
+                        bucket,
+                        prefix + f"{shard_index:06d}.csv.gz",
+                        24,
+                        "metadata-etag",
+                    ),
+                )
             ]
 
         def output_listing(_client, bucket, prefix):
@@ -1586,10 +1697,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 )
             )
         validate_build(argparse.Namespace(build=self.build))
-        output_summary = json.loads(
-            (self.build / "03-output-validation/output-summary.json").read_text()
-        )
+        output_summary = json.loads((self.build / "03-output-validation/output-summary.json").read_text())
         self.assertTrue(output_summary["aggregate_target_residual_within_bound"])
+        self.assertEqual(
+            output_summary["actual_output_shard_count"],
+            output_summary["planned_output_shard_count"],
+        )
         self.assertNotEqual(
             output_summary["actual_uint32_values"],
             output_summary["predicted_uint32_values"],
@@ -1602,9 +1715,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 max_unit_working_bytes=20_000_000_000_000,
             )
         )
-        self.assertTrue(
-            (self.build / "01-plan/execution/proposal-summary.json").is_file()
-        )
+        self.assertTrue((self.build / "01-plan/execution/proposal-summary.json").is_file())
         self.assertFalse((self.build / "02-preflight").exists())
         self.assertFalse((self.build / "03-output-validation").exists())
 

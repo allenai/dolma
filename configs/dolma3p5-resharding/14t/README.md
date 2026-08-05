@@ -23,7 +23,10 @@ Review `runs/dolma3p5-resharding/14t/01-plan/report.html`:
   sampling ratio at the source-family, subcategory, category, and lower-group
   levels.
 - In **Materialization execution**, confirm unit working sets fit the selected
-  worker storage and inspect categories split across multiple units.
+  worker storage, inspect the planned i4i fleet, and inspect categories split
+  across multiple units. Confirm the aggregate output-shard and file counts are
+  reasonable for training. The planner targets 64 GiB output shards, emits one
+  shard for small units, and caps each unit at eight shards.
 - Confirm the destinations in `01-plan/execution/config-index.csv` are correct
   and unique.
 - Confirm `01-plan/resolution/resolution-failures.csv` and
@@ -33,9 +36,11 @@ Review `runs/dolma3p5-resharding/14t/01-plan/report.html`:
 The materializer consumes the exact manifests and launchers under
 `01-plan/execution/`.
 
-Download concurrency is set in `settings.yaml`. `max_workers_per_reshard`
-controls concurrent object copies; `s5cmd_download_concurrency` controls the
-multipart ranges used for each large object.
+The output-shard target and per-unit cap, worker grid, workload thresholds, disk
+headroom, and concurrency limits are set in `settings.yaml`. The workload
+estimate includes planned output plus both metadata passes for each source using
+document selection. Worker vCPU count does not determine the number of final
+output files.
 
 ## 2. Validate the preparation build
 
@@ -72,11 +77,10 @@ Do not launch if a source changed or a destination is occupied.
 
 ## 4. Materialize
 
-`materialize.py` manages the worker lifecycle. It creates or resumes the
-required poormanray workers, waits for them, prepares local NVMe, installs
-Dolma and `s5cmd`, installs the resharding runtime from this checkout,
-validates the runtime, dispatches the selected units, and stops each worker
-after its assigned units finish.
+`materialize.py` manages the worker lifecycle. It batches the selected units by
+their planned i4i type, creates or resumes the required poormanray workers,
+prepares the planned single-disk or RAID-0 layout, installs the runtime,
+dispatches the units, and stops each worker after its assigned units finish.
 
 Find an exact category selector without contacting AWS:
 
@@ -133,11 +137,12 @@ The important worker options are:
 - `--completion-poll-seconds` controls the worker-state and log polling
   interval; it defaults to 30 seconds.
 - `--profile` selects the AWS profile used for provisioning and worker setup.
-- `--instance-type` defaults to `i4i.2xlarge`.
+- `--instance-type` overrides the per-unit type selected by the plan. When the
+  override differs from the plan, also provide `--storage-layout` explicitly.
 - `--root-storage-type` and `--root-storage-size` default to a 200 GiB gp3 root
   volume. Materialization data uses local NVMe, not the root volume.
-- `--storage-layout single` is the default for the one-NVMe baseline. Use
-  `--storage-layout raid0` only with a multi-NVMe instance type.
+- `--storage-layout auto` uses the plan: one NVMe device selects `single` and
+  multiple devices select `raid0`.
 
 At execution time, the materializer refuses a cluster containing active or
 transitioning workers. Compatible stopped workers are reused; missing workers
@@ -174,6 +179,7 @@ Accept the output only when:
 - `output-summary.json` has `passed: true`, zero errors, and zero failed
   destinations.
 - Expected and checked destination counts are equal.
+- Planned and actual output-shard counts are equal.
 - `aggregate_target_residual_within_bound` is `true`.
 - Every row in `output-validation.csv` is `passed`.
 - `output-problems.csv` and `output-errors.csv` are empty.

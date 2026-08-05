@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import csv
 import hashlib
 import html
@@ -65,9 +66,36 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "max_listing_overfetch_ratio": 8.0,
     "minimum_catalog_prefix_components": 4,
     "random_seed": 42,
-    "max_workers_per_reshard": 8,
+    "max_workers_per_reshard": 32,
     "s5cmd_download_concurrency": 32,
     "tokenizer_name_or_path": "allenai/dolma2-tokenizer",
+    "target_output_shard_bytes": 64 * 1024**3,
+    "max_output_shards_per_unit": 8,
+    "worker_disk_headroom_ratio": 1.1,
+    "document_selection_work_passes": 2,
+    "worker_instance_grid": [
+        {
+            "instance_type": "i4i.2xlarge",
+            "vcpus": 8,
+            "local_nvme_devices": 1,
+            "local_nvme_bytes": 1_875_000_000_000,
+            "max_estimated_work_uint32_values": 150_000_000_000,
+        },
+        {
+            "instance_type": "i4i.4xlarge",
+            "vcpus": 16,
+            "local_nvme_devices": 1,
+            "local_nvme_bytes": 3_750_000_000_000,
+            "max_estimated_work_uint32_values": 300_000_000_000,
+        },
+        {
+            "instance_type": "i4i.8xlarge",
+            "vcpus": 32,
+            "local_nvme_devices": 2,
+            "local_nvme_bytes": 7_500_000_000_000,
+            "max_estimated_work_uint32_values": None,
+        },
+    ],
     "maximum_expected_upsample_rate": None,
     "max_materialized_unit_target_residual_fraction": 0.001,
     "max_materialized_total_target_residual_fraction": 0.00001,
@@ -281,9 +309,7 @@ def _reset_preparation_phase(
     return phase
 
 
-def _reset_plan_stage(
-    build: Path, stage_name: str, *downstream_stage_names: str
-) -> Path:
+def _reset_plan_stage(build: Path, stage_name: str, *downstream_stage_names: str) -> Path:
     """Replace generated plan stages while preserving earlier reviewed stages."""
 
     _validate_preparation_build(build)
@@ -293,13 +319,12 @@ def _reset_plan_stage(
     unknown = sorted(
         child.name
         for child in plan_root.iterdir()
-        if child.name
-        not in {*PLAN_STAGES, *PLAN_ROOT_ARTIFACTS, *PRESERVED_BUILD_METADATA}
+        if child.name not in {*PLAN_STAGES, *PLAN_ROOT_ARTIFACTS, *PRESERVED_BUILD_METADATA}
     )
     if unknown:
-        raise PreparationError(
-            "Refusing to reset a plan containing unknown entries: " + ", ".join(unknown)
-        )
+        raise PreparationError("Refusing to reset a plan containing unknown entries: " + ", ".join(unknown))
+    if stage_name == "execution":
+        _restore_inventory_report_from_combined(plan_root)
     names = (stage_name, *downstream_stage_names)
     if any(name not in PLAN_STAGES for name in names):
         raise ValueError(f"Unknown plan stage: {names}")
@@ -307,9 +332,7 @@ def _reset_plan_stage(
         artifact = plan_root / artifact_name
         if artifact.exists():
             if artifact.is_symlink() or not artifact.is_file():
-                raise PreparationError(
-                    f"Refusing to replace an unsafe plan artifact: {artifact}"
-                )
+                raise PreparationError(f"Refusing to replace an unsafe plan artifact: {artifact}")
             artifact.unlink()
     for name in names:
         _remove_generated_phase(plan_root / name)
@@ -318,6 +341,28 @@ def _reset_plan_stage(
     stage = plan_root / stage_name
     stage.mkdir(exist_ok=False)
     return stage
+
+
+def _restore_inventory_report_from_combined(plan_root: Path) -> None:
+    """Recover the source-report input before replacing only execution artifacts."""
+
+    inventory_report = plan_root / "inventory/report.html"
+    if inventory_report.is_file() and not inventory_report.is_symlink():
+        return
+    combined_report = plan_root / "report.html"
+    if combined_report.is_symlink() or not combined_report.is_file():
+        return
+    combined = combined_report.read_text(encoding="utf-8")
+    match = re.search(
+        r'<template id="source-report-document">(?P<document>.*?)</template>\s*'
+        r'<template id="execution-report-document">',
+        combined,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        raise PreparationError(f"Cannot recover the inventory report from: {combined_report}")
+    document = match.group("document").replace('<head><base href="inventory/">', "<head>", 1)
+    _write_text(inventory_report, document)
 
 
 def _write_text(path: Path, value: str) -> None:
@@ -357,7 +402,7 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
 
 
 def _load_settings(path: Path | None) -> dict[str, Any]:
-    settings = dict(DEFAULT_SETTINGS)
+    settings = copy.deepcopy(DEFAULT_SETTINGS)
     if path is not None:
         with path.open(encoding="utf-8") as f:
             loaded = yaml.safe_load(f) or {}
@@ -369,9 +414,19 @@ def _load_settings(path: Path | None) -> dict[str, Any]:
         settings.update(loaded)
     if int(settings["target_uint32_values"]) <= 0:
         raise PreparationError("target_uint32_values must be positive")
-    for name in ("max_workers_per_reshard", "s5cmd_download_concurrency"):
+    for name in (
+        "max_workers_per_reshard",
+        "s5cmd_download_concurrency",
+        "target_output_shard_bytes",
+        "max_output_shards_per_unit",
+    ):
         if int(settings[name]) <= 0:
             raise PreparationError(f"{name} must be positive")
+    if float(settings["worker_disk_headroom_ratio"]) <= 1:
+        raise PreparationError("worker_disk_headroom_ratio must be greater than one")
+    if int(settings["document_selection_work_passes"]) < 0:
+        raise PreparationError("document_selection_work_passes cannot be negative")
+    settings["worker_instance_grid"] = _validate_worker_instance_grid(settings["worker_instance_grid"])
     for name in (
         "max_materialized_unit_target_residual_fraction",
         "max_materialized_total_target_residual_fraction",
@@ -380,14 +435,81 @@ def _load_settings(path: Path | None) -> dict[str, Any]:
         if not 0 < value < 1:
             raise PreparationError(f"{name} must be between zero and one")
     maximum_expected_upsample_rate = settings["maximum_expected_upsample_rate"]
-    if (
-        maximum_expected_upsample_rate is not None
-        and float(maximum_expected_upsample_rate) <= 1
-    ):
-        raise PreparationError(
-            "maximum_expected_upsample_rate must be greater than one"
-        )
+    if maximum_expected_upsample_rate is not None and float(maximum_expected_upsample_rate) <= 1:
+        raise PreparationError("maximum_expected_upsample_rate must be greater than one")
     return settings
+
+
+def _validate_worker_instance_grid(value: Any) -> list[dict[str, Any]]:
+    """Validate the ordered CPU/storage choices used by the execution planner."""
+
+    if not isinstance(value, list) or not value:
+        raise PreparationError("worker_instance_grid must be a non-empty list")
+    required = {
+        "instance_type",
+        "vcpus",
+        "local_nvme_devices",
+        "local_nvme_bytes",
+        "max_estimated_work_uint32_values",
+    }
+    grid: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    previous_vcpus = 0
+    previous_storage = 0
+    previous_work_limit = 0
+    for index, raw in enumerate(value):
+        if not isinstance(raw, dict):
+            raise PreparationError(f"worker_instance_grid entry {index + 1} must be a mapping")
+        missing = required - set(raw)
+        unknown = set(raw) - required
+        if missing or unknown:
+            details = []
+            if missing:
+                details.append("missing " + ", ".join(sorted(missing)))
+            if unknown:
+                details.append("unknown " + ", ".join(sorted(unknown)))
+            raise PreparationError(f"Invalid worker_instance_grid entry {index + 1}: " + "; ".join(details))
+        instance_type = str(raw["instance_type"]).strip()
+        if not re.fullmatch(r"i4i\.[A-Za-z0-9]+", instance_type):
+            raise PreparationError(
+                "worker_instance_grid is restricted to i4i instance types; "
+                f"found {instance_type or 'empty value'}"
+            )
+        if instance_type in seen:
+            raise PreparationError(f"Duplicate worker instance type in grid: {instance_type}")
+        seen.add(instance_type)
+        vcpus = int(raw["vcpus"])
+        devices = int(raw["local_nvme_devices"])
+        storage = int(raw["local_nvme_bytes"])
+        raw_work_limit = raw["max_estimated_work_uint32_values"]
+        work_limit = int(raw_work_limit) if raw_work_limit is not None else None
+        if vcpus <= 0 or devices <= 0 or storage <= 0:
+            raise PreparationError(f"Worker resources must be positive for {instance_type}")
+        if work_limit is not None and work_limit <= 0:
+            raise PreparationError(f"Work limit must be positive for {instance_type}")
+        if vcpus <= previous_vcpus or storage <= previous_storage:
+            raise PreparationError("worker_instance_grid must increase in both vCPUs and local NVMe")
+        if work_limit is None:
+            if index != len(value) - 1:
+                raise PreparationError("Only the final worker_instance_grid entry may have no work limit")
+        elif work_limit <= previous_work_limit:
+            raise PreparationError("worker_instance_grid work limits must increase with instance size")
+        grid.append(
+            {
+                "instance_type": instance_type,
+                "vcpus": vcpus,
+                "local_nvme_devices": devices,
+                "local_nvme_bytes": storage,
+                "max_estimated_work_uint32_values": work_limit,
+            }
+        )
+        previous_vcpus = vcpus
+        previous_storage = storage
+        if work_limit is not None:
+            previous_work_limit = work_limit
+    if grid[-1]["max_estimated_work_uint32_values"] is not None:
+        raise PreparationError("The final worker_instance_grid entry must accept unbounded work")
+    return grid
 
 
 def _load_catalog(path: Path) -> list[dict[str, str]]:
@@ -1676,6 +1798,82 @@ def _execution_unit_sizes(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
     }
 
 
+def _execution_unit_work(rows: Sequence[dict[str, Any]], document_selection_work_passes: int) -> dict[str, int]:
+    """Estimate CPU work without changing the requested output-shard count.
+
+    Every planned output value is merged once. A source shard using document
+    selection also requires full metadata scans before its selected documents
+    can be merged; the current selector performs two passes.
+    """
+
+    if document_selection_work_passes < 0:
+        raise ValueError("document_selection_work_passes cannot be negative")
+    planned_values = sum(
+        int(row["estimated_uint32_values"]) * int(row["repeat_count"])
+        + int(row.get("partial_target_uint32_values", 0))
+        for row in rows
+    )
+    selection_source_values = sum(
+        int(row["estimated_uint32_values"]) for row in rows if int(row.get("partial_target_uint32_values", 0)) > 0
+    )
+    return {
+        "planned_uint32_values": planned_values,
+        "document_selection_source_uint32_values": selection_source_values,
+        "estimated_work_uint32_values": planned_values + document_selection_work_passes * selection_source_values,
+    }
+
+
+def _planned_output_shards(
+    *,
+    output_npy_bytes: int,
+    input_view_count: int,
+    target_output_shard_bytes: int,
+    max_output_shards_per_unit: int,
+) -> int:
+    """Choose a small, size-based output count bounded by available input views."""
+
+    if output_npy_bytes <= 0 or input_view_count <= 0:
+        raise ValueError("Output bytes and input view count must be positive")
+    if target_output_shard_bytes <= 0 or max_output_shards_per_unit <= 0:
+        raise ValueError("Output shard target and limit must be positive")
+    size_based_count = math.ceil(output_npy_bytes / target_output_shard_bytes)
+    return min(max(1, size_based_count), max_output_shards_per_unit, input_view_count)
+
+
+def _select_worker_instance(
+    grid: Sequence[dict[str, Any]],
+    *,
+    estimated_peak_local_bytes: int,
+    estimated_work_uint32_values: int,
+    disk_headroom_ratio: float,
+) -> dict[str, Any]:
+    """Choose the smallest i4i grid entry satisfying disk and CPU workload."""
+
+    if estimated_peak_local_bytes <= 0 or estimated_work_uint32_values <= 0:
+        raise ValueError("Execution-unit disk and work estimates must be positive")
+    if disk_headroom_ratio <= 1:
+        raise ValueError("disk_headroom_ratio must be greater than one")
+    required_local_bytes = math.ceil(estimated_peak_local_bytes * disk_headroom_ratio)
+    for raw in grid:
+        work_limit = raw.get("max_estimated_work_uint32_values")
+        if int(raw["local_nvme_bytes"]) < required_local_bytes:
+            continue
+        if work_limit is not None and estimated_work_uint32_values > int(work_limit):
+            continue
+        selected = dict(raw)
+        selected["required_local_nvme_bytes"] = required_local_bytes
+        selected["storage_layout"] = "single" if int(raw["local_nvme_devices"]) == 1 else "raid0"
+        return selected
+    largest = grid[-1]
+    raise PreparationError(
+        "No worker instance in the configured grid can run an execution unit with "
+        f"{estimated_peak_local_bytes:,} estimated peak bytes and "
+        f"{estimated_work_uint32_values:,} estimated work values. Largest candidate "
+        f"is {largest['instance_type']} with {int(largest['local_nvme_bytes']):,} "
+        "local NVMe bytes."
+    )
+
+
 def _partition_object_uses(
     rows: Sequence[dict[str, Any]], max_unit_working_bytes: int
 ) -> list[list[dict[str, Any]]]:
@@ -1925,9 +2123,7 @@ def propose_configs(args: argparse.Namespace) -> None:
     manifest = _load_build(build)
     inventory_phase = build / "01-plan/inventory"
     if not (inventory_phase / "inventory-summary.json").is_file():
-        raise PreparationError(
-            "Inventory is missing; rerun scripts/dolma3p5_resharding/plan.py"
-        )
+        raise PreparationError("Inventory is missing; rerun scripts/dolma3p5_resharding/plan.py")
     with (inventory_phase / "inventory-summary.json").open() as f:
         inventory_summary = json.load(f)
     blocking = sum(
@@ -1961,8 +2157,8 @@ def propose_configs(args: argparse.Namespace) -> None:
     local_temp_root = Path(args.local_temp_root)
     if not local_temp_root.is_absolute():
         raise PreparationError("local-temp-root must be an absolute path")
-    max_unit_working_bytes = int(args.max_unit_working_bytes)
-    if max_unit_working_bytes <= 0:
+    requested_max_unit_working_bytes = int(args.max_unit_working_bytes)
+    if requested_max_unit_working_bytes <= 0:
         raise PreparationError("max-unit-working-bytes must be positive")
 
     normalized_mix = _read_csv(build / "01-plan/resolution/normalized-mix.csv")
@@ -1976,20 +2172,14 @@ def propose_configs(args: argparse.Namespace) -> None:
         by_leaf[row["leaf_id"]][object_id] = row
         memberships[object_id].add(row["leaf_id"])
     source_roots = sorted(
-        {
-            _source_root_uri(row["bucket"], row["key"])
-            for row in inventory
-            if row["active"] == "true"
-        }
+        {_source_root_uri(row["bucket"], row["key"]) for row in inventory if row["active"] == "true"}
     )
     overlaps = [
         {"bucket": bucket, "key": key, "leaf_ids": ";".join(sorted(leaves))}
         for (bucket, key), leaves in memberships.items()
         if len(leaves) > 1
     ]
-    _write_csv(
-        phase / "cross-leaf-overlaps.csv", overlaps, ["bucket", "key", "leaf_ids"]
-    )
+    _write_csv(phase / "cross-leaf-overlaps.csv", overlaps, ["bucket", "key", "leaf_ids"])
     if overlaps:
         raise PreparationError(
             f"Found {len(overlaps)} exact NPY object(s) assigned to multiple active categories; inspect cross-leaf-overlaps.csv"
@@ -2003,6 +2193,14 @@ def propose_configs(args: argparse.Namespace) -> None:
     next_execution_unit_index = 0
 
     settings = manifest["settings"]
+    worker_grid = _validate_worker_instance_grid(settings["worker_instance_grid"])
+    worker_disk_headroom_ratio = float(settings["worker_disk_headroom_ratio"])
+    document_selection_work_passes = int(settings["document_selection_work_passes"])
+    target_output_shard_bytes = int(settings["target_output_shard_bytes"])
+    max_output_shards_per_unit = int(settings["max_output_shards_per_unit"])
+    largest_worker = worker_grid[-1]
+    largest_worker_working_bytes = math.floor(int(largest_worker["local_nvme_bytes"]) / worker_disk_headroom_ratio)
+    max_unit_working_bytes = min(requested_max_unit_working_bytes, largest_worker_working_bytes)
     total_planned = 0
     manifest_fields = [
         "npy_uri",
@@ -2035,9 +2233,7 @@ def propose_configs(args: argparse.Namespace) -> None:
             key=lambda row: (row["bucket"], row["key"]),
         )
         if not objects:
-            raise PreparationError(
-                f"Active category has no inventoried objects: {leaf['leaf_id']}"
-            )
+            raise PreparationError(f"Active category has no inventoried objects: {leaf['leaf_id']}")
         sizes = [int(row["estimated_uint32_values"]) for row in objects]
         target = int(leaf["target_uint32_values"])
         repetitions, partial_targets, planned = _allocate_object_sampling(target, sizes)
@@ -2063,34 +2259,25 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "target_residual_fraction": f"{(planned - target) / target:.12g}",
                 "unique_object_count": len(objects),
                 "selected_object_count": sum(
-                    repeat > 0 or partial > 0
-                    for repeat, partial in zip(repetitions, partial_targets)
+                    repeat > 0 or partial > 0 for repeat, partial in zip(repetitions, partial_targets)
                 ),
                 "dropped_object_count": sum(
-                    repeat == 0 and partial == 0
-                    for repeat, partial in zip(repetitions, partial_targets)
+                    repeat == 0 and partial == 0 for repeat, partial in zip(repetitions, partial_targets)
                 ),
                 "repeated_object_count": sum(
                     size * repeat + partial > size
-                    for size, repeat, partial in zip(
-                        sizes, repetitions, partial_targets
-                    )
+                    for size, repeat, partial in zip(sizes, repetitions, partial_targets)
                 ),
                 "partial_object_count": sum(value > 0 for value in partial_targets),
-                "total_object_uses": sum(repetitions)
-                + sum(value > 0 for value in partial_targets),
+                "total_object_uses": sum(repetitions) + sum(value > 0 for value in partial_targets),
                 "minimum_repetition": min(repetitions),
                 "maximum_repetition": max(repetitions),
             }
         )
         leaf_object_uses: list[dict[str, Any]] = []
-        for obj, repeat_count, partial_target in zip(
-            objects, repetitions, partial_targets
-        ):
+        for obj, repeat_count, partial_target in zip(objects, repetitions, partial_targets):
             selection_seed = int(settings["random_seed"]) + int(
-                hashlib.sha256(
-                    f"{leaf['leaf_id']}\0{obj['npy_uri']}".encode()
-                ).hexdigest()[:16],
+                hashlib.sha256(f"{leaf['leaf_id']}\0{obj['npy_uri']}".encode()).hexdigest()[:16],
                 16,
             )
             object_use = {
@@ -2115,9 +2302,7 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "partial_target_uint32_values": partial_target,
                 "selection_seed": selection_seed,
                 "selection_algorithm": DOCUMENT_SELECTION_ALGORITHM,
-                "planned_uint32_values": int(obj["estimated_uint32_values"])
-                * repeat_count
-                + partial_target,
+                "planned_uint32_values": int(obj["estimated_uint32_values"]) * repeat_count + partial_target,
             }
             object_use_rows.append(object_use)
             if repeat_count > 0 or partial_target > 0:
@@ -2130,14 +2315,13 @@ def propose_configs(args: argparse.Namespace) -> None:
                 f"the {EXECUTION_UNIT_INDEX_WIDTH}-digit destination counter"
             )
         source_layout_prefix = _category_output_directory(objects, category_name)
-        unit_planned_values = [
-            _execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES
-            for unit in units
-        ]
+        unit_planned_values = [_execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES for unit in units]
         unit_targets = unit_planned_values
 
         unit_peak_bytes: list[int] = []
         unit_input_bytes: list[int] = []
+        unit_instance_types: list[str] = []
+        unit_output_shards: list[int] = []
         dataset_root = f"{destination_root}/{manifest['build_id']}"
         for unit_index, (unit_rows, unit_target) in enumerate(zip(units, unit_targets)):
             unit_number = unit_index + 1
@@ -2148,39 +2332,42 @@ def propose_configs(args: argparse.Namespace) -> None:
             unit_id = f"{next_execution_unit_index:0{EXECUTION_UNIT_INDEX_WIDTH}d}"
             next_execution_unit_index += 1
             unit_sizes = _execution_unit_sizes(unit_rows)
-            unit_peak_bytes.append(unit_sizes["estimated_peak_local_bytes"])
-            unit_input_bytes.append(
-                unit_sizes["input_npy_bytes"] + unit_sizes["input_metadata_bytes"]
+            unit_work = _execution_unit_work(unit_rows, document_selection_work_passes)
+            worker = _select_worker_instance(
+                worker_grid,
+                estimated_peak_local_bytes=unit_sizes["estimated_peak_local_bytes"],
+                estimated_work_uint32_values=unit_work["estimated_work_uint32_values"],
+                disk_headroom_ratio=worker_disk_headroom_ratio,
             )
+            unit_peak_bytes.append(unit_sizes["estimated_peak_local_bytes"])
+            unit_input_bytes.append(unit_sizes["input_npy_bytes"] + unit_sizes["input_metadata_bytes"])
+            unit_instance_types.append(str(worker["instance_type"]))
             unit_planned = unit_sizes["output_npy_bytes"] // UINT32_BYTES
             unit_max_repeat = max(int(row["repeat_count"]) for row in unit_rows)
-            unit_partial_objects = sum(
-                int(row.get("partial_target_uint32_values", 0)) > 0 for row in unit_rows
+            unit_partial_objects = sum(int(row.get("partial_target_uint32_values", 0)) > 0 for row in unit_rows)
+            input_view_count = sum(
+                int(row["repeat_count"]) + (int(row.get("partial_target_uint32_values", 0)) > 0)
+                for row in unit_rows
             )
             manifest_path = manifests_dir / f"{unit_id}.csv"
             _write_csv(manifest_path, unit_rows, manifest_fields)
-            if unit_planned < 10_000_000_000:
-                shard_floor = 2
-            elif unit_planned < 100_000_000_000:
-                shard_floor = 4
-            else:
-                shard_floor = 8
-            max_num_files = max(shard_floor, unit_max_repeat)
+            max_num_files = _planned_output_shards(
+                output_npy_bytes=unit_sizes["output_npy_bytes"],
+                input_view_count=input_view_count,
+                target_output_shard_bytes=target_output_shard_bytes,
+                max_output_shards_per_unit=max_output_shards_per_unit,
+            )
+            unit_output_shards.append(max_num_files)
+            max_workers = min(int(settings["max_workers_per_reshard"]), int(worker["vcpus"]))
             destination_index = f"{unit_index:0{EXECUTION_UNIT_INDEX_WIDTH}d}"
             destination = f"{dataset_root}/{source_layout_prefix}/{destination_index}"
             config = {
                 "destination_prefix": destination,
-                "source_manifests": [
-                    {"manifest": f"../manifests/{manifest_path.name}"}
-                ],
+                "source_manifests": [{"manifest": f"../manifests/{manifest_path.name}"}],
                 "local_tempdir": str(local_temp_root / manifest["build_id"] / unit_id),
                 "max_num_files": max_num_files,
-                "max_workers": min(
-                    int(settings["max_workers_per_reshard"]), max_num_files
-                ),
-                "s5cmd_download_concurrency": int(
-                    settings["s5cmd_download_concurrency"]
-                ),
+                "max_workers": max_workers,
+                "s5cmd_download_concurrency": int(settings["s5cmd_download_concurrency"]),
                 "random_seed": int(settings["random_seed"])
                 + int(hashlib.sha256(unit_id.encode()).hexdigest()[:16], 16),
                 "tokenizer_name_or_path": str(settings["tokenizer_name_or_path"]),
@@ -2208,12 +2395,8 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "mix_name": mix_name,
                 "category_index": category_index,
                 "category_name": category_name,
-                "source_directories": ";".join(
-                    sorted({row["source_directory"] for row in unit_rows})
-                ),
-                "source_directory_count": len(
-                    {row["source_directory"] for row in unit_rows}
-                ),
+                "source_directories": ";".join(sorted({row["source_directory"] for row in unit_rows})),
+                "source_directory_count": len({row["source_directory"] for row in unit_rows}),
                 "source_layout_prefix": source_layout_prefix,
                 "destination_index": destination_index,
                 "unit_index": unit_number,
@@ -2230,34 +2413,41 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "input_npy_bytes": unit_sizes["input_npy_bytes"],
                 "input_metadata_bytes": unit_sizes["input_metadata_bytes"],
                 "output_npy_bytes": unit_sizes["output_npy_bytes"],
-                "estimated_output_metadata_bytes": unit_sizes[
-                    "estimated_output_metadata_bytes"
-                ],
-                "estimated_selection_index_bytes": unit_sizes[
-                    "estimated_selection_index_bytes"
-                ],
+                "estimated_output_metadata_bytes": unit_sizes["estimated_output_metadata_bytes"],
+                "estimated_selection_index_bytes": unit_sizes["estimated_selection_index_bytes"],
                 "estimated_peak_local_bytes": unit_sizes["estimated_peak_local_bytes"],
                 "max_unit_working_bytes": max_unit_working_bytes,
+                "requested_max_unit_working_bytes": requested_max_unit_working_bytes,
                 "working_budget_utilization": f"{unit_sizes['estimated_peak_local_bytes'] / max_unit_working_bytes:.12g}",
+                "document_selection_source_uint32_values": unit_work["document_selection_source_uint32_values"],
+                "document_selection_work_passes": document_selection_work_passes,
+                "estimated_work_uint32_values": unit_work["estimated_work_uint32_values"],
+                "worker_instance_type": worker["instance_type"],
+                "worker_vcpus": worker["vcpus"],
+                "worker_local_nvme_devices": worker["local_nvme_devices"],
+                "worker_local_nvme_bytes": worker["local_nvme_bytes"],
+                "worker_required_local_nvme_bytes": worker["required_local_nvme_bytes"],
+                "worker_disk_headroom_ratio": f"{worker_disk_headroom_ratio:.12g}",
+                "worker_storage_layout": worker["storage_layout"],
+                "worker_disk_utilization": f"{unit_sizes['estimated_peak_local_bytes'] / int(worker['local_nvme_bytes']):.12g}",
                 "unique_object_count": len(unit_rows),
                 "partial_object_count": unit_partial_objects,
+                "input_view_count": input_view_count,
                 "allowed_materialized_target_residual_uint32_values": (
-                    math.ceil(
-                        unit_target
-                        * float(
-                            settings["max_materialized_unit_target_residual_fraction"]
-                        )
-                    )
+                    math.ceil(unit_target * float(settings["max_materialized_unit_target_residual_fraction"]))
                     if unit_partial_objects
                     else 0
                 ),
                 "maximum_repetition": unit_max_repeat,
+                "target_output_shard_bytes": target_output_shard_bytes,
+                "max_output_shards_per_unit": max_output_shards_per_unit,
+                "planned_output_shard_count": max_num_files,
+                "average_output_shard_bytes": math.ceil(unit_sizes["output_npy_bytes"] / max_num_files),
                 "max_num_files": max_num_files,
+                "max_workers": max_workers,
             }
             config_index.append(unit_row)
-            local_unit_commands.append(
-                f"python -m dolma.tokenizer.reshard {shlex.quote(str(config_path))}"
-            )
+            local_unit_commands.append(f"python -m dolma.tokenizer.reshard {shlex.quote(str(config_path))}")
 
         category_execution_rows.append(
             {
@@ -2272,9 +2462,14 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "largest_estimated_peak_local_bytes": max(unit_peak_bytes),
                 "total_input_bytes_across_units": sum(unit_input_bytes),
                 "max_unit_working_bytes": max_unit_working_bytes,
+                "worker_instance_types": ";".join(sorted(set(unit_instance_types))),
+                "planned_output_shard_count": sum(unit_output_shards),
             }
         )
 
+    worker_instance_counts = dict(sorted(Counter(row["worker_instance_type"] for row in config_index).items()))
+    planned_output_shard_count = sum(int(row["planned_output_shard_count"]) for row in config_index)
+    planned_output_file_count = planned_output_shard_count * 2
     allocation_fields = [
         "leaf_id",
         "mix_index",
@@ -2302,9 +2497,7 @@ def propose_configs(args: argparse.Namespace) -> None:
         "maximum_repetition",
     ]
     _write_csv(phase / "category-allocation.csv", allocation_rows, allocation_fields)
-    _write_csv(
-        phase / "planned-object-uses.csv", object_use_rows, list(object_use_rows[0])
-    )
+    _write_csv(phase / "planned-object-uses.csv", object_use_rows, list(object_use_rows[0]))
     _write_csv(phase / "config-index.csv", config_index, list(config_index[0]))
     _write_csv(
         phase / "category-execution-summary.csv",
@@ -2335,11 +2528,17 @@ def propose_configs(args: argparse.Namespace) -> None:
             "category_count": len(category_execution_rows),
             "execution_unit_count": len(config_index),
             "nominal_target_uint32_values": int(settings["target_uint32_values"]),
-            "target_uint32_values": sum(
-                int(row["target_uint32_values"]) for row in allocation_rows
-            ),
+            "target_uint32_values": sum(int(row["target_uint32_values"]) for row in allocation_rows),
             "planned_uint32_values": total_planned,
             "max_unit_working_bytes": max_unit_working_bytes,
+            "requested_max_unit_working_bytes": requested_max_unit_working_bytes,
+            "worker_disk_headroom_ratio": worker_disk_headroom_ratio,
+            "worker_instance_grid": worker_grid,
+            "worker_instance_counts": worker_instance_counts,
+            "target_output_shard_bytes": target_output_shard_bytes,
+            "max_output_shards_per_unit": max_output_shards_per_unit,
+            "planned_output_shard_count": planned_output_shard_count,
+            "planned_output_file_count": planned_output_file_count,
             "destination_prefixes_file": "dataset-prefixes.txt",
         },
     )
@@ -2400,18 +2599,25 @@ def propose_configs(args: argparse.Namespace) -> None:
             "execution_unit_count": len(config_index),
             "config_count": len(config_index),
             "max_unit_working_bytes": max_unit_working_bytes,
+            "requested_max_unit_working_bytes": requested_max_unit_working_bytes,
             "largest_estimated_peak_local_bytes": max(
                 int(row["estimated_peak_local_bytes"]) for row in config_index
             ),
+            "worker_disk_headroom_ratio": worker_disk_headroom_ratio,
+            "document_selection_work_passes": document_selection_work_passes,
+            "worker_instance_grid": worker_grid,
+            "worker_instance_counts": worker_instance_counts,
+            "target_output_shard_bytes": target_output_shard_bytes,
+            "max_output_shards_per_unit": max_output_shards_per_unit,
+            "planned_output_shard_count": planned_output_shard_count,
+            "planned_output_file_count": planned_output_file_count,
             "nominal_target_uint32_values": int(settings["target_uint32_values"]),
             "target_uint32_values": report_totals["target_uint32_values"],
             "source_uint32_values": report_totals["source_uint32_values"],
             "planned_uint32_values": total_planned,
-            "token_change_from_source": total_planned
-            - report_totals["source_uint32_values"],
+            "token_change_from_source": total_planned - report_totals["source_uint32_values"],
             "target_residual_uint32_values": target_residual,
-            "nominal_target_residual_uint32_values": total_planned
-            - int(settings["target_uint32_values"]),
+            "nominal_target_residual_uint32_values": total_planned - int(settings["target_uint32_values"]),
             "source_shards_with_document_selection": source_shards_with_document_selection,
             "document_selection_algorithm": DOCUMENT_SELECTION_ALGORITHM,
             "max_materialized_unit_target_residual_fraction": float(
@@ -2425,10 +2631,14 @@ def propose_configs(args: argparse.Namespace) -> None:
         },
     )
     _combine_plan_reports(build)
+    worker_summary = ", ".join(
+        f"{count:,} {instance_type}" for instance_type, count in worker_instance_counts.items()
+    )
     print(
         f"Execution plan ready: {_human_token_count(total_planned)} tokens across "
-        f"{len(config_index):,} execution units; "
+        f"{len(config_index):,} execution units and {planned_output_shard_count:,} output shards; "
         f"target residual: {target_residual:,} tokens.\n"
+        f"Planned workers: {worker_summary}.\n"
         f"Review: {build / '01-plan/report.html'}"
     )
 
@@ -2441,6 +2651,11 @@ def _validate_proposal(
     object_uses: Sequence[dict[str, Any]],
 ) -> None:
     failures: list[dict[str, str]] = []
+    build_manifest = _validate_preparation_build(build)
+    worker_grid = _validate_worker_instance_grid(build_manifest["settings"]["worker_instance_grid"])
+    workers_by_type = {row["instance_type"]: row for row in worker_grid}
+    target_output_shard_bytes = int(build_manifest["settings"]["target_output_shard_bytes"])
+    max_output_shards_per_unit = int(build_manifest["settings"]["max_output_shards_per_unit"])
     destinations = [row["destination_prefix"] for row in config_index]
     for destination, count in Counter(destinations).items():
         if count != 1:
@@ -2451,9 +2666,7 @@ def _validate_proposal(
             failures.append({"check": "unique_unit_id", "detail": unit_id})
         if not re.fullmatch(rf"[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}", unit_id):
             failures.append({"check": "numeric_unit_id", "detail": unit_id})
-    expected_unit_ids = [
-        f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}" for index in range(len(config_index))
-    ]
+    expected_unit_ids = [f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}" for index in range(len(config_index))]
     if unit_ids != expected_unit_ids:
         failures.append(
             {
@@ -2463,18 +2676,14 @@ def _validate_proposal(
         )
     for row in config_index:
         destination_index = row.get("destination_index", "")
-        if not re.fullmatch(
-            rf"[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}", destination_index
-        ):
+        if not re.fullmatch(rf"[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}", destination_index):
             failures.append(
                 {
                     "check": "destination_index",
                     "detail": row["unit_id"],
                 }
             )
-        expected_destination_suffix = (
-            f"/{row['source_layout_prefix']}/{destination_index}"
-        )
+        expected_destination_suffix = f"/{row['source_layout_prefix']}/{destination_index}"
         if not row["destination_prefix"].endswith(expected_destination_suffix):
             failures.append(
                 {
@@ -2493,19 +2702,95 @@ def _validate_proposal(
                 }
             )
         if config.get("allow_existing_destination") is not False:
+            failures.append({"check": "no_existing_destination", "detail": str(config_path)})
+        if (
+            int(config.get("max_num_files", 0)) != int(row.get("planned_output_shard_count", 0))
+            or int(row.get("max_num_files", 0)) != int(row.get("planned_output_shard_count", 0))
+            or int(row.get("target_output_shard_bytes", 0)) != target_output_shard_bytes
+            or int(row.get("max_output_shards_per_unit", 0)) != max_output_shards_per_unit
+        ):
             failures.append(
-                {"check": "no_existing_destination", "detail": str(config_path)}
+                {
+                    "check": "output_shard_policy_matches_config",
+                    "detail": row["unit_id"],
+                }
             )
+        worker = workers_by_type.get(str(row.get("worker_instance_type", "")))
+        if worker is None:
+            failures.append(
+                {
+                    "check": "worker_instance_in_grid",
+                    "detail": row["unit_id"],
+                }
+            )
+        else:
+            expected_layout = "single" if int(worker["local_nvme_devices"]) == 1 else "raid0"
+            if (
+                int(row.get("worker_vcpus", 0)) != int(worker["vcpus"])
+                or int(row.get("worker_local_nvme_devices", 0)) != int(worker["local_nvme_devices"])
+                or int(row.get("worker_local_nvme_bytes", 0)) != int(worker["local_nvme_bytes"])
+                or row.get("worker_storage_layout") != expected_layout
+            ):
+                failures.append(
+                    {
+                        "check": "worker_resources_match_grid",
+                        "detail": row["unit_id"],
+                    }
+                )
+            if int(row["worker_required_local_nvme_bytes"]) > int(worker["local_nvme_bytes"]):
+                failures.append(
+                    {
+                        "check": "worker_disk_capacity",
+                        "detail": row["unit_id"],
+                    }
+                )
+            work_limit = worker["max_estimated_work_uint32_values"]
+            if work_limit is not None and int(row["estimated_work_uint32_values"]) > int(work_limit):
+                failures.append(
+                    {
+                        "check": "worker_workload_capacity",
+                        "detail": row["unit_id"],
+                    }
+                )
+            if int(config.get("max_workers", 0)) != int(row["max_workers"]) or int(row["max_workers"]) > int(
+                worker["vcpus"]
+            ):
+                failures.append(
+                    {
+                        "check": "worker_concurrency",
+                        "detail": row["unit_id"],
+                    }
+                )
         manifest_path = config_path.parent / config["source_manifests"][0]["manifest"]
         if not manifest_path.resolve().is_file():
             failures.append({"check": "manifest_exists", "detail": str(manifest_path)})
         else:
             manifest_rows = _read_csv(manifest_path.resolve())
+            input_view_count = sum(
+                int(manifest_row["repeat_count"])
+                + (int(manifest_row.get("partial_target_uint32_values", 0)) > 0)
+                for manifest_row in manifest_rows
+            )
+            expected_output_shards = _planned_output_shards(
+                output_npy_bytes=int(row["output_npy_bytes"]),
+                input_view_count=input_view_count,
+                target_output_shard_bytes=target_output_shard_bytes,
+                max_output_shards_per_unit=max_output_shards_per_unit,
+            )
+            if (
+                int(row.get("input_view_count", 0)) != input_view_count
+                or int(row.get("planned_output_shard_count", 0)) != expected_output_shards
+                or int(row.get("average_output_shard_bytes", 0))
+                != math.ceil(int(row["output_npy_bytes"]) / expected_output_shards)
+            ):
+                failures.append(
+                    {
+                        "check": "output_shard_count_matches_manifest",
+                        "detail": row["unit_id"],
+                    }
+                )
             manifest_source_directories = sorted(
-                {
-                    manifest_row["npy_uri"].rsplit("/", 1)[0]
-                    for manifest_row in manifest_rows
-                }
+                {manifest_row["npy_uri"].rsplit("/", 1)[0] for manifest_row in manifest_rows}
             )
             indexed_source_directories = row["source_directories"].split(";")
             if manifest_source_directories != indexed_source_directories or len(
@@ -2518,12 +2803,9 @@ def _validate_proposal(
                     }
                 )
             for manifest_row in manifest_rows:
-                partial_target = int(
-                    manifest_row.get("partial_target_uint32_values", 0)
-                )
+                partial_target = int(manifest_row.get("partial_target_uint32_values", 0))
                 if partial_target and (
-                    manifest_row.get("selection_algorithm")
-                    != DOCUMENT_SELECTION_ALGORITHM
+                    manifest_row.get("selection_algorithm") != DOCUMENT_SELECTION_ALGORITHM
                     or not manifest_row.get("selection_seed")
                 ):
                     failures.append(
@@ -2534,9 +2816,7 @@ def _validate_proposal(
                     )
         launcher_path = build / row["launcher_path"]
         if not launcher_path.is_file() or not os.access(launcher_path, os.X_OK):
-            failures.append(
-                {"check": "launcher_is_executable", "detail": str(launcher_path)}
-            )
+            failures.append({"check": "launcher_is_executable", "detail": str(launcher_path)})
         if int(row["estimated_peak_local_bytes"]) > int(row["max_unit_working_bytes"]):
             failures.append(
                 {
@@ -2570,25 +2850,17 @@ def _validate_proposal(
         if allocation is None:
             continue
         if planned != int(allocation["planned_uint32_values"]):
-            failures.append(
-                {"check": "unit_planned_sum", "detail": f"{leaf_id}: {planned}"}
-            )
+            failures.append({"check": "unit_planned_sum", "detail": f"{leaf_id}: {planned}"})
         if target != int(allocation["target_uint32_values"]):
-            failures.append(
-                {"check": "unit_target_sum", "detail": f"{leaf_id}: {target}"}
-            )
+            failures.append({"check": "unit_target_sum", "detail": f"{leaf_id}: {target}"})
         if int(allocation["target_residual_uint32_values"]) != 0:
             failures.append(
                 {
                     "check": "exact_proposal_target",
-                    "detail": (
-                        f"{leaf_id}: {allocation['target_residual_uint32_values']}"
-                    ),
+                    "detail": (f"{leaf_id}: {allocation['target_residual_uint32_values']}"),
                 }
             )
-        object_planned = sum(
-            int(row["planned_uint32_values"]) for row in uses_by_leaf.get(leaf_id, [])
-        )
+        object_planned = sum(int(row["planned_uint32_values"]) for row in uses_by_leaf.get(leaf_id, []))
         if object_planned != planned:
             failures.append(
                 {
@@ -2622,9 +2894,7 @@ def _validate_proposal(
         if row["active"] == "true"
     }
     for leaf_id, uri in sorted(required_uses - planned_uses):
-        failures.append(
-            {"check": "required_object_considered", "detail": f"{leaf_id}: {uri}"}
-        )
+        failures.append({"check": "required_object_considered", "detail": f"{leaf_id}: {uri}"})
     _write_csv(phase / "validation-failures.csv", failures, ["check", "detail"])
     _write_json(
         phase / "validation-summary.json",
@@ -2638,9 +2908,7 @@ def _validate_proposal(
         },
     )
     if failures:
-        raise PreparationError(
-            f"Proposal validation failed; inspect {phase / 'validation-failures.csv'}"
-        )
+        raise PreparationError(f"Proposal validation failed; inspect {phase / 'validation-failures.csv'}")
 
 
 def _filter_execution_units(
@@ -3011,12 +3279,13 @@ def verify_output(args: argparse.Namespace) -> None:
             ]
             actual = sum(obj.size_bytes // UINT32_BYTES for obj in npys)
             predicted = int(row["planned_uint32_values"])
+            planned_output_shards = int(row["planned_output_shard_count"])
             allowed_residual = int(
                 row["allowed_materialized_target_residual_uint32_values"]
             )
             status = (
                 "passed"
-                if npys
+                if len(npys) == planned_output_shards
                 and not missing_metadata
                 and not orphan_metadata
                 and not invalid_npys
@@ -3038,6 +3307,7 @@ def verify_output(args: argparse.Namespace) -> None:
                     "actual_uint32_values": actual,
                     "actual_minus_predicted": actual - predicted,
                     "allowed_target_residual_uint32_values": allowed_residual,
+                    "planned_output_shard_count": planned_output_shards,
                     "npy_count": len(npys),
                     "metadata_count": len(metadata),
                     "missing_metadata_count": len(missing_metadata),
@@ -3131,6 +3401,7 @@ def verify_output(args: argparse.Namespace) -> None:
         "actual_uint32_values",
         "actual_minus_predicted",
         "allowed_target_residual_uint32_values",
+        "planned_output_shard_count",
         "npy_count",
         "metadata_count",
         "missing_metadata_count",
@@ -3178,6 +3449,13 @@ def verify_output(args: argparse.Namespace) -> None:
                 int(row["predicted_uint32_values"]) for row in validation_rows
             ),
             "actual_uint32_values": actual_total,
+            "planned_output_shard_count": sum(
+                int(row["planned_output_shard_count"]) for row in validation_rows
+            ),
+            "actual_output_shard_count": sum(int(row["npy_count"]) for row in validation_rows),
+            "actual_output_file_count": sum(
+                int(row["npy_count"]) + int(row["metadata_count"]) for row in validation_rows
+            ),
             "materialized_target_residual_uint32_values": aggregate_residual,
             "allowed_materialized_target_residual_uint32_values": (
                 allowed_aggregate_residual
@@ -3588,8 +3866,8 @@ def _execution_proposal_style() -> str:
 <style>
 :root{color-scheme:light dark;--muted:#536965;--surface:#edf6f4;--surface-hover:#e4f0ed;--track:#d2e1de;--source:#71817e;--output:#218f84;--selection:#d28a32;--link:#126a63}
 @media(prefers-color-scheme:dark){:root{--muted:#a7bbb7;--surface:#142420;--surface-hover:#1a2d29;--track:#2a403c;--source:#91a29f;--output:#5cc8bb;--selection:#e5a456;--link:#74d7cb}}
-*{box-sizing:border-box}body{max-width:1240px;margin:0 auto;padding:34px 26px 72px;background:Canvas;color:CanvasText;font:14px/1.45 system-ui,sans-serif}h1{margin:0;font-size:28px;line-height:1.2}h2{margin:34px 0 14px;font-size:20px}.lede{max-width:820px;margin:8px 0 0;color:var(--muted)}.execution-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 28px;margin:20px 0}.execution-metric{min-width:0}.metric-label{display:block;color:var(--muted)}.metric-value{display:block;margin-top:2px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}.storage-note{margin:0 0 16px;color:var(--muted)}.utilization-bands{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.utilization-band{padding:12px 14px;border-radius:8px;background:var(--surface)}.utilization-band strong{display:block;font-size:18px;font-variant-numeric:tabular-nums}.utilization-band span{color:var(--muted)}.split-list{display:grid;gap:6px}.split-category{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,minmax(115px,auto));gap:12px 24px;align-items:center;padding:11px 14px;border-radius:8px;background:var(--surface)}.split-name{overflow-wrap:anywhere;font-weight:600}.split-value{font-variant-numeric:tabular-nums}.split-value span{display:block;color:var(--muted);font-size:12px}.unit-heading{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:end;justify-content:space-between}.unit-heading h2{margin-bottom:0}.visible-count{color:var(--muted);font-variant-numeric:tabular-nums}.unit-controls{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:10px 20px;margin:14px 0}.unit-controls input[type=search]{width:100%;padding:9px 11px;border:0;border-radius:7px;background:var(--surface);color:inherit;font:inherit}.unit-controls label{display:flex;gap:8px;align-items:center;color:var(--muted)}.unit-list{display:grid;gap:6px}.execution-unit{border:0;border-radius:9px;background:var(--surface)}.execution-unit[hidden]{display:none}.execution-unit summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,260px);gap:10px 28px;padding:14px 16px;cursor:pointer;list-style-position:inside}.execution-unit summary:hover{background:var(--surface-hover);border-radius:9px}.unit-title{min-width:0;overflow-wrap:anywhere;font-weight:600}.unit-position{display:block;margin:2px 0 0 18px;color:var(--muted);font-size:12px;font-weight:400}.unit-disk{font-variant-numeric:tabular-nums}.unit-disk strong,.unit-disk span{display:block}.unit-disk span{color:var(--muted);font-size:12px}.unit-body{padding:2px 16px 17px}.unit-metrics{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px 24px;margin:6px 0 16px}.unit-metric{min-width:0}.unit-metric span{display:block;color:var(--muted);font-size:12px}.unit-metric strong{display:block;margin-top:2px;font-weight:600;font-variant-numeric:tabular-nums}.disk-breakdown{display:flex;height:9px;overflow:hidden;border-radius:999px;background:var(--track)}.disk-segment{display:block;height:100%}.disk-source{background:var(--source)}.disk-output{background:var(--output)}.disk-selection{background:var(--selection)}.disk-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px 22px;margin:7px 0 16px;color:var(--muted);font-variant-numeric:tabular-nums}.disk-legend span::before{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:2px;content:""}.legend-source::before{background:var(--source)}.legend-output::before{background:var(--output)}.legend-selection::before{background:var(--selection)}.unit-paths{display:grid;gap:8px;margin:0}.unit-paths div{min-width:0}.unit-paths dt{color:var(--muted);font-size:12px}.unit-paths dd{margin:2px 0 0}.unit-paths code{display:block;padding:8px 10px;border-radius:6px;background:Canvas;overflow-wrap:anywhere;font:12px/1.4 ui-monospace,monospace}.artifact-links{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}.artifact-links a{color:var(--link);font-weight:600;text-decoration:none}.artifact-links a:hover{text-decoration:underline}
-@media(max-width:760px){body{padding:24px 16px 48px}.utilization-bands{grid-template-columns:repeat(2,1fr)}.split-category{grid-template-columns:1fr 1fr}.execution-unit summary{grid-template-columns:1fr}.unit-metrics{grid-template-columns:repeat(2,1fr)}.disk-legend{grid-template-columns:1fr}.unit-controls{grid-template-columns:1fr}}
+*{box-sizing:border-box}body{max-width:1240px;margin:0 auto;padding:34px 26px 72px;background:Canvas;color:CanvasText;font:14px/1.45 system-ui,sans-serif}h1{margin:0;font-size:28px;line-height:1.2}h2{margin:34px 0 14px;font-size:20px}.lede{max-width:820px;margin:8px 0 0;color:var(--muted)}.execution-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 28px;margin:20px 0}.execution-metric{min-width:0}.metric-label{display:block;color:var(--muted)}.metric-value{display:block;margin-top:2px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}.storage-note{margin:0 0 16px;color:var(--muted)}.worker-grid{width:100%;border-collapse:separate;border-spacing:0 6px;margin:0}.worker-grid th{padding:0 12px 4px;color:var(--muted);font-size:12px;font-weight:500;text-align:left}.worker-grid td{padding:11px 12px;background:var(--surface);font-variant-numeric:tabular-nums}.worker-grid td:first-child{border-radius:8px 0 0 8px;font-weight:600}.worker-grid td:last-child{border-radius:0 8px 8px 0}.split-list{display:grid;gap:6px}.split-category{display:grid;grid-template-columns:minmax(0,1fr) repeat(4,minmax(115px,auto));gap:12px 24px;align-items:center;padding:11px 14px;border-radius:8px;background:var(--surface)}.split-name{overflow-wrap:anywhere;font-weight:600}.split-value{font-variant-numeric:tabular-nums}.split-value span{display:block;color:var(--muted);font-size:12px}.unit-heading{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:end;justify-content:space-between}.unit-heading h2{margin-bottom:0}.visible-count{color:var(--muted);font-variant-numeric:tabular-nums}.unit-controls{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:10px 20px;margin:14px 0}.unit-controls input[type=search]{width:100%;padding:9px 11px;border:0;border-radius:7px;background:var(--surface);color:inherit;font:inherit}.unit-controls label{display:flex;gap:8px;align-items:center;color:var(--muted)}.unit-list{display:grid;gap:6px}.execution-unit{border:0;border-radius:9px;background:var(--surface)}.execution-unit[hidden]{display:none}.execution-unit summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,290px);gap:10px 28px;padding:14px 16px;cursor:pointer;list-style-position:inside}.execution-unit summary:hover{background:var(--surface-hover);border-radius:9px}.unit-title{min-width:0;overflow-wrap:anywhere;font-weight:600}.unit-position{display:block;margin:2px 0 0 18px;color:var(--muted);font-size:12px;font-weight:400}.unit-disk{font-variant-numeric:tabular-nums}.unit-disk strong,.unit-disk span{display:block}.unit-disk span{color:var(--muted);font-size:12px}.unit-body{padding:2px 16px 17px}.unit-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px 24px;margin:6px 0 16px}.unit-metric{min-width:0}.unit-metric span{display:block;color:var(--muted);font-size:12px}.unit-metric strong{display:block;margin-top:2px;font-weight:600;font-variant-numeric:tabular-nums}.disk-breakdown{display:flex;height:9px;overflow:hidden;border-radius:999px;background:var(--track)}.disk-segment{display:block;height:100%}.disk-source{background:var(--source)}.disk-output{background:var(--output)}.disk-selection{background:var(--selection)}.disk-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px 22px;margin:7px 0 16px;color:var(--muted);font-variant-numeric:tabular-nums}.disk-legend span::before{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:2px;content:""}.legend-source::before{background:var(--source)}.legend-output::before{background:var(--output)}.legend-selection::before{background:var(--selection)}.unit-paths{display:grid;gap:8px;margin:0}.unit-paths div{min-width:0}.unit-paths dt{color:var(--muted);font-size:12px}.unit-paths dd{margin:2px 0 0}.unit-paths code{display:block;padding:8px 10px;border-radius:6px;background:Canvas;overflow-wrap:anywhere;font:12px/1.4 ui-monospace,monospace}.artifact-links{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}.artifact-links a{color:var(--link);font-weight:600;text-decoration:none}.artifact-links a:hover{text-decoration:underline}
+@media(max-width:760px){body{padding:24px 16px 48px}.worker-grid{display:block;overflow-x:auto}.split-category{grid-template-columns:1fr 1fr}.execution-unit summary{grid-template-columns:1fr}.unit-metrics{grid-template-columns:repeat(2,1fr)}.disk-legend{grid-template-columns:1fr}.unit-controls{grid-template-columns:1fr}}
 </style>
 """
 
@@ -3642,9 +3920,9 @@ def _render_execution_proposal_html(
         reverse=True,
     )
     peak_values = [int(row["estimated_peak_local_bytes"]) for row in ordered_units]
-    max_budget = max(
-        (int(row["max_unit_working_bytes"]) for row in ordered_units), default=0
-    )
+    units_by_worker: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in ordered_units:
+        units_by_worker[str(row["worker_instance_type"])].append(row)
     split_categories = sorted(
         (row for row in category_execution if int(row["execution_unit_count"]) > 1),
         key=lambda row: (
@@ -3655,34 +3933,56 @@ def _render_execution_proposal_html(
         reverse=True,
     )
     partial_units = sum(int(row["partial_object_count"]) > 0 for row in ordered_units)
-    utilizations = [
-        int(row["estimated_peak_local_bytes"]) / int(row["max_unit_working_bytes"])
+    planned_output_shards = sum(int(row["planned_output_shard_count"]) for row in ordered_units)
+    average_output_shard_bytes = [
+        int(row["average_output_shard_bytes"])
         for row in ordered_units
-    ]
-    utilization_bands = [
-        ("Below 50%", sum(value < 0.5 for value in utilizations)),
-        ("50–75%", sum(0.5 <= value < 0.75 for value in utilizations)),
-        ("75–90%", sum(0.75 <= value < 0.9 for value in utilizations)),
-        ("90% or higher", sum(value >= 0.9 for value in utilizations)),
+        for _ in range(int(row["planned_output_shard_count"]))
     ]
     metrics = render_metrics(
         [
             ("Execution units", f"{len(ordered_units):,}"),
+            ("Output shards", f"{planned_output_shards:,}"),
+            ("Output files", f"{planned_output_shards * 2:,}"),
+            ("Worker types", f"{len(units_by_worker):,}"),
             ("Units using document selection", f"{partial_units:,}"),
             ("Planned output", f"{_human_token_count(planned_total)} tokens"),
         ]
     )
     storage_metrics = render_metrics(
         [
-            ("Worker disk budget", _human_byte_count(max_budget)),
             ("Median unit", _human_byte_count(_percentile(peak_values, 0.5))),
             ("P95 unit", _human_byte_count(_percentile(peak_values, 0.95))),
             ("Largest unit", _human_byte_count(max(peak_values, default=0))),
+            (
+                "Median output shard",
+                _human_byte_count(_percentile(average_output_shard_bytes, 0.5)),
+            ),
+            (
+                "P95 output shard",
+                _human_byte_count(_percentile(average_output_shard_bytes, 0.95)),
+            ),
         ]
     )
-    band_html = "".join(
-        f'<div class="utilization-band"><strong>{count:,}</strong><span>{label}</span></div>'
-        for label, count in utilization_bands
+    worker_grid_html = (
+        '<table class="worker-grid"><thead><tr><th>Instance</th><th>Units</th>'
+        "<th>vCPUs</th><th>Local NVMe</th><th>Layout</th>"
+        "<th>Largest working set</th><th>Largest work estimate</th></tr></thead><tbody>"
+        + "".join(
+            "<tr>"
+            f"<td>{html.escape(instance_type)}</td>"
+            f"<td>{len(rows):,}</td>"
+            f"<td>{int(rows[0]['worker_vcpus']):,}</td>"
+            f"<td>{_human_byte_count(int(rows[0]['worker_local_nvme_bytes']))}</td>"
+            f"<td>{html.escape(str(rows[0]['worker_storage_layout']))}</td>"
+            f"<td>{_human_byte_count(max(int(row['estimated_peak_local_bytes']) for row in rows))}</td>"
+            f"<td>{_human_token_count(max(int(row['estimated_work_uint32_values']) for row in rows))}</td>"
+            "</tr>"
+            for instance_type, rows in sorted(
+                units_by_worker.items(), key=lambda item: int(item[1][0]["worker_vcpus"])
+            )
+        )
+        + "</tbody></table>"
     )
     split_html = (
         '<div class="split-list">'
@@ -3691,6 +3991,8 @@ def _render_execution_proposal_html(
             f'<span class="split-name">{html.escape(str(row["mix_name"]))} / '
             f"{html.escape(str(row['category_name']))}</span>"
             f'<span class="split-value"><span>Units</span>{int(row["execution_unit_count"]):,}</span>'
+            f'<span class="split-value"><span>Output shards</span>'
+            f'{int(row["planned_output_shard_count"]):,}</span>'
             f'<span class="split-value"><span>Output</span>'
             f"{_human_token_count(int(row['planned_uint32_values']))} tokens</span>"
             f'<span class="split-value"><span>Largest unit</span>'
@@ -3705,19 +4007,17 @@ def _render_execution_proposal_html(
     unit_cards: list[str] = []
     for row in ordered_units:
         input_bytes = int(row["input_npy_bytes"]) + int(row["input_metadata_bytes"])
-        output_bytes = int(row["output_npy_bytes"]) + int(
-            row["estimated_output_metadata_bytes"]
-        )
+        output_bytes = int(row["output_npy_bytes"]) + int(row["estimated_output_metadata_bytes"])
         selection_bytes = int(row["estimated_selection_index_bytes"])
         peak_bytes = int(row["estimated_peak_local_bytes"])
-        budget_bytes = int(row["max_unit_working_bytes"])
-        utilization = peak_bytes / budget_bytes
-        source_width = 100 * input_bytes / budget_bytes
-        output_width = 100 * output_bytes / budget_bytes
-        selection_width = 100 * selection_bytes / budget_bytes
+        worker_disk_bytes = int(row["worker_local_nvme_bytes"])
+        utilization = peak_bytes / worker_disk_bytes
+        source_width = 100 * input_bytes / worker_disk_bytes
+        output_width = 100 * output_bytes / worker_disk_bytes
+        selection_width = 100 * selection_bytes / worker_disk_bytes
         category_label = f"{row['mix_name']} / {row['category_name']}"
         searchable = html.escape(
-            f"{row['unit_id']} {row['mix_name']} {row['category_name']}".lower(),
+            f"{row['unit_id']} {row['mix_name']} {row['category_name']} " f"{row['worker_instance_type']}".lower(),
             quote=True,
         )
         split = int(row["unit_count_for_category"]) > 1
@@ -3727,17 +4027,26 @@ def _render_execution_proposal_html(
             f'<span class="unit-title">{html.escape(category_label)}'
             f'<span class="unit-position">Unit {int(row["unit_index"]):,} of '
             f"{int(row['unit_count_for_category']):,}</span></span>"
-            f'<span class="unit-disk"><strong>{_human_byte_count(peak_bytes)}</strong>'
-            f"<span>{utilization:.1%} of worker disk budget</span></span></summary>"
+            f'<span class="unit-disk"><strong>{html.escape(str(row["worker_instance_type"]))}</strong>'
+            f"<span>{_human_byte_count(peak_bytes)} working set · "
+            f"{utilization:.1%} of local NVMe</span></span></summary>"
             '<div class="unit-body"><div class="unit-metrics">'
             '<div class="unit-metric"><span>Output tokens</span>'
             f"<strong>{_human_token_count(int(row['planned_uint32_values']))}</strong></div>"
+            '<div class="unit-metric"><span>Estimated processing work</span>'
+            f"<strong>{_human_token_count(int(row['estimated_work_uint32_values']))}</strong></div>"
+            '<div class="unit-metric"><span>Worker</span>'
+            f"<strong>{int(row['worker_vcpus']):,} vCPUs · "
+            f"{_human_byte_count(worker_disk_bytes)}</strong></div>"
+            '<div class="unit-metric"><span>Reshard concurrency</span>'
+            f"<strong>{int(row['max_workers']):,} workers</strong></div>"
+            '<div class="unit-metric"><span>Output layout</span>'
+            f"<strong>{int(row['planned_output_shard_count']):,} shards · "
+            f"{_human_byte_count(int(row['average_output_shard_bytes']))} average</strong></div>"
             '<div class="unit-metric"><span>Source shard downloads</span>'
             f"<strong>{int(row['unique_object_count']):,}</strong></div>"
             '<div class="unit-metric"><span>Source shards using document selection</span>'
             f"<strong>{int(row['partial_object_count']):,}</strong></div>"
-            '<div class="unit-metric"><span>Output shard cap</span>'
-            f"<strong>{int(row['max_num_files']):,}</strong></div>"
             "</div>"
             '<div class="disk-breakdown" aria-label="Estimated local disk composition">'
             f'<span class="disk-segment disk-source" style="width:{source_width:.8f}%"></span>'
@@ -3768,9 +4077,9 @@ def _render_execution_proposal_html(
         '<p class="lede">Worker partitioning, local-disk requirements, and runnable artifacts for the '
         "materialization phase.</p>"
         + metrics
-        + "<h2>Worker storage</h2>"
+        + "<h2>Planned worker fleet</h2>"
         + storage_metrics
-        + f'<div class="utilization-bands">{band_html}</div>'
+        + worker_grid_html
         + "<h2>Categories requiring multiple execution units</h2>"
         + split_html
         + '<div class="unit-heading"><h2>Execution units</h2>'
@@ -3779,9 +4088,7 @@ def _render_execution_proposal_html(
         '<div class="unit-controls"><input id="unit-search" type="search" '
         'placeholder="Filter by source, category, or unit ID" aria-label="Filter execution units">'
         '<label><input id="split-only" type="checkbox"> Only categories with multiple units</label></div>'
-        f'<div class="unit-list">{"".join(unit_cards)}</div>'
-        + _execution_proposal_script()
-        + "</body></html>\n"
+        f'<div class="unit-list">{"".join(unit_cards)}</div>' + _execution_proposal_script() + "</body></html>\n"
     )
 
 
@@ -5211,14 +5518,8 @@ def _render_report(
         ),
         reverse=True,
     )
-    chart_rows = _interactive_chart_rows(
-        family_rows,
-        "planned_uint32_values",
-        "planned_percent",
-        "proposal-family-detail",
-        proposed_total,
-    )
     for family_index, family_row in enumerate(family_rows):
+        family_row["detail_id"] = f"proposal-family-detail-{family_index}"
         family_row["subcategory_chart_rows"] = _interactive_chart_rows(
             family_row["subcategories"],
             "planned_uint32_values",

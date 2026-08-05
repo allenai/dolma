@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import hashlib
 import json
@@ -142,8 +143,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--instance-type",
-        default="i4i.2xlarge",
-        help="worker EC2 instance type",
+        help="override the worker type selected by the execution plan",
     )
     parser.add_argument(
         "--root-storage-type",
@@ -159,9 +159,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--storage-layout",
-        choices=("single", "raid0"),
-        default="single",
-        help="local NVMe layout prepared on every worker",
+        choices=("auto", "single", "raid0"),
+        default="auto",
+        help="local NVMe layout; auto uses the execution plan",
     )
     parser.add_argument(
         "--ssh-key-path",
@@ -256,6 +256,13 @@ class MaterializedUnitCheck:
     npy_count: int
     metadata_count: int
     problems: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class PlannedWorkerGroup:
+    instance_type: str
+    storage_layout: str
+    rows: tuple[dict[str, str], ...]
 
 
 def _worker_log_line(tag: str, style: str, message: str, *, bold: bool = False) -> Text:
@@ -685,14 +692,61 @@ def _load_execution_units(build: Path) -> list[dict[str, str]]:
         "launcher_path",
         "destination_prefix",
         "planned_uint32_values",
+        "planned_output_shard_count",
         "estimated_peak_local_bytes",
+        "worker_instance_type",
+        "worker_storage_layout",
+        "worker_vcpus",
     }
     missing = required - set(rows[0])
     if missing:
-        raise PreparationError(
-            "Execution index is missing columns: " + ", ".join(sorted(missing))
-        )
+        raise PreparationError("Execution index is missing columns: " + ", ".join(sorted(missing)))
     return rows
+
+
+def _planned_worker_groups(args: argparse.Namespace, rows: Sequence[dict[str, str]]) -> list[PlannedWorkerGroup]:
+    """Group selected units by their planned i4i worker configuration."""
+
+    if args.instance_type:
+        if args.storage_layout == "auto":
+            planned_layouts = {
+                row["worker_storage_layout"] for row in rows if row["worker_instance_type"] == args.instance_type
+            }
+            planned_types = {row["worker_instance_type"] for row in rows}
+            if planned_types != {args.instance_type} or len(planned_layouts) != 1:
+                raise PreparationError(
+                    "--storage-layout must be explicit when --instance-type overrides " "the execution plan"
+                )
+            storage_layout = planned_layouts.pop()
+        else:
+            storage_layout = args.storage_layout
+        return [
+            PlannedWorkerGroup(
+                instance_type=args.instance_type,
+                storage_layout=storage_layout,
+                rows=tuple(rows),
+            )
+        ]
+
+    if args.storage_layout != "auto":
+        raise PreparationError("--storage-layout can only override the plan together with --instance-type")
+    grouped: dict[tuple[str, str, int], list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        layout = row["worker_storage_layout"]
+        if layout not in {"single", "raid0"}:
+            raise PreparationError(f"Invalid planned storage layout for {row['unit_id']}: {layout}")
+        key = (
+            row["worker_instance_type"],
+            layout,
+            int(row["worker_vcpus"]),
+        )
+        grouped[key].append(row)
+    return [
+        PlannedWorkerGroup(instance_type, layout, tuple(group_rows))
+        for (instance_type, layout, _), group_rows in sorted(
+            grouped.items(), key=lambda item: (item[0][2], item[0][0])
+        )
+    ]
 
 
 def _category_selector(row: dict[str, str]) -> str:
@@ -712,17 +766,13 @@ def _category_rows(rows: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
                 "category_name": category_name,
                 "selector": f"{mix_name}::{category_name}",
                 "execution_units": len(units),
-                "planned_uint32_values": sum(
-                    int(row["planned_uint32_values"]) for row in units
-                ),
-                "largest_estimated_peak_local_bytes": max(
-                    int(row["estimated_peak_local_bytes"]) for row in units
-                ),
+                "planned_uint32_values": sum(int(row["planned_uint32_values"]) for row in units),
+                "planned_output_shard_count": sum(int(row["planned_output_shard_count"]) for row in units),
+                "largest_estimated_peak_local_bytes": max(int(row["estimated_peak_local_bytes"]) for row in units),
+                "worker_instance_types": ",".join(sorted({row["worker_instance_type"] for row in units})),
             }
         )
-    return sorted(
-        output, key=lambda row: (int(row["leaf_id"].split(":", 1)[0]), row["leaf_id"])
-    )
+    return sorted(output, key=lambda row: (int(row["leaf_id"].split(":", 1)[0]), row["leaf_id"]))
 
 
 def _print_categories(rows: Sequence[dict[str, str]], filter_text: str) -> None:
@@ -731,19 +781,18 @@ def _print_categories(rows: Sequence[dict[str, str]], filter_text: str) -> None:
         row
         for row in _category_rows(rows)
         if not needle
-        or needle
-        in " ".join(
-            (row["leaf_id"], row["mix_name"], row["category_name"], row["selector"])
-        ).casefold()
+        or needle in " ".join((row["leaf_id"], row["mix_name"], row["category_name"], row["selector"])).casefold()
     ]
     if not matches:
         raise PreparationError(f"No categories match: {filter_text}")
-    print("leaf_id\texecution_units\tplanned_tokens\tlargest_unit\tselector")
+    print("leaf_id\texecution_units\toutput_shards\tplanned_tokens\tlargest_unit\tworkers\tselector")
     for row in matches:
         print(
             f"{row['leaf_id']}\t{row['execution_units']:,}\t"
+            f"{row['planned_output_shard_count']:,}\t"
             f"{_human_token_count(int(row['planned_uint32_values']))}\t"
             f"{_human_byte_count(int(row['largest_estimated_peak_local_bytes']))}\t"
+            f"{row['worker_instance_types']}\t"
             f"{row['selector']}"
         )
 
@@ -1313,6 +1362,11 @@ def _check_materialized_unit(client: Any, row: dict[str, str]) -> MaterializedUn
     problems: list[str] = []
     if not npys:
         problems.append("no NPY output")
+    planned_output_shards = int(row["planned_output_shard_count"])
+    if len(npys) != planned_output_shards:
+        problems.append(
+            f"found {len(npys):,} output shards; expected {planned_output_shards:,}"
+        )
     invalid_npys = [
         obj for obj in npys if obj.size_bytes <= 0 or obj.size_bytes % UINT32_BYTES
     ]
@@ -1462,13 +1516,14 @@ def _print_dispatch(
     cluster: str | None = None,
     project: str | None = None,
     region: str | None = None,
+    instance_type: str | None = None,
+    storage_layout: str | None = None,
 ) -> None:
     category_count = len({row["leaf_id"] for row in rows})
     planned_tokens = sum(int(row["planned_uint32_values"]) for row in rows)
+    planned_output_shards = sum(int(row["planned_output_shard_count"]) for row in rows)
     largest_unit = max(int(row["estimated_peak_local_bytes"]) for row in rows)
-    display_label = (
-        label.removeprefix("category-") if label.startswith("category-") else label
-    )
+    display_label = label.removeprefix("category-") if label.startswith("category-") else label
 
     def count(value: int, noun: str) -> str:
         return f"{value:,} {noun if value == 1 else noun + 's'}"
@@ -1487,8 +1542,15 @@ def _print_dispatch(
             )
         ),
     )
-    summary.add_row("Output", f"{_human_token_count(planned_tokens)} tokens")
+    summary.add_row(
+        "Output",
+        f"{_human_token_count(planned_tokens)} tokens · {planned_output_shards:,} shards",
+    )
     summary.add_row("Largest working set", _human_byte_count(largest_unit))
+    if instance_type:
+        summary.add_row("Worker", instance_type)
+    if storage_layout:
+        summary.add_row("Local storage", storage_layout)
     if cluster:
         summary.add_row("Cluster", cluster)
     if project:
@@ -1507,6 +1569,7 @@ def _print_dispatch(
     for row in sorted(rows, key=lambda item: item["unit_id"]):
         print(
             f"{row['unit_id']}\t{_human_token_count(int(row['planned_uint32_values']))} tokens\t"
+            f"{int(row['planned_output_shard_count']):,} shards\t"
             f"{_human_byte_count(int(row['estimated_peak_local_bytes']))}\t"
             f"{row['destination_prefix']}"
         )
@@ -1524,90 +1587,98 @@ def main() -> None:
             return
 
         label, selected = _select_units(args, rows)
-        status_run_id = (
-            f"{int(time.time())}-{uuid.uuid4().hex[:12]}" if args.execute else None
-        )
-        script_dir = _stage_selection(build, label, selected, status_run_id)
-        worker_count = min(len(selected), args.parallelism)
-        lifecycle_commands = _dry_run_lifecycle_commands(
-            args,
-            selected,
-            script_dir,
-            worker_count,
-        )
-        _print_dispatch(
-            label,
-            selected,
-            script_dir,
-            lifecycle_commands,
-            worker_count,
-            args.execute,
-            cluster=args.cluster,
-            project=args.project,
-            region=args.region,
-        )
-        if not args.execute:
-            return
-        preflight_created_at = _require_preflight(build, selected)
-        if shutil.which("pmr") is None:
-            raise PreparationError(
-                "pmr is unavailable; run materialize.py with uv so its inline dependencies are installed"
-            )
-        for required_path in (
-            WORKER_STORAGE_SCRIPT,
-            RESHARD_MODULE,
-            DOCUMENT_SELECTION_MODULE,
-        ):
-            if required_path.is_symlink() or not required_path.is_file():
+        worker_groups = _planned_worker_groups(args, selected)
+        status_run_id = f"{int(time.time())}-{uuid.uuid4().hex[:12]}" if args.execute else None
+        if args.execute:
+            preflight_created_at = _require_preflight(build, selected)
+            if shutil.which("pmr") is None:
                 raise PreparationError(
-                    f"Required worker runtime file is missing or unsafe: {required_path}"
+                    "pmr is unavailable; run materialize.py with uv so its inline dependencies are installed"
                 )
-        if args.profile:
-            os.environ["AWS_PROFILE"] = args.profile
-        print(f"preflight=passed created_at={preflight_created_at}")
-        worker_ids = _prepare_workers(args, worker_count)
-        try:
-            _run_lifecycle_command(
-                "upload storage setup",
-                _storage_transfer_command(args, worker_ids),
-                verbose=args.verbose,
+            for required_path in (
+                WORKER_STORAGE_SCRIPT,
+                RESHARD_MODULE,
+                DOCUMENT_SELECTION_MODULE,
+            ):
+                if required_path.is_symlink() or not required_path.is_file():
+                    raise PreparationError(f"Required worker runtime file is missing or unsafe: {required_path}")
+            if args.profile:
+                os.environ["AWS_PROFILE"] = args.profile
+            print(f"preflight=passed created_at={preflight_created_at}")
+
+        for group in worker_groups:
+            group_args = copy.copy(args)
+            group_args.instance_type = group.instance_type
+            group_args.storage_layout = group.storage_layout
+            group_rows = list(group.rows)
+            group_label = label if len(worker_groups) == 1 else f"{label}-{group.instance_type}"
+            script_dir = _stage_selection(build, group_label, group_rows, status_run_id)
+            worker_count = min(len(group_rows), args.parallelism)
+            lifecycle_commands = _dry_run_lifecycle_commands(
+                group_args,
+                group_rows,
+                script_dir,
+                worker_count,
             )
-            _run_lifecycle_command(
-                "prepare local NVMe",
-                _storage_setup_command(args, worker_ids, selected),
-                verbose=args.verbose,
+            _print_dispatch(
+                group_label,
+                group_rows,
+                script_dir,
+                lifecycle_commands,
+                worker_count,
+                args.execute,
+                cluster=args.cluster,
+                project=args.project,
+                region=args.region,
+                instance_type=group.instance_type,
+                storage_layout=group.storage_layout,
             )
-            _run_lifecycle_command(
-                "install Dolma and s5cmd",
-                _runtime_setup_command(args, worker_ids),
-                verbose=args.verbose,
+            if not args.execute:
+                continue
+
+            worker_ids = _prepare_workers(group_args, worker_count)
+            try:
+                _run_lifecycle_command(
+                    "upload storage setup",
+                    _storage_transfer_command(group_args, worker_ids),
+                    verbose=args.verbose,
+                )
+                _run_lifecycle_command(
+                    "prepare local NVMe",
+                    _storage_setup_command(group_args, worker_ids, group_rows),
+                    verbose=args.verbose,
+                )
+                _run_lifecycle_command(
+                    "install Dolma and s5cmd",
+                    _runtime_setup_command(group_args, worker_ids),
+                    verbose=args.verbose,
+                )
+                _run_lifecycle_command(
+                    "upload resharding runtime",
+                    _runtime_transfer_command(group_args, worker_ids),
+                    verbose=args.verbose,
+                )
+                _run_lifecycle_command(
+                    "install and validate resharding runtime",
+                    _runtime_validation_command(group_args, worker_ids),
+                    verbose=args.verbose,
+                )
+                _run_lifecycle_command(
+                    "submit materialization",
+                    _map_command(group_args, script_dir, worker_ids),
+                    verbose=args.verbose,
+                )
+            except BaseException:
+                _pause_workers_after_failure(group_args, worker_ids)
+                raise
+            assert status_run_id is not None
+            _wait_for_workers_to_stop(
+                group_args,
+                worker_ids,
+                len(group_rows),
+                status_run_id,
             )
-            _run_lifecycle_command(
-                "upload resharding runtime",
-                _runtime_transfer_command(args, worker_ids),
-                verbose=args.verbose,
-            )
-            _run_lifecycle_command(
-                "install and validate resharding runtime",
-                _runtime_validation_command(args, worker_ids),
-                verbose=args.verbose,
-            )
-            _run_lifecycle_command(
-                "submit materialization",
-                _map_command(args, script_dir, worker_ids),
-                verbose=args.verbose,
-            )
-        except BaseException:
-            _pause_workers_after_failure(args, worker_ids)
-            raise
-        assert status_run_id is not None
-        _wait_for_workers_to_stop(
-            args,
-            worker_ids,
-            len(selected),
-            status_run_id,
-        )
-        _verify_materialized_units(args, selected)
+            _verify_materialized_units(group_args, group_rows)
     except PreparationError as exc:
         parser.exit(2, f"error: {exc}\n")
 

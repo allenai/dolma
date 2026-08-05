@@ -19,9 +19,38 @@ minimum_catalog_prefix_components: 4
 # Deterministic per-execution-unit config values. Worker storage is deliberately
 # not defaulted here; plan.py requires an explicit planning budget.
 random_seed: 42
-max_workers_per_reshard: 8
+max_workers_per_reshard: 32
 s5cmd_download_concurrency: 32
 tokenizer_name_or_path: allenai/dolma2-tokenizer
+
+# Choose enough output shards to keep their average size near 64 GiB, but never
+# create more than eight outputs for one execution unit. Units smaller than the
+# target produce one shard.
+target_output_shard_bytes: 68719476736
+max_output_shards_per_unit: 8
+
+# Each unit is assigned the smallest worker satisfying both its estimated CPU
+# work and its peak local working set. CPU work includes planned output plus
+# the two full metadata passes required for every document-selected source.
+# Worker selection does not increase the output shard count.
+worker_disk_headroom_ratio: 1.1
+document_selection_work_passes: 2
+worker_instance_grid:
+  - instance_type: i4i.2xlarge
+    vcpus: 8
+    local_nvme_devices: 1
+    local_nvme_bytes: 1875000000000
+    max_estimated_work_uint32_values: 150000000000
+  - instance_type: i4i.4xlarge
+    vcpus: 16
+    local_nvme_devices: 1
+    local_nvme_bytes: 3750000000000
+    max_estimated_work_uint32_values: 300000000000
+  - instance_type: i4i.8xlarge
+    vcpus: 32
+    local_nvme_devices: 2
+    local_nvme_bytes: 7500000000000
+    max_estimated_work_uint32_values:
 
 # Partial copies are selected on whole-document boundaries while materializing.
 # These bounds are checked from output file sizes after all units finish.
