@@ -345,13 +345,15 @@ def _runtime_validation_command(
     args: argparse.Namespace, instance_ids: Sequence[str]
 ) -> list[str]:
     remote_command = """set -euo pipefail
+export PYTHONSAFEPATH=1
+cd /tmp
 python_bin="$HOME/.venv/bin/python"
 module_dir=$(
-  "$python_bin" -c 'import pathlib, dolma.tokenizer; print(pathlib.Path(dolma.tokenizer.__file__).parent)'
+  "$python_bin" -P -c 'import pathlib, dolma.tokenizer; print(pathlib.Path(dolma.tokenizer.__file__).parent)'
 )
 install -m 0644 /tmp/dolma3p5-runtime/reshard.py "$module_dir/reshard.py"
 install -m 0644 /tmp/dolma3p5-runtime/document_selection.py "$module_dir/document_selection.py"
-"$python_bin" -c 'from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2'
+"$python_bin" -P -c 'from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2'
 s5cmd version
 findmnt /mnt/dolma
 test -w /mnt/dolma/dolma3p5-resharding"""
@@ -480,13 +482,34 @@ def _resolve_launcher(build: Path, row: dict[str, str]) -> Path:
     return launcher
 
 
+def _safe_path_launcher_payload(launcher: Path) -> bytes:
+    """Force safe-path mode for existing and newly generated worker launchers."""
+
+    text = launcher.read_text(encoding="utf-8")
+    safe_path_export = "export PYTHONSAFEPATH=1"
+    safe_working_directory = "cd /tmp"
+    strict_mode = "set -euo pipefail\n"
+    if strict_mode not in text:
+        raise PreparationError(f"Worker launcher is missing strict shell mode: {launcher}")
+    missing_directives = [
+        directive
+        for directive in (safe_path_export, safe_working_directory)
+        if directive not in text
+    ]
+    if missing_directives:
+        inserted = "\n".join(missing_directives)
+        text = text.replace(strict_mode, f"{strict_mode}\n{inserted}\n", 1)
+    return text.encode("utf-8")
+
+
 def _stage_selection(build: Path, label: str, rows: Sequence[dict[str, str]]) -> Path:
     launchers = []
     for row in rows:
         launcher = _resolve_launcher(build, row)
-        launchers.append((row, launcher, hashlib.sha256(launcher.read_bytes()).digest()))
+        payload = _safe_path_launcher_payload(launcher)
+        launchers.append((row, launcher, payload, hashlib.sha256(payload).digest()))
     digest = hashlib.sha256()
-    for row, _, launcher_digest in sorted(launchers, key=lambda item: item[0]["unit_id"]):
+    for row, _, _, launcher_digest in sorted(launchers, key=lambda item: item[0]["unit_id"]):
         digest.update(row["unit_id"].encode())
         digest.update(launcher_digest)
     selection_name = f"{_safe_slug(label)}-{digest.hexdigest()[:12]}"
@@ -495,7 +518,7 @@ def _stage_selection(build: Path, label: str, rows: Sequence[dict[str, str]]) ->
         raise PreparationError(f"Unsafe dispatch artifact path: {dispatch_root}")
     dispatch_root.mkdir(exist_ok=True)
     selection_dir = dispatch_root / selection_name
-    expected_names = {launcher.name for _, launcher, _ in launchers}
+    expected_names = {launcher.name for _, launcher, _, _ in launchers}
     if selection_dir.exists():
         if selection_dir.is_symlink() or not selection_dir.is_dir():
             raise PreparationError(f"Unsafe dispatch selection path: {selection_dir}")
@@ -505,7 +528,7 @@ def _stage_selection(build: Path, label: str, rows: Sequence[dict[str, str]]) ->
         content_changed = any(
             hashlib.sha256((selection_dir / launcher.name).read_bytes()).digest()
             != launcher_digest
-            for _, launcher, launcher_digest in launchers
+            for _, launcher, _, launcher_digest in launchers
             if (selection_dir / launcher.name).is_file()
         )
         if actual_names != expected_names or unsafe or content_changed:
@@ -513,9 +536,10 @@ def _stage_selection(build: Path, label: str, rows: Sequence[dict[str, str]]) ->
         return selection_dir
 
     selection_dir.mkdir(exist_ok=False)
-    for _, launcher, _ in launchers:
+    for _, launcher, payload, _ in launchers:
         destination = selection_dir / launcher.name
-        shutil.copy2(launcher, destination)
+        destination.write_bytes(payload)
+        destination.chmod(launcher.stat().st_mode & 0o777)
     return selection_dir
 
 

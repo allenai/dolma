@@ -1610,6 +1610,9 @@ def _self_contained_launcher(
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
+export PYTHONSAFEPATH=1
+cd /tmp
+
 python_bin="${{DOLMA_PYTHON:-$HOME/.venv/bin/python}}"
 if [[ ! -x "$python_bin" ]]; then
   python_bin=$(command -v python3.12 || command -v python3 || command -v python)
@@ -1637,7 +1640,7 @@ trap finish EXIT
 printf 'running\n' > "$status_path"
 mkdir -p "$unit_root/config" "$unit_root/manifests"
 
-"$python_bin" - <<'PY'
+"$python_bin" -P - <<'PY'
 from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION
 
 if RESHARDING_MANIFEST_SCHEMA_VERSION != 2:
@@ -1646,7 +1649,7 @@ if RESHARDING_MANIFEST_SCHEMA_VERSION != 2:
     )
 PY
 
-"$python_bin" - "$unit_root/config/{config_name}" "$unit_root/manifests/{manifest_name}" <<'PY'
+"$python_bin" -P - "$unit_root/config/{config_name}" "$unit_root/manifests/{manifest_name}" <<'PY'
 import base64
 import pathlib
 import sys
@@ -1655,7 +1658,7 @@ pathlib.Path(sys.argv[1]).write_bytes(base64.b64decode("{config_payload}", valid
 pathlib.Path(sys.argv[2]).write_bytes(base64.b64decode("{manifest_payload}", validate=True))
 PY
 
-"$python_bin" -m dolma.tokenizer.reshard "$unit_root/config/{config_name}"
+"$python_bin" -P -m dolma.tokenizer.reshard "$unit_root/config/{config_name}"
 """
 
 

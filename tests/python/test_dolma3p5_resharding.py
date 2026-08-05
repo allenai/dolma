@@ -31,6 +31,7 @@ from dolma.tokenizer.reshard import (
 from scripts.dolma3p5_resharding.materialize import (
     ClusterInstance,
     _prepare_workers,
+    _safe_path_launcher_payload,
 )
 from scripts.dolma3p5_resharding.materialize import (
     build_parser as build_materialize_parser,
@@ -47,6 +48,7 @@ from scripts.dolma3p5_resharding.workflow import (
     _load_catalog,
     _parse_s5cmd_jsonl,
     _partition_object_uses,
+    _self_contained_launcher,
     _source_relative_directory,
     _unit_selection_digest,
     _validate_execution_layout,
@@ -62,6 +64,31 @@ from scripts.dolma3p5_resharding.workflow import (
 
 
 class TestDolma35ReshardingPreparation(unittest.TestCase):
+    def test_generated_materialize_launcher_uses_safe_import_directory(self):
+        launcher = _self_contained_launcher(
+            unit_id="00000000",
+            config_name="00000000.yaml",
+            config_text="destination_prefix: /tmp/output\n",
+            manifest_name="00000000.csv",
+            manifest_text="npy_uri,metadata_uri\n",
+        )
+        self.assertIn("export PYTHONSAFEPATH=1\ncd /tmp\n", launcher)
+        self.assertIn('"$python_bin" -P -m dolma.tokenizer.reshard', launcher)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "launcher.sh"
+            path.write_text(launcher)
+            self.assertEqual(subprocess.run(["bash", "-n", path], check=False).returncode, 0)
+
+    def test_materialize_forces_safe_path_for_existing_launchers(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            launcher = Path(temp_dir) / "unit.sh"
+            launcher.write_text("#!/usr/bin/env bash\nset -euo pipefail\npython -m dolma\n")
+            payload = _safe_path_launcher_payload(launcher).decode()
+        self.assertIn(
+            "set -euo pipefail\n\nexport PYTHONSAFEPATH=1\ncd /tmp\n",
+            payload,
+        )
+
     def test_materialize_defaults_to_a_complete_oe_other_worker_lifecycle(self):
         args = build_materialize_parser().parse_args(["--all"])
         self.assertEqual(args.project, "oe-other")
@@ -743,7 +770,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(len(launcher_scripts), 4)
         self.assertTrue(all(path.stat().st_mode & 0o100 for path in launcher_scripts))
         self.assertTrue(
-            all('"$python_bin" -m dolma.tokenizer.reshard' in path.read_text() for path in launcher_scripts)
+            all(
+                '"$python_bin" -P -m dolma.tokenizer.reshard' in path.read_text()
+                and "export PYTHONSAFEPATH=1" in path.read_text()
+                and "cd /tmp" in path.read_text()
+                for path in launcher_scripts
+            )
         )
         self.assertTrue(
             all(
