@@ -51,6 +51,7 @@ import sys
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from concurrent.futures import (
     FIRST_COMPLETED,
     ProcessPoolExecutor,
@@ -160,10 +161,20 @@ class MergeGroupResult:
     elapsed_seconds: float
 
 
+@dataclass(frozen=True)
+class MergeGroupProgress:
+    destination: Path
+    processed_values: int
+    total_values: int
+    document_count: int
+    complete: bool = False
+
+
 def merge_group(
     paths: list[TokensMetadataPaths],
     destination: str | Path,
     dtype: np.dtype,
+    progress: Callable[[MergeGroupProgress], None] | None = None,
 ) -> MergeGroupResult:
     """
     Given a list of paths, merge them into a single memmap.
@@ -183,11 +194,11 @@ def merge_group(
 
     started_at = time.monotonic()
     logger.info(
-        "Merge shard %s started: %s input views · %s (%s values)",
+        "merge %s start · %s inputs · %s tokens (%s)",
         npy_destination.stem,
         len(paths),
-        _human_bytes(total_size),
         _human_count(total_values),
+        _human_bytes(total_size),
     )
     target_memmap = np.memmap(
         npy_destination, mode="w+", shape=(total_values,), dtype=dtype
@@ -198,16 +209,28 @@ def merge_group(
     document_count = 0
     token_copy_operations = 0
     last_progress_at = started_at
+
+    def publish_progress(*, complete: bool = False) -> None:
+        if progress is not None:
+            progress(
+                MergeGroupProgress(
+                    destination=npy_destination,
+                    processed_values=completed_values + input_processed_values,
+                    total_values=total_values,
+                    document_count=document_count,
+                    complete=complete,
+                )
+            )
+
+    input_processed_values = 0
+    publish_progress()
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
         rw = csv.writer(f)
         for input_index, path in enumerate(paths, start=1):
             input_started_at = time.monotonic()
             input_documents = 0
             input_processed_values = 0
-            input_copy_operations = 0
             view_type = "selected" if path.selection_path is not None else "full"
-            source_path = Path(path.npy_path)
-            source_label = f"{source_path.parent.name}/{source_path.name}"
             source_memmap = np.memmap(
                 path.npy_path,
                 mode="r",
@@ -222,13 +245,11 @@ def merge_group(
                 )
                 copy_seconds = max(time.monotonic() - copy_started_at, 1e-9)
                 token_copy_operations += 1
-                input_copy_operations += 1
                 logger.info(
-                    "Merge shard %s input %s/%s token copy: %s full view · %s · %s/s",
+                    "merge %s copy · input %s/%s full · %s at %s/s",
                     npy_destination.stem,
                     input_index,
                     len(paths),
-                    source_label,
                     _human_bytes(path.size),
                     _human_bytes(round(path.size / copy_seconds)),
                 )
@@ -257,7 +278,6 @@ def merge_group(
                         copied_values = end_value - start_value
                         input_processed_values += copied_values
                         token_copy_operations += 1
-                        input_copy_operations += 1
                     input_documents += 1
                     document_count += 1
                     rw.writerow(
@@ -272,46 +292,31 @@ def merge_group(
                     if document_count % 100_000 == 0:
                         now = time.monotonic()
                         if now - last_progress_at >= PROGRESS_INTERVAL_SECONDS:
-                            processed_values = completed_values + input_processed_values
-                            elapsed_seconds = max(now - started_at, 1e-9)
-                            logger.info(
-                                "Merge shard %s progress: input %s/%s %s view %s · %s documents · "
-                                "%s/%s values processed · %s documents/s · %s values/s · elapsed %s",
-                                npy_destination.stem,
-                                input_index,
-                                len(paths),
-                                view_type,
-                                source_label,
-                                _human_count(document_count),
-                                _human_count(processed_values),
-                                _human_count(total_values),
-                                _human_count(round(document_count / elapsed_seconds)),
-                                _human_count(round(processed_values / elapsed_seconds)),
-                                _elapsed(started_at),
-                            )
+                            publish_progress()
                             last_progress_at = now
             del source_memmap
             input_seconds = max(time.monotonic() - input_started_at, 1e-9)
-            completed_values += input_processed_values
+            finished_input_values = input_processed_values
+            completed_values += finished_input_values
+            input_processed_values = 0
+            publish_progress()
             logger.info(
-                "Merge shard %s input %s/%s complete: %s view %s · %s documents · %s values · "
-                "%s token copy operations · %s documents/s · %s values/s · elapsed %s",
+                "merge %s input %s/%s done · %s · %s tokens · %s docs · "
+                "%s tokens/s · %s docs/s · %s",
                 npy_destination.stem,
                 input_index,
                 len(paths),
                 view_type,
-                source_label,
+                _human_count(finished_input_values),
                 _human_count(input_documents),
-                _human_count(input_processed_values),
-                _human_count(input_copy_operations),
+                _human_count(round(finished_input_values / input_seconds)),
                 _human_count(round(input_documents / input_seconds)),
-                _human_count(round(input_processed_values / input_seconds)),
                 _elapsed(input_started_at),
             )
         flush_started_at = time.monotonic()
         target_memmap.flush()
         logger.info(
-            "Merge shard %s token flush complete: %s · elapsed %s",
+            "merge %s flush · %s · %s",
             npy_destination.stem,
             _human_bytes(total_size),
             _elapsed(flush_started_at),
@@ -331,15 +336,16 @@ def merge_group(
         token_copy_operations=token_copy_operations,
         elapsed_seconds=elapsed_seconds,
     )
+    publish_progress(complete=True)
     logger.info(
-        "Merge shard %s complete: %s tokens · %s metadata · %s documents · "
-        "%s token copy operations · %s/s token output · %s documents/s · elapsed %s",
+        "merge %s done · %s tokens (%s) · %s metadata · %s docs · "
+        "%s tokens/s · %s docs/s · %s",
         npy_destination.stem,
+        _human_count(total_values),
         _human_bytes(total_size),
         _human_bytes(metadata_bytes),
         _human_count(document_count),
-        _human_count(token_copy_operations),
-        _human_bytes(round(total_size / elapsed_seconds)),
+        _human_count(round(total_values / elapsed_seconds)),
         _human_count(round(document_count / elapsed_seconds)),
         _elapsed(started_at),
     )
@@ -511,16 +517,24 @@ def merge_all_npys(
         raise ValueError("Either max_size_bytes or max_num_files must be provided")
 
     total_bytes = sum(path.size for path in paths)
+    total_values = total_bytes // tokenizer.dtype.itemsize
     logger.info(
-        "Merge started: %s merge input uses · %s output shards · %s · %s workers",
+        "merge start · %s inputs · %s shards · %s tokens (%s) · %s workers",
         len(paths),
         len(grouped_paths),
+        _human_count(total_values),
         _human_bytes(total_bytes),
         max_workers,
     )
 
     init_fn = partial(_worker_init, seed=seed)
     started_at = time.monotonic()
+    progress_lock = threading.Lock()
+    progress_by_shard: dict[str, MergeGroupProgress] = {}
+
+    def update_progress(update: MergeGroupProgress) -> None:
+        with progress_lock:
+            progress_by_shard[update.destination.stem] = update
 
     with ThreadPoolExecutor(max_workers=max_workers, initializer=init_fn) as pool:
         futures = set()
@@ -530,15 +544,14 @@ def merge_all_npys(
                 paths=group,
                 destination=destination / f"{i:06d}.npy",
                 dtype=tokenizer.dtype,
+                progress=update_progress,
             )
             futures.add(future)
 
         pending = futures
         completed_shards = 0
-        completed_bytes = 0
         completed_metadata_bytes = 0
         completed_documents = 0
-        completed_copy_operations = 0
         while pending:
             done, pending = wait(
                 pending,
@@ -553,38 +566,47 @@ def merge_all_npys(
                         pending_future.cancel()
                     raise
                 completed_shards += 1
-                completed_bytes += result.output_bytes
                 completed_metadata_bytes += result.metadata_bytes
                 completed_documents += result.document_count
-                completed_copy_operations += result.token_copy_operations
-            elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
-            logger.info(
-                "Merge progress: %s/%s output shards · %s/%s token output · %s metadata · "
-                "%s documents · %s token copy operations · %s/s completed output · "
-                "%s documents/s · %s active · elapsed %s",
-                completed_shards,
-                len(grouped_paths),
-                _human_bytes(completed_bytes),
-                _human_bytes(total_bytes),
-                _human_bytes(completed_metadata_bytes),
-                _human_count(completed_documents),
-                _human_count(completed_copy_operations),
-                _human_bytes(round(completed_bytes / elapsed_seconds)),
-                _human_count(round(completed_documents / elapsed_seconds)),
-                len(pending),
-                _elapsed(started_at),
-            )
+            if pending:
+                elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
+                with progress_lock:
+                    progress_snapshot = tuple(progress_by_shard.values())
+                processed_values = sum(
+                    update.processed_values for update in progress_snapshot
+                )
+                processed_documents = sum(
+                    update.document_count for update in progress_snapshot
+                )
+                active_shards = sum(not update.complete for update in progress_snapshot)
+                queued_shards = len(grouped_paths) - len(progress_snapshot)
+                percent = 100 * processed_values / total_values
+                queued = f" · {queued_shards} queued" if queued_shards else ""
+                logger.info(
+                    "merge %.1f%% · %s/%s tokens · %s tokens/s · %s docs/s · "
+                    "%s/%s done · %s active%s · %s",
+                    percent,
+                    _human_count(processed_values),
+                    _human_count(total_values),
+                    _human_count(round(processed_values / elapsed_seconds)),
+                    _human_count(round(processed_documents / elapsed_seconds)),
+                    completed_shards,
+                    len(grouped_paths),
+                    active_shards,
+                    queued,
+                    _elapsed(started_at),
+                )
 
     elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
     logger.info(
-        "Merge complete: %s output shards · %s tokens · %s metadata · %s documents · "
-        "%s token copy operations · %s/s token output · %s documents/s · elapsed %s",
+        "merge done · %s shards · %s tokens (%s) · %s metadata · %s docs · "
+        "%s tokens/s · %s docs/s · %s",
         len(grouped_paths),
+        _human_count(total_values),
         _human_bytes(total_bytes),
         _human_bytes(completed_metadata_bytes),
         _human_count(completed_documents),
-        _human_count(completed_copy_operations),
-        _human_bytes(round(total_bytes / elapsed_seconds)),
+        _human_count(round(total_values / elapsed_seconds)),
         _human_count(round(completed_documents / elapsed_seconds)),
         _elapsed(started_at),
     )
@@ -1024,11 +1046,13 @@ class ReshardingManifestConfig:
                 remote_commands.extend(
                     [
                         (
-                            f"cp --raw --no-clobber --concurrency {s5cmd_concurrency} "
+                            "cp --show-progress --raw --no-clobber "
+                            f"--concurrency {s5cmd_concurrency} "
                             f"{shlex.quote(npy_uri)} {shlex.quote(str(local_npy))}"
                         ),
                         (
-                            f"cp --raw --no-clobber --concurrency {s5cmd_concurrency} "
+                            "cp --show-progress --raw --no-clobber "
+                            f"--concurrency {s5cmd_concurrency} "
                             f"{shlex.quote(metadata_uri)} {shlex.quote(str(local_metadata))}"
                         ),
                     ]
@@ -1339,7 +1363,7 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
         str(max_workers),
         "cp",
         "--no-clobber",
-        "-sp",
+        "--show-progress",
         f"{local_prefix_no_star}/*",
         f"{remote_prefix_no_trailing_slash}/",
     ]

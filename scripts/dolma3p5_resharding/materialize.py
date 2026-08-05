@@ -208,11 +208,17 @@ def _positive_integer(value: str, name: str) -> int:
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 WORKER_STORAGE_SCRIPT = Path(__file__).with_name("setup_worker_storage.sh")
 RESHARD_MODULE = REPOSITORY_ROOT / "python/dolma/tokenizer/reshard.py"
-DOCUMENT_SELECTION_MODULE = REPOSITORY_ROOT / "python/dolma/tokenizer/document_selection.py"
+DOCUMENT_SELECTION_MODULE = (
+    REPOSITORY_ROOT / "python/dolma/tokenizer/document_selection.py"
+)
 REMOTE_STORAGE_SCRIPT = "/tmp/dolma3p5-setup-worker-storage.sh"
 REMOTE_RESHARD_MODULE = "/tmp/dolma3p5-runtime/reshard.py"
 REMOTE_DOCUMENT_SELECTION_MODULE = "/tmp/dolma3p5-runtime/document_selection.py"
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+DOLMA_LOG_PREFIX = re.compile(
+    r"^\[\d{4}-\d{2}-\d{2} [^\]]+ "
+    r"(?P<level>TRACE|DEBUG|INFO|WARNING|ERROR|CRITICAL)\]\s*"
+)
 WAIT_STATUS = re.compile(
     r"Waiting for instances\.\.\.\s*(?P<ready>\d+/\d+ ready)"
     r"(?:\s*\((?P<elapsed>[^)]+)\))?",
@@ -258,6 +264,18 @@ def _worker_log_line(tag: str, style: str, message: str, *, bold: bool = False) 
     line.append(" ")
     line.append(message, style="bold" if bold else None)
     return line
+
+
+def _worker_log_message(message: str) -> str:
+    """Remove Dolma's logger envelope; the colored instance tag supplies context."""
+
+    match = DOLMA_LOG_PREFIX.match(message)
+    if match is None:
+        return message
+    rendered = message[match.end() :]
+    if match.group("level") in {"WARNING", "ERROR", "CRITICAL"}:
+        return f"{match.group('level').lower()} · {rendered}"
+    return rendered
 
 
 def _describe_cluster_instances(
@@ -342,7 +360,10 @@ def _retag_cluster_instances(
                     if tag.get("Key") is not None and tag.get("Value") is not None
                 }
         if all(
-            all(observed.get(instance_id, {}).get(key) == value for key, value in required_tags.items())
+            all(
+                observed.get(instance_id, {}).get(key) == value
+                for key, value in required_tags.items()
+            )
             and (
                 names is None
                 or instance_id not in names
@@ -372,7 +393,11 @@ def _status_detail(stage: str, line: str) -> str | None:
         match = WAIT_STATUS.search(line)
         if match:
             elapsed = match.group("elapsed")
-            return f"{match.group('ready')} · {elapsed}" if elapsed else match.group("ready")
+            return (
+                f"{match.group('ready')} · {elapsed}"
+                if elapsed
+                else match.group("ready")
+            )
         if line.startswith(("·", "•")):
             return None
     if line.startswith("[INFO]"):
@@ -468,7 +493,9 @@ def _run_compact_process(
 
     duration = _elapsed_time(started_at)
     if return_code == 0:
-        output.print(Text.assemble(("✓", "bold green"), " ", stage, (f"  {duration}", "dim")))
+        output.print(
+            Text.assemble(("✓", "bold green"), " ", stage, (f"  {duration}", "dim"))
+        )
         return return_code
 
     output.print(Text.assemble(("✗", "bold red"), " ", stage, (f"  {duration}", "dim")))
@@ -493,7 +520,9 @@ def _run_lifecycle_command(
         raise PreparationError(f"{stage} failed with exit code {return_code}")
 
 
-def _instance_options(args: argparse.Namespace, instance_ids: Sequence[str]) -> dict[str, Any]:
+def _instance_options(
+    args: argparse.Namespace, instance_ids: Sequence[str]
+) -> dict[str, Any]:
     return {
         # Poormanray selects existing AWS instances through the `project` tag
         # supplied as --name. Our workers use the accounting project there and
@@ -503,7 +532,9 @@ def _instance_options(args: argparse.Namespace, instance_ids: Sequence[str]) -> 
         "region": args.region,
         "instance_ids": instance_ids,
         "parallelism": (
-            min(args.parallelism, len(instance_ids)) if instance_ids else args.parallelism
+            min(args.parallelism, len(instance_ids))
+            if instance_ids
+            else args.parallelism
         ),
         "ssh_key_path": args.ssh_key_path,
     }
@@ -600,12 +631,12 @@ def _runtime_validation_command(
     remote_command = (
         "set -euo pipefail; export PYTHONSAFEPATH=1; cd /tmp; "
         'python_bin="$HOME/.venv/bin/python"; '
-        "module_dir=$(\"$python_bin\" -P -c 'import pathlib, dolma.tokenizer; "
+        'module_dir=$("$python_bin" -P -c \'import pathlib, dolma.tokenizer; '
         "print(pathlib.Path(dolma.tokenizer.__file__).parent)'); "
         'install -m 0644 /tmp/dolma3p5-runtime/reshard.py "$module_dir/reshard.py"; '
         "install -m 0644 /tmp/dolma3p5-runtime/document_selection.py "
         '"$module_dir/document_selection.py"; '
-        "\"$python_bin\" -P -c 'from dolma.tokenizer.reshard import "
+        '"$python_bin" -P -c \'from dolma.tokenizer.reshard import '
         "RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2'; "
         "s5cmd version; findmnt /mnt/dolma; test -w /mnt/dolma/dolma3p5-resharding"
     )
@@ -633,7 +664,9 @@ def _map_command(
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
     if path.is_symlink() or not path.is_file():
-        raise PreparationError(f"Required execution artifact is missing or unsafe: {path}")
+        raise PreparationError(
+            f"Required execution artifact is missing or unsafe: {path}"
+        )
     with path.open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
 
@@ -656,12 +689,14 @@ def _load_execution_units(build: Path) -> list[dict[str, str]]:
     }
     missing = required - set(rows[0])
     if missing:
-        raise PreparationError("Execution index is missing columns: " + ", ".join(sorted(missing)))
+        raise PreparationError(
+            "Execution index is missing columns: " + ", ".join(sorted(missing))
+        )
     return rows
 
 
 def _category_selector(row: dict[str, str]) -> str:
-    return f'{row["mix_name"]}::{row["category_name"]}'
+    return f"{row['mix_name']}::{row['category_name']}"
 
 
 def _category_rows(rows: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
@@ -677,13 +712,17 @@ def _category_rows(rows: Sequence[dict[str, str]]) -> list[dict[str, Any]]:
                 "category_name": category_name,
                 "selector": f"{mix_name}::{category_name}",
                 "execution_units": len(units),
-                "planned_uint32_values": sum(int(row["planned_uint32_values"]) for row in units),
+                "planned_uint32_values": sum(
+                    int(row["planned_uint32_values"]) for row in units
+                ),
                 "largest_estimated_peak_local_bytes": max(
                     int(row["estimated_peak_local_bytes"]) for row in units
                 ),
             }
         )
-    return sorted(output, key=lambda row: (int(row["leaf_id"].split(":", 1)[0]), row["leaf_id"]))
+    return sorted(
+        output, key=lambda row: (int(row["leaf_id"].split(":", 1)[0]), row["leaf_id"])
+    )
 
 
 def _print_categories(rows: Sequence[dict[str, str]], filter_text: str) -> None:
@@ -702,14 +741,16 @@ def _print_categories(rows: Sequence[dict[str, str]], filter_text: str) -> None:
     print("leaf_id\texecution_units\tplanned_tokens\tlargest_unit\tselector")
     for row in matches:
         print(
-            f'{row["leaf_id"]}\t{row["execution_units"]:,}\t'
-            f'{_human_token_count(int(row["planned_uint32_values"]))}\t'
-            f'{_human_byte_count(int(row["largest_estimated_peak_local_bytes"]))}\t'
-            f'{row["selector"]}'
+            f"{row['leaf_id']}\t{row['execution_units']:,}\t"
+            f"{_human_token_count(int(row['planned_uint32_values']))}\t"
+            f"{_human_byte_count(int(row['largest_estimated_peak_local_bytes']))}\t"
+            f"{row['selector']}"
         )
 
 
-def _select_units(args: argparse.Namespace, rows: Sequence[dict[str, str]]) -> tuple[str, list[dict[str, str]]]:
+def _select_units(
+    args: argparse.Namespace, rows: Sequence[dict[str, str]]
+) -> tuple[str, list[dict[str, str]]]:
     if args.all:
         return "all", list(rows)
     if args.unit:
@@ -722,15 +763,23 @@ def _select_units(args: argparse.Namespace, rows: Sequence[dict[str, str]]) -> t
 
 
 def _safe_slug(value: str) -> str:
-    slug = "".join(character.lower() if character.isalnum() else "-" for character in value)
+    slug = "".join(
+        character.lower() if character.isalnum() else "-" for character in value
+    )
     return "-".join(part for part in slug.split("-") if part)[:80] or "selection"
 
 
 def _resolve_launcher(build: Path, row: dict[str, str]) -> Path:
     launcher = (build / row["launcher_path"]).resolve()
     launcher_root = (build / "01-plan/execution/launcher-scripts").resolve()
-    if launcher.parent != launcher_root or launcher.is_symlink() or not launcher.is_file():
-        raise PreparationError(f"Unsafe or missing launcher for {row['unit_id']}: {launcher}")
+    if (
+        launcher.parent != launcher_root
+        or launcher.is_symlink()
+        or not launcher.is_file()
+    ):
+        raise PreparationError(
+            f"Unsafe or missing launcher for {row['unit_id']}: {launcher}"
+        )
     return launcher
 
 
@@ -745,7 +794,9 @@ def _safe_path_launcher_payload(
     safe_working_directory = "cd /tmp"
     strict_mode = "set -euo pipefail\n"
     if strict_mode not in text:
-        raise PreparationError(f"Worker launcher is missing strict shell mode: {launcher}")
+        raise PreparationError(
+            f"Worker launcher is missing strict shell mode: {launcher}"
+        )
     missing_directives = [
         directive
         for directive in (safe_path_export, safe_working_directory)
@@ -777,12 +828,16 @@ def _stage_selection(
         payload = _safe_path_launcher_payload(launcher, status_run_id)
         launchers.append((row, launcher, payload, hashlib.sha256(payload).digest()))
     digest = hashlib.sha256()
-    for row, _, _, launcher_digest in sorted(launchers, key=lambda item: item[0]["unit_id"]):
+    for row, _, _, launcher_digest in sorted(
+        launchers, key=lambda item: item[0]["unit_id"]
+    ):
         digest.update(row["unit_id"].encode())
         digest.update(launcher_digest)
     selection_name = f"{_safe_slug(label)}-{digest.hexdigest()[:12]}"
     dispatch_root = build / "01-plan/execution/dispatch"
-    if dispatch_root.exists() and (dispatch_root.is_symlink() or not dispatch_root.is_dir()):
+    if dispatch_root.exists() and (
+        dispatch_root.is_symlink() or not dispatch_root.is_dir()
+    ):
         raise PreparationError(f"Unsafe dispatch artifact path: {dispatch_root}")
     dispatch_root.mkdir(exist_ok=True)
     selection_dir = dispatch_root / selection_name
@@ -800,7 +855,9 @@ def _stage_selection(
             if (selection_dir / launcher.name).is_file()
         )
         if actual_names != expected_names or unsafe or content_changed:
-            raise PreparationError(f"Existing dispatch selection does not match the plan: {selection_dir}")
+            raise PreparationError(
+                f"Existing dispatch selection does not match the plan: {selection_dir}"
+            )
         return selection_dir
 
     selection_dir.mkdir(exist_ok=False)
@@ -823,11 +880,16 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
     except (OSError, json.JSONDecodeError) as exc:
         raise PreparationError(f"Invalid preflight summary: {summary_path}") from exc
     blocking_fields = ("drifted_input_objects", "occupied_destinations", "errors")
-    if not summary.get("passed") or any(int(summary.get(name, 0)) for name in blocking_fields):
+    if not summary.get("passed") or any(
+        int(summary.get(name, 0)) for name in blocking_fields
+    ):
         raise PreparationError(f"Preflight did not pass: {summary_path}")
     selected_digest = _unit_selection_digest(selected)
     preflight_scope = summary.get("selection_scope")
-    if preflight_scope != "all" and summary.get("selected_unit_ids_sha256") != selected_digest:
+    if (
+        preflight_scope != "all"
+        and summary.get("selected_unit_ids_sha256") != selected_digest
+    ):
         raise PreparationError(
             "Preflight selection does not match this dispatch. Rerun preflight.py with the same "
             "--category or --unit selector."
@@ -835,7 +897,9 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
 
     destination_rows = _read_csv(build / "02-preflight/destination-status.csv")
     statuses = {row["unit_id"]: row["status"] for row in destination_rows}
-    invalid = [row["unit_id"] for row in selected if statuses.get(row["unit_id"]) != "empty"]
+    invalid = [
+        row["unit_id"] for row in selected if statuses.get(row["unit_id"]) != "empty"
+    ]
     if invalid:
         raise PreparationError(
             f"Preflight does not show an empty destination for {len(invalid):,} selected unit(s)"
@@ -843,7 +907,9 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
     return str(summary.get("created_at", "unknown"))
 
 
-def _pause_workers_after_failure(args: argparse.Namespace, instance_ids: Sequence[str]) -> None:
+def _pause_workers_after_failure(
+    args: argparse.Namespace, instance_ids: Sequence[str]
+) -> None:
     if not instance_ids:
         return
     command = _pause_command(args, instance_ids)
@@ -1109,15 +1175,19 @@ def _wait_for_workers_to_stop(
     verbose = getattr(args, "verbose", False)
     previous_statuses: dict[tuple[str, str], str] = {}
     emitted_log_lines: dict[tuple[str, str], int] = {}
-    worker_number_width = max(2, len(str(len(expected_ids))))
+    previous_state_signature: tuple[tuple[str, int], ...] | None = None
     worker_tags = {
         instance_id: (
-            f"worker {index:0{worker_number_width}d} · {instance_id}",
+            instance_id,
             WORKER_LOG_STYLES[(index - 1) % len(WORKER_LOG_STYLES)],
         )
         for index, instance_id in enumerate(sorted(expected_ids), start=1)
     }
-    live_status = output.status(_stage_status("materializing"), spinner="dots") if output.is_terminal else None
+    live_status = (
+        output.status(_stage_status("materializing"), spinner="dots")
+        if output.is_terminal
+        else None
+    )
     if live_status is None:
         output.print(Text.assemble(("…", "cyan"), " ", ("materializing", "bold")))
     else:
@@ -1150,8 +1220,12 @@ def _wait_for_workers_to_stop(
             )
             if live_status is not None:
                 live_status.update(_stage_status("materializing", detail))
+            else:
+                state_signature = tuple(sorted(state_counts.items()))
+                if state_signature != previous_state_signature:
+                    output.print(Text(f"materializing  {detail}", style="dim"))
+                    previous_state_signature = state_signature
             if verbose:
-                output.print(Text(f"materializing  {detail}", style="dim"))
                 running_ids = sorted(
                     instance.instance_id
                     for instance in selected.values()
@@ -1187,20 +1261,21 @@ def _wait_for_workers_to_stop(
                                 emitted = 0
                             new_lines = log_lines[emitted:]
                             if new_lines:
-                                output.print(
-                                    _worker_log_line(
-                                        worker_tag,
-                                        worker_style,
-                                        log_name,
-                                        bold=True,
+                                if emitted == 0:
+                                    output.print(
+                                        _worker_log_line(
+                                            worker_tag,
+                                            worker_style,
+                                            f"unit {Path(log_name).stem}",
+                                            bold=True,
+                                        )
                                     )
-                                )
                                 for line in new_lines:
                                     output.print(
                                         _worker_log_line(
                                             worker_tag,
                                             worker_style,
-                                            line,
+                                            _worker_log_message(line),
                                         )
                                     )
                             emitted_log_lines[log_key] = len(log_lines)
@@ -1238,7 +1313,9 @@ def _check_materialized_unit(client: Any, row: dict[str, str]) -> MaterializedUn
     problems: list[str] = []
     if not npys:
         problems.append("no NPY output")
-    invalid_npys = [obj for obj in npys if obj.size_bytes <= 0 or obj.size_bytes % UINT32_BYTES]
+    invalid_npys = [
+        obj for obj in npys if obj.size_bytes <= 0 or obj.size_bytes % UINT32_BYTES
+    ]
     if invalid_npys:
         problems.append(f"{len(invalid_npys):,} invalid NPY sizes")
     missing_metadata = [
@@ -1253,9 +1330,7 @@ def _check_materialized_unit(client: Any, row: dict[str, str]) -> MaterializedUn
     ]
     if orphan_metadata:
         problems.append(f"{len(orphan_metadata):,} orphan metadata files")
-    unexpected = [
-        obj for obj in objects if not obj.key.endswith((".npy", ".csv.gz"))
-    ]
+    unexpected = [obj for obj in objects if not obj.key.endswith((".npy", ".csv.gz"))]
     if unexpected:
         problems.append(f"{len(unexpected):,} unexpected output objects")
 
@@ -1290,9 +1365,15 @@ def _verify_materialized_units(
         client = session.client("s3", region_name=args.region)
     output = console or Console(stderr=True, highlight=False)
     started_at = time.monotonic()
-    live_status = output.status(_stage_status("verify materialized outputs"), spinner="dots") if output.is_terminal else None
+    live_status = (
+        output.status(_stage_status("verify materialized outputs"), spinner="dots")
+        if output.is_terminal
+        else None
+    )
     if live_status is None:
-        output.print(Text.assemble(("…", "cyan"), " ", ("verify materialized outputs", "bold")))
+        output.print(
+            Text.assemble(("…", "cyan"), " ", ("verify materialized outputs", "bold"))
+        )
     else:
         live_status.start()
 
@@ -1300,7 +1381,9 @@ def _verify_materialized_units(
     request_errors: list[str] = []
     try:
         with ThreadPoolExecutor(max_workers=min(args.parallelism, len(rows))) as pool:
-            futures = {pool.submit(_check_materialized_unit, client, row): row for row in rows}
+            futures = {
+                pool.submit(_check_materialized_unit, client, row): row for row in rows
+            }
             for completed, future in enumerate(as_completed(futures), start=1):
                 row = futures[future]
                 try:
@@ -1360,7 +1443,10 @@ def _dry_run_lifecycle_commands(
         ("prepare local NVMe", _storage_setup_command(args, (), rows)),
         ("install Dolma and s5cmd", _runtime_setup_command(args, ())),
         ("upload resharding runtime", _runtime_transfer_command(args, ())),
-        ("install and validate resharding runtime", _runtime_validation_command(args, ())),
+        (
+            "install and validate resharding runtime",
+            _runtime_validation_command(args, ()),
+        ),
         ("dispatch and stop workers when done", _map_command(args, script_dir)),
     ]
 
@@ -1380,7 +1466,9 @@ def _print_dispatch(
     category_count = len({row["leaf_id"] for row in rows})
     planned_tokens = sum(int(row["planned_uint32_values"]) for row in rows)
     largest_unit = max(int(row["estimated_peak_local_bytes"]) for row in rows)
-    display_label = label.removeprefix("category-") if label.startswith("category-") else label
+    display_label = (
+        label.removeprefix("category-") if label.startswith("category-") else label
+    )
 
     def count(value: int, noun: str) -> str:
         return f"{value:,} {noun if value == 1 else noun + 's'}"
@@ -1418,9 +1506,9 @@ def _print_dispatch(
     print("\nunits:")
     for row in sorted(rows, key=lambda item: item["unit_id"]):
         print(
-            f'{row["unit_id"]}\t{_human_token_count(int(row["planned_uint32_values"]))} tokens\t'
-            f'{_human_byte_count(int(row["estimated_peak_local_bytes"]))}\t'
-            f'{row["destination_prefix"]}'
+            f"{row['unit_id']}\t{_human_token_count(int(row['planned_uint32_values']))} tokens\t"
+            f"{_human_byte_count(int(row['estimated_peak_local_bytes']))}\t"
+            f"{row['destination_prefix']}"
         )
 
 
@@ -1436,7 +1524,9 @@ def main() -> None:
             return
 
         label, selected = _select_units(args, rows)
-        status_run_id = f"{int(time.time())}-{uuid.uuid4().hex[:12]}" if args.execute else None
+        status_run_id = (
+            f"{int(time.time())}-{uuid.uuid4().hex[:12]}" if args.execute else None
+        )
         script_dir = _stage_selection(build, label, selected, status_run_id)
         worker_count = min(len(selected), args.parallelism)
         lifecycle_commands = _dry_run_lifecycle_commands(
@@ -1469,7 +1559,9 @@ def main() -> None:
             DOCUMENT_SELECTION_MODULE,
         ):
             if required_path.is_symlink() or not required_path.is_file():
-                raise PreparationError(f"Required worker runtime file is missing or unsafe: {required_path}")
+                raise PreparationError(
+                    f"Required worker runtime file is missing or unsafe: {required_path}"
+                )
         if args.profile:
             os.environ["AWS_PROFILE"] = args.profile
         print(f"preflight=passed created_at={preflight_created_at}")

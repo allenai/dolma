@@ -126,10 +126,10 @@ The important worker options are:
 - `--region` defaults to `us-east-1` and can be overridden directly or with
   `PMR_REGION`.
 - `--verbose` streams poormanray output and every new resharding-log line from
-  active workers. Source downloads show s5cmd's per-file logs and final
-  statistics instead of inferred transfer progress. Resharding logs cover
-  source validation, document-selection passes, merge completion by output
-  shard, and output upload progress.
+  active workers. Source downloads show s5cmd's native progress statistics for
+  every copy and its final operation totals. Resharding logs cover
+  source validation, document-selection passes, aggregate merge progress,
+  input/shard completion milestones, and output upload progress.
 - `--completion-poll-seconds` controls the worker-state and log polling
   interval; it defaults to 30 seconds.
 - `--profile` selects the AWS profile used for provisioning and worker setup.

@@ -46,6 +46,7 @@ from scripts.dolma3p5_resharding.materialize import (
     _wait_command,
     _wait_for_workers_to_stop,
     _worker_log_command,
+    _worker_log_message,
     _worker_log_snapshots,
 )
 from scripts.dolma3p5_resharding.materialize import (
@@ -220,6 +221,20 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             "accepted by 2 workers",
         )
 
+    def test_worker_log_message_removes_envelope_but_preserves_errors(self):
+        self.assertEqual(
+            _worker_log_message(
+                "[2026-08-05 15:38:11 main.dolma.__main__ INFO] merge 50.0%"
+            ),
+            "merge 50.0%",
+        )
+        self.assertEqual(
+            _worker_log_message(
+                "[2026-08-05 15:38:11 main.dolma.__main__ ERROR] disk full"
+            ),
+            "error · disk full",
+        )
+
     def test_materialize_waits_for_worker_spindown(self):
         args = SimpleNamespace(
             cluster="dolma3p5-14t",
@@ -264,7 +279,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                         "logs": {
                             "00000000.log": (
                                 "Downloading exact manifest objects",
-                                "Merge progress: 1/2 output shards",
+                                (
+                                    "[2026-08-05 15:38:11 main.dolma.__main__ INFO] "
+                                    "merge 50.0% · 10B/20B tokens · 40M tokens/s"
+                                ),
                             ),
                         },
                     },
@@ -289,12 +307,15 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(sleep.call_args_list, [call(30), call(30)])
         rendered = output.getvalue()
         self.assertIn("2 units · 1 running · 1 stopping · 0 stopped", rendered)
-        self.assertIn("[worker 01 · i-first] 00000000 · running", rendered)
-        self.assertIn("[worker 01 · i-first] 00000000.log", rendered)
+        self.assertIn("[i-first] 00000000 · running", rendered)
+        self.assertIn("[i-first] unit 00000000", rendered)
+        self.assertEqual(rendered.count("unit 00000000"), 1)
         self.assertIn("Downloading exact manifest objects", rendered)
         self.assertEqual(rendered.count("Downloading exact manifest objects"), 1)
-        self.assertIn("Merge progress: 1/2 output shards", rendered)
-        self.assertIn("[worker 02 · i-second] Other worker progress", rendered)
+        self.assertIn("merge 50.0% · 10B/20B tokens · 40M tokens/s", rendered)
+        self.assertNotIn("main.dolma.__main__ INFO", rendered)
+        self.assertIn("[i-second] Other worker progress", rendered)
+        self.assertNotIn("worker 01", rendered)
         self.assertIn("materialization workers stopped", rendered)
 
     @patch("scripts.dolma3p5_resharding.materialize.subprocess.run")
@@ -305,7 +326,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 "Instance i-first:\n"
                 "stdout: @@DOLMA_STATUS@@\t00000000\trunning\n"
                 "@@DOLMA_LOG_BEGIN@@\t00000000.log\n"
-                "first line\nsecond line\n"
+                "first line\n"
+                "12.00%  12 GB / 100 GB (1.20 GB/s) 1m left (0/1)\r"
+                "24.00%  24 GB / 100 GB (1.18 GB/s) 1m left (0/1)\r"
+                "second line\n"
                 "@@DOLMA_LOG_END@@\t00000000.log\n"
                 "stderr:\n\n"
                 "Instance i-second:\n"
@@ -331,7 +355,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         self.assertEqual(
             snapshots["i-first"]["logs"]["00000000.log"],
-            ("first line", "second line"),
+            (
+                "first line",
+                "12.00%  12 GB / 100 GB (1.20 GB/s) 1m left (0/1)",
+                "24.00%  24 GB / 100 GB (1.18 GB/s) 1m left (0/1)",
+                "second line",
+            ),
         )
         self.assertEqual(
             snapshots["i-second"]["logs"]["00000001.log"],
@@ -1739,7 +1768,13 @@ class TestReshardingSafety(unittest.TestCase):
         self.assertEqual(first_selection, second_selection)
 
         output = self.root / "partial-output/000000.npy"
-        merge_result = merge_group(first, output, np.dtype(np.uint32))
+        progress_updates = []
+        merge_result = merge_group(
+            first,
+            output,
+            np.dtype(np.uint32),
+            progress=progress_updates.append,
+        )
         materialized = np.fromfile(output, dtype=np.uint32)
         self.assertEqual(len(materialized), first[0].selected_uint32_values)
         previous_end = 0
@@ -1754,6 +1789,11 @@ class TestReshardingSafety(unittest.TestCase):
         self.assertEqual(merge_result.output_bytes, output.stat().st_size)
         self.assertEqual(
             merge_result.metadata_bytes, output.with_suffix(".csv.gz").stat().st_size
+        )
+        self.assertTrue(progress_updates[-1].complete)
+        self.assertEqual(
+            progress_updates[-1].processed_values,
+            merge_result.output_bytes // np.dtype(np.uint32).itemsize,
         )
         with self.assertRaises(FileExistsError):
             merge_group(first, output, np.dtype(np.uint32))
@@ -1896,8 +1936,15 @@ class TestReshardingSafety(unittest.TestCase):
             for command_line, expected_size in zip(command_lines, (16, 12)):
                 arguments = shlex.split(command_line)
                 self.assertEqual(
-                    arguments[:5],
-                    ["cp", "--raw", "--no-clobber", "--concurrency", "17"],
+                    arguments[:6],
+                    [
+                        "cp",
+                        "--show-progress",
+                        "--raw",
+                        "--no-clobber",
+                        "--concurrency",
+                        "17",
+                    ],
                 )
                 destination = Path(arguments[-1])
                 destination.write_bytes(b"\x00" * expected_size)
@@ -1955,6 +2002,7 @@ class TestReshardingSafety(unittest.TestCase):
             upload_to_s3(self.root, "s3://test-bucket/new/prefix", max_workers=3)
         command = run.call_args.args[0]
         self.assertIn("--no-clobber", command)
+        self.assertIn("--show-progress", command)
         self.assertEqual(command[:5], ["s5cmd", "--stat", "--numworkers", "3", "cp"])
 
     def test_s3_bucket_root_is_refused_before_listing(self):
