@@ -276,6 +276,14 @@ class PlannedWorkerGroup:
     rows: tuple[dict[str, str], ...]
 
 
+@dataclass(frozen=True)
+class MaterializationGroup:
+    args: argparse.Namespace
+    rows: tuple[dict[str, str], ...]
+    script_dir: Path
+    worker_count: int
+
+
 def _worker_log_line(
     tag: str,
     style: str,
@@ -780,6 +788,37 @@ def _planned_worker_groups(args: argparse.Namespace, rows: Sequence[dict[str, st
     ]
 
 
+def _worker_counts_for_groups(
+    groups: Sequence[PlannedWorkerGroup], maximum_workers: int
+) -> list[int]:
+    """Allocate the global worker limit while keeping every worker group active."""
+
+    if not groups:
+        return []
+    if maximum_workers < len(groups):
+        raise PreparationError(
+            f"--parallelism must be at least {len(groups):,} to run all planned "
+            "worker groups concurrently"
+        )
+
+    total_units = sum(len(group.rows) for group in groups)
+    remaining = min(maximum_workers, total_units) - len(groups)
+    counts = [1] * len(groups)
+    while remaining:
+        allocated = False
+        for index, group in enumerate(groups):
+            if counts[index] >= len(group.rows):
+                continue
+            counts[index] += 1
+            remaining -= 1
+            allocated = True
+            if not remaining:
+                break
+        if not allocated:
+            break
+    return counts
+
+
 def _category_selector(row: dict[str, str]) -> str:
     return f"{row['mix_name']}::{row['category_name']}"
 
@@ -1028,7 +1067,12 @@ def _pause_workers_after_failure(
         )
 
 
-def _prepare_workers(args: argparse.Namespace, worker_count: int) -> list[str]:
+def _prepare_workers(
+    args: argparse.Namespace,
+    worker_count: int,
+    *,
+    owned_instance_ids: Sequence[str] = (),
+) -> list[str]:
     """Resume stopped compatible workers and create any remaining workers."""
 
     try:
@@ -1038,7 +1082,12 @@ def _prepare_workers(args: argparse.Namespace, worker_count: int) -> list[str]:
             f"Could not inspect poormanray cluster {args.cluster!r} in {args.region}: {exc}"
         ) from exc
 
-    busy = [instance for instance in before if instance.state != "stopped"]
+    owned = set(owned_instance_ids)
+    busy = [
+        instance
+        for instance in before
+        if instance.state != "stopped" and instance.instance_id not in owned
+    ]
     if busy:
         states = ", ".join(
             f"{instance.instance_id}={instance.state}" for instance in busy
@@ -1622,6 +1671,72 @@ def _print_dispatch(
         )
 
 
+def _execute_materialization_groups(
+    args: argparse.Namespace,
+    groups: Sequence[MaterializationGroup],
+    selected: Sequence[dict[str, str]],
+    status_run_id: str,
+) -> None:
+    """Prepare and dispatch every group before waiting for the combined selection."""
+
+    prepared: list[tuple[MaterializationGroup, list[str]]] = []
+    all_worker_ids: list[str] = []
+    try:
+        for group in groups:
+            worker_ids = _prepare_workers(
+                group.args,
+                group.worker_count,
+                owned_instance_ids=all_worker_ids,
+            )
+            prepared.append((group, worker_ids))
+            all_worker_ids.extend(worker_ids)
+
+        for group, worker_ids in prepared:
+            _run_lifecycle_command(
+                f"upload storage setup ({group.args.instance_type})",
+                _storage_transfer_command(group.args, worker_ids),
+                verbose=args.verbose,
+            )
+            _run_lifecycle_command(
+                f"prepare local NVMe ({group.args.instance_type})",
+                _storage_setup_command(group.args, worker_ids, group.rows),
+                verbose=args.verbose,
+            )
+            _run_lifecycle_command(
+                f"install Dolma and s5cmd ({group.args.instance_type})",
+                _runtime_setup_command(group.args, worker_ids),
+                verbose=args.verbose,
+            )
+            _run_lifecycle_command(
+                f"upload resharding runtime ({group.args.instance_type})",
+                _runtime_transfer_command(group.args, worker_ids),
+                verbose=args.verbose,
+            )
+            _run_lifecycle_command(
+                f"install and validate resharding runtime ({group.args.instance_type})",
+                _runtime_validation_command(group.args, worker_ids),
+                verbose=args.verbose,
+            )
+
+        for group, worker_ids in prepared:
+            _run_lifecycle_command(
+                f"submit materialization ({group.args.instance_type})",
+                _map_command(group.args, group.script_dir, worker_ids),
+                verbose=args.verbose,
+            )
+
+        _wait_for_workers_to_stop(
+            args,
+            all_worker_ids,
+            len(selected),
+            status_run_id,
+        )
+        _verify_materialized_units(args, selected)
+    except BaseException:
+        _pause_workers_after_failure(args, all_worker_ids)
+        raise
+
+
 def main() -> None:
     parser = build_parser()
     try:
@@ -1657,14 +1772,15 @@ def main() -> None:
             preflight_created_at = _require_preflight(build, selected)
             print(f"preflight=passed created_at={preflight_created_at}")
 
-        for group in worker_groups:
+        worker_counts = _worker_counts_for_groups(worker_groups, args.parallelism)
+        materialization_groups: list[MaterializationGroup] = []
+        for group, worker_count in zip(worker_groups, worker_counts):
             group_args = copy.copy(args)
             group_args.instance_type = group.instance_type
             group_args.storage_layout = group.storage_layout
             group_rows = list(group.rows)
             group_label = label if len(worker_groups) == 1 else f"{label}-{group.instance_type}"
             script_dir = _stage_selection(build, group_label, group_rows, status_run_id)
-            worker_count = min(len(group_rows), args.parallelism)
             lifecycle_commands = _dry_run_lifecycle_commands(
                 group_args,
                 group_rows,
@@ -1684,52 +1800,23 @@ def main() -> None:
                 instance_type=group.instance_type,
                 storage_layout=group.storage_layout,
             )
-            if not args.execute:
-                continue
+            materialization_groups.append(
+                MaterializationGroup(
+                    args=group_args,
+                    rows=tuple(group_rows),
+                    script_dir=script_dir,
+                    worker_count=worker_count,
+                )
+            )
 
-            worker_ids = _prepare_workers(group_args, worker_count)
-            try:
-                _run_lifecycle_command(
-                    "upload storage setup",
-                    _storage_transfer_command(group_args, worker_ids),
-                    verbose=args.verbose,
-                )
-                _run_lifecycle_command(
-                    "prepare local NVMe",
-                    _storage_setup_command(group_args, worker_ids, group_rows),
-                    verbose=args.verbose,
-                )
-                _run_lifecycle_command(
-                    "install Dolma and s5cmd",
-                    _runtime_setup_command(group_args, worker_ids),
-                    verbose=args.verbose,
-                )
-                _run_lifecycle_command(
-                    "upload resharding runtime",
-                    _runtime_transfer_command(group_args, worker_ids),
-                    verbose=args.verbose,
-                )
-                _run_lifecycle_command(
-                    "install and validate resharding runtime",
-                    _runtime_validation_command(group_args, worker_ids),
-                    verbose=args.verbose,
-                )
-                _run_lifecycle_command(
-                    "submit materialization",
-                    _map_command(group_args, script_dir, worker_ids),
-                    verbose=args.verbose,
-                )
-            except BaseException:
-                _pause_workers_after_failure(group_args, worker_ids)
-                raise
+        if args.execute:
             assert status_run_id is not None
-            _wait_for_workers_to_stop(
-                group_args,
-                worker_ids,
-                len(group_rows),
+            _execute_materialization_groups(
+                args,
+                materialization_groups,
+                selected,
                 status_run_id,
             )
-            _verify_materialized_units(group_args, group_rows)
     except PreparationError as exc:
         parser.exit(2, f"error: {exc}\n")
 

@@ -34,6 +34,9 @@ from dolma.tokenizer.reshard import (
 )
 from scripts.dolma3p5_resharding.materialize import (
     ClusterInstance,
+    MaterializationGroup,
+    PlannedWorkerGroup,
+    _execute_materialization_groups,
     _map_command,
     _planned_worker_groups,
     _prepare_workers,
@@ -46,6 +49,7 @@ from scripts.dolma3p5_resharding.materialize import (
     _verify_materialized_units,
     _wait_command,
     _wait_for_workers_to_stop,
+    _worker_counts_for_groups,
     _worker_log_command,
     _worker_log_message,
     _worker_log_parts,
@@ -613,6 +617,26 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             [("i4i.2xlarge", "single"), ("i4i.8xlarge", "raid0")],
         )
 
+    def test_materialize_allocates_global_parallelism_across_worker_groups(self):
+        groups = [
+            PlannedWorkerGroup(
+                "i4i.2xlarge",
+                "single",
+                tuple({"unit_id": f"small-{index}"} for index in range(3)),
+            ),
+            PlannedWorkerGroup(
+                "i4i.8xlarge",
+                "raid0",
+                tuple({"unit_id": f"large-{index}"} for index in range(5)),
+            ),
+        ]
+
+        self.assertEqual(_worker_counts_for_groups(groups, 2), [1, 1])
+        self.assertEqual(_worker_counts_for_groups(groups, 4), [2, 2])
+        self.assertEqual(_worker_counts_for_groups(groups, 8), [3, 5])
+        with self.assertRaisesRegex(PreparationError, "must be at least 2"):
+            _worker_counts_for_groups(groups, 1)
+
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
@@ -777,6 +801,146 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         with self.assertRaisesRegex(PreparationError, "already has active"):
             _prepare_workers(args, 1)
+
+    @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
+    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
+    def test_materialize_allows_workers_owned_by_the_same_launch(
+        self, describe, run, retag
+    ):
+        describe.return_value = [
+            ClusterInstance("i-owned", "running", "i4i.2xlarge", "oe-other"),
+            ClusterInstance("i-large", "stopped", "i4i.8xlarge", "oe-other"),
+        ]
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=8,
+            instance_type="i4i.8xlarge",
+            root_storage_type="gp3",
+            root_storage_size=200,
+            ssh_key_path=None,
+            profile=None,
+        )
+
+        self.assertEqual(
+            _prepare_workers(args, 1, owned_instance_ids=["i-owned"]),
+            ["i-large"],
+        )
+        retag.assert_called_once_with(args, ["i-large"])
+        self.assertEqual(
+            [call.args[0] for call in run.call_args_list],
+            ["resume workers", "wait for workers"],
+        )
+
+    @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")
+    @patch("scripts.dolma3p5_resharding.materialize._verify_materialized_units")
+    @patch("scripts.dolma3p5_resharding.materialize._wait_for_workers_to_stop")
+    @patch("scripts.dolma3p5_resharding.materialize._map_command", return_value=["map"])
+    @patch("scripts.dolma3p5_resharding.materialize._runtime_validation_command", return_value=["validate"])
+    @patch("scripts.dolma3p5_resharding.materialize._runtime_transfer_command", return_value=["runtime-transfer"])
+    @patch("scripts.dolma3p5_resharding.materialize._runtime_setup_command", return_value=["runtime-setup"])
+    @patch("scripts.dolma3p5_resharding.materialize._storage_setup_command", return_value=["storage-setup"])
+    @patch("scripts.dolma3p5_resharding.materialize._storage_transfer_command", return_value=["storage-transfer"])
+    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    @patch("scripts.dolma3p5_resharding.materialize._prepare_workers")
+    def test_materialize_dispatches_every_worker_group_before_waiting(
+        self,
+        prepare,
+        run,
+        storage_transfer,
+        storage_setup,
+        runtime_setup,
+        runtime_transfer,
+        runtime_validation,
+        map_command,
+        wait,
+        verify,
+        pause,
+    ):
+        events = []
+
+        def prepare_group(group_args, worker_count, *, owned_instance_ids=()):
+            events.append(("prepare", group_args.instance_type, tuple(owned_instance_ids)))
+            return [
+                "i-small" if group_args.instance_type == "i4i.2xlarge" else "i-large"
+            ]
+
+        prepare.side_effect = prepare_group
+        run.side_effect = lambda stage, command, **kwargs: events.append(("run", stage))
+        wait.side_effect = lambda *args, **kwargs: events.append(("wait",))
+        verify.side_effect = lambda *args, **kwargs: events.append(("verify",))
+        args = SimpleNamespace(verbose=True)
+        selected = [{"unit_id": "small"}, {"unit_id": "large"}]
+        groups = [
+            MaterializationGroup(
+                args=SimpleNamespace(instance_type="i4i.2xlarge"),
+                rows=(selected[0],),
+                script_dir=Path("/tmp/small"),
+                worker_count=1,
+            ),
+            MaterializationGroup(
+                args=SimpleNamespace(instance_type="i4i.8xlarge"),
+                rows=(selected[1],),
+                script_dir=Path("/tmp/large"),
+                worker_count=1,
+            ),
+        ]
+
+        _execute_materialization_groups(args, groups, selected, "test-run")
+
+        submit_indices = [
+            index
+            for index, event in enumerate(events)
+            if event[0] == "run" and event[1].startswith("submit materialization")
+        ]
+        wait_index = events.index(("wait",))
+        self.assertEqual(len(submit_indices), 2)
+        self.assertTrue(all(index < wait_index for index in submit_indices))
+        self.assertEqual(
+            events[:2],
+            [
+                ("prepare", "i4i.2xlarge", ()),
+                ("prepare", "i4i.8xlarge", ("i-small",)),
+            ],
+        )
+        wait.assert_called_once_with(
+            args,
+            ["i-small", "i-large"],
+            2,
+            "test-run",
+        )
+        verify.assert_called_once_with(args, selected)
+        pause.assert_not_called()
+
+    @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")
+    @patch("scripts.dolma3p5_resharding.materialize._prepare_workers")
+    def test_materialize_cleans_up_prepared_groups_if_later_provisioning_fails(
+        self, prepare, pause
+    ):
+        prepare.side_effect = [["i-small"], PreparationError("create failed")]
+        args = SimpleNamespace(verbose=False)
+        selected = [{"unit_id": "small"}, {"unit_id": "large"}]
+        groups = [
+            MaterializationGroup(
+                args=SimpleNamespace(instance_type="i4i.2xlarge"),
+                rows=(selected[0],),
+                script_dir=Path("/tmp/small"),
+                worker_count=1,
+            ),
+            MaterializationGroup(
+                args=SimpleNamespace(instance_type="i4i.8xlarge"),
+                rows=(selected[1],),
+                script_dir=Path("/tmp/large"),
+                worker_count=1,
+            ),
+        ]
+
+        with self.assertRaisesRegex(PreparationError, "create failed"):
+            _execute_materialization_groups(args, groups, selected, "test-run")
+
+        pause.assert_called_once_with(args, ["i-small"])
 
     def test_region_defaults_to_us_east_1_and_allows_override(self):
         self.assertEqual(normalize_region(None), DEFAULT_REGION)
@@ -1566,6 +1730,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("Execution units", proposal_report)
         self.assertIn("Output shards", proposal_report)
         self.assertIn("Output files", proposal_report)
+        self.assertNotIn("Units using document selection", proposal_report)
         self.assertIn("Planned worker fleet", proposal_report)
         self.assertIn('class="worker-grid"', proposal_report)
         self.assertIn("Local NVMe", proposal_report)

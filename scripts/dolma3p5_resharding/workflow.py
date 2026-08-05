@@ -3932,7 +3932,6 @@ def _render_execution_proposal_html(
         ),
         reverse=True,
     )
-    partial_units = sum(int(row["partial_object_count"]) > 0 for row in ordered_units)
     planned_output_shards = sum(int(row["planned_output_shard_count"]) for row in ordered_units)
     average_output_shard_bytes = [
         int(row["average_output_shard_bytes"])
@@ -3945,7 +3944,6 @@ def _render_execution_proposal_html(
             ("Output shards", f"{planned_output_shards:,}"),
             ("Output files", f"{planned_output_shards * 2:,}"),
             ("Worker types", f"{len(units_by_worker):,}"),
-            ("Units using document selection", f"{partial_units:,}"),
             ("Planned output", f"{_human_token_count(planned_total)} tokens"),
         ]
     )

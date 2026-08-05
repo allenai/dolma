@@ -80,7 +80,8 @@ Do not launch if a source changed or a destination is occupied.
 `materialize.py` manages the worker lifecycle. It batches the selected units by
 their planned i4i type, creates or resumes the required poormanray workers,
 prepares the planned single-disk or RAID-0 layout, installs the runtime,
-dispatches the units, and stops each worker after its assigned units finish.
+dispatches every worker group before waiting, and stops each worker after its
+assigned units finish. Units assigned to different i4i types run concurrently.
 
 Find an exact category selector without contacting AWS:
 
@@ -94,7 +95,7 @@ Print the complete lifecycle for one category without creating workers:
 ```bash
 uv run scripts/dolma3p5_resharding/materialize.py \
   --category 'dolma3_finemath_v3:finemath::default' \
-  --parallelism 1 \
+  --parallelism 2 \
   --dry-run
 ```
 
@@ -103,7 +104,7 @@ Run its matching preflight and launch the category:
 ```bash
 uv run scripts/dolma3p5_resharding/materialize.py \
   --category 'dolma3_finemath_v3:finemath::default' \
-  --parallelism 1 \
+  --parallelism 2 \
   --preflight \
   --execute
 ```
@@ -127,6 +128,7 @@ The important worker options are:
 
 - `--parallelism` is the maximum number of concurrent workers. The actual
   count is the smaller of this value and the selected execution-unit count.
+  It must allow at least one worker for every i4i type selected by the plan.
 - `--preflight` reruns the read-only source and destination checks for the exact
   selection immediately before provisioning workers. It requires `--execute`.
 - `--cluster` defaults to `dolma3p5-14t` and sets the worker `cluster` tag.
