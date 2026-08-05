@@ -116,13 +116,28 @@ def _elapsed(started_at: float) -> str:
 
 
 def _run_s5cmd(command: list[str], phase: str) -> None:
-    """Run s5cmd with its stdout and stderr attached directly to the worker log."""
+    """Run s5cmd while preserving every in-place progress update in the worker log."""
 
     logger.info("s5cmd %s: %s", phase, shlex.join(command))
-    result = subprocess.run(command, check=False)
-    if result.returncode:
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    assert process.stdout is not None
+    for line in process.stdout:
+        # TextIOWrapper's universal-newline handling converts the carriage
+        # returns used by --show-progress into newlines. Flush each update so
+        # the controller can retrieve it while s5cmd is still running.
+        print(line, end="", flush=True)
+    returncode = process.wait()
+    if returncode:
         raise RuntimeError(
-            f"s5cmd {phase} failed with exit code {result.returncode}; inspect the worker log"
+            f"s5cmd {phase} failed with exit code {returncode}; inspect the worker log"
         )
 
 

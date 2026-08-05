@@ -31,6 +31,7 @@ from dolma.tokenizer.reshard import (
     destination_has_objects,
     merge_group,
     reshard,
+    _run_s5cmd as run_s5cmd,
     upload_to_s3,
 )
 from scripts.dolma3p5_resharding.materialize import (
@@ -518,18 +519,18 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             stdout=(
                 "Instance i-first:\n"
                 "stdout: @@DOLMA_STATUS@@\t00000000\trunning\n"
-                "@@DOLMA_LOG_BEGIN@@\t00000000.log\n"
+                "@@DOLMA_LOG_BEGIN@@\t00000000.log\t0\t123\t123\n"
                 "first line\n"
                 "12.00%  12 GB / 100 GB (1.20 GB/s) 1m left (0/1)\r"
                 "24.00%  24 GB / 100 GB (1.18 GB/s) 1m left (0/1)\r"
                 "second line\n"
-                "@@DOLMA_LOG_END@@\t00000000.log\n"
+                "@@DOLMA_LOG_END@@\t00000000.log\t123\tOK\n"
                 "stderr:\n\n"
                 "Instance i-second:\n"
                 "stdout: @@DOLMA_STATUS@@\t00000001\tsucceeded\n"
-                "@@DOLMA_LOG_BEGIN@@\t00000001.log\n"
+                "@@DOLMA_LOG_BEGIN@@\t00000001.log\t0\t50\t50\n"
                 "other worker line\n"
-                "@@DOLMA_LOG_END@@\t00000001.log\n"
+                "@@DOLMA_LOG_END@@\t00000001.log\t50\tOK\n"
                 "stderr:\n"
             ),
             stderr="",
@@ -559,6 +560,105 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             snapshots["i-second"]["logs"]["00000001.log"],
             ("other worker line",),
         )
+        self.assertEqual(snapshots["i-first"]["offsets"], {"00000000.log": 123})
+        self.assertEqual(snapshots["i-second"]["offsets"], {"00000001.log": 50})
+
+    @patch("scripts.dolma3p5_resharding.materialize.subprocess.run")
+    def test_worker_log_capture_retries_an_unacknowledged_page(self, run):
+        run.return_value = SimpleNamespace(
+            returncode=0,
+            stdout=(
+                "Instance i-first:\n"
+                "stdout: @@DOLMA_STATUS@@\t00000000\trunning\n"
+                "@@DOLMA_LOG_BEGIN@@\t00000000.log\t100\t140\t200\n"
+                "partial progress record\n"
+                "@@DOLMA_LOG_END@@\t00000000.log\t140\n"
+                "stderr:\n"
+            ),
+            stderr="",
+        )
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=1,
+            ssh_key_path=None,
+        )
+        offsets = {("i-first", "00000000.log"): 100}
+
+        snapshots = _worker_log_snapshots(
+            args,
+            ["i-first"],
+            "test-run",
+            offsets,
+        )
+
+        self.assertEqual(snapshots["i-first"]["logs"], {})
+        self.assertEqual(snapshots["i-first"]["offsets"], {})
+        command = " ".join(run.call_args.args[0])
+        self.assertIn("00000000.log", command)
+        self.assertIn("100", command)
+
+    @patch("scripts.dolma3p5_resharding.materialize.subprocess.run")
+    def test_worker_log_capture_resumes_after_a_successful_page(self, run):
+        run.side_effect = [
+            SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "Instance i-first:\n"
+                    "stdout: @@DOLMA_STATUS@@\t00000000\trunning\n"
+                    "@@DOLMA_LOG_BEGIN@@\t00000000.log\t0\t100\t180\n"
+                    "first progress record\n"
+                    "@@DOLMA_LOG_END@@\t00000000.log\t100\tOK\n"
+                    "stderr:\n"
+                ),
+                stderr="",
+            ),
+            SimpleNamespace(
+                returncode=0,
+                stdout=(
+                    "Instance i-first:\n"
+                    "stdout: @@DOLMA_STATUS@@\t00000000\trunning\n"
+                    "@@DOLMA_LOG_BEGIN@@\t00000000.log\t100\t180\t180\n"
+                    "second progress record\n"
+                    "@@DOLMA_LOG_END@@\t00000000.log\t180\tOK\n"
+                    "stderr:\n"
+                ),
+                stderr="",
+            ),
+        ]
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=1,
+            ssh_key_path=None,
+        )
+
+        first = _worker_log_snapshots(args, ["i-first"], "test-run")
+        offsets = {
+            ("i-first", log_name): offset
+            for log_name, offset in first["i-first"]["offsets"].items()
+        }
+        second = _worker_log_snapshots(
+            args,
+            ["i-first"],
+            "test-run",
+            offsets,
+        )
+
+        self.assertEqual(
+            first["i-first"]["logs"]["00000000.log"],
+            ("first progress record",),
+        )
+        self.assertEqual(
+            second["i-first"]["logs"]["00000000.log"],
+            ("second progress record",),
+        )
+        self.assertEqual(second["i-first"]["offsets"], {"00000000.log": 180})
+        second_command = " ".join(run.call_args_list[1].args[0])
+        self.assertIn("00000000.log", second_command)
+        self.assertIn("100", second_command)
 
     def test_materialize_verifies_selected_output_sizes_and_metadata(self):
         args = SimpleNamespace(
@@ -2584,6 +2684,27 @@ class TestReshardingSafety(unittest.TestCase):
         self.assertEqual(len(paths), 1)
         self.assertEqual(Path(paths[0].npy_path).stat().st_size, 16)
         self.assertEqual(Path(paths[0].csv_path).stat().st_size, 12)
+
+    def test_s5cmd_carriage_return_progress_is_preserved_as_log_records(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            run_s5cmd(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "import sys; "
+                        "sys.stdout.write('10% complete\\r20% complete\\r'); "
+                        "sys.stdout.flush()"
+                    ),
+                ],
+                "test transfer",
+            )
+
+        self.assertEqual(
+            output.getvalue().splitlines(),
+            ["10% complete", "20% complete"],
+        )
 
     def test_existing_local_destination_is_refused(self):
         destination = self.root / "existing"

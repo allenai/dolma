@@ -288,6 +288,7 @@ SECRET_VALUE = re.compile(
     r"(\s*[=:]\s*)\S+"
 )
 PROCESS_TAIL_LINES = 12
+WORKER_LOG_PAGE_BYTES = 16 * 1024
 WORKER_LOG_STYLES = (
     "bold bright_cyan",
     "bold bright_magenta",
@@ -1383,12 +1384,56 @@ def _worker_log_command(
     args: argparse.Namespace,
     instance_ids: Sequence[str],
     status_run_id: str,
+    log_offsets: dict[tuple[str, str], int] | None = None,
 ) -> list[str]:
     status_root = f"$HOME/dolma3p5-resharding-status/{status_run_id}"
+    active_instance_ids = set(instance_ids)
+    offset_payload = json.dumps(
+        {
+            log_name: offset
+            for (instance_id, log_name), offset in (log_offsets or {}).items()
+            if instance_id in active_instance_ids
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    log_reader = r'''import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+offsets = json.loads(sys.argv[2])
+budget = int(sys.argv[3])
+for path in sorted(root.glob("*.log")):
+    if budget <= 0:
+        break
+    size = path.stat().st_size
+    offset = int(offsets.get(path.name, 0))
+    if offset < 0 or offset > size:
+        offset = 0
+    if offset == size:
+        continue
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        data = handle.read(min(size - offset, budget))
+    if offset + len(data) < size:
+        boundary = max(data.rfind(b"\n"), data.rfind(b"\r"))
+        if boundary >= 0:
+            data = data[: boundary + 1]
+    if not data:
+        continue
+    end = offset + len(data)
+    print(f"@@DOLMA_LOG_BEGIN@@\t{path.name}\t{offset}\t{end}\t{size}")
+    text = data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
+    sys.stdout.write(text)
+    if not text.endswith("\n"):
+        sys.stdout.write("\n")
+    print(f"@@DOLMA_LOG_END@@\t{path.name}\t{end}\tOK")
+    budget -= len(data)
+'''
     remote_script = f"""status_root=\"{status_root}\"
 shopt -s nullglob
 status_files=(\"$status_root\"/*.status)
-log_files=(\"$status_root\"/*.log)
 if (( ${{#status_files[@]}} == 0 )); then
   echo 'no unit status yet'
 else
@@ -1398,11 +1443,13 @@ else
     printf '\n'
   done
 fi
-for path in \"${{log_files[@]}}\"; do
-  printf '@@DOLMA_LOG_BEGIN@@\t%s\n' \"$(basename \"$path\")\"
-  cat \"$path\"
-  printf '\n@@DOLMA_LOG_END@@\t%s\n' \"$(basename \"$path\")\"
-done"""
+python_bin=\"${{DOLMA_PYTHON:-$HOME/.venv/bin/python}}\"
+if [[ ! -x \"$python_bin\" ]]; then
+  python_bin=$(command -v python3.12 || command -v python3 || command -v python)
+fi
+\"$python_bin\" - \"$status_root\" {shlex.quote(offset_payload)} {WORKER_LOG_PAGE_BYTES} <<'PY'
+{log_reader}
+PY"""
     return build_poormanray_run_command(
         cluster=args.project,
         project=args.project,
@@ -1418,12 +1465,13 @@ def _worker_log_snapshots(
     args: argparse.Namespace,
     instance_ids: Sequence[str],
     status_run_id: str,
-) -> dict[str, dict[str, dict[str, tuple[str, ...] | str]]]:
-    """Read every current-run status and log from every active worker."""
+    log_offsets: dict[tuple[str, str], int] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Read one acknowledged page of new log bytes from every active worker."""
 
     try:
         result = subprocess.run(
-            _worker_log_command(args, instance_ids, status_run_id),
+            _worker_log_command(args, instance_ids, status_run_id, log_offsets),
             check=False,
             capture_output=True,
             text=True,
@@ -1459,10 +1507,11 @@ def _worker_log_snapshots(
         if reading_stdout and line and current_instance is not None:
             instance_payloads[current_instance].append(line)
 
-    snapshots: dict[str, dict[str, dict[str, tuple[str, ...] | str]]] = {}
+    snapshots: dict[str, dict[str, Any]] = {}
     for instance_id, payload in instance_payloads.items():
         statuses: dict[str, str] = {}
         logs: dict[str, tuple[str, ...]] = {}
+        offsets: dict[str, int] = {}
         current_log: str | None = None
         current_lines: list[str] = []
         for line in payload:
@@ -1471,18 +1520,32 @@ def _worker_log_snapshots(
                 statuses[unit_id] = status
                 continue
             if line.startswith("@@DOLMA_LOG_BEGIN@@\t"):
-                current_log = line.split("\t", 1)[1]
+                current_log = line.split("\t", 2)[1]
                 current_lines = []
                 continue
             if line.startswith("@@DOLMA_LOG_END@@\t"):
-                if current_log is not None:
+                fields = line.split("\t")
+                if (
+                    current_log is not None
+                    and len(fields) == 4
+                    and fields[1] == current_log
+                    and fields[3] == "OK"
+                ):
+                    logs[current_log] = tuple(current_lines)
+                    offsets[current_log] = int(fields[2])
+                elif current_log is not None and len(fields) == 2:
+                    # Accept envelopes written by the older full-log reader.
                     logs[current_log] = tuple(current_lines)
                 current_log = None
                 current_lines = []
                 continue
             if current_log is not None:
                 current_lines.append(line)
-        snapshots[instance_id] = {"statuses": statuses, "logs": logs}
+        snapshots[instance_id] = {
+            "statuses": statuses,
+            "logs": logs,
+            "offsets": offsets,
+        }
     return snapshots
 
 
@@ -1509,6 +1572,8 @@ def _wait_for_workers_to_stop(
     verbose = getattr(args, "verbose", False)
     previous_statuses: dict[tuple[str, str], str] = {}
     emitted_log_lines: dict[tuple[str, str], int] = {}
+    log_byte_offsets: dict[tuple[str, str], int] = {}
+    announced_logs: set[tuple[str, str]] = set()
     previous_state_signature: tuple[tuple[str, int], ...] | None = None
     aborted = False
     worker_tags = {
@@ -1610,7 +1675,12 @@ def _wait_for_workers_to_stop(
                     )
                 )
                 if running_ids:
-                    snapshots = _worker_log_snapshots(args, running_ids, status_run_id)
+                    snapshots = _worker_log_snapshots(
+                        args,
+                        running_ids,
+                        status_run_id,
+                        log_byte_offsets,
+                    )
                     for instance_id in sorted(snapshots):
                         worker_tag, worker_style = worker_tags[instance_id]
                         snapshot = snapshots[instance_id]
@@ -1631,15 +1701,23 @@ def _wait_for_workers_to_stop(
                                 )
                         logs = snapshot["logs"]
                         assert isinstance(logs, dict)
+                        offsets = snapshot.get("offsets", {})
+                        assert isinstance(offsets, dict)
                         for log_name, log_lines in sorted(logs.items()):
                             assert isinstance(log_lines, tuple)
                             log_key = (instance_id, log_name)
-                            emitted = emitted_log_lines.get(log_key, 0)
-                            if len(log_lines) < emitted:
-                                emitted = 0
-                            new_lines = log_lines[emitted:]
+                            if log_name in offsets:
+                                new_lines = log_lines
+                            else:
+                                # Backward compatibility for old worker-log
+                                # envelopes without acknowledged byte offsets.
+                                emitted = emitted_log_lines.get(log_key, 0)
+                                if len(log_lines) < emitted:
+                                    emitted = 0
+                                new_lines = log_lines[emitted:]
                             if new_lines:
-                                if emitted == 0:
+                                if log_key not in announced_logs:
+                                    announced_logs.add(log_key)
                                     output.print(
                                         _worker_log_line(
                                             worker_tag,
@@ -1658,7 +1736,10 @@ def _wait_for_workers_to_stop(
                                             timestamp=timestamp,
                                         )
                                     )
-                            emitted_log_lines[log_key] = len(log_lines)
+                            if log_name in offsets:
+                                log_byte_offsets[log_key] = int(offsets[log_name])
+                            else:
+                                emitted_log_lines[log_key] = len(log_lines)
             dispatch_complete = all_dispatched is None or all_dispatched.is_set()
             if dispatch_complete and stopped == len(expected_ids):
                 break
