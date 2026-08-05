@@ -34,6 +34,7 @@ import yaml
 
 
 UINT32_BYTES = 4
+DOCUMENT_SELECTION_ALGORITHM = "document_hash_bucket_v1"
 DEFAULT_TARGET = 14_000_000_000_000
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BUILD_PATH = REPOSITORY_ROOT / "runs/dolma3p5-resharding/14t"
@@ -57,6 +58,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "random_seed": 42,
     "max_workers_per_reshard": 8,
     "tokenizer_name_or_path": "allenai/dolma2-tokenizer",
+    "max_materialized_unit_target_residual_fraction": 0.001,
+    "max_materialized_total_target_residual_fraction": 0.00001,
 }
 
 
@@ -139,45 +142,32 @@ def _validate_preparation_build(path: Path) -> dict[str, Any]:
         with manifest_path.open(encoding="utf-8") as f:
             manifest = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
-        raise PreparationError(
-            f"Invalid preparation build marker: {manifest_path}"
-        ) from exc
+        raise PreparationError(f"Invalid preparation build marker: {manifest_path}") from exc
     build_id = manifest.get("build_id")
     mix_sha256 = manifest.get("mix_sha256")
     catalog_sha256 = manifest.get("catalog_sha256")
     hashes_are_valid = all(
-        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
-        for value in (mix_sha256, catalog_sha256)
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) for value in (mix_sha256, catalog_sha256)
     )
     expected_build_id = ""
     if hashes_are_valid:
         seed = f"{mix_sha256}:{catalog_sha256}".encode()
         expected_build_id = f"dolma3p5-14t-{hashlib.sha256(seed).hexdigest()[:12]}"
-    if (
-        manifest.get("schema_version") != 1
-        or not isinstance(build_id, str)
-        or build_id != expected_build_id
-    ):
-        raise PreparationError(
-            f"Refusing to replace an unrecognized preparation build: {path}"
-        )
+    if manifest.get("schema_version") != 1 or not isinstance(build_id, str) or build_id != expected_build_id:
+        raise PreparationError(f"Refusing to replace an unrecognized preparation build: {path}")
     unknown = sorted(
         child.name
         for child in path.iterdir()
-        if child.name
-        not in {"build.json", *PREPARATION_PHASES, *PRESERVED_BUILD_METADATA}
+        if child.name not in {"build.json", *PREPARATION_PHASES, *PRESERVED_BUILD_METADATA}
     )
     if unknown:
         raise PreparationError(
-            "Refusing to reset a preparation build containing unknown top-level "
-            f"entries: {', '.join(unknown)}"
+            "Refusing to reset a preparation build containing unknown top-level " f"entries: {', '.join(unknown)}"
         )
     for phase_name in PREPARATION_PHASES:
         phase = path / phase_name
         if phase.exists() and (phase.is_symlink() or not phase.is_dir()):
-            raise PreparationError(
-                f"Refusing to replace an unsafe preparation phase path: {phase}"
-            )
+            raise PreparationError(f"Refusing to replace an unsafe preparation phase path: {phase}")
     return manifest
 
 
@@ -185,9 +175,7 @@ def _remove_generated_phase(path: Path) -> None:
     if not path.exists():
         return
     if path.is_symlink() or not path.is_dir():
-        raise PreparationError(
-            f"Refusing to replace an unsafe preparation phase path: {path}"
-        )
+        raise PreparationError(f"Refusing to replace an unsafe preparation phase path: {path}")
     shutil.rmtree(path)
 
 
@@ -207,9 +195,7 @@ def _reset_preparation_build(path: Path) -> None:
     (path / "build.json").unlink()
 
 
-def _reset_preparation_phase(
-    build: Path, phase_name: str, *downstream_phase_names: str
-) -> Path:
+def _reset_preparation_phase(build: Path, phase_name: str, *downstream_phase_names: str) -> Path:
     """Replace generated local phases after verifying the build ownership marker."""
 
     _validate_preparation_build(build)
@@ -229,25 +215,19 @@ def _write_text(path: Path, value: str) -> None:
         with path.open("x", encoding="utf-8") as f:
             f.write(value)
     except FileExistsError as exc:
-        raise PreparationError(
-            f"Refusing to replace existing artifact: {path}"
-        ) from exc
+        raise PreparationError(f"Refusing to replace existing artifact: {path}") from exc
 
 
 def _write_json(path: Path, value: Any) -> None:
     _write_text(path, json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
-def _write_csv(
-    path: Path, rows: Iterable[dict[str, Any]], fieldnames: Sequence[str]
-) -> None:
+def _write_csv(path: Path, rows: Iterable[dict[str, Any]], fieldnames: Sequence[str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         f = path.open("x", newline="", encoding="utf-8")
     except FileExistsError as exc:
-        raise PreparationError(
-            f"Refusing to replace existing artifact: {path}"
-        ) from exc
+        raise PreparationError(f"Refusing to replace existing artifact: {path}") from exc
     with f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
@@ -272,6 +252,13 @@ def _load_settings(path: Path | None) -> dict[str, Any]:
         settings.update(loaded)
     if int(settings["target_uint32_values"]) <= 0:
         raise PreparationError("target_uint32_values must be positive")
+    for name in (
+        "max_materialized_unit_target_residual_fraction",
+        "max_materialized_total_target_residual_fraction",
+    ):
+        value = float(settings[name])
+        if not 0 < value < 1:
+            raise PreparationError(f"{name} must be between zero and one")
     return settings
 
 
@@ -283,34 +270,22 @@ def _load_catalog(path: Path) -> list[dict[str, str]]:
             if not row or all(not value.strip() for value in row):
                 continue
             if len(row) < 2:
-                raise PreparationError(
-                    f"Catalog row {line_number} has fewer than two columns"
-                )
+                raise PreparationError(f"Catalog row {line_number} has fewer than two columns")
             bucket, encoded_key = row[0].strip(), row[1].strip()
-            if (
-                line_number == 1
-                and bucket.lower() == "bucket"
-                and encoded_key.lower() in {"key", "path"}
-            ):
+            if line_number == 1 and bucket.lower() == "bucket" and encoded_key.lower() in {"key", "path"}:
                 continue
             key = unquote(encoded_key)
             if not bucket:
-                raise PreparationError(
-                    f"Invalid catalog object on row {line_number}: {row[:2]}"
-                )
+                raise PreparationError(f"Invalid catalog object on row {line_number}: {row[:2]}")
             if any(ord(char) < 32 for char in bucket + key):
-                raise PreparationError(
-                    f"Control character in catalog object on row {line_number}"
-                )
+                raise PreparationError(f"Control character in catalog object on row {line_number}")
             if not key.endswith(".npy"):
                 # The reference file is nominally an NPY catalog but currently
                 # contains at least one metadata row. Metadata never defines
                 # membership, so ignore it here and verify the derived partner
                 # against S3 during inventory.
                 continue
-            rows.append(
-                {"bucket": bucket, "key": key, "catalog_line": str(line_number)}
-            )
+            rows.append({"bucket": bucket, "key": key, "catalog_line": str(line_number)})
     if not rows:
         raise PreparationError(f"Catalog contains no NPY objects: {path}")
     return rows
@@ -318,9 +293,7 @@ def _load_catalog(path: Path) -> list[dict[str, str]]:
 
 def _catalog_pattern(yaml_path: str) -> str:
     relative = yaml_path.removeprefix("dolma3p5_pool/")
-    return (
-        relative if relative.startswith("preprocessed/") else f"preprocessed/{relative}"
-    )
+    return relative if relative.startswith("preprocessed/") else f"preprocessed/{relative}"
 
 
 def _direct_s3_pattern(yaml_path: str, bucket: str) -> tuple[str, str]:
@@ -489,9 +462,7 @@ def plan_build(args: argparse.Namespace) -> None:
                 resolution_route = (
                     "catalog"
                     if yaml_path.startswith("dolma3p5_pool/")
-                    else "direct_s3"
-                    if yaml_path.startswith("preprocessed/")
-                    else "unsupported"
+                    else "direct_s3" if yaml_path.startswith("preprocessed/") else "unsupported"
                 )
                 normalized_paths.append(
                     {
@@ -507,9 +478,7 @@ def plan_build(args: argparse.Namespace) -> None:
                 )
                 if resolution_route == "catalog":
                     pattern = _catalog_pattern(yaml_path)
-                    matched = [
-                        row for row in catalog if _matches_key(row["key"], pattern)
-                    ]
+                    matched = [row for row in catalog if _matches_key(row["key"], pattern)]
                     if not matched:
                         failures.append(
                             {
@@ -536,9 +505,7 @@ def plan_build(args: argparse.Namespace) -> None:
                             }
                         )
                 elif resolution_route == "direct_s3":
-                    bucket, pattern = _direct_s3_pattern(
-                        yaml_path, str(settings["direct_s3_bucket"])
-                    )
+                    bucket, pattern = _direct_s3_pattern(yaml_path, str(settings["direct_s3_bucket"]))
                     direct_patterns.append(
                         {
                             "path_id": path_id,
@@ -603,11 +570,7 @@ def plan_build(args: argparse.Namespace) -> None:
         for subgroup in subgroups:
             subgroup_prefix = _common_directory_prefix([row["key"] for row in subgroup])
             required = {(row["bucket"], row["key"]) for row in subgroup}
-            estimated = sum(
-                1
-                for row in catalog_by_bucket[bucket]
-                if row["key"].startswith(subgroup_prefix)
-            )
+            estimated = sum(1 for row in catalog_by_bucket[bucket] if row["key"].startswith(subgroup_prefix))
             overfetch = estimated / max(1, len(required))
             if (
                 estimated > int(settings["max_listing_catalog_objects"])
@@ -617,9 +580,7 @@ def plan_build(args: argparse.Namespace) -> None:
             else:
                 final_groups = [subgroup]
             for final_group in final_groups:
-                final_prefix = _common_directory_prefix(
-                    [row["key"] for row in final_group]
-                )
+                final_prefix = _common_directory_prefix([row["key"] for row in final_group])
                 key = (bucket, final_prefix)
                 entry = listing_groups.setdefault(
                     key,
@@ -644,12 +605,8 @@ def plan_build(args: argparse.Namespace) -> None:
         entry["leaf_ids"].add(row["leaf_id"])
 
     listing_plan: list[dict[str, Any]] = []
-    for listing_id, ((bucket, prefix), entry) in enumerate(
-        sorted(listing_groups.items())
-    ):
-        estimated = sum(
-            1 for row in catalog_by_bucket[bucket] if row["key"].startswith(prefix)
-        )
+    for listing_id, ((bucket, prefix), entry) in enumerate(sorted(listing_groups.items())):
+        estimated = sum(1 for row in catalog_by_bucket[bucket] if row["key"].startswith(prefix))
         required = {
             (row["bucket"], row["key"])
             for row in catalog_matches
@@ -694,9 +651,7 @@ def plan_build(args: argparse.Namespace) -> None:
     phase.mkdir(exist_ok=False)
     _write_json(output / "build.json", manifest)
     _write_csv(phase / "normalized-mix.csv", normalized_mix, list(normalized_mix[0]))
-    _write_csv(
-        phase / "normalized-paths.csv", normalized_paths, list(normalized_paths[0])
-    )
+    _write_csv(phase / "normalized-paths.csv", normalized_paths, list(normalized_paths[0]))
     _write_csv(
         phase / "catalog-matches.csv",
         catalog_matches,
@@ -753,8 +708,7 @@ def plan_build(args: argparse.Namespace) -> None:
     )
 
     commands = [
-        "ls --etag --storage-class "
-        + shlex.quote("s3://" + row["bucket"] + "/" + row["listing_prefix"] + "*")
+        "ls --etag --storage-class " + shlex.quote("s3://" + row["bucket"] + "/" + row["listing_prefix"] + "*")
         for row in listing_plan
     ]
     _write_text(
@@ -769,16 +723,11 @@ def plan_build(args: argparse.Namespace) -> None:
         direct_patterns=direct_patterns,
     )
 
-    catalog_summary = _count_label(
-        len(catalog_matches), "catalog NPY match", "catalog NPY matches"
-    )
+    catalog_summary = _count_label(len(catalog_matches), "catalog NPY match", "catalog NPY matches")
     pattern_summary = _count_label(len(direct_patterns), "direct S3 pattern")
     correction_summary = _count_label(len(corrections), "correction")
     failure_summary = _count_label(len(failures), "blocking failure")
-    print(
-        f"Plan summary: {catalog_summary}, {pattern_summary}, "
-        f"{correction_summary}, {failure_summary}"
-    )
+    print(f"Plan summary: {catalog_summary}, {pattern_summary}, " f"{correction_summary}, {failure_summary}")
     if failures:
         raise PreparationError(
             f"Plan contains {len(failures)} validation failure(s); inspect {phase / 'resolution-failures.csv'}"
@@ -796,6 +745,9 @@ def _load_build(build: Path) -> dict[str, Any]:
         raise PreparationError(f"Mix YAML changed since plan creation: {mix_path}")
     if _sha256(catalog_path) != manifest["catalog_sha256"]:
         raise PreparationError(f"Catalog changed since plan creation: {catalog_path}")
+    settings = dict(DEFAULT_SETTINGS)
+    settings.update(manifest.get("settings", {}))
+    manifest["settings"] = settings
     return manifest
 
 
@@ -868,9 +820,7 @@ def _run_s5cmd_inventory(
                 returncode = process.wait(timeout=status_interval_seconds)
                 break
             except subprocess.TimeoutExpired:
-                output_offset, new_records = _count_newlines(
-                    raw_output, output_offset
-                )
+                output_offset, new_records = _count_newlines(raw_output, output_offset)
                 output_records += new_records
                 status(
                     f"Running: {output_records:,} JSON records received, "
@@ -893,9 +843,7 @@ def collect_inventory(args: argparse.Namespace) -> None:
     build = args.build.resolve()
     manifest = _load_build(build)
     if shutil.which("s5cmd") is None:
-        raise PreparationError(
-            "s5cmd is required for inventory collection and was not found on PATH"
-        )
+        raise PreparationError("s5cmd is required for inventory collection and was not found on PATH")
     phase = _reset_preparation_phase(
         build,
         "02-inventory",
@@ -905,9 +853,7 @@ def collect_inventory(args: argparse.Namespace) -> None:
     )
     listing_plan = _read_csv(build / "01-plan/listing-plan.csv")
 
-    session = (
-        boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
-    )
+    session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
     client = session.client("s3", region_name=args.region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     listed: dict[tuple[str, str], S3Object] = {}
@@ -986,13 +932,10 @@ def collect_inventory(args: argparse.Namespace) -> None:
             f"FAILED: s5cmd exit {result.returncode}; {len(errors):,} listing errors. "
             f"Inspect {phase / 'inventory-errors.csv'} and {raw_output}",
         )
-        raise PreparationError(
-            f"S3 listing failed; inspect {phase / 'inventory-errors.csv'}"
-        )
+        raise PreparationError(f"S3 listing failed; inspect {phase / 'inventory-errors.csv'}")
     _inventory_status(
         1,
-        f"Complete: {len(listed):,} unique objects parsed in "
-        f"{result.elapsed_seconds:,.1f}s",
+        f"Complete: {len(listed):,} unique objects parsed in " f"{result.elapsed_seconds:,.1f}s",
     )
     summary = _finalize_inventory(
         build,
@@ -1053,9 +996,7 @@ def _parse_s5cmd_jsonl(
             try:
                 record = json.loads(line)
             except json.JSONDecodeError as exc:
-                errors.append(
-                    {"line": str(line_number), "error": f"invalid JSON: {exc}"}
-                )
+                errors.append({"line": str(line_number), "error": f"invalid JSON: {exc}"})
                 continue
             if record.get("error"):
                 errors.append({"line": str(line_number), "error": str(record["error"])})
@@ -1066,21 +1007,11 @@ def _parse_s5cmd_jsonl(
             bucket_value = _first_value(nodes, {"bucket"})
             if isinstance(key_value, str) and key_value.startswith("s3://"):
                 uri = key_value
-            elif (
-                not (isinstance(uri, str) and uri.startswith("s3://"))
-                and bucket_value
-                and key_value
-            ):
+            elif not (isinstance(uri, str) and uri.startswith("s3://")) and bucket_value and key_value:
                 uri = f"s3://{bucket_value}/{key_value}"
-            if (
-                not isinstance(uri, str)
-                or not uri.startswith("s3://")
-                or any(c in uri for c in "*?[")
-            ):
+            if not isinstance(uri, str) or not uri.startswith("s3://") or any(c in uri for c in "*?["):
                 continue
-            size = _first_value(
-                nodes, {"size", "size_bytes", "content_length", "contentlength"}
-            )
+            size = _first_value(nodes, {"size", "size_bytes", "content_length", "contentlength"})
             try:
                 size_int = int(size)
             except (TypeError, ValueError):
@@ -1092,13 +1023,8 @@ def _parse_s5cmd_jsonl(
                 key=key,
                 size_bytes=size_int,
                 etag=str(_first_value(nodes, {"etag", "e_tag"}) or "").strip('"'),
-                last_modified=str(
-                    _first_value(nodes, {"last_modified", "lastmodified", "modtime"})
-                    or ""
-                ),
-                storage_class=str(
-                    _first_value(nodes, {"storage_class", "storageclass"}) or ""
-                ),
+                last_modified=str(_first_value(nodes, {"last_modified", "lastmodified", "modtime"}) or ""),
+                storage_class=str(_first_value(nodes, {"storage_class", "storageclass"}) or ""),
                 source="s5cmd",
             )
     return objects, errors
@@ -1129,9 +1055,7 @@ def _finalize_inventory(
         matches = [
             obj
             for (bucket, key), obj in listed.items()
-            if bucket == pattern["bucket"]
-            and key.endswith(".npy")
-            and _matches_key(key, pattern["key_pattern"])
+            if bucket == pattern["bucket"] and key.endswith(".npy") and _matches_key(key, pattern["key_pattern"])
         ]
         if not matches:
             resolution_failures.append(
@@ -1180,10 +1104,7 @@ def _finalize_inventory(
             f"{max_workers:,} concurrent HeadObject requests",
         )
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(_head_object, client, bucket, key): (bucket, key)
-                for bucket, key in missing
-            }
+            futures = {pool.submit(_head_object, client, bucket, key): (bucket, key) for bucket, key in missing}
             for future in as_completed(futures):
                 bucket, key = futures[future]
                 try:
@@ -1199,10 +1120,7 @@ def _finalize_inventory(
                         }
                     )
                 completed_heads += 1
-                if (
-                    completed_heads == head_total
-                    or completed_heads % progress_interval == 0
-                ):
+                if completed_heads == head_total or completed_heads % progress_interval == 0:
                     emit(
                         2,
                         f"Exact checks: {completed_heads:,}/{head_total:,} complete",
@@ -1291,9 +1209,7 @@ def _finalize_inventory(
         list(all_objects[0]) if all_objects else [],
     )
     _write_csv(phase / "required-objects.csv", required_rows, required_fields)
-    _write_csv(
-        phase / "missing-objects.csv", missing_rows, ["bucket", "key", "object_type"]
-    )
+    _write_csv(phase / "missing-objects.csv", missing_rows, ["bucket", "key", "object_type"])
     _write_csv(
         phase / "invalid-npy-sizes.csv",
         invalid_sizes,
@@ -1304,14 +1220,10 @@ def _finalize_inventory(
         resolution_failures,
         ["path_id", "yaml_path", "reason"],
     )
-    _write_csv(
-        phase / "head-errors.csv", head_errors, ["operation", "bucket", "key", "error"]
-    )
+    _write_csv(phase / "head-errors.csv", head_errors, ["operation", "bucket", "key", "error"])
     original_by_leaf: dict[str, dict[str, int]] = defaultdict(dict)
     for row in required_rows:
-        original_by_leaf[row["leaf_id"]][row["npy_uri"]] = int(
-            row["estimated_uint32_values"]
-        )
+        original_by_leaf[row["leaf_id"]][row["npy_uri"]] = int(row["estimated_uint32_values"])
     normalized_mix = _read_csv(build / "01-plan/normalized-mix.csv")
     original_total = sum(sum(objects.values()) for objects in original_by_leaf.values())
     target_total = sum(int(row["target_uint32_values"]) for row in normalized_mix)
@@ -1342,8 +1254,7 @@ def _finalize_inventory(
     )
     emit(
         3,
-        f"Estimated source tokens: {_human_token_count(original_total)} "
-        f"({original_total:,} uint32 values)",
+        f"Estimated source tokens: {_human_token_count(original_total)} " f"({original_total:,} uint32 values)",
     )
     emit(4, f"Finalizing inventory report and summary in {phase}")
     detail_metadata = _render_inventory_report(
@@ -1366,78 +1277,81 @@ def _finalize_inventory(
             4,
             f"FAILED: inventory validation did not pass. Inspect {phase}",
         )
-        raise PreparationError(
-            f"Inventory validation failed; inspect artifacts in {phase}"
-        )
+        raise PreparationError(f"Inventory validation failed; inspect artifacts in {phase}")
     return summary
 
 
-def _allocate_object_repetitions(
-    target: int, sizes: Sequence[int]
-) -> tuple[list[int], int]:
+def _allocate_object_sampling(target: int, sizes: Sequence[int]) -> tuple[list[int], list[int], int]:
+    """Allocate every shard the same rate, using partial quotas for the residual.
+
+    A 0.30 rate assigns roughly 30% of every shard, rather than selecting 30%
+    of the shard files. Largest-remainder apportionment keeps the aggregate
+    target exact while each per-shard quota differs from its ideal by less than
+    one uint32 value.
+    """
+
     if target <= 0 or not sizes or any(size <= 0 for size in sizes):
-        raise ValueError(
-            "Allocation requires a positive target and positive object sizes"
-        )
+        raise ValueError("Allocation requires a positive target and positive object sizes")
     available = sum(sizes)
     base = target // available
     repetitions = [base for _ in sizes]
     residual = target - base * available
-    selected: set[int] = set()
-    remaining = residual
+    partial_targets: list[int] = []
+    remainders: list[tuple[int, int]] = []
+    for index, size in enumerate(sizes):
+        partial, remainder = divmod(residual * size, available)
+        partial_targets.append(partial)
+        remainders.append((remainder, index))
+    undistributed = residual - sum(partial_targets)
+    for _, index in sorted(remainders, key=lambda item: (-item[0], item[1]))[:undistributed]:
+        partial_targets[index] += 1
 
-    for index in sorted(range(len(sizes)), key=lambda i: (-sizes[i], i)):
-        candidate = remaining - sizes[index]
-        if abs(candidate) < abs(remaining):
-            selected.add(index)
-            remaining = candidate
-
-    improved = True
-    while improved:
-        improved = False
-        current_error = abs(remaining)
-        unselected = [i for i in range(len(sizes)) if i not in selected]
-        for remove in sorted(selected):
-            for add in unselected:
-                candidate = remaining + sizes[remove] - sizes[add]
-                if abs(candidate) < current_error:
-                    selected.remove(remove)
-                    selected.add(add)
-                    remaining = candidate
-                    improved = True
-                    break
-            if improved:
-                break
-
-    if base == 0 and not selected:
-        closest = min(
-            range(len(sizes)), key=lambda i: (abs(sizes[i] - target), sizes[i], i)
-        )
-        selected.add(closest)
-    for index in selected:
-        repetitions[index] += 1
-    planned = sum(size * repeat for size, repeat in zip(sizes, repetitions))
-    return repetitions, planned
+    for index, size in enumerate(sizes):
+        if partial_targets[index] == size:
+            repetitions[index] += 1
+            partial_targets[index] = 0
+        elif partial_targets[index] > size:
+            raise AssertionError("Proportional partial target exceeds its source")
+        residual_allocation = (repetitions[index] - base) * size + partial_targets[index]
+        if abs(residual_allocation * available - residual * size) >= available:
+            raise AssertionError("Per-shard sampling quota is not proportional")
+        if residual * size >= available and residual_allocation <= 0:
+            raise AssertionError("A shard with a positive proportional quota was dropped")
+    planned = sum(size * repeat + partial for size, repeat, partial in zip(sizes, repetitions, partial_targets))
+    if planned != target:
+        raise AssertionError(f"Allocation did not preserve target: {planned} != {target}")
+    return repetitions, partial_targets, planned
 
 
 def _execution_unit_sizes(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
+    def partial_metadata_bytes(row: dict[str, Any]) -> int:
+        partial_target = int(row.get("partial_target_uint32_values", 0))
+        if not partial_target:
+            return 0
+        return math.ceil(int(row["metadata_size_bytes"]) * partial_target / int(row["estimated_uint32_values"]))
+
     input_npy_bytes = sum(int(row["npy_size_bytes"]) for row in rows)
     input_metadata_bytes = sum(int(row["metadata_size_bytes"]) for row in rows)
     output_npy_bytes = sum(
-        int(row["npy_size_bytes"]) * int(row["repeat_count"]) for row in rows
+        int(row["npy_size_bytes"]) * int(row["repeat_count"])
+        + int(row.get("partial_target_uint32_values", 0)) * UINT32_BYTES
+        for row in rows
     )
     estimated_output_metadata_bytes = sum(
-        int(row["metadata_size_bytes"]) * int(row["repeat_count"]) for row in rows
+        int(row["metadata_size_bytes"]) * int(row["repeat_count"]) + partial_metadata_bytes(row) for row in rows
     )
+    estimated_selection_index_bytes = sum(partial_metadata_bytes(row) for row in rows)
     return {
         "input_npy_bytes": input_npy_bytes,
         "input_metadata_bytes": input_metadata_bytes,
         "output_npy_bytes": output_npy_bytes,
         "estimated_output_metadata_bytes": estimated_output_metadata_bytes,
+        "estimated_selection_index_bytes": estimated_selection_index_bytes,
         "estimated_peak_local_bytes": input_npy_bytes
         + input_metadata_bytes
         + output_npy_bytes
-        + estimated_output_metadata_bytes,
+        + estimated_output_metadata_bytes
+        + estimated_selection_index_bytes,
     }
 
 
@@ -1448,7 +1362,11 @@ def _partition_object_uses(
 
     if max_unit_working_bytes <= 0:
         raise ValueError("max_unit_working_bytes must be positive")
-    positive = [dict(row) for row in rows if int(row["repeat_count"]) > 0]
+    positive = [
+        dict(row)
+        for row in rows
+        if int(row["repeat_count"]) > 0 or int(row.get("partial_target_uint32_values", 0)) > 0
+    ]
     if not positive:
         raise ValueError("An execution-unit partition requires a positive object use")
 
@@ -1463,11 +1381,10 @@ def _partition_object_uses(
 
     for row in sorted(positive, key=lambda item: item["npy_uri"]):
         remaining = int(row["repeat_count"])
+        partial_target = int(row.get("partial_target_uint32_values", 0))
         input_bytes = int(row["npy_size_bytes"]) + int(row["metadata_size_bytes"])
         output_bytes_per_repeat = input_bytes
-        maximum_repeats_alone = (
-            max_unit_working_bytes - input_bytes
-        ) // output_bytes_per_repeat
+        maximum_repeats_alone = (max_unit_working_bytes - input_bytes) // output_bytes_per_repeat
         if maximum_repeats_alone < 1:
             raise PreparationError(
                 "One source object cannot fit in an execution unit with one output copy: "
@@ -1477,28 +1394,40 @@ def _partition_object_uses(
 
         whole_row = dict(row)
         whole_row["repeat_count"] = remaining
-        if (
-            _execution_unit_sizes([whole_row])["estimated_peak_local_bytes"]
-            <= max_unit_working_bytes
-        ):
+        if _execution_unit_sizes([whole_row])["estimated_peak_local_bytes"] <= max_unit_working_bytes:
             candidate = [*current, whole_row]
-            if (
-                current
-                and _execution_unit_sizes(candidate)["estimated_peak_local_bytes"]
-                > max_unit_working_bytes
-            ):
+            if current and _execution_unit_sizes(candidate)["estimated_peak_local_bytes"] > max_unit_working_bytes:
                 flush()
             current.append(whole_row)
             continue
 
         flush()
-        while remaining:
-            repeat_count = min(remaining, maximum_repeats_alone)
+        while remaining or partial_target:
             chunk = dict(row)
+            chunk["repeat_count"] = 0
+            chunk["partial_target_uint32_values"] = 0
+            if partial_target:
+                chunk["partial_target_uint32_values"] = partial_target
+                partial_target = 0
+            partial_sizes = _execution_unit_sizes([chunk])
+            if partial_sizes["estimated_peak_local_bytes"] > max_unit_working_bytes:
+                raise PreparationError(
+                    "One source object's partial-document selection cannot fit in "
+                    f"an execution unit: {row['npy_uri']} requires at least "
+                    f"{partial_sizes['estimated_peak_local_bytes']} bytes, limit is "
+                    f"{max_unit_working_bytes}"
+                )
+            remaining_bytes = max_unit_working_bytes - partial_sizes["estimated_peak_local_bytes"]
+            repeat_count = min(
+                remaining,
+                max(0, remaining_bytes // output_bytes_per_repeat),
+            )
+            if repeat_count == 0 and not chunk["partial_target_uint32_values"]:
+                repeat_count = min(remaining, maximum_repeats_alone)
             chunk["repeat_count"] = repeat_count
             current.append(chunk)
             remaining -= repeat_count
-            if remaining:
+            if remaining or partial_target:
                 flush()
 
     flush()
@@ -1547,7 +1476,7 @@ mkdir -p "$unit_root/config" "$unit_root/manifests"
 "$python_bin" - <<'PY'
 from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION
 
-if RESHARDING_MANIFEST_SCHEMA_VERSION != 1:
+if RESHARDING_MANIFEST_SCHEMA_VERSION != 2:
     raise RuntimeError(
         "Worker Dolma runtime does not match the reviewed manifest-resharding schema"
     )
@@ -1573,17 +1502,11 @@ def _validate_destination_root(destination_root: str) -> str:
     prefix = parsed.path.strip("/")
     components = prefix.split("/")
     if len(components) < 2:
-        raise PreparationError(
-            "destination-root must contain at least two path components below the bucket"
-        )
+        raise PreparationError("destination-root must contain at least two path components below the bucket")
     if any(component in {"", ".", ".."} for component in components):
-        raise PreparationError(
-            "destination-root cannot contain empty, '.' or '..' components"
-        )
+        raise PreparationError("destination-root cannot contain empty, '.' or '..' components")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", prefix):
-        raise PreparationError(
-            "destination-root must use only letters, digits, '.', '_', '-', and '/'"
-        )
+        raise PreparationError("destination-root must use only letters, digits, '.', '_', '-', and '/'")
     return f"s3://{parsed.netloc}/{prefix}"
 
 
@@ -1592,9 +1515,7 @@ def propose_configs(args: argparse.Namespace) -> None:
     manifest = _load_build(build)
     inventory_phase = build / "02-inventory"
     if not (inventory_phase / "inventory-summary.json").is_file():
-        raise PreparationError(
-            "Inventory is missing; run scripts/dolma3p5_resharding/inventory.py first"
-        )
+        raise PreparationError("Inventory is missing; run scripts/dolma3p5_resharding/inventory.py first")
     with (inventory_phase / "inventory-summary.json").open() as f:
         inventory_summary = json.load(f)
     blocking = sum(
@@ -1609,9 +1530,7 @@ def propose_configs(args: argparse.Namespace) -> None:
     if blocking:
         raise PreparationError("Inventory contains blocking validation failures")
 
-    phase = _reset_preparation_phase(
-        build, "03-proposal", "04-preflight", "05-output-validation"
-    )
+    phase = _reset_preparation_phase(build, "03-proposal", "04-preflight", "05-output-validation")
     configs_dir = phase / "config"
     manifests_dir = phase / "manifests"
     plots_dir = phase / "plots"
@@ -1643,9 +1562,7 @@ def propose_configs(args: argparse.Namespace) -> None:
         for (bucket, key), leaves in memberships.items()
         if len(leaves) > 1
     ]
-    _write_csv(
-        phase / "cross-leaf-overlaps.csv", overlaps, ["bucket", "key", "leaf_ids"]
-    )
+    _write_csv(phase / "cross-leaf-overlaps.csv", overlaps, ["bucket", "key", "leaf_ids"])
     if overlaps:
         raise PreparationError(
             f"Found {len(overlaps)} exact NPY object(s) assigned to multiple active categories; inspect cross-leaf-overlaps.csv"
@@ -1663,6 +1580,9 @@ def propose_configs(args: argparse.Namespace) -> None:
         "npy_uri",
         "metadata_uri",
         "repeat_count",
+        "partial_target_uint32_values",
+        "selection_seed",
+        "selection_algorithm",
         "npy_size_bytes",
         "estimated_uint32_values",
         "npy_etag",
@@ -1686,12 +1606,10 @@ def propose_configs(args: argparse.Namespace) -> None:
             key=lambda row: (row["bucket"], row["key"]),
         )
         if not objects:
-            raise PreparationError(
-                f"Active category has no inventoried objects: {leaf['leaf_id']}"
-            )
+            raise PreparationError(f"Active category has no inventoried objects: {leaf['leaf_id']}")
         sizes = [int(row["estimated_uint32_values"]) for row in objects]
         target = int(leaf["target_uint32_values"])
-        repetitions, planned = _allocate_object_repetitions(target, sizes)
+        repetitions, partial_targets, planned = _allocate_object_sampling(target, sizes)
         available = sum(sizes)
         total_planned += planned
         allocation_rows.append(
@@ -1709,20 +1627,32 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "token_change_percent_from_original": f"{(planned - available) / available:.12g}",
                 "ideal_sample_rate": f"{target / available:.12g}",
                 "effective_sample_rate": f"{planned / available:.12g}",
-                "absolute_error": planned - target,
-                "absolute_error_bps_of_total": f"{10_000 * (planned - target) / int(settings['target_uint32_values']):.12g}",
-                "relative_error": f"{(planned - target) / target:.12g}",
+                "target_residual_uint32_values": planned - target,
+                "target_residual_bps_of_total": f"{10_000 * (planned - target) / int(settings['target_uint32_values']):.12g}",
+                "target_residual_fraction": f"{(planned - target) / target:.12g}",
                 "unique_object_count": len(objects),
-                "selected_object_count": sum(value > 0 for value in repetitions),
-                "dropped_object_count": sum(value == 0 for value in repetitions),
-                "repeated_object_count": sum(value > 1 for value in repetitions),
-                "total_object_uses": sum(repetitions),
+                "selected_object_count": sum(
+                    repeat > 0 or partial > 0 for repeat, partial in zip(repetitions, partial_targets)
+                ),
+                "dropped_object_count": sum(
+                    repeat == 0 and partial == 0 for repeat, partial in zip(repetitions, partial_targets)
+                ),
+                "repeated_object_count": sum(
+                    size * repeat + partial > size
+                    for size, repeat, partial in zip(sizes, repetitions, partial_targets)
+                ),
+                "partial_object_count": sum(value > 0 for value in partial_targets),
+                "total_object_uses": sum(repetitions) + sum(value > 0 for value in partial_targets),
                 "minimum_repetition": min(repetitions),
                 "maximum_repetition": max(repetitions),
             }
         )
         leaf_object_uses: list[dict[str, Any]] = []
-        for obj, repeat_count in zip(objects, repetitions):
+        for obj, repeat_count, partial_target in zip(objects, repetitions, partial_targets):
+            selection_seed = int(settings["random_seed"]) + int(
+                hashlib.sha256(f"{leaf['leaf_id']}\0{obj['npy_uri']}".encode()).hexdigest()[:16],
+                16,
+            )
             object_use = {
                 "leaf_id": leaf["leaf_id"],
                 "mix_index": mix_index,
@@ -1740,32 +1670,21 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "metadata_size_bytes": obj["metadata_size_bytes"],
                 "metadata_etag": obj["metadata_etag"],
                 "repeat_count": repeat_count,
-                "planned_uint32_values": int(obj["estimated_uint32_values"])
-                * repeat_count,
+                "partial_target_uint32_values": partial_target,
+                "selection_seed": selection_seed,
+                "selection_algorithm": DOCUMENT_SELECTION_ALGORITHM,
+                "planned_uint32_values": int(obj["estimated_uint32_values"]) * repeat_count + partial_target,
             }
             object_use_rows.append(object_use)
-            if repeat_count > 0:
+            if repeat_count > 0 or partial_target > 0:
                 leaf_object_uses.append(object_use)
 
         units = _partition_object_uses(leaf_object_uses, max_unit_working_bytes)
         category_slug = (
-            f"{mix_index:03d}-{_slug(mix_name, 60)}--"
-            f"{category_index:02d}-{_slug(category_name, 40)}"
+            f"{mix_index:03d}-{_slug(mix_name, 60)}--" f"{category_index:02d}-{_slug(category_name, 40)}"
         )
-        unit_planned_values = [
-            _execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES
-            for unit in units
-        ]
-        unit_targets: list[int] = []
-        remaining_target = target
-        for unit_index, unit_planned in enumerate(unit_planned_values):
-            unit_target = (
-                remaining_target
-                if unit_index == len(units) - 1
-                else round(target * unit_planned / planned)
-            )
-            unit_targets.append(unit_target)
-            remaining_target -= unit_target
+        unit_planned_values = [_execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES for unit in units]
+        unit_targets = unit_planned_values
 
         unit_peak_bytes: list[int] = []
         unit_input_bytes: list[int] = []
@@ -1774,11 +1693,10 @@ def propose_configs(args: argparse.Namespace) -> None:
             unit_id = f"{category_slug}--unit-{unit_number:04d}-of-{len(units):04d}"
             unit_sizes = _execution_unit_sizes(unit_rows)
             unit_peak_bytes.append(unit_sizes["estimated_peak_local_bytes"])
-            unit_input_bytes.append(
-                unit_sizes["input_npy_bytes"] + unit_sizes["input_metadata_bytes"]
-            )
+            unit_input_bytes.append(unit_sizes["input_npy_bytes"] + unit_sizes["input_metadata_bytes"])
             unit_planned = unit_sizes["output_npy_bytes"] // UINT32_BYTES
             unit_max_repeat = max(int(row["repeat_count"]) for row in unit_rows)
+            unit_partial_objects = sum(int(row.get("partial_target_uint32_values", 0)) > 0 for row in unit_rows)
             manifest_path = manifests_dir / f"{unit_id}.csv"
             _write_csv(manifest_path, unit_rows, manifest_fields)
             if unit_planned < 10_000_000_000:
@@ -1789,19 +1707,14 @@ def propose_configs(args: argparse.Namespace) -> None:
                 shard_floor = 8
             max_num_files = max(shard_floor, unit_max_repeat)
             destination = (
-                f"{destination_root}/{manifest['build_id']}/categories/"
-                f"{category_slug}/unit-{unit_number:04d}"
+                f"{destination_root}/{manifest['build_id']}/categories/" f"{category_slug}/unit-{unit_number:04d}"
             )
             config = {
                 "destination_prefix": destination,
-                "source_manifests": [
-                    {"manifest": f"../manifests/{manifest_path.name}"}
-                ],
+                "source_manifests": [{"manifest": f"../manifests/{manifest_path.name}"}],
                 "local_tempdir": str(local_temp_root / manifest["build_id"] / unit_id),
                 "max_num_files": max_num_files,
-                "max_workers": min(
-                    int(settings["max_workers_per_reshard"]), max_num_files
-                ),
+                "max_workers": min(int(settings["max_workers_per_reshard"]), max_num_files),
                 "random_seed": int(settings["random_seed"])
                 + int(hashlib.sha256(unit_id.encode()).hexdigest()[:16], 16),
                 "tokenizer_name_or_path": str(settings["tokenizer_name_or_path"]),
@@ -1837,26 +1750,29 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "destination_prefix": destination,
                 "target_uint32_values": unit_target,
                 "planned_uint32_values": unit_planned,
-                "absolute_error": unit_planned - unit_target,
+                "target_residual_uint32_values": unit_planned - unit_target,
                 "category_target_uint32_values": target,
                 "category_planned_uint32_values": planned,
                 "input_npy_bytes": unit_sizes["input_npy_bytes"],
                 "input_metadata_bytes": unit_sizes["input_metadata_bytes"],
                 "output_npy_bytes": unit_sizes["output_npy_bytes"],
-                "estimated_output_metadata_bytes": unit_sizes[
-                    "estimated_output_metadata_bytes"
-                ],
+                "estimated_output_metadata_bytes": unit_sizes["estimated_output_metadata_bytes"],
+                "estimated_selection_index_bytes": unit_sizes["estimated_selection_index_bytes"],
                 "estimated_peak_local_bytes": unit_sizes["estimated_peak_local_bytes"],
                 "max_unit_working_bytes": max_unit_working_bytes,
                 "working_budget_utilization": f"{unit_sizes['estimated_peak_local_bytes'] / max_unit_working_bytes:.12g}",
                 "unique_object_count": len(unit_rows),
+                "partial_object_count": unit_partial_objects,
+                "allowed_materialized_target_residual_uint32_values": (
+                    math.ceil(unit_target * float(settings["max_materialized_unit_target_residual_fraction"]))
+                    if unit_partial_objects
+                    else 0
+                ),
                 "maximum_repetition": unit_max_repeat,
                 "max_num_files": max_num_files,
             }
             config_index.append(unit_row)
-            local_unit_commands.append(
-                f"python -m dolma.tokenizer.reshard {shlex.quote(str(config_path))}"
-            )
+            local_unit_commands.append(f"python -m dolma.tokenizer.reshard {shlex.quote(str(config_path))}")
 
         category_execution_rows.append(
             {
@@ -1888,21 +1804,20 @@ def propose_configs(args: argparse.Namespace) -> None:
         "token_change_percent_from_original",
         "ideal_sample_rate",
         "effective_sample_rate",
-        "absolute_error",
-        "absolute_error_bps_of_total",
-        "relative_error",
+        "target_residual_uint32_values",
+        "target_residual_bps_of_total",
+        "target_residual_fraction",
         "unique_object_count",
         "selected_object_count",
         "dropped_object_count",
         "repeated_object_count",
+        "partial_object_count",
         "total_object_uses",
         "minimum_repetition",
         "maximum_repetition",
     ]
     _write_csv(phase / "category-allocation.csv", allocation_rows, allocation_fields)
-    _write_csv(
-        phase / "planned-object-uses.csv", object_use_rows, list(object_use_rows[0])
-    )
+    _write_csv(phase / "planned-object-uses.csv", object_use_rows, list(object_use_rows[0]))
     _write_csv(phase / "config-index.csv", config_index, list(config_index[0]))
     _write_csv(
         phase / "category-execution-summary.csv",
@@ -1920,14 +1835,6 @@ def propose_configs(args: argparse.Namespace) -> None:
         + "\n".join(local_unit_commands)
         + "\n",
     )
-    _write_text(
-        phase / "DISTRIBUTED-LAUNCH.txt",
-        "# INERT COMMAND. Review the execution-unit plan and preflight before launching.\n"
-        "# launcher-scripts contains only self-contained executable unit scripts.\n"
-        "# Set PMR_REGION to the ai2-llm bucket region first.\n"
-        f"pmr map --name dolma3p5-14t --region \"$PMR_REGION\" "
-        f"--script {shlex.quote(str(launcher_dir))}\n",
-    )
     _write_json(
         phase / "dataset-layout.json",
         {
@@ -1937,6 +1844,7 @@ def propose_configs(args: argparse.Namespace) -> None:
             "category_count": len(category_execution_rows),
             "execution_unit_count": len(config_index),
             "nominal_target_uint32_values": int(settings["target_uint32_values"]),
+            "target_uint32_values": sum(int(row["target_uint32_values"]) for row in allocation_rows),
             "planned_uint32_values": total_planned,
             "max_unit_working_bytes": max_unit_working_bytes,
             "destination_prefixes_file": "dataset-prefixes.txt",
@@ -1946,7 +1854,12 @@ def propose_configs(args: argparse.Namespace) -> None:
         phase / "runtime-requirements.json",
         {
             "required_python_module": "dolma.tokenizer.reshard",
-            "required_resharding_manifest_schema_version": 1,
+            "required_python_modules": [
+                "dolma.tokenizer.reshard",
+                "dolma.tokenizer.document_selection",
+            ],
+            "required_resharding_manifest_schema_version": 2,
+            "document_selection_algorithm": DOCUMENT_SELECTION_ALGORITHM,
             "launcher_runtime_check": True,
         },
     )
@@ -1988,12 +1901,23 @@ def propose_configs(args: argparse.Namespace) -> None:
             "largest_estimated_peak_local_bytes": max(
                 int(row["estimated_peak_local_bytes"]) for row in config_index
             ),
-            "target_uint32_values": int(settings["target_uint32_values"]),
+            "nominal_target_uint32_values": int(settings["target_uint32_values"]),
+            "target_uint32_values": report_totals["target_uint32_values"],
             "source_uint32_values": report_totals["source_uint32_values"],
             "planned_uint32_values": total_planned,
-            "token_change_from_source": total_planned
-            - report_totals["source_uint32_values"],
-            "absolute_error": total_planned - int(settings["target_uint32_values"]),
+            "token_change_from_source": total_planned - report_totals["source_uint32_values"],
+            "target_residual_uint32_values": total_planned - report_totals["target_uint32_values"],
+            "nominal_target_residual_uint32_values": total_planned - int(settings["target_uint32_values"]),
+            "partial_object_count": sum(
+                int(row.get("partial_target_uint32_values", 0)) > 0 for row in object_use_rows
+            ),
+            "document_selection_algorithm": DOCUMENT_SELECTION_ALGORITHM,
+            "max_materialized_unit_target_residual_fraction": float(
+                settings["max_materialized_unit_target_residual_fraction"]
+            ),
+            "max_materialized_total_target_residual_fraction": float(
+                settings["max_materialized_total_target_residual_fraction"]
+            ),
             "materialization_executed": False,
         },
     )
@@ -2021,17 +1945,27 @@ def _validate_proposal(
         with config_path.open() as f:
             config = yaml.safe_load(f)
         if config.get("allow_existing_destination") is not False:
-            failures.append(
-                {"check": "no_existing_destination", "detail": str(config_path)}
-            )
+            failures.append({"check": "no_existing_destination", "detail": str(config_path)})
         manifest_path = config_path.parent / config["source_manifests"][0]["manifest"]
         if not manifest_path.resolve().is_file():
             failures.append({"check": "manifest_exists", "detail": str(manifest_path)})
+        else:
+            manifest_rows = _read_csv(manifest_path.resolve())
+            for manifest_row in manifest_rows:
+                partial_target = int(manifest_row.get("partial_target_uint32_values", 0))
+                if partial_target and (
+                    manifest_row.get("selection_algorithm") != DOCUMENT_SELECTION_ALGORITHM
+                    or not manifest_row.get("selection_seed")
+                ):
+                    failures.append(
+                        {
+                            "check": "partial_selection_manifest",
+                            "detail": str(manifest_path),
+                        }
+                    )
         launcher_path = build / row["launcher_path"]
         if not launcher_path.is_file() or not os.access(launcher_path, os.X_OK):
-            failures.append(
-                {"check": "launcher_is_executable", "detail": str(launcher_path)}
-            )
+            failures.append({"check": "launcher_is_executable", "detail": str(launcher_path)})
         if int(row["estimated_peak_local_bytes"]) > int(row["max_unit_working_bytes"]):
             failures.append(
                 {
@@ -2040,9 +1974,7 @@ def _validate_proposal(
                 }
             )
     active_leaf_ids = {
-        row["leaf_id"]
-        for row in _read_csv(build / "01-plan/normalized-mix.csv")
-        if row["active"] == "true"
+        row["leaf_id"] for row in _read_csv(build / "01-plan/normalized-mix.csv") if row["active"] == "true"
     }
     allocated_leaf_ids = {row["leaf_id"] for row in allocations}
     for leaf_id in sorted(active_leaf_ids - allocated_leaf_ids):
@@ -2051,6 +1983,9 @@ def _validate_proposal(
     for row in config_index:
         units_by_leaf[row["leaf_id"]].append(row)
     allocation_by_leaf = {row["leaf_id"]: row for row in allocations}
+    uses_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in object_uses:
+        uses_by_leaf[row["leaf_id"]].append(row)
     for leaf_id in sorted(active_leaf_ids):
         units = units_by_leaf.get(leaf_id, [])
         if not units:
@@ -2062,12 +1997,42 @@ def _validate_proposal(
         if allocation is None:
             continue
         if planned != int(allocation["planned_uint32_values"]):
-            failures.append(
-                {"check": "unit_planned_sum", "detail": f"{leaf_id}: {planned}"}
-            )
+            failures.append({"check": "unit_planned_sum", "detail": f"{leaf_id}: {planned}"})
         if target != int(allocation["target_uint32_values"]):
+            failures.append({"check": "unit_target_sum", "detail": f"{leaf_id}: {target}"})
+        if int(allocation["target_residual_uint32_values"]) != 0:
             failures.append(
-                {"check": "unit_target_sum", "detail": f"{leaf_id}: {target}"}
+                {
+                    "check": "exact_proposal_target",
+                    "detail": (f"{leaf_id}: " f"{allocation['target_residual_uint32_values']}"),
+                }
+            )
+        object_planned = sum(int(row["planned_uint32_values"]) for row in uses_by_leaf.get(leaf_id, []))
+        if object_planned != planned:
+            failures.append(
+                {
+                    "check": "object_planned_sum",
+                    "detail": f"{leaf_id}: {object_planned} != {planned}",
+                }
+            )
+    for row in object_uses:
+        source = int(row["estimated_uint32_values"])
+        repeat_count = int(row["repeat_count"])
+        partial_target = int(row.get("partial_target_uint32_values", 0))
+        planned = int(row["planned_uint32_values"])
+        if not 0 <= partial_target < source:
+            failures.append(
+                {
+                    "check": "valid_partial_target",
+                    "detail": f"{row['npy_uri']}: {partial_target} of {source}",
+                }
+            )
+        if planned != source * repeat_count + partial_target:
+            failures.append(
+                {
+                    "check": "object_sampling_arithmetic",
+                    "detail": f"{row['npy_uri']}: {planned}",
+                }
             )
     planned_uses = {(row["leaf_id"], row["npy_uri"]) for row in object_uses}
     required_uses = {
@@ -2076,9 +2041,7 @@ def _validate_proposal(
         if row["active"] == "true"
     }
     for leaf_id, uri in sorted(required_uses - planned_uses):
-        failures.append(
-            {"check": "required_object_considered", "detail": f"{leaf_id}: {uri}"}
-        )
+        failures.append({"check": "required_object_considered", "detail": f"{leaf_id}: {uri}"})
     _write_csv(phase / "validation-failures.csv", failures, ["check", "detail"])
     _write_json(
         phase / "validation-summary.json",
@@ -2092,9 +2055,7 @@ def _validate_proposal(
         },
     )
     if failures:
-        raise PreparationError(
-            f"Proposal validation failed; inspect {phase / 'validation-failures.csv'}"
-        )
+        raise PreparationError(f"Proposal validation failed; inspect {phase / 'validation-failures.csv'}")
 
 
 def preflight_build(args: argparse.Namespace) -> None:
@@ -2108,23 +2069,16 @@ def preflight_build(args: argparse.Namespace) -> None:
     phase = _reset_preparation_phase(build, "04-preflight", "05-output-validation")
     listing_plan = _read_csv(build / "01-plan/listing-plan.csv")
     approved_inventory = _read_csv(build / "02-inventory/normalized-s3-inventory.csv")
-    approved = {
-        (row["bucket"], row["key"]): row
-        for row in approved_inventory
-        if row["required"] == "true"
-    }
+    approved = {(row["bucket"], row["key"]): row for row in approved_inventory if row["required"] == "true"}
 
-    session = (
-        boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
-    )
+    session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
     client = session.client("s3", region_name=args.region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     current: dict[tuple[str, str], S3Object] = {}
     errors: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
-            pool.submit(_list_prefix, client, row["bucket"], row["listing_prefix"]): row
-            for row in listing_plan
+            pool.submit(_list_prefix, client, row["bucket"], row["listing_prefix"]): row for row in listing_plan
         }
         for future in as_completed(futures):
             row = futures[future]
@@ -2144,10 +2098,7 @@ def preflight_build(args: argparse.Namespace) -> None:
     missing = sorted(set(approved) - set(current))
     if missing:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {
-                pool.submit(_head_object, client, bucket, key): (bucket, key)
-                for bucket, key in missing
-            }
+            futures = {pool.submit(_head_object, client, bucket, key): (bucket, key) for bucket, key in missing}
             for future in as_completed(futures):
                 bucket, key = futures[future]
                 try:
@@ -2172,9 +2123,9 @@ def preflight_build(args: argparse.Namespace) -> None:
             status = "size_changed"
         elif expected["etag"] and actual.etag != expected["etag"]:
             status = "etag_changed"
-        elif expected["last_modified"] and _normalize_timestamp(
-            actual.last_modified
-        ) != _normalize_timestamp(expected["last_modified"]):
+        elif expected["last_modified"] and _normalize_timestamp(actual.last_modified) != _normalize_timestamp(
+            expected["last_modified"]
+        ):
             status = "last_modified_changed"
         else:
             status = "unchanged"
@@ -2257,17 +2208,10 @@ def preflight_build(args: argparse.Namespace) -> None:
             "first_existing_key",
         ],
     )
-    _write_csv(
-        phase / "preflight-errors.csv", errors, ["operation", "bucket", "key", "error"]
-    )
+    _write_csv(phase / "preflight-errors.csv", errors, ["operation", "bucket", "key", "error"])
     drifted = sum(row["status"] != "unchanged" for row in drift_rows)
     occupied = sum(row["status"] != "empty" for row in destination_rows)
-    passed = (
-        not errors
-        and not drifted
-        and not occupied
-        and len(destination_rows) == len(config_index)
-    )
+    passed = not errors and not drifted and not occupied and len(destination_rows) == len(config_index)
     summary = {
         "created_at": _utc_now(),
         "approved_input_objects": len(approved),
@@ -2318,13 +2262,12 @@ def verify_output(args: argparse.Namespace) -> None:
 
     build = args.build.resolve()
     manifest = _load_build(build)
+    settings = manifest["settings"]
     config_index = _read_csv(build / "03-proposal/config-index.csv")
     if not config_index:
         raise PreparationError("Proposal config index is empty or missing")
     phase = _reset_preparation_phase(build, "05-output-validation")
-    session = (
-        boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
-    )
+    session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
     client = session.client("s3", region_name=args.region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     output_objects: list[dict[str, Any]] = []
@@ -2356,26 +2299,15 @@ def verify_output(args: argparse.Namespace) -> None:
             object_map = {obj.key: obj for obj in objects}
             npys = [obj for obj in objects if obj.key.endswith(".npy")]
             metadata = {obj.key for obj in objects if obj.key.endswith(".csv.gz")}
-            unexpected = [
-                obj for obj in objects if not obj.key.endswith((".npy", ".csv.gz"))
-            ]
+            unexpected = [obj for obj in objects if not obj.key.endswith((".npy", ".csv.gz"))]
             missing_metadata = [
-                _pair_metadata_key(obj.key)
-                for obj in npys
-                if _pair_metadata_key(obj.key) not in metadata
+                _pair_metadata_key(obj.key) for obj in npys if _pair_metadata_key(obj.key) not in metadata
             ]
-            orphan_metadata = [
-                key
-                for key in metadata
-                if key[: -len(".csv.gz")] + ".npy" not in object_map
-            ]
-            invalid_npys = [
-                obj
-                for obj in npys
-                if obj.size_bytes <= 0 or obj.size_bytes % UINT32_BYTES
-            ]
+            orphan_metadata = [key for key in metadata if key[: -len(".csv.gz")] + ".npy" not in object_map]
+            invalid_npys = [obj for obj in npys if obj.size_bytes <= 0 or obj.size_bytes % UINT32_BYTES]
             actual = sum(obj.size_bytes // UINT32_BYTES for obj in npys)
             predicted = int(row["planned_uint32_values"])
+            allowed_residual = int(row["allowed_materialized_target_residual_uint32_values"])
             status = (
                 "passed"
                 if npys
@@ -2383,7 +2315,7 @@ def verify_output(args: argparse.Namespace) -> None:
                 and not orphan_metadata
                 and not invalid_npys
                 and not unexpected
-                and actual == predicted
+                and abs(actual - predicted) <= allowed_residual
                 else "failed"
             )
             validation_rows.append(
@@ -2399,6 +2331,7 @@ def verify_output(args: argparse.Namespace) -> None:
                     "predicted_uint32_values": predicted,
                     "actual_uint32_values": actual,
                     "actual_minus_predicted": actual - predicted,
+                    "allowed_target_residual_uint32_values": allowed_residual,
                     "npy_count": len(npys),
                     "metadata_count": len(metadata),
                     "missing_metadata_count": len(missing_metadata),
@@ -2420,11 +2353,11 @@ def verify_output(args: argparse.Namespace) -> None:
                         "size_bytes": obj.size_bytes,
                         "etag": obj.etag,
                         "last_modified": obj.last_modified,
-                        "object_type": "npy"
-                        if obj.key.endswith(".npy")
-                        else "metadata"
-                        if obj.key.endswith(".csv.gz")
-                        else "unexpected",
+                        "object_type": (
+                            "npy"
+                            if obj.key.endswith(".npy")
+                            else "metadata" if obj.key.endswith(".csv.gz") else "unexpected"
+                        ),
                     }
                 )
             for key in missing_metadata:
@@ -2489,6 +2422,7 @@ def verify_output(args: argparse.Namespace) -> None:
         "predicted_uint32_values",
         "actual_uint32_values",
         "actual_minus_predicted",
+        "allowed_target_residual_uint32_values",
         "npy_count",
         "metadata_count",
         "missing_metadata_count",
@@ -2503,11 +2437,16 @@ def verify_output(args: argparse.Namespace) -> None:
         unexpected_rows,
         ["mix_name", "key", "reason"],
     )
-    _write_csv(
-        phase / "output-errors.csv", errors, ["operation", "bucket", "key", "error"]
-    )
+    _write_csv(phase / "output-errors.csv", errors, ["operation", "bucket", "key", "error"])
     failed = sum(row["status"] != "passed" for row in validation_rows)
-    passed = not errors and not failed and len(validation_rows) == len(config_index)
+    target_total = sum(int(row["target_uint32_values"]) for row in validation_rows)
+    actual_total = sum(int(row["actual_uint32_values"]) for row in validation_rows)
+    aggregate_residual = actual_total - target_total
+    allowed_aggregate_residual = math.ceil(
+        target_total * float(settings["max_materialized_total_target_residual_fraction"])
+    )
+    aggregate_within_bound = abs(aggregate_residual) <= allowed_aggregate_residual
+    passed = not errors and not failed and len(validation_rows) == len(config_index) and aggregate_within_bound
     _write_json(
         phase / "output-summary.json",
         {
@@ -2516,15 +2455,12 @@ def verify_output(args: argparse.Namespace) -> None:
             "destinations_checked": len(validation_rows),
             "failed_destinations": failed,
             "errors": len(errors),
-            "target_uint32_values": sum(
-                int(row["target_uint32_values"]) for row in validation_rows
-            ),
-            "predicted_uint32_values": sum(
-                int(row["predicted_uint32_values"]) for row in validation_rows
-            ),
-            "actual_uint32_values": sum(
-                int(row["actual_uint32_values"]) for row in validation_rows
-            ),
+            "target_uint32_values": target_total,
+            "predicted_uint32_values": sum(int(row["predicted_uint32_values"]) for row in validation_rows),
+            "actual_uint32_values": actual_total,
+            "materialized_target_residual_uint32_values": aggregate_residual,
+            "allowed_materialized_target_residual_uint32_values": (allowed_aggregate_residual),
+            "aggregate_target_residual_within_bound": aggregate_within_bound,
             "passed": passed,
         },
     )
@@ -2545,6 +2481,7 @@ def verify_output(args: argparse.Namespace) -> None:
             "predicted_uint32_values",
             "actual_uint32_values",
             "actual_minus_predicted",
+            "allowed_target_residual_uint32_values",
             "status",
         ],
     )
@@ -2594,9 +2531,7 @@ def verify_output(args: argparse.Namespace) -> None:
         "</body></html>\n",
     )
     if not passed:
-        raise PreparationError(
-            f"Output validation failed; inspect artifacts in {phase}"
-        )
+        raise PreparationError(f"Output validation failed; inspect artifacts in {phase}")
     print(f"Output validation passed using size-only checks: {phase}")
 
 
@@ -2622,11 +2557,7 @@ def _svg_bar_chart(
     for index, (label, value) in enumerate(zip(labels, values)):
         y = 50 + index * row_height
         bar_width = max(0.0, plot_width * value / maximum)
-        displayed_value = (
-            value_labels[index]
-            if value_labels is not None
-            else f"{value:.4g} {unit}"
-        )
+        displayed_value = value_labels[index] if value_labels is not None else f"{value:.4g} {unit}"
         rows.append(
             f'<text x="{label_x}" y="{y + 14}">{html.escape(label[:52])}</text>'
             f'<rect x="{margin_left}" y="{y}" width="{bar_width:.2f}" height="16" />'
@@ -2637,11 +2568,7 @@ def _svg_bar_chart(
         f'aria-label="{html.escape(title)}"><title>{html.escape(title)}</title><style>'
         "text{font:12px sans-serif;fill:#222}rect{fill:#356cb6}"
         ".summary{font-size:14px;font-weight:600}</style>"
-        + (
-            f'<text class="summary" x="{label_x}" y="24">{html.escape(summary)}</text>'
-            if summary
-            else ""
-        )
+        + (f'<text class="summary" x="{label_x}" y="24">{html.escape(summary)}</text>' if summary else "")
         + "".join(rows)
         + "</svg>\n"
     )
@@ -2719,13 +2646,17 @@ def _mix_plot_value_label(value: int, total: int) -> str:
 
 
 def _summary_metrics(metrics: Sequence[tuple[str, str]]) -> str:
-    return '<div class="summary-metrics">' + "".join(
-        '<div class="summary-metric">'
-        f'<span class="summary-label">{html.escape(label)}</span>'
-        f'<span class="summary-value">{html.escape(value)}</span>'
-        "</div>"
-        for label, value in metrics
-    ) + "</div>"
+    return (
+        '<div class="summary-metrics">'
+        + "".join(
+            '<div class="summary-metric">'
+            f'<span class="summary-label">{html.escape(label)}</span>'
+            f'<span class="summary-value">{html.escape(value)}</span>'
+            "</div>"
+            for label, value in metrics
+        )
+        + "</div>"
+    )
 
 
 def _svg_scatter(
@@ -2762,20 +2693,13 @@ def _path_subgroup(yaml_path: str) -> str:
     for index, part in enumerate(parts):
         if part == "allenai" and index:
             return unquote(parts[index - 1])
-    candidates = [
-        part
-        for part in parts
-        if "*" not in part and not part.endswith((".npy", ".csv.gz"))
-    ]
+    candidates = [part for part in parts if "*" not in part and not part.endswith((".npy", ".csv.gz"))]
     return unquote(candidates[-1]) if candidates else yaml_path
 
 
 def _source_uri_details(source_uris: Iterable[str], empty_message: str) -> str:
     resolved_sources = sorted(set(source_uris)) or [empty_message]
-    return "".join(
-        f'<span class="path-detail-uri">{html.escape(uri)}</span>'
-        for uri in resolved_sources
-    )
+    return "".join(f'<span class="path-detail-uri">{html.escape(uri)}</span>' for uri in resolved_sources)
 
 
 def _split_mix_name(mix_name: str) -> tuple[str, str]:
@@ -2815,18 +2739,20 @@ def _interactive_chart_rows(
         percent = float(row[percent_field])
         relative_width = 100 * percent / maximum
         tokens = int(row[value_field])
-        value_label = str(
-            row.get("value_label") or _mix_plot_value_label(tokens, total)
-        )
+        value_label = str(row.get("value_label") or _mix_plot_value_label(tokens, total))
         metric_columns = row.get("metric_columns")
         if metric_columns:
-            metrics = '<span class="mix-metrics">' + "".join(
-                '<span class="mix-metric">'
-                f'<span class="mix-metric-label">{html.escape(str(metric["label"]))}</span>'
-                f'<span class="mix-metric-value">{html.escape(str(metric["value"]))}</span>'
-                "</span>"
-                for metric in metric_columns
-            ) + "</span>"
+            metrics = (
+                '<span class="mix-metrics">'
+                + "".join(
+                    '<span class="mix-metric">'
+                    f'<span class="mix-metric-label">{html.escape(str(metric["label"]))}</span>'
+                    f'<span class="mix-metric-value">{html.escape(str(metric["value"]))}</span>'
+                    "</span>"
+                    for metric in metric_columns
+                )
+                + "</span>"
+            )
             rendered_row_class = f"{row_class} has-metrics"
             value = metrics
         else:
@@ -2909,13 +2835,9 @@ def _render_plan_report(
         {
             "mix_name": name,
             "target_uint32_values": value,
-            "target_percent": f"{100 * value / target_total:.8f}"
-            if target_total
-            else "0",
+            "target_percent": f"{100 * value / target_total:.8f}" if target_total else "0",
         }
-        for name, value in sorted(
-            target_by_mix.items(), key=lambda item: item[1], reverse=True
-        )
+        for name, value in sorted(target_by_mix.items(), key=lambda item: item[1], reverse=True)
     ]
     _write_csv(
         plot_data / "target-mix.csv",
@@ -2931,9 +2853,7 @@ def _render_plan_report(
         subcategories_by_family[source_family].append(row)
     family_rows: list[dict[str, Any]] = []
     for source_family, subcategories in subcategories_by_family.items():
-        family_target = sum(
-            int(row["target_uint32_values"]) for row in subcategories
-        )
+        family_target = sum(int(row["target_uint32_values"]) for row in subcategories)
         family_percent = 100 * family_target / target_total if target_total else 0.0
         ordered_subcategories = sorted(
             subcategories,
@@ -2950,10 +2870,7 @@ def _render_plan_report(
             row["metric_columns"] = [
                 {
                     "label": "Target",
-                    "value": (
-                        f"{_human_token_count(sub_target)} tokens · "
-                        f"{sub_percent:.2f}% of family"
-                    ),
+                    "value": (f"{_human_token_count(sub_target)} tokens · " f"{sub_percent:.2f}% of family"),
                 }
             ]
         family_rows.append(
@@ -2965,10 +2882,7 @@ def _render_plan_report(
                 "metric_columns": [
                     {
                         "label": "Target",
-                        "value": (
-                            f"{_human_token_count(family_target)} tokens · "
-                            f"{family_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(family_target)} tokens · " f"{family_percent:.2f}%"),
                     }
                 ],
             }
@@ -2987,14 +2901,8 @@ def _render_plan_report(
             [row["mix_name"] for row in family_rows],
             [float(row["target_percent"]) for row in family_rows],
             "% of target",
-            value_labels=[
-                _mix_plot_value_label(row["target_uint32_values"], target_total)
-                for row in family_rows
-            ],
-            summary=(
-                f"Total target: {_human_token_count(target_total)} tokens "
-                f"({target_total:,})"
-            ),
+            value_labels=[_mix_plot_value_label(row["target_uint32_values"], target_total) for row in family_rows],
+            summary=(f"Total target: {_human_token_count(target_total)} tokens " f"({target_total:,})"),
         ),
     )
     chart_rows = _interactive_chart_rows(
@@ -3019,12 +2927,9 @@ def _render_plan_report(
     catalog_counts = Counter(row["path_id"] for row in catalog_matches)
     catalog_sources_by_path: dict[str, list[str]] = defaultdict(list)
     for row in catalog_matches:
-        catalog_sources_by_path[row["path_id"]].append(
-            f's3://{row["bucket"]}/{row["key"]}'
-        )
+        catalog_sources_by_path[row["path_id"]].append(f's3://{row["bucket"]}/{row["key"]}')
     direct_sources_by_path = {
-        row["path_id"]: f's3://{row["bucket"]}/{row["key_pattern"]}'
-        for row in direct_patterns
+        row["path_id"]: f's3://{row["bucket"]}/{row["key_pattern"]}' for row in direct_patterns
     }
     categories_by_mix: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in normalized_mix:
@@ -3035,15 +2940,11 @@ def _render_plan_report(
         mix_name = str(target_row["mix_name"])
         mix_target = int(target_row["target_uint32_values"])
         category_sections: list[str] = []
-        for category in sorted(
-            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
-        ):
+        for category in sorted(categories_by_mix[mix_name], key=lambda row: int(row["category_index"])):
             category_target = int(category["target_uint32_values"])
             category_percent = 100 * category_target / mix_target if mix_target else 0
             path_rows: list[str] = []
-            for path in sorted(
-                paths_by_leaf[category["leaf_id"]], key=lambda row: row["path_id"]
-            ):
+            for path in sorted(paths_by_leaf[category["leaf_id"]], key=lambda row: row["path_id"]):
                 active = path["active"] == "true"
                 source_uris = sorted(set(catalog_sources_by_path[path["path_id"]]))
                 direct_source = direct_sources_by_path.get(path["path_id"])
@@ -3054,19 +2955,15 @@ def _render_plan_report(
                 elif direct_source is not None:
                     matched = "pending inventory"
                 else:
-                    matched = _count_label(
-                        catalog_counts[path["path_id"]], "matched NPY"
-                    )
-                source_details = _source_uri_details(
-                    source_uris, "No resolved S3 source"
-                )
+                    matched = _count_label(catalog_counts[path["path_id"]], "matched NPY")
+                source_details = _source_uri_details(source_uris, "No resolved S3 source")
                 path_rows.append(
                     '<details class="path-detail"><summary>'
                     f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
                     f'<span class="path-stat">{html.escape(matched)}'
                     '<span class="path-chevron" aria-hidden="true">›</span></span>'
                     "</summary>"
-                    f'<code>{source_details}</code>'
+                    f"<code>{source_details}</code>"
                     "</details>"
                 )
             category_sections.append(
@@ -3077,10 +2974,7 @@ def _render_plan_report(
                 "</div>"
                 '<div class="category-bar" aria-hidden="true">'
                 f'<span class="category-bar-fill" style="width:{category_percent:.8f}%"></span></div>'
-                '<div class="path-list">'
-                + "".join(path_rows)
-                + "</div>"
-                + "</section>"
+                '<div class="path-list">' + "".join(path_rows) + "</div>" + "</section>"
             )
         subcategory_detail_by_mix[mix_name] = (
             f'<section class="subcategory-detail" id="{target_row["detail_id"]}" hidden>'
@@ -3088,10 +2982,7 @@ def _render_plan_report(
             f'<h2>{html.escape(str(target_row["subcategory_name"]))}</h2>'
             f'<div class="detail-total">{_human_token_count(mix_target)} tokens · '
             f'{float(target_row["target_percent"]):.2f}% of target</div></div>'
-            '<div class="category-grid">'
-            + "".join(category_sections)
-            + "</div>"
-            + "</section>"
+            '<div class="category-grid">' + "".join(category_sections) + "</div>" + "</section>"
         )
     detail_sections: list[str] = []
     for family_row in family_rows:
@@ -3117,7 +3008,7 @@ def _render_plan_report(
         + "</head><body>"
         + "<h1>Dolma 3.5 Target Allocation and Source Path Plan</h1>"
         f'<div class="chart-total">Materialized output target: '
-        f'{_human_token_count(target_total)} tokens ({target_total:,})</div>'
+        f"{_human_token_count(target_total)} tokens ({target_total:,})</div>"
         f'<div class="mix-chart">{chart_rows}</div>'
         + "".join(detail_sections)
         + _interactive_report_script()
@@ -3148,25 +3039,17 @@ def _build_inventory_details(
         source_family, subcategory_name = _split_mix_name(str(mix_name))
         category_rows: list[dict[str, Any]] = []
         source_object_uris: set[str] = set()
-        for category in sorted(
-            categories, key=lambda row: int(row["category_index"])
-        ):
+        for category in sorted(categories, key=lambda row: int(row["category_index"])):
             leaf_id = category["leaf_id"]
             category_objects = {
-                row["npy_uri"]: int(row["estimated_uint32_values"])
-                for row in rows_by_leaf[leaf_id]
+                row["npy_uri"]: int(row["estimated_uint32_values"]) for row in rows_by_leaf[leaf_id]
             }
             source_object_uris.update(category_objects)
             source_tokens = sum(category_objects.values())
             target_tokens = int(category["target_uint32_values"])
-            path_definitions = sorted(
-                paths_by_leaf[leaf_id], key=lambda row: row["path_id"]
-            )
+            path_definitions = sorted(paths_by_leaf[leaf_id], key=lambda row: row["path_id"])
             path_objects = [
-                {
-                    row["npy_uri"]: int(row["estimated_uint32_values"])
-                    for row in rows_by_path[path["path_id"]]
-                }
+                {row["npy_uri"]: int(row["estimated_uint32_values"]) for row in rows_by_path[path["path_id"]]}
                 for path in path_definitions
             ]
             path_source_tokens = [sum(objects.values()) for objects in path_objects]
@@ -3211,27 +3094,19 @@ def _build_inventory_details(
         target_tokens = sum(row["target_uint32_values"] for row in category_rows)
         for category in category_rows:
             category["source_percent_of_parent"] = (
-                100 * category["source_uint32_values"] / source_tokens
-                if source_tokens
-                else 0.0
+                100 * category["source_uint32_values"] / source_tokens if source_tokens else 0.0
             )
             category["target_percent_of_parent"] = (
-                100 * category["target_uint32_values"] / target_tokens
-                if target_tokens
-                else 0.0
+                100 * category["target_uint32_values"] / target_tokens if target_tokens else 0.0
             )
             for lower_group in category["lower_groups"]:
                 lower_group["source_percent_of_parent"] = (
-                    100
-                    * lower_group["source_uint32_values"]
-                    / category["source_uint32_values"]
+                    100 * lower_group["source_uint32_values"] / category["source_uint32_values"]
                     if category["source_uint32_values"]
                     else 0.0
                 )
                 lower_group["implied_target_percent_of_parent"] = (
-                    100
-                    * lower_group["implied_target_uint32_values"]
-                    / category["target_uint32_values"]
+                    100 * lower_group["implied_target_uint32_values"] / category["target_uint32_values"]
                     if category["target_uint32_values"]
                     else 0.0
                 )
@@ -3256,38 +3131,24 @@ def _build_inventory_details(
     target_total = sum(row["target_uint32_values"] for row in source_rows)
     for source in source_rows:
         source["source_percent_of_total"] = (
-            100 * source["source_uint32_values"] / source_total
-            if source_total
-            else 0.0
+            100 * source["source_uint32_values"] / source_total if source_total else 0.0
         )
         source["target_percent_of_total"] = (
-            100 * source["target_uint32_values"] / target_total
-            if target_total
-            else 0.0
+            100 * source["target_uint32_values"] / target_total if target_total else 0.0
         )
         for category in source["categories"]:
             category["source_percent_of_total"] = (
-                100 * category["source_uint32_values"] / source_total
-                if source_total
-                else 0.0
+                100 * category["source_uint32_values"] / source_total if source_total else 0.0
             )
             category["target_percent_of_total"] = (
-                100 * category["target_uint32_values"] / target_total
-                if target_total
-                else 0.0
+                100 * category["target_uint32_values"] / target_total if target_total else 0.0
             )
             for lower_group in category["lower_groups"]:
                 lower_group["source_percent_of_total"] = (
-                    100 * lower_group["source_uint32_values"] / source_total
-                    if source_total
-                    else 0.0
+                    100 * lower_group["source_uint32_values"] / source_total if source_total else 0.0
                 )
                 lower_group["implied_target_percent_of_total"] = (
-                    100
-                    * lower_group["implied_target_uint32_values"]
-                    / target_total
-                    if target_total
-                    else 0.0
+                    100 * lower_group["implied_target_uint32_values"] / target_total if target_total else 0.0
                 )
 
     source_rows.sort(
@@ -3307,16 +3168,12 @@ def _build_inventory_details(
         "token_delta": target_total - source_total,
         "sampling_ratio": aggregate_ratio,
         "sampling_rate": aggregate_rate,
-        "source_family_count": len(
-            {str(row["source_family"]) for row in source_rows}
-        ),
+        "source_family_count": len({str(row["source_family"]) for row in source_rows}),
         "subcategory_count": len(source_rows),
         "source_count": len(source_rows),
         "category_count": sum(len(row["categories"]) for row in source_rows),
         "lower_group_count": sum(
-            len(category["lower_groups"])
-            for source in source_rows
-            for category in source["categories"]
+            len(category["lower_groups"]) for source in source_rows for category in source["categories"]
         ),
         "sources": source_rows,
     }
@@ -3357,9 +3214,7 @@ def refresh_inventory_details(build: Path) -> dict[str, Any]:
         required_rows=_read_csv(phase / "required-objects.csv"),
     )
     summary_source = int(
-        summary["source_uint32_values"]
-        if "source_uint32_values" in summary
-        else summary["original_uint32_values"]
+        summary["source_uint32_values"] if "source_uint32_values" in summary else summary["original_uint32_values"]
     )
     if summary_source != details["source_uint32_values"]:
         raise PreparationError("Inventory detail source total does not match summary")
@@ -3400,9 +3255,7 @@ def _render_inventory_report(
     plots.mkdir(exist_ok=False)
     plot_data.mkdir(exist_ok=False)
     found_npy = {(row["bucket"], row["key"]) for row in required_rows}
-    found_metadata = {
-        (row["bucket"], _pair_metadata_key(row["key"])) for row in required_rows
-    }
+    found_metadata = {(row["bucket"], _pair_metadata_key(row["key"])) for row in required_rows}
     missing_npy = sum(row["object_type"] == "npy" for row in missing_rows)
     missing_metadata = sum(row["object_type"] == "metadata" for row in missing_rows)
     coverage_rows = [
@@ -3457,17 +3310,11 @@ def _render_inventory_report(
                 "metric_columns": [
                     {
                         "label": "Source",
-                        "value": (
-                            f"{_human_token_count(original)} tokens · "
-                            f"{source_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(original)} tokens · " f"{source_percent:.2f}%"),
                     },
                     {
                         "label": "Target",
-                        "value": (
-                            f"{_human_token_count(target)} tokens · "
-                            f"{target_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(target)} tokens · " f"{target_percent:.2f}%"),
                     },
                     {"label": "Sampling", "value": sampling_rate},
                 ],
@@ -3484,19 +3331,11 @@ def _render_inventory_report(
 
     family_rows: list[dict[str, Any]] = []
     for source_family, subcategories in subcategories_by_family.items():
-        family_source = sum(
-            int(row["available_uint32_values"]) for row in subcategories
-        )
-        family_target = sum(
-            int(row["target_uint32_values"]) for row in subcategories
-        )
-        source_percent = (
-            100 * family_source / original_total if original_total else 0.0
-        )
+        family_source = sum(int(row["available_uint32_values"]) for row in subcategories)
+        family_target = sum(int(row["target_uint32_values"]) for row in subcategories)
+        source_percent = 100 * family_source / original_total if original_total else 0.0
         target_percent = 100 * family_target / target_total if target_total else 0.0
-        sampling_rate, sampling_class = _sampling_rate_label(
-            family_source, family_target
-        )
+        sampling_rate, sampling_class = _sampling_rate_label(family_source, family_target)
         ordered_subcategories = sorted(
             subcategories,
             key=lambda row: (
@@ -3509,26 +3348,20 @@ def _render_inventory_report(
         for row in ordered_subcategories:
             sub_source = int(row["available_uint32_values"])
             sub_target = int(row["target_uint32_values"])
-            sub_source_percent = (
-                100 * sub_source / family_source if family_source else 0.0
-            )
-            sub_target_percent = (
-                100 * sub_target / family_target if family_target else 0.0
-            )
+            sub_source_percent = 100 * sub_source / family_source if family_source else 0.0
+            sub_target_percent = 100 * sub_target / family_target if family_target else 0.0
             row["family_target_percent"] = f"{sub_target_percent:.8f}"
             row["metric_columns"] = [
                 {
                     "label": "Source",
                     "value": (
-                        f"{_human_token_count(sub_source)} tokens · "
-                        f"{sub_source_percent:.2f}% of source"
+                        f"{_human_token_count(sub_source)} tokens · " f"{sub_source_percent:.2f}% of source"
                     ),
                 },
                 {
                     "label": "Target",
                     "value": (
-                        f"{_human_token_count(sub_target)} tokens · "
-                        f"{sub_target_percent:.2f}% of target"
+                        f"{_human_token_count(sub_target)} tokens · " f"{sub_target_percent:.2f}% of target"
                     ),
                 },
                 {"label": "Sampling", "value": row["sampling_rate"]},
@@ -3546,17 +3379,11 @@ def _render_inventory_report(
                 "metric_columns": [
                     {
                         "label": "Source",
-                        "value": (
-                            f"{_human_token_count(family_source)} tokens · "
-                            f"{source_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(family_source)} tokens · " f"{source_percent:.2f}%"),
                     },
                     {
                         "label": "Target",
-                        "value": (
-                            f"{_human_token_count(family_target)} tokens · "
-                            f"{target_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(family_target)} tokens · " f"{target_percent:.2f}%"),
                     },
                     {"label": "Sampling", "value": sampling_rate},
                 ],
@@ -3630,25 +3457,16 @@ def _render_inventory_report(
             [float(row["available_percent"]) for row in available_rows],
             "% of available tokens",
             value_labels=[
-                _mix_plot_value_label(
-                    row["available_uint32_values"], original_total
-                )
-                for row in available_rows
+                _mix_plot_value_label(row["available_uint32_values"], original_total) for row in available_rows
             ],
-            summary=(
-                f"Source aggregate: {_human_token_count(original_total)} tokens "
-                f"({original_total:,})"
-            ),
+            summary=(f"Source aggregate: {_human_token_count(original_total)} tokens " f"({original_total:,})"),
         ),
     )
     _write_text(
         plots / "object-size-histogram.svg",
         _svg_bar_chart(
             "Required NPY object-size histogram",
-            [
-                f"{row['bin_start_bytes'] / 1e9:.1f}–{row['bin_end_bytes'] / 1e9:.1f} GB"
-                for row in size_rows
-            ],
+            [f"{row['bin_start_bytes'] / 1e9:.1f}–{row['bin_end_bytes'] / 1e9:.1f} GB" for row in size_rows],
             [row["object_count"] for row in size_rows],
             "objects",
         ),
@@ -3686,29 +3504,16 @@ def _render_inventory_report(
         mix_original = int(mix_row["available_uint32_values"])
         mix_target = int(mix_row["target_uint32_values"])
         category_sections: list[str] = []
-        for category in sorted(
-            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
-        ):
+        for category in sorted(categories_by_mix[mix_name], key=lambda row: int(row["category_index"])):
             leaf_id = category["leaf_id"]
             leaf_rows = rows_by_leaf[leaf_id]
-            category_objects = {
-                row["npy_uri"]: int(row["estimated_uint32_values"])
-                for row in leaf_rows
-            }
+            category_objects = {row["npy_uri"]: int(row["estimated_uint32_values"]) for row in leaf_rows}
             category_original = sum(category_objects.values())
             category_target = target_by_leaf[leaf_id]
-            category_source_percent = (
-                100 * category_original / mix_original if mix_original else 0.0
-            )
-            category_target_percent = (
-                100 * category_target / mix_target if mix_target else 0.0
-            )
-            _, category_class, category_ratio = _sampling_change(
-                category_original, category_target
-            )
-            category_sampling_rate, _ = _sampling_rate_label(
-                category_original, category_target
-            )
+            category_source_percent = 100 * category_original / mix_original if mix_original else 0.0
+            category_target_percent = 100 * category_target / mix_target if mix_target else 0.0
+            _, category_class, category_ratio = _sampling_change(category_original, category_target)
+            category_sampling_rate, _ = _sampling_rate_label(category_original, category_target)
             category_comparisons.append(
                 {
                     "leaf_id": leaf_id,
@@ -3718,22 +3523,15 @@ def _render_inventory_report(
                     "source_percent_of_parent": category_source_percent,
                     "target_uint32_values": category_target,
                     "target_percent_of_parent": category_target_percent,
-                    "sampling_ratio": ""
-                    if category_ratio is None
-                    else f"{category_ratio:.12g}",
+                    "sampling_ratio": "" if category_ratio is None else f"{category_ratio:.12g}",
                     "sampling_rate": category_sampling_rate,
                 }
             )
-            path_definitions = sorted(
-                paths_by_leaf[leaf_id], key=lambda row: row["path_id"]
-            )
+            path_definitions = sorted(paths_by_leaf[leaf_id], key=lambda row: row["path_id"])
             path_objects: list[dict[str, int]] = []
             for path in path_definitions:
                 path_objects.append(
-                    {
-                        row["npy_uri"]: int(row["estimated_uint32_values"])
-                        for row in rows_by_path[path["path_id"]]
-                    }
+                    {row["npy_uri"]: int(row["estimated_uint32_values"]) for row in rows_by_path[path["path_id"]]}
                 )
             path_originals = [sum(objects.values()) for objects in path_objects]
             path_targets = _apportion_by_size(category_target, path_originals)
@@ -3741,20 +3539,10 @@ def _render_inventory_report(
             for path, objects, path_original, path_target in zip(
                 path_definitions, path_objects, path_originals, path_targets
             ):
-                _, path_class, path_ratio = _sampling_change(
-                    path_original, path_target
-                )
-                path_sampling_rate, _ = _sampling_rate_label(
-                    path_original, path_target
-                )
-                path_source_percent = (
-                    100 * path_original / category_original
-                    if category_original
-                    else 0.0
-                )
-                path_target_percent = (
-                    100 * path_target / category_target if category_target else 0.0
-                )
+                _, path_class, path_ratio = _sampling_change(path_original, path_target)
+                path_sampling_rate, _ = _sampling_rate_label(path_original, path_target)
+                path_source_percent = 100 * path_original / category_original if category_original else 0.0
+                path_target_percent = 100 * path_target / category_target if category_target else 0.0
                 path_comparisons.append(
                     {
                         "path_id": path["path_id"],
@@ -3767,16 +3555,12 @@ def _render_inventory_report(
                         "source_percent_of_parent": path_source_percent,
                         "implied_target_uint32_values": path_target,
                         "implied_target_percent_of_parent": path_target_percent,
-                        "sampling_ratio": ""
-                        if path_ratio is None
-                        else f"{path_ratio:.12g}",
+                        "sampling_ratio": "" if path_ratio is None else f"{path_ratio:.12g}",
                         "sampling_rate": path_sampling_rate,
                         "unique_npy_count": len(objects),
                     }
                 )
-                source_details = _source_uri_details(
-                    objects, "No source NPYs resolved"
-                )
+                source_details = _source_uri_details(objects, "No source NPYs resolved")
                 path_rows.append(
                     '<details class="path-detail"><summary>'
                     f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
@@ -3785,13 +3569,13 @@ def _render_inventory_report(
                     '<span class="path-sampling">'
                     '<span class="path-metric"><span class="mix-metric-label">Source</span>'
                     f'<span class="mix-metric-value">{_human_token_count(path_original)} tokens · '
-                    f'{path_source_percent:.2f}% of category</span></span>'
+                    f"{path_source_percent:.2f}% of category</span></span>"
                     '<span class="path-metric"><span class="mix-metric-label">Target</span>'
                     f'<span class="mix-metric-value">{_human_token_count(path_target)} tokens · '
-                    f'{path_target_percent:.2f}% of category</span></span>'
+                    f"{path_target_percent:.2f}% of category</span></span>"
                     '<span class="path-metric"><span class="mix-metric-label">Sampling</span>'
                     f'<span class="mix-metric-value sampling {path_class}">'
-                    f'{html.escape(path_sampling_rate)}</span></span>'
+                    f"{html.escape(path_sampling_rate)}</span></span>"
                     + _comparison_bars(path_original, path_target)
                     + "</span></summary>"
                     '<code><span class="path-detail-metrics">'
@@ -3808,13 +3592,13 @@ def _render_inventory_report(
                 '<div class="category-metrics">'
                 '<span class="category-metric"><span class="mix-metric-label">Source</span>'
                 f'<span class="mix-metric-value">{_human_token_count(category_original)} tokens · '
-                f'{category_source_percent:.2f}% of entry</span></span>'
+                f"{category_source_percent:.2f}% of entry</span></span>"
                 '<span class="category-metric"><span class="mix-metric-label">Target</span>'
                 f'<span class="mix-metric-value">{_human_token_count(category_target)} tokens · '
-                f'{category_target_percent:.2f}% of entry</span></span>'
+                f"{category_target_percent:.2f}% of entry</span></span>"
                 '<span class="category-metric"><span class="mix-metric-label">Sampling</span>'
                 f'<span class="mix-metric-value sampling {category_class}">'
-                f'{html.escape(category_sampling_rate)}</span></span></div>'
+                f"{html.escape(category_sampling_rate)}</span></span></div>"
                 + _comparison_bars(category_original, category_target)
                 + '<div class="path-list">'
                 + "".join(path_rows)
@@ -3825,12 +3609,10 @@ def _render_inventory_report(
             '<div class="detail-head">'
             f'<h2>{html.escape(str(mix_row["subcategory_name"]))}</h2>'
             f'<div class="detail-total">source {_human_token_count(mix_original)} → '
-            f'target {_human_token_count(mix_target)}<br>'
+            f"target {_human_token_count(mix_target)}<br>"
             f'<span class="sampling {mix_row["sampling_class"]}">'
             f'{html.escape(str(mix_row["sampling_rate"]))}</span></div></div>'
-            '<div class="category-grid">'
-            + "".join(category_sections)
-            + "</div></section>"
+            '<div class="category-grid">' + "".join(category_sections) + "</div></section>"
         )
 
     detail_sections: list[str] = []
@@ -3842,7 +3624,7 @@ def _render_inventory_report(
             '<div class="detail-head">'
             f'<h2>{html.escape(str(family_row["mix_name"]))}</h2>'
             f'<div class="detail-total">source {_human_token_count(family_source)} → '
-            f'target {_human_token_count(family_target)}<br>'
+            f"target {_human_token_count(family_target)}<br>"
             f'<span class="sampling {family_row["sampling_class"]}">'
             f'{html.escape(str(family_row["sampling_rate"]))}</span></div></div>'
             '<div class="subcategory-list">'
@@ -3954,6 +3736,7 @@ def _render_report(
             "input_metadata_bytes",
             "output_npy_bytes",
             "estimated_output_metadata_bytes",
+            "estimated_selection_index_bytes",
             "estimated_peak_local_bytes",
             "max_unit_working_bytes",
             "working_budget_utilization",
@@ -3991,10 +3774,7 @@ def _render_report(
         plots / "execution-units-per-category.svg",
         _svg_bar_chart(
             "Most partitioned categories",
-            [
-                f"{row['mix_name']} / {row['category_name']}"
-                for row in most_split_categories
-            ],
+            [f"{row['mix_name']} / {row['category_name']}" for row in most_split_categories],
             [int(row["execution_unit_count"]) for row in most_split_categories],
             "units",
         ),
@@ -4004,9 +3784,7 @@ def _render_report(
         entry = by_mix[row["mix_name"]]
         entry["target"] += int(row["target_uint32_values"])
         entry["planned"] += int(row["planned_uint32_values"])
-    top_targets = sorted(
-        by_mix.items(), key=lambda item: item[1]["target"], reverse=True
-    )[:40]
+    top_targets = sorted(by_mix.items(), key=lambda item: item[1]["target"], reverse=True)[:40]
     target_rows = [
         {
             "mix_name": name,
@@ -4018,9 +3796,7 @@ def _render_report(
     target_total = sum(values["target"] for values in by_mix.values())
     for row in target_rows:
         row["target_percent"] = (
-            f"{100 * int(row['target_uint32_values']) / target_total:.8f}"
-            if target_total
-            else "0"
+            f"{100 * int(row['target_uint32_values']) / target_total:.8f}" if target_total else "0"
         )
     _write_csv(
         plot_data / "target-by-mix.csv",
@@ -4040,15 +3816,9 @@ def _render_report(
             [float(row["target_percent"]) for row in target_rows],
             "% of target",
             value_labels=[
-                _mix_plot_value_label(
-                    int(row["target_uint32_values"]), target_total
-                )
-                for row in target_rows
+                _mix_plot_value_label(int(row["target_uint32_values"]), target_total) for row in target_rows
             ],
-            summary=(
-                f"Total target: {_human_token_count(target_total)} tokens "
-                f"({target_total:,})"
-            ),
+            summary=(f"Total target: {_human_token_count(target_total)} tokens " f"({target_total:,})"),
         ),
     )
     points = [
@@ -4088,34 +3858,21 @@ def _render_report(
             "Proposed (billions of tokens)",
         ),
     )
-    residuals = sorted(
-        allocations, key=lambda row: abs(int(row["absolute_error"])), reverse=True
-    )[:40]
     _write_csv(
-        plot_data / "largest-absolute-residuals.csv",
-        residuals,
+        plot_data / "proposal-target-residuals.csv",
+        allocations,
         [
             "leaf_id",
             "mix_name",
             "category_name",
             "target_uint32_values",
             "planned_uint32_values",
-            "absolute_error",
-            "absolute_error_bps_of_total",
+            "target_residual_uint32_values",
+            "target_residual_bps_of_total",
+            "target_residual_fraction",
         ],
     )
-    _write_text(
-        plots / "largest-absolute-residuals.svg",
-        _svg_bar_chart(
-            "Largest absolute allocation residuals",
-            [f"{row['mix_name']} / {row['category_name']}" for row in residuals],
-            [abs(int(row["absolute_error"])) / 1e6 for row in residuals],
-            "millions of tokens",
-        ),
-    )
-    pressure = sorted(
-        allocations, key=lambda row: float(row["ideal_sample_rate"]), reverse=True
-    )[:40]
+    pressure = sorted(allocations, key=lambda row: float(row["ideal_sample_rate"]), reverse=True)[:40]
     _write_csv(
         plot_data / "upsampling-pressure.csv",
         pressure,
@@ -4138,9 +3895,7 @@ def _render_report(
             "x",
         ),
     )
-    sizes = list(
-        {row["npy_uri"]: int(row["npy_size_bytes"]) for row in inventory}.values()
-    )
+    sizes = list({row["npy_uri"]: int(row["npy_size_bytes"]) for row in inventory}.values())
     if sizes:
         bins = [0] * 20
         maximum = max(sizes)
@@ -4163,10 +3918,7 @@ def _render_report(
             plots / "object-size-histogram.svg",
             _svg_bar_chart(
                 "NPY object-size histogram",
-                [
-                    f"{i * maximum / 20 / 1e9:.1f}–{(i + 1) * maximum / 20 / 1e9:.1f} GB"
-                    for i in range(20)
-                ],
+                [f"{i * maximum / 20 / 1e9:.1f}–{(i + 1) * maximum / 20 / 1e9:.1f} GB" for i in range(20)],
                 bins,
                 "objects",
             ),
@@ -4192,20 +3944,15 @@ def _render_report(
     for row in normalized_paths:
         paths_by_leaf[row["leaf_id"]].append(row)
 
-    source_totals: dict[str, dict[str, int]] = defaultdict(
-        lambda: {"original": 0, "target": 0, "planned": 0}
-    )
+    source_totals: dict[str, dict[str, int]] = defaultdict(lambda: {"original": 0, "target": 0, "planned": 0})
     original_by_leaf: dict[str, int] = {}
     for category in normalized_mix:
         leaf_id = category["leaf_id"]
         original_objects = {
-            row["npy_uri"]: int(row["estimated_uint32_values"])
-            for row in inventory_by_leaf[leaf_id]
+            row["npy_uri"]: int(row["estimated_uint32_values"]) for row in inventory_by_leaf[leaf_id]
         }
         original = sum(original_objects.values())
-        planned = sum(
-            int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id]
-        )
+        planned = sum(int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id])
         original_by_leaf[leaf_id] = original
         entry = source_totals[category["mix_name"]]
         entry["original"] += original
@@ -4220,21 +3967,11 @@ def _render_report(
         key=lambda item: (item[1]["planned"], item[1]["target"], item[0]),
         reverse=True,
     ):
-        effective = (
-            totals["planned"] / totals["original"] if totals["original"] else 0.0
-        )
-        source_percent = (
-            100 * totals["original"] / original_total if original_total else 0.0
-        )
-        planned_percent = (
-            100 * totals["planned"] / proposed_total if proposed_total else 0.0
-        )
-        target_percent = (
-            100 * totals["target"] / target_total if target_total else 0.0
-        )
-        sampling_rate, sampling_class = _sampling_rate_label(
-            totals["original"], totals["planned"]
-        )
+        effective = totals["planned"] / totals["original"] if totals["original"] else 0.0
+        source_percent = 100 * totals["original"] / original_total if original_total else 0.0
+        planned_percent = 100 * totals["planned"] / proposed_total if proposed_total else 0.0
+        target_percent = 100 * totals["target"] / target_total if target_total else 0.0
+        sampling_rate, sampling_class = _sampling_rate_label(totals["original"], totals["planned"])
         comparison_rows.append(
             {
                 "mix_name": mix_name,
@@ -4243,24 +3980,15 @@ def _render_report(
                 "metric_columns": [
                     {
                         "label": "Source",
-                        "value": (
-                            f"{_human_token_count(totals['original'])} tokens · "
-                            f"{source_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(totals['original'])} tokens · " f"{source_percent:.2f}%"),
                     },
                     {
                         "label": "Proposed",
-                        "value": (
-                            f"{_human_token_count(totals['planned'])} tokens · "
-                            f"{planned_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(totals['planned'])} tokens · " f"{planned_percent:.2f}%"),
                     },
                     {
                         "label": "Target",
-                        "value": (
-                            f"{_human_token_count(totals['target'])} tokens · "
-                            f"{target_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(totals['target'])} tokens · " f"{target_percent:.2f}%"),
                     },
                     {"label": "Sampling", "value": sampling_rate},
                 ],
@@ -4286,16 +4014,10 @@ def _render_report(
         family_source = sum(int(row["original"]) for row in subcategories)
         family_proposed = sum(int(row["planned"]) for row in subcategories)
         family_target = sum(int(row["target"]) for row in subcategories)
-        source_percent = (
-            100 * family_source / original_total if original_total else 0.0
-        )
-        proposed_percent = (
-            100 * family_proposed / proposed_total if proposed_total else 0.0
-        )
+        source_percent = 100 * family_source / original_total if original_total else 0.0
+        proposed_percent = 100 * family_proposed / proposed_total if proposed_total else 0.0
         target_percent = 100 * family_target / target_total if target_total else 0.0
-        sampling_rate, sampling_class = _sampling_rate_label(
-            family_source, family_proposed
-        )
+        sampling_rate, sampling_class = _sampling_rate_label(family_source, family_proposed)
         ordered_subcategories = sorted(
             subcategories,
             key=lambda row: (
@@ -4309,36 +4031,27 @@ def _render_report(
             sub_source = int(row["original"])
             sub_proposed = int(row["planned"])
             sub_target = int(row["target"])
-            sub_source_percent = (
-                100 * sub_source / family_source if family_source else 0.0
-            )
-            sub_proposed_percent = (
-                100 * sub_proposed / family_proposed if family_proposed else 0.0
-            )
-            sub_target_percent = (
-                100 * sub_target / family_target if family_target else 0.0
-            )
+            sub_source_percent = 100 * sub_source / family_source if family_source else 0.0
+            sub_proposed_percent = 100 * sub_proposed / family_proposed if family_proposed else 0.0
+            sub_target_percent = 100 * sub_target / family_target if family_target else 0.0
             row["family_planned_percent"] = f"{sub_proposed_percent:.8f}"
             row["metric_columns"] = [
                 {
                     "label": "Source",
                     "value": (
-                        f"{_human_token_count(sub_source)} tokens · "
-                        f"{sub_source_percent:.2f}% of source"
+                        f"{_human_token_count(sub_source)} tokens · " f"{sub_source_percent:.2f}% of source"
                     ),
                 },
                 {
                     "label": "Proposed",
                     "value": (
-                        f"{_human_token_count(sub_proposed)} tokens · "
-                        f"{sub_proposed_percent:.2f}% of proposed"
+                        f"{_human_token_count(sub_proposed)} tokens · " f"{sub_proposed_percent:.2f}% of proposed"
                     ),
                 },
                 {
                     "label": "Target",
                     "value": (
-                        f"{_human_token_count(sub_target)} tokens · "
-                        f"{sub_target_percent:.2f}% of target"
+                        f"{_human_token_count(sub_target)} tokens · " f"{sub_target_percent:.2f}% of target"
                     ),
                 },
                 {"label": "Sampling", "value": row["sampling_rate"]},
@@ -4357,24 +4070,15 @@ def _render_report(
                 "metric_columns": [
                     {
                         "label": "Source",
-                        "value": (
-                            f"{_human_token_count(family_source)} tokens · "
-                            f"{source_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(family_source)} tokens · " f"{source_percent:.2f}%"),
                     },
                     {
                         "label": "Proposed",
-                        "value": (
-                            f"{_human_token_count(family_proposed)} tokens · "
-                            f"{proposed_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(family_proposed)} tokens · " f"{proposed_percent:.2f}%"),
                     },
                     {
                         "label": "Target",
-                        "value": (
-                            f"{_human_token_count(family_target)} tokens · "
-                            f"{target_percent:.2f}%"
-                        ),
+                        "value": (f"{_human_token_count(family_target)} tokens · " f"{target_percent:.2f}%"),
                     },
                     {"label": "Sampling", "value": sampling_rate},
                 ],
@@ -4411,26 +4115,21 @@ def _render_report(
     for mix_row in comparison_rows:
         mix_name = str(mix_row["mix_name"])
         category_sections: list[str] = []
-        for category in sorted(
-            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
-        ):
+        for category in sorted(categories_by_mix[mix_name], key=lambda row: int(row["category_index"])):
             leaf_id = category["leaf_id"]
             original = original_by_leaf[leaf_id]
             target = int(category["target_uint32_values"])
-            planned = sum(
-                int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id]
-            )
+            planned = sum(int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id])
             allocation = allocation_by_leaf.get(leaf_id)
             if allocation is None:
                 minimum_repetition = 0
                 maximum_repetition = 0
                 total_object_uses = 0
-                unique_object_count = len(
-                    {row["npy_uri"] for row in inventory_by_leaf[leaf_id]}
-                )
+                unique_object_count = len({row["npy_uri"] for row in inventory_by_leaf[leaf_id]})
                 selected_object_count = 0
                 dropped_object_count = unique_object_count
                 repeated_object_count = 0
+                partial_object_count = 0
             else:
                 minimum_repetition = int(allocation["minimum_repetition"])
                 maximum_repetition = int(allocation["maximum_repetition"])
@@ -4439,6 +4138,7 @@ def _render_report(
                 selected_object_count = int(allocation["selected_object_count"])
                 dropped_object_count = int(allocation["dropped_object_count"])
                 repeated_object_count = int(allocation["repeated_object_count"])
+                partial_object_count = int(allocation["partial_object_count"])
             effective = planned / original if original else 0.0
             sampling_label, sampling_class = _sampling_rate_label(original, planned)
             category_sampling_rows.append(
@@ -4458,36 +4158,38 @@ def _render_report(
                     "selected_object_count": selected_object_count,
                     "dropped_object_count": dropped_object_count,
                     "repeated_object_count": repeated_object_count,
+                    "partial_object_count": partial_object_count,
                 }
             )
             path_rows: list[str] = []
-            for path in sorted(
-                paths_by_leaf[leaf_id], key=lambda row: row["path_id"]
-            ):
+            for path in sorted(paths_by_leaf[leaf_id], key=lambda row: row["path_id"]):
                 path_original_objects = {
                     row["npy_uri"]: int(row["estimated_uint32_values"])
                     for row in inventory_by_path[path["path_id"]]
                 }
                 path_original = sum(path_original_objects.values())
                 path_uses = uses_by_path[path["path_id"]]
-                path_planned = sum(
-                    int(row["planned_uint32_values"]) for row in path_uses
-                )
+                path_planned = sum(int(row["planned_uint32_values"]) for row in path_uses)
                 path_repetitions = [int(row["repeat_count"]) for row in path_uses]
+                path_partials = [int(row.get("partial_target_uint32_values", 0)) for row in path_uses]
                 if not path_repetitions:
                     path_repetitions = [0 for _ in path_original_objects]
+                    path_partials = [0 for _ in path_original_objects]
                 path_minimum = min(path_repetitions, default=0)
                 path_maximum = max(path_repetitions, default=0)
-                path_total_uses = sum(path_repetitions)
-                path_selected = sum(value > 0 for value in path_repetitions)
-                path_dropped = sum(value == 0 for value in path_repetitions)
-                path_repeated = sum(value > 1 for value in path_repetitions)
-                path_effective = (
-                    path_planned / path_original if path_original else 0.0
+                path_partial_count = sum(value > 0 for value in path_partials)
+                path_total_uses = sum(path_repetitions) + path_partial_count
+                path_selected = sum(
+                    repeat > 0 or partial > 0 for repeat, partial in zip(path_repetitions, path_partials)
                 )
-                path_sampling_rate, path_sampling_class = _sampling_rate_label(
-                    path_original, path_planned
+                path_dropped = sum(
+                    repeat == 0 and partial == 0 for repeat, partial in zip(path_repetitions, path_partials)
                 )
+                path_repeated = sum(
+                    int(row["planned_uint32_values"]) > int(row["estimated_uint32_values"]) for row in path_uses
+                )
+                path_effective = path_planned / path_original if path_original else 0.0
+                path_sampling_rate, path_sampling_class = _sampling_rate_label(path_original, path_planned)
                 path_sampling_rows.append(
                     {
                         "path_id": path["path_id"],
@@ -4507,18 +4209,17 @@ def _render_report(
                         "selected_object_count": path_selected,
                         "dropped_object_count": path_dropped,
                         "repeated_object_count": path_repeated,
+                        "partial_object_count": path_partial_count,
                     }
                 )
                 repeat_range = (
-                    f"{path_minimum}×"
-                    if path_minimum == path_maximum
-                    else f"{path_minimum}–{path_maximum}×"
+                    f"{path_minimum}×" if path_minimum == path_maximum else f"{path_minimum}–{path_maximum}×"
                 )
                 source_details = _source_uri_details(
                     (
                         row["npy_uri"]
                         for row in path_uses
-                        if int(row["repeat_count"]) > 0
+                        if int(row["repeat_count"]) > 0 or int(row.get("partial_target_uint32_values", 0)) > 0
                     ),
                     "No source NPYs selected for materialization",
                 )
@@ -4534,9 +4235,10 @@ def _render_report(
                     f'<span class="mix-metric-value">{_human_token_count(path_planned)} tokens</span></span>'
                     '<span class="path-metric"><span class="mix-metric-label">Sampling</span>'
                     f'<span class="mix-metric-value sampling {path_sampling_class}">'
-                    f'{html.escape(path_sampling_rate)}</span></span>'
-                    f'<span class="path-use-summary">NPYs repeated: {path_repeated:,} · '
-                    f'dropped: {path_dropped:,} · {path_total_uses:,} total object uses</span>'
+                    f"{html.escape(path_sampling_rate)}</span></span>"
+                    f'<span class="path-use-summary">Partial selections: {path_partial_count:,} · '
+                    f"NPYs repeated: {path_repeated:,} · dropped: {path_dropped:,} · "
+                    f"{path_total_uses:,} total object uses</span>"
                     + _comparison_bars(path_original, path_planned)
                     + "</span></summary>"
                     '<code><span class="path-detail-metrics">'
@@ -4564,17 +4266,16 @@ def _render_report(
                 f'<span class="mix-metric-value">{_human_token_count(target)} tokens</span></span>'
                 '<span class="category-metric"><span class="mix-metric-label">Sampling</span>'
                 f'<span class="mix-metric-value sampling {sampling_class}">'
-                f'{html.escape(sampling_label)}</span></span></div>'
+                f"{html.escape(sampling_label)}</span></span></div>"
                 + _comparison_bars(original, planned)
                 + '<div class="repetition-line">'
-                f'<span>per-object repeats {repeat_range}</span>'
-                f'<span>NPYs repeated: {repeated_object_count:,} · '
-                f'dropped: {dropped_object_count:,} · '
-                f'{total_object_uses:,} total object uses across '
-                f'{unique_object_count:,} source NPYs</span></div>'
-                '<div class="path-list">'
-                + "".join(path_rows)
-                + "</div></section>"
+                f"<span>full copies per object {repeat_range}</span>"
+                f"<span>partial selections: {partial_object_count:,} · "
+                f"NPYs repeated: {repeated_object_count:,} · "
+                f"dropped: {dropped_object_count:,} · "
+                f"{total_object_uses:,} total object uses across "
+                f"{unique_object_count:,} source NPYs</span></div>"
+                '<div class="path-list">' + "".join(path_rows) + "</div></section>"
             )
         subcategory_detail_by_mix[mix_name] = (
             f'<section class="subcategory-detail" id="{mix_row["detail_id"]}" hidden>'
@@ -4585,9 +4286,7 @@ def _render_report(
             f'target {_human_token_count(int(mix_row["target"]))} · '
             f'<span class="sampling {mix_row["sampling_class"]}">'
             f'{html.escape(str(mix_row["sampling_rate"]))}</span></div></div>'
-            '<div class="category-grid">'
-            + "".join(category_sections)
-            + "</div></section>"
+            '<div class="category-grid">' + "".join(category_sections) + "</div></section>"
         )
 
     detail_sections: list[str] = []

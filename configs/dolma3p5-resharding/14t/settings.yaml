@@ -21,3 +21,8 @@ minimum_catalog_prefix_components: 4
 random_seed: 42
 max_workers_per_reshard: 8
 tokenizer_name_or_path: allenai/dolma2-tokenizer
+
+# Partial copies are selected on whole-document boundaries while materializing.
+# These bounds are checked from output file sizes after all units finish.
+max_materialized_unit_target_residual_fraction: 0.001
+max_materialized_total_target_residual_fraction: 0.00001

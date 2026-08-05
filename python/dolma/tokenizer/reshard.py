@@ -64,25 +64,39 @@ import yaml
 from tqdm import tqdm
 
 from dolma.core.loggers import get_logger
+from dolma.tokenizer.document_selection import (
+    DOCUMENT_SELECTION_ALGORITHM,
+    create_document_selection,
+)
 from dolma.tokenizer.tokenizer import Tokenizer
 
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
-RESHARDING_MANIFEST_SCHEMA_VERSION = 1
+RESHARDING_MANIFEST_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
 class TokensMetadataPaths:
     npy_path: str
     csv_path: str
+    selection_path: str | None = None
+    selected_uint32_values: int | None = None
 
     def __post_init__(self):
         assert self.npy_path.endswith(".npy")
         assert self.csv_path.endswith(".csv.gz")
         assert Path(self.npy_path).stem == Path(Path(self.csv_path).stem).stem
+        if self.selection_path is None:
+            assert self.selected_uint32_values is None
+        else:
+            assert self.selection_path.endswith(".csv.gz")
+            assert self.selected_uint32_values is not None
+            assert self.selected_uint32_values > 0
 
     @property
     def size(self) -> int:
+        if self.selected_uint32_values is not None:
+            return self.selected_uint32_values * np.dtype(np.uint32).itemsize
         return os.path.getsize(self.npy_path)
 
 
@@ -97,14 +111,16 @@ def merge_group(
     npy_destination = Path(destination)
     csv_destination = npy_destination.with_suffix(".csv.gz")
     total_size = sum(p.size for p in paths)
+    if any(path.selection_path is not None for path in paths) and dtype.itemsize != 4:
+        raise ValueError("Document selections require uint32 token memmaps")
 
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
+    if os.path.lexists(npy_destination) or os.path.lexists(csv_destination):
+        raise FileExistsError(f"Refusing to replace an existing reshard output: {npy_destination}")
 
-    target_memmap = np.memmap(
-        npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype
-    )
+    target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
 
-    bytes_offset = row_offset = 0
+    token_offset = 0
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
         for path in paths:
             rw = csv.writer(f)
@@ -112,32 +128,46 @@ def merge_group(
                 path.npy_path,
                 mode="r",
                 dtype=dtype,
-                shape=(path.size // dtype.itemsize,),
+                shape=(os.path.getsize(path.npy_path) // dtype.itemsize,),
             )
-            target_memmap[bytes_offset : bytes_offset + source_memmap.shape[0]] = (
-                source_memmap
-            )
-            target_memmap.flush()
-
-            row_count = 0
-            with smart_open.open(path.csv_path, "r", encoding="utf-8") as g:
+            metadata_path = path.selection_path or path.csv_path
+            if path.selection_path is None:
+                target_memmap[token_offset : token_offset + source_memmap.shape[0]] = source_memmap
+                copy_start = token_offset
+                token_offset += source_memmap.shape[0]
+            else:
+                copy_start = None
+            with smart_open.open(metadata_path, "r", encoding="utf-8") as g:
                 rd = csv.reader(g)
                 for row in rd:
                     start, end, id_, src, idx = row
+                    start_value = int(start)
+                    end_value = int(end)
+                    if path.selection_path is None:
+                        assert copy_start is not None
+                        output_start = copy_start + start_value
+                        output_end = copy_start + end_value
+                    else:
+                        output_start = token_offset
+                        output_end = token_offset + end_value - start_value
+                        target_memmap[output_start:output_end] = source_memmap[start_value:end_value]
+                        token_offset = output_end
                     rw.writerow(
                         [
-                            int(start) + bytes_offset,
-                            int(end) + bytes_offset,
+                            output_start,
+                            output_end,
                             id_,
                             src,
                             int(idx),
                         ]
                     )
-                    row_count += 1
-
-            bytes_offset += source_memmap.shape[0]
-            row_offset += row_count
             del source_memmap
+        target_memmap.flush()
+    if token_offset != total_size // dtype.itemsize:
+        raise RuntimeError(
+            f"Reshard output length mismatch for {npy_destination}: "
+            f"wrote {token_offset}, expected {total_size // dtype.itemsize}"
+        )
 
 
 def group_paths_by_max_size(
@@ -147,9 +177,7 @@ def group_paths_by_max_size(
     """
     Group paths by max size.
     """
-    counts: dict[TokensMetadataPaths, int] = {
-        p: int(c) for p, c in Counter(paths).items()
-    }
+    counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
     logger.info(
         "Found %s unique paths from %s files; max repetition is %s",
         len(counts),
@@ -170,11 +198,7 @@ def group_paths_by_max_size(
                 grouped_paths[-1].append(path)
 
         # decrease counts, remove paths with 0 count.
-        counts = {
-            path: new_count
-            for path, count in counts.items()
-            if (new_count := count - 1) > 0
-        }
+        counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
 
     logger.info(
         "By size: organized %s files into %s groups of max %.2f GB",
@@ -211,9 +235,7 @@ def group_paths_by_max_num_files(
     )
 
     if (m := max(counts.values())) > max_num_files:
-        raise ValueError(
-            f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}"
-        )
+        raise ValueError(f"One or more paths appear {m} times, exceeding max_num_files={max_num_files}")
 
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
     # Distribute each element across groups in round-robin fashion
@@ -321,9 +343,7 @@ def merge_all_npys(
             )
             futures.append(future)
 
-        for future in tqdm(
-            as_completed(futures), total=len(futures), desc="Merging files"
-        ):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Merging files"):
             try:
                 future.result()
             except Exception as e:
@@ -365,9 +385,7 @@ class ReshardingPrefixConfig:
         ]
 
         logger.info("Running command: %s", " ".join(cmd))
-        result = subprocess.run(
-            cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if result.returncode != 0:
             print(f"s5cmd failed with error: {result.stderr}")
@@ -403,9 +421,7 @@ class ReshardingPrefixConfig:
         # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
         # of same size, we can just take a random sample.
         if (residual_frac := self.sample_rate - repetition_rate) > 0:
-            new_paths.extend(
-                random.sample(paths, max(1, round(residual_frac * len(paths))))
-            )
+            new_paths.extend(random.sample(paths, max(1, round(residual_frac * len(paths)))))
 
         # sort by size
         logger.info(
@@ -429,6 +445,9 @@ class ReshardingManifestEntry:
     npy_uri: str
     metadata_uri: str
     repeat_count: int
+    partial_target_uint32_values: int = 0
+    selection_seed: int = 0
+    selection_algorithm: str = DOCUMENT_SELECTION_ALGORITHM
     npy_size_bytes: int | None = None
     metadata_size_bytes: int | None = None
     npy_etag: str = ""
@@ -439,16 +458,15 @@ class ReshardingManifestEntry:
 class ReshardingManifestConfig:
     """An exact, locally stored manifest of token/metadata object pairs.
 
-    The CSV must contain ``npy_uri``, ``metadata_uri``, and ``repeat_count``.
-    Remote objects are downloaded exactly once into a run-owned directory;
-    repetition is represented in memory after download.
+    Version-one CSVs contain ``npy_uri``, ``metadata_uri``, and
+    ``repeat_count``. Version two may also request a deterministic partial copy
+    with ``partial_target_uint32_values`` and ``selection_seed``. Remote
+    objects are downloaded exactly once into a run-owned directory.
     """
 
     manifest: str | Path
 
-    def take(
-        self, local_prefix: str | Path, max_workers: int
-    ) -> list[TokensMetadataPaths]:
+    def take(self, local_prefix: str | Path, max_workers: int) -> list[TokensMetadataPaths]:
         manifest = Path(self.manifest)
         if not manifest.is_file():
             raise FileNotFoundError(f"Resharding manifest does not exist: {manifest}")
@@ -460,71 +478,77 @@ class ReshardingManifestConfig:
             reader = csv.DictReader(f)
             expected = {"npy_uri", "metadata_uri", "repeat_count"}
             if reader.fieldnames is None or not expected.issubset(reader.fieldnames):
-                raise ValueError(
-                    f"Manifest {manifest} must contain columns {sorted(expected)}"
-                )
-            for row_number, row in enumerate(reader, start=2):
-                npy_uri = row["npy_uri"].strip()
-                metadata_uri = row["metadata_uri"].strip()
+                raise ValueError(f"Manifest {manifest} must contain columns {sorted(expected)}")
+            for row_number, csv_row in enumerate(reader, start=2):
+                npy_uri = csv_row["npy_uri"].strip()
+                metadata_uri = csv_row["metadata_uri"].strip()
                 try:
-                    repeat_count = int(row["repeat_count"])
+                    repeat_count = int(csv_row["repeat_count"])
+                    partial_target = int(csv_row.get("partial_target_uint32_values") or 0)
+                    selection_seed = int(csv_row.get("selection_seed") or 0)
                 except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        f"Invalid repeat_count on {manifest}:{row_number}"
-                    ) from exc
+                    raise ValueError(f"Invalid sampling values on {manifest}:{row_number}") from exc
                 if not npy_uri.endswith(".npy") or not metadata_uri.endswith(".csv.gz"):
                     raise ValueError(f"Invalid object pair on {manifest}:{row_number}")
                 if any(ord(char) < 32 for char in npy_uri + metadata_uri):
-                    raise ValueError(
-                        f"Control character in object URI on {manifest}:{row_number}"
-                    )
+                    raise ValueError(f"Control character in object URI on {manifest}:{row_number}")
                 if Path(npy_uri).stem != Path(Path(metadata_uri).stem).stem:
-                    raise ValueError(
-                        f"Mismatched object pair on {manifest}:{row_number}"
-                    )
-                if repeat_count <= 0:
-                    raise ValueError(
-                        f"repeat_count must be positive on {manifest}:{row_number}"
-                    )
+                    raise ValueError(f"Mismatched object pair on {manifest}:{row_number}")
+                if repeat_count < 0 or partial_target < 0:
+                    raise ValueError(f"Sampling values cannot be negative on {manifest}:{row_number}")
+                if repeat_count == 0 and partial_target == 0:
+                    raise ValueError(f"Manifest row selects no tokens on {manifest}:{row_number}")
                 try:
-                    npy_size_bytes = (
-                        int(row["npy_size_bytes"])
-                        if row.get("npy_size_bytes")
-                        else None
-                    )
+                    npy_size_bytes = int(csv_row["npy_size_bytes"]) if csv_row.get("npy_size_bytes") else None
                     metadata_size_bytes = (
-                        int(row["metadata_size_bytes"])
-                        if row.get("metadata_size_bytes")
-                        else None
+                        int(csv_row["metadata_size_bytes"]) if csv_row.get("metadata_size_bytes") else None
                     )
                 except ValueError as exc:
-                    raise ValueError(
-                        f"Invalid expected size on {manifest}:{row_number}"
-                    ) from exc
+                    raise ValueError(f"Invalid expected size on {manifest}:{row_number}") from exc
                 if npy_size_bytes is not None and npy_size_bytes <= 0:
-                    raise ValueError(
-                        f"npy_size_bytes must be positive on {manifest}:{row_number}"
-                    )
+                    raise ValueError(f"npy_size_bytes must be positive on {manifest}:{row_number}")
                 if metadata_size_bytes is not None and metadata_size_bytes <= 0:
-                    raise ValueError(
-                        f"metadata_size_bytes must be positive on {manifest}:{row_number}"
-                    )
-                if urlparse(npy_uri).scheme == "s3" and (
-                    npy_size_bytes is None or metadata_size_bytes is None
-                ):
+                    raise ValueError(f"metadata_size_bytes must be positive on {manifest}:{row_number}")
+                if urlparse(npy_uri).scheme == "s3" and (npy_size_bytes is None or metadata_size_bytes is None):
                     raise ValueError(
                         f"Remote manifest rows require npy_size_bytes and metadata_size_bytes on "
                         f"{manifest}:{row_number}"
                     )
+                if partial_target:
+                    if npy_size_bytes is None:
+                        raise ValueError(
+                            "Partial manifest rows require npy_size_bytes on " f"{manifest}:{row_number}"
+                        )
+                    if npy_size_bytes % np.dtype(np.uint32).itemsize:
+                        raise ValueError(
+                            f"Partial source size is not uint32-aligned on " f"{manifest}:{row_number}"
+                        )
+                    source_values = npy_size_bytes // np.dtype(np.uint32).itemsize
+                    if partial_target >= source_values:
+                        raise ValueError(
+                            "partial_target_uint32_values must be smaller than "
+                            f"the source on {manifest}:{row_number}"
+                        )
+                    selection_algorithm = str(csv_row.get("selection_algorithm") or DOCUMENT_SELECTION_ALGORITHM)
+                    if selection_algorithm != DOCUMENT_SELECTION_ALGORITHM:
+                        raise ValueError(
+                            f"Unsupported selection_algorithm on "
+                            f"{manifest}:{row_number}: {selection_algorithm}"
+                        )
+                else:
+                    selection_algorithm = DOCUMENT_SELECTION_ALGORITHM
                 rows.append(
                     ReshardingManifestEntry(
                         npy_uri=npy_uri,
                         metadata_uri=metadata_uri,
                         repeat_count=repeat_count,
+                        partial_target_uint32_values=partial_target,
+                        selection_seed=selection_seed,
+                        selection_algorithm=selection_algorithm,
                         npy_size_bytes=npy_size_bytes,
                         metadata_size_bytes=metadata_size_bytes,
-                        npy_etag=str(row.get("npy_etag", "")).strip('"'),
-                        metadata_etag=str(row.get("metadata_etag", "")).strip('"'),
+                        npy_etag=str(csv_row.get("npy_etag", "")).strip('"'),
+                        metadata_etag=str(csv_row.get("metadata_etag", "")).strip('"'),
                     )
                 )
 
@@ -532,14 +556,18 @@ class ReshardingManifestConfig:
             raise ValueError(f"Resharding manifest is empty: {manifest}")
 
         remote_expectations: list[tuple[str, int, str]] = []
-        for row in rows:
-            if urlparse(row.npy_uri).scheme == "s3":
-                assert row.npy_size_bytes is not None
-                assert row.metadata_size_bytes is not None
+        for entry in rows:
+            if urlparse(entry.npy_uri).scheme == "s3":
+                assert entry.npy_size_bytes is not None
+                assert entry.metadata_size_bytes is not None
                 remote_expectations.extend(
                     [
-                        (row.npy_uri, row.npy_size_bytes, row.npy_etag),
-                        (row.metadata_uri, row.metadata_size_bytes, row.metadata_etag),
+                        (entry.npy_uri, entry.npy_size_bytes, entry.npy_etag),
+                        (
+                            entry.metadata_uri,
+                            entry.metadata_size_bytes,
+                            entry.metadata_etag,
+                        ),
                     ]
                 )
         if remote_expectations:
@@ -548,9 +576,7 @@ class ReshardingManifestConfig:
             def verify_remote(expectation: tuple[str, int, str]) -> None:
                 uri, expected_size, expected_etag = expectation
                 parsed = urlparse(uri)
-                response = client.head_object(
-                    Bucket=parsed.netloc, Key=parsed.path.lstrip("/")
-                )
+                response = client.head_object(Bucket=parsed.netloc, Key=parsed.path.lstrip("/"))
                 actual_size = int(response["ContentLength"])
                 actual_etag = str(response.get("ETag", "")).strip('"')
                 if actual_size != expected_size:
@@ -565,19 +591,25 @@ class ReshardingManifestConfig:
                     )
 
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                futures = [
-                    pool.submit(verify_remote, expectation)
-                    for expectation in remote_expectations
-                ]
+                futures = [pool.submit(verify_remote, expectation) for expectation in remote_expectations]
                 for future in as_completed(futures):
                     future.result()
 
         paths: list[TokensMetadataPaths] = []
-        downloaded_pairs: list[tuple[Path, Path, int | None, int | None]] = []
+        downloaded_pairs: list[
+            tuple[
+                ReshardingManifestEntry,
+                Path,
+                Path,
+                Path,
+                int | None,
+                int | None,
+            ]
+        ] = []
         remote_commands: list[str] = []
-        for index, row in enumerate(rows):
-            npy_uri = row.npy_uri
-            metadata_uri = row.metadata_uri
+        for index, entry in enumerate(rows):
+            npy_uri = entry.npy_uri
+            metadata_uri = entry.metadata_uri
             row_dir = local_prefix / f"{index:06d}"
             row_dir.mkdir(exist_ok=False)
             local_npy = row_dir / "tokens.npy"
@@ -593,29 +625,22 @@ class ReshardingManifestConfig:
                     ]
                 )
             elif npy_scheme in {"", "file"} and metadata_scheme in {"", "file"}:
-                local_npy = Path(
-                    urlparse(npy_uri).path if npy_scheme == "file" else npy_uri
-                )
-                local_metadata = Path(
-                    urlparse(metadata_uri).path
-                    if metadata_scheme == "file"
-                    else metadata_uri
-                )
+                local_npy = Path(urlparse(npy_uri).path if npy_scheme == "file" else npy_uri)
+                local_metadata = Path(urlparse(metadata_uri).path if metadata_scheme == "file" else metadata_uri)
                 if not local_npy.is_file() or not local_metadata.is_file():
-                    raise FileNotFoundError(
-                        f"Manifest object pair does not exist: {npy_uri}, {metadata_uri}"
-                    )
+                    raise FileNotFoundError(f"Manifest object pair does not exist: {npy_uri}, {metadata_uri}")
             else:
-                raise ValueError(
-                    f"Manifest row mixes unsupported URI schemes: {npy_uri}, {metadata_uri}"
-                )
+                raise ValueError(f"Manifest row mixes unsupported URI schemes: {npy_uri}, {metadata_uri}")
 
             downloaded_pairs.append(
-                (local_npy, local_metadata, row.npy_size_bytes, row.metadata_size_bytes)
-            )
-            paths.extend(
-                [TokensMetadataPaths(str(local_npy), str(local_metadata))]
-                * row.repeat_count
+                (
+                    entry,
+                    local_npy,
+                    local_metadata,
+                    row_dir / "selection.csv.gz",
+                    entry.npy_size_bytes,
+                    entry.metadata_size_bytes,
+                )
             )
 
         if remote_commands:
@@ -624,54 +649,75 @@ class ReshardingManifestConfig:
                 f.write("\n".join(remote_commands) + "\n")
             cmd = ["s5cmd", "--numworkers", str(max_workers), "run", str(commands_path)]
             logger.info("Downloading exact manifest objects with s5cmd")
-            result = subprocess.run(
-                cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
+            result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if result.returncode != 0:
                 raise RuntimeError(f"s5cmd manifest download failed: {result.stderr}")
 
             missing = [
                 (npy_path, metadata_path)
-                for npy_path, metadata_path, _, _ in downloaded_pairs
+                for _, npy_path, metadata_path, _, _, _ in downloaded_pairs
                 if not npy_path.is_file() or not metadata_path.is_file()
             ]
             if missing:
-                raise RuntimeError(
-                    f"s5cmd completed without creating {len(missing)} manifest object pairs"
-                )
+                raise RuntimeError(f"s5cmd completed without creating {len(missing)} manifest object pairs")
 
         for (
+            entry,
             npy_path,
             metadata_path,
+            selection_path,
             expected_npy_size,
             expected_metadata_size,
         ) in downloaded_pairs:
-            if (
-                expected_npy_size is not None
-                and npy_path.stat().st_size != expected_npy_size
-            ):
+            if expected_npy_size is not None and npy_path.stat().st_size != expected_npy_size:
                 raise RuntimeError(
                     f"Downloaded NPY size does not match manifest: {npy_path}; "
                     f"expected {expected_npy_size}, found {npy_path.stat().st_size}"
                 )
-            if (
-                expected_metadata_size is not None
-                and metadata_path.stat().st_size != expected_metadata_size
-            ):
+            if expected_metadata_size is not None and metadata_path.stat().st_size != expected_metadata_size:
                 raise RuntimeError(
                     f"Downloaded metadata size does not match manifest: {metadata_path}; "
                     f"expected {expected_metadata_size}, found {metadata_path.stat().st_size}"
                 )
 
+            full_path = TokensMetadataPaths(str(npy_path), str(metadata_path))
+            paths.extend([full_path] * entry.repeat_count)
+            if entry.partial_target_uint32_values:
+                source_values = npy_path.stat().st_size // np.dtype(np.uint32).itemsize
+                selection = create_document_selection(
+                    metadata_path=metadata_path,
+                    selection_path=selection_path,
+                    source_uint32_values=source_values,
+                    target_uint32_values=entry.partial_target_uint32_values,
+                    seed=entry.selection_seed,
+                )
+                logger.info(
+                    "Selected %s uint32 values from %s for a %s-value quota " "(residual %+d; %s documents)",
+                    selection.selected_uint32_values,
+                    entry.npy_uri,
+                    entry.partial_target_uint32_values,
+                    selection.target_residual_uint32_values,
+                    selection.selected_document_count,
+                )
+                if selection.selected_uint32_values:
+                    paths.append(
+                        TokensMetadataPaths(
+                            str(npy_path),
+                            str(metadata_path),
+                            selection_path=str(selection.selection_path),
+                            selected_uint32_values=selection.selected_uint32_values,
+                        )
+                    )
+
+        if not paths:
+            raise RuntimeError(f"Manifest document selections produced no output: {manifest}")
         return paths
 
     def to_dict(self) -> dict:
         return {"manifest": str(self.manifest)}
 
     @classmethod
-    def from_dict(
-        cls, d: dict, base_dir: Path | None = None
-    ) -> "ReshardingManifestConfig":
+    def from_dict(cls, d: dict, base_dir: Path | None = None) -> "ReshardingManifestConfig":
         path = Path(d["manifest"])
         if base_dir is not None and not path.is_absolute():
             path = base_dir / path
@@ -699,9 +745,7 @@ class ReshardingConfig:
         if self.max_size_bytes is None and self.max_num_files is None:
             raise ValueError("Either max_size_bytes or max_num_files must be provided")
         if not self.source_prefixes and not self.source_manifests:
-            raise ValueError(
-                "At least one source_prefix or source_manifest must be provided"
-            )
+            raise ValueError("At least one source_prefix or source_manifest must be provided")
         if self.allow_existing_destination:
             raise ValueError("Overwriting an existing destination is not supported")
         if self.max_workers <= 0:
@@ -723,31 +767,20 @@ class ReshardingConfig:
 
     @classmethod
     def from_dict(cls, d: dict, base_dir: Path | None = None) -> "ReshardingConfig":
-        source_prefixes = [
-            ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])
-        ]
+        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
         source_manifests = [
-            ReshardingManifestConfig.from_dict(m, base_dir=base_dir)
-            for m in d.get("source_manifests", [])
+            ReshardingManifestConfig.from_dict(m, base_dir=base_dir) for m in d.get("source_manifests", [])
         ]
         return cls(
             destination_prefix=str(d["destination_prefix"]),
             source_prefixes=source_prefixes,
             source_manifests=source_manifests,
-            local_tempdir=(
-                Path(p) if (p := d.get("local_tempdir")) is not None else None
-            ),
-            max_size_bytes=(
-                int(s) if (s := d.get("max_size_bytes")) is not None else None
-            ),
-            max_num_files=(
-                int(n) if (n := d.get("max_num_files")) is not None else None
-            ),
+            local_tempdir=(Path(p) if (p := d.get("local_tempdir")) is not None else None),
+            max_size_bytes=(int(s) if (s := d.get("max_size_bytes")) is not None else None),
+            max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
             max_workers=int(d.get("max_workers", 1)),
             random_seed=int(d.get("random_seed", 42)),
-            tokenizer_name_or_path=str(
-                d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer")
-            ),
+            tokenizer_name_or_path=str(d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer")),
             allow_existing_destination=bool(d.get("allow_existing_destination", False)),
         )
 
@@ -780,9 +813,7 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
         f"{local_prefix_no_star}/*",
         f"{remote_prefix_no_trailing_slash}/",
     ]
-    result = subprocess.run(
-        cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+    result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     if result.returncode != 0:
         print(f"s5cmd failed with error: {result.stderr}")
@@ -803,9 +834,7 @@ def destination_has_objects(destination: str | Path) -> bool:
         prefix = parsed.path.lstrip("/").rstrip("/")
         if not parsed.netloc or not prefix:
             raise ValueError("Refusing to materialize into an S3 bucket root")
-        response = boto3.client("s3").list_objects_v2(
-            Bucket=parsed.netloc, Prefix=f"{prefix}/", MaxKeys=1
-        )
+        response = boto3.client("s3").list_objects_v2(Bucket=parsed.netloc, Prefix=f"{prefix}/", MaxKeys=1)
         return bool(response.get("Contents"))
     if parsed.scheme not in {"", "file"}:
         raise ValueError(f"Unsupported destination protocol: {parsed.scheme}")
@@ -817,9 +846,7 @@ def reshard(config: ReshardingConfig):
     random.seed(config.random_seed)
 
     if destination_has_objects(config.destination_prefix):
-        raise FileExistsError(
-            f"Refusing to use existing destination: {config.destination_prefix}"
-        )
+        raise FileExistsError(f"Refusing to use existing destination: {config.destination_prefix}")
 
     run_tempdir: Path | None = None
     try:
@@ -843,9 +870,7 @@ def reshard(config: ReshardingConfig):
         ]
 
         # get repetition aware samples
-        source_paths = [
-            path for source_prefix in source_prefixes for path in source_prefix.take()
-        ]
+        source_paths = [path for source_prefix in source_prefixes for path in source_prefix.take()]
         for i, source_manifest in enumerate(config.source_manifests):
             source_paths.extend(
                 source_manifest.take(

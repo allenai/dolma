@@ -69,18 +69,18 @@ This command creates configs and manifests but does not materialize data.
 
 Before continuing:
 
-- Open `03-proposal/report.html`. Compare the inventoried source counts with the
-  exact proposed counts after whole-object sampling and with the targets. Click
-  through source family, subcategory, category, and lower group; check token
-  changes, effective repetition factors, per-object repetition ranges, repeated
-  and dropped NPY counts, and total object uses.
+- Open `03-proposal/report.html`. Compare source, proposed, and target counts at
+  the source-family, subcategory, category, and lower-group levels. Confirm each
+  lower group retains its intended share. The proposal uses full copies plus a
+  proportional partial-document quota for each object, so every active category
+  should have a zero proposal target residual.
 - In `03-proposal/proposal-summary.json`, confirm the source, proposed, and
   target totals; token change from the source; destination; unit count; and
   largest working set are acceptable.
 - Inspect `03-proposal/plot-data/proposed-sampling-by-category.csv` and
   `proposed-sampling-by-lower-group.csv` when exact numeric review is easier
-  than the HTML. Inspect `03-proposal/category-allocation.csv` for active
-  category residuals and repetition counts.
+  than the HTML. Inspect `03-proposal/category-allocation.csv` for full-copy
+  counts, partial selections, and zero target residuals.
 - Inspect `03-proposal/config-index.csv`. Confirm every unit is within the
   working-set budget, large categories were split sensibly, and every S3
   destination is correct and unique.
@@ -244,7 +244,7 @@ pmr setup-dolma-python \
 ```
 
 `setup-dolma-python` installs the base package and `s5cmd`. Replace its
-resharding module with the reviewed manifest-aware module from this checkout,
+resharding modules with the reviewed manifest-aware modules from this checkout,
 then verify every worker before dispatch:
 
 ```bash
@@ -253,10 +253,15 @@ pmr transfer \
   --region "$PMR_REGION" \
   --source python/dolma/tokenizer/reshard.py:/home/ec2-user/.venv/lib/python3.12/site-packages/dolma/tokenizer/reshard.py
 
+pmr transfer \
+  --name dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --source python/dolma/tokenizer/document_selection.py:/home/ec2-user/.venv/lib/python3.12/site-packages/dolma/tokenizer/document_selection.py
+
 pmr run \
   --name dolma3p5-14t \
   --region "$PMR_REGION" \
-  --command '$HOME/.venv/bin/python -c "from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 1; print(\"manifest resharder: ready\")" && s5cmd version'
+  --command '$HOME/.venv/bin/python -c "from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2; print(\"manifest resharder: ready\")" && s5cmd version'
 ```
 
 Run preflight again immediately before dispatch, then map the reviewed unit
@@ -274,7 +279,14 @@ pmr map \
 `pmr map` distributes scripts across workers; each worker processes its
 assigned units sequentially and returns after dispatch. Each unit records
 `running`, `succeeded`, or `failed EXIT_CODE` in
-`~/dolma3p5-resharding-status/`. Check aggregate worker status with:
+`~/dolma3p5-resharding-status/`.
+
+For partial copies, each worker reads the paired metadata twice, selects a
+deterministic hash-ranked set of whole documents, and logs the realized token
+count and residual before writing output. Source token volume is still derived
+from file size; the proposal never tokenizes or scans arrays to count tokens.
+
+Check aggregate worker status with:
 
 ```bash
 pmr run \
@@ -313,8 +325,9 @@ Accept the dataset only when:
 
 - `05-output-validation/output-summary.json` has `passed: true`, zero errors,
   zero failed destinations, and equal expected and checked destination counts.
-- `actual_uint32_values` equals `predicted_uint32_values`. It does not need to
-  equal exactly 14T.
+- `aggregate_target_residual_within_bound` is `true`. Whole-document boundaries
+  can make the materialized count differ slightly from the exact proposal; the
+  summary records both the realized residual and the allowed bound.
 - Every row in `05-output-validation/output-validation.csv` is `passed`.
 - `05-output-validation/output-problems.csv` and `output-errors.csv` are empty.
 - The plots and totals in `05-output-validation/report.html` match the reviewed
