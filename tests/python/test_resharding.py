@@ -12,8 +12,21 @@ import smart_open
 from dolma.cli.__main__ import main as cli_main
 from dolma.tokenizer import Tokenizer
 from dolma.tokenizer.reshard import ReshardingConfig, reshard
+from scripts.resharding.dispatch import build_poormanray_map_command
 
 DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2-test-tokenizer.json"
+
+
+class TestReshardDispatch(unittest.TestCase):
+    def test_poormanray_map_command_can_require_worker_spindown(self):
+        command = build_poormanray_map_command(
+            cluster="resharding",
+            project=None,
+            region="us-east-1",
+            script_dir="/tmp/dispatch",
+            spindown=True,
+        )
+        self.assertEqual(command[-1], "--spindown")
 
 
 class Sequence(NamedTuple):

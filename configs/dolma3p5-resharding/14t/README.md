@@ -307,8 +307,11 @@ python scripts/dolma3p5_resharding/materialize.py \
 the same selection (or all units), every selected destination is empty, and
 the selected inputs are unchanged. `pmr map` then distributes only the staged
 selection across workers; each worker processes its assigned units
-sequentially and returns after dispatch. Each unit records
-`running`, `succeeded`, or `failed EXIT_CODE` in
+sequentially. Every dispatch includes poormanray's `--spindown` flag, so each
+assigned instance stops after completing its assigned scripts. Before dispatch,
+the command also refuses a cluster with more active instances than selected
+execution units because poormanray does not stop instances that receive no
+script. Each unit records `running`, `succeeded`, or `failed EXIT_CODE` in
 `~/dolma3p5-resharding-status/`.
 
 For partial copies, each worker reads the paired metadata twice, selects a

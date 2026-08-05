@@ -10,9 +10,20 @@ import os
 import shlex
 import shutil
 import subprocess
+import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Sequence
+
+scripts_root = Path(__file__).resolve().parents[1]
+if str(scripts_root) not in sys.path:
+    sys.path.insert(0, str(scripts_root))
+
+from resharding.dispatch import (
+    PoormanrayDispatchError,
+    build_poormanray_map_command,
+    require_spindown_coverage,
+)
 
 try:
     from .workflow import (
@@ -276,14 +287,20 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
     return str(summary.get("created_at", "unknown"))
 
 
-def _pmr_command(args: argparse.Namespace, script_dir: Path) -> list[str]:
-    command = ["pmr", "map", "--name", args.cluster]
-    if args.project:
-        command.extend(("--project", args.project))
-    if args.region:
-        command.extend(("--region", args.region))
-    command.extend(("--script", str(script_dir)))
-    return command
+def _require_every_cluster_node_has_work(
+    args: argparse.Namespace,
+    selected: Sequence[dict[str, str]],
+) -> None:
+    """Prevent poormanray from leaving unassigned cluster nodes running."""
+
+    try:
+        require_spindown_coverage(
+            cluster=args.cluster,
+            region=args.region,
+            script_count=len(selected),
+        )
+    except PoormanrayDispatchError as exc:
+        raise PreparationError(str(exc)) from exc
 
 
 def _print_dispatch(
@@ -327,13 +344,20 @@ def main() -> None:
 
         label, selected = _select_units(args, rows)
         script_dir = _stage_selection(build, label, selected)
-        command = _pmr_command(args, script_dir)
+        command = build_poormanray_map_command(
+            cluster=args.cluster,
+            project=args.project,
+            region=args.region,
+            script_dir=script_dir,
+            spindown=True,
+        )
         _print_dispatch(label, selected, script_dir, command, args.execute)
         if not args.execute:
             return
         preflight_created_at = _require_preflight(build, selected)
         if shutil.which("pmr") is None:
             raise PreparationError("pmr is required for --execute and was not found on PATH")
+        _require_every_cluster_node_has_work(args, selected)
         print(f"\nPreflight passed: {preflight_created_at}")
         result = subprocess.run(command, check=False)
         if result.returncode:
