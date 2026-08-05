@@ -33,6 +33,7 @@ from scripts.dolma3p5_resharding.workflow import (
     PreparationError,
     S3Object,
     _allocate_object_sampling,
+    _category_output_directory,
     _filter_execution_units,
     _finalize_inventory,
     _load_catalog,
@@ -74,6 +75,21 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             ),
             "cc_all_dressed/all_dressed_v5/topic/health/"
             "vigintile_0016/allenai/dolma2-tokenizer",
+        )
+
+    def test_category_output_directory_replaces_varying_lower_group(self):
+        objects = [
+            {
+                "key": (
+                    "preprocessed/cc_all_dressed/all_dressed_v5/topic/health/"
+                    f"vigintile_{index:04d}/allenai/dolma2-tokenizer/000000.npy"
+                )
+            }
+            for index in range(16, 20)
+        ]
+        self.assertEqual(
+            _category_output_directory(objects, "high"),
+            "cc_all_dressed/all_dressed_v5/topic/health/high/allenai/dolma2-tokenizer",
         )
 
     def setUp(self):
@@ -696,7 +712,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             dataset_layout["dataset_root"],
             r"^s3://test-bucket/new-datasets/dolma3p5/dolma3p5-14t-[0-9a-f]{12}$",
         )
-        self.assertEqual(dataset_layout["layout"], "build-scoped-source-root-replacement-v1")
+        self.assertEqual(dataset_layout["layout"], "build-scoped-category-output-v1")
         self.assertEqual(dataset_layout["execution_unit_index_width"], EXECUTION_UNIT_INDEX_WIDTH)
         self.assertEqual(dataset_layout["execution_unit_id_width"], EXECUTION_UNIT_INDEX_WIDTH)
         self.assertEqual(_validate_execution_layout(self.build), dataset_layout)
@@ -770,9 +786,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("Materialized output", proposal_report)
         self.assertIn("Selection indexes", proposal_report)
         self.assertIn("Source shard downloads", proposal_report)
-        self.assertIn("Partial-document shards", proposal_report)
+        self.assertIn("Source shards using document selection", proposal_report)
         self.assertIn("Output shard cap", proposal_report)
-        self.assertIn("Only categories split across workers", proposal_report)
+        self.assertIn("Only categories with multiple units", proposal_report)
         self.assertIn('href="config/', proposal_report)
         self.assertIn('href="manifests/', proposal_report)
         self.assertIn('href="launcher-scripts/', proposal_report)

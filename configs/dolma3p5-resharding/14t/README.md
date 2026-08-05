@@ -20,12 +20,14 @@ read-only, and the destination is not written.
 
 The build ID is appended to the destination root. That dataset root replaces
 each source's top-level storage prefix (for example,
-`s3://ai2-llm/preprocessed`). The remaining source directory, including lower
-groups such as vigintiles, is unchanged. Execution units are partitioned within
-those source directories and numbered with eight-digit directories
-(`00000000`, `00000001`, ...). Execution-unit IDs use the same globally
-incrementing eight-digit format; category names and hashes are not embedded in
-IDs.
+`s3://ai2-llm/preprocessed`). A category backed by one source directory keeps
+that directory. When one category combines several lower groups, such as
+vigintiles, its destination keeps their common source hierarchy and replaces
+the varying lower-group segment with the YAML category name. The planner packs
+the entire category against the worker-disk limit; source-directory boundaries
+do not create execution units. A category gets more than one unit only when its
+estimated working set requires it. Unit destinations and globally unique unit
+IDs use zero-padded eight-digit counters (`00000000`, `00000001`, ...).
 
 The output is grouped by purpose:
 
@@ -59,7 +61,7 @@ Before continuing:
 - Spot-check `01-plan/inventory/required-objects.csv`, including the NPY/metadata
   pairings, sizes, and paths for large or unusual categories.
 - In **Materialization execution**, review the worker-disk distribution,
-  categories split across workers, and the concrete execution units.
+  categories requiring multiple execution units, and the concrete units.
 - Inspect `01-plan/execution/config-index.csv`. Confirm every unit is within
   the working-set budget and every destination is correct and unique.
 - Confirm the worker temporary path has more usable space than the largest

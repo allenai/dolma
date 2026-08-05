@@ -36,7 +36,7 @@ UINT32_BYTES = 4
 DOCUMENT_SELECTION_ALGORITHM = "document_hash_bucket_v1"
 EXECUTION_UNIT_INDEX_WIDTH = 8
 EXECUTION_LAYOUT_SCHEMA_VERSION = 1
-DESTINATION_LAYOUT = "build-scoped-source-root-replacement-v1"
+DESTINATION_LAYOUT = "build-scoped-category-output-v1"
 DEFAULT_TARGET = 14_000_000_000_000
 DEFAULT_REGION = "us-east-1"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -1522,7 +1522,7 @@ def _execution_unit_sizes(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
 def _partition_object_uses(
     rows: Sequence[dict[str, Any]], max_unit_working_bytes: int
 ) -> list[list[dict[str, Any]]]:
-    """Partition one source-directory group into deterministic worker-sized units."""
+    """Partition one category into deterministic worker-sized units."""
 
     if max_unit_working_bytes <= 0:
         raise ValueError("max_unit_working_bytes must be positive")
@@ -1689,6 +1689,54 @@ def _source_root_uri(bucket: str, source_key: str) -> str:
     if not bucket or not top_level or top_level in {".", ".."}:
         raise PreparationError(f"Cannot derive source root for s3://{bucket}/{source_key}")
     return f"s3://{bucket}/{top_level}"
+
+
+def _common_path_prefix(paths: Sequence[tuple[str, ...]]) -> tuple[str, ...]:
+    common: list[str] = []
+    for components in zip(*paths):
+        if len(set(components)) != 1:
+            break
+        common.append(components[0])
+    return tuple(common)
+
+
+def _common_path_suffix(
+    paths: Sequence[tuple[str, ...]],
+    prefix_length: int,
+) -> tuple[str, ...]:
+    common_reversed: list[str] = []
+    available = min(len(path) - prefix_length for path in paths)
+    for offset in range(1, available + 1):
+        components = {path[-offset] for path in paths}
+        if len(components) != 1:
+            break
+        common_reversed.append(components.pop())
+    return tuple(reversed(common_reversed))
+
+
+def _category_output_directory(
+    objects: Sequence[dict[str, str]],
+    category_name: str,
+) -> str:
+    """Build one source-shaped output directory for a YAML category."""
+
+    if not category_name or category_name in {".", ".."} or "/" in category_name:
+        raise PreparationError(f"Category name cannot be used in an output path: {category_name!r}")
+    directories = sorted(
+        {
+            tuple(_source_relative_directory(row["key"]).split("/"))
+            for row in objects
+        }
+    )
+    if len(directories) == 1:
+        return "/".join(directories[0])
+    common_prefix = _common_path_prefix(directories)
+    if not common_prefix:
+        raise PreparationError(
+            f"Category {category_name!r} has source paths without a common output prefix"
+        )
+    common_suffix = _common_path_suffix(directories, len(common_prefix))
+    return "/".join((*common_prefix, category_name, *common_suffix))
 
 
 def propose_configs(args: argparse.Namespace) -> None:
@@ -1877,42 +1925,20 @@ def propose_configs(args: argparse.Namespace) -> None:
             if repeat_count > 0 or partial_target > 0:
                 leaf_object_uses.append(object_use)
 
-        uses_by_source_path: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-        for object_use in leaf_object_uses:
-            source_identity = (
-                object_use["source_directory"],
-                object_use["source_layout_prefix"],
+        units = _partition_object_uses(leaf_object_uses, max_unit_working_bytes)
+        if len(units) > 10**EXECUTION_UNIT_INDEX_WIDTH:
+            raise PreparationError(
+                f"Category {leaf['leaf_id']} needs {len(units):,} execution units, which exceeds "
+                f"the {EXECUTION_UNIT_INDEX_WIDTH}-digit destination counter"
             )
-            uses_by_source_path[source_identity].append(object_use)
-        path_units: list[tuple[str, str, int, list[dict[str, Any]]]] = []
-        for source_directory, source_layout_prefix in sorted(uses_by_source_path):
-            source_units = _partition_object_uses(
-                uses_by_source_path[(source_directory, source_layout_prefix)],
-                max_unit_working_bytes,
-            )
-            if len(source_units) > 10**EXECUTION_UNIT_INDEX_WIDTH:
-                raise PreparationError(
-                    f"Source path {source_layout_prefix} needs {len(source_units):,} execution units, "
-                    f"which exceeds the {EXECUTION_UNIT_INDEX_WIDTH}-digit destination counter"
-                )
-            path_units.extend(
-                (source_directory, source_layout_prefix, source_unit_index, unit_rows)
-                for source_unit_index, unit_rows in enumerate(source_units)
-            )
-
-        units = [unit_rows for _, _, _, unit_rows in path_units]
+        source_layout_prefix = _category_output_directory(objects, category_name)
         unit_planned_values = [_execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES for unit in units]
         unit_targets = unit_planned_values
 
         unit_peak_bytes: list[int] = []
         unit_input_bytes: list[int] = []
         dataset_root = f"{destination_root}/{manifest['build_id']}"
-        for unit_index, (
-            (source_directory, source_layout_prefix, source_unit_index, unit_rows),
-            unit_target,
-        ) in enumerate(
-            zip(path_units, unit_targets)
-        ):
+        for unit_index, (unit_rows, unit_target) in enumerate(zip(units, unit_targets)):
             unit_number = unit_index + 1
             if next_execution_unit_index >= 10**EXECUTION_UNIT_INDEX_WIDTH:
                 raise PreparationError(
@@ -1935,7 +1961,7 @@ def propose_configs(args: argparse.Namespace) -> None:
             else:
                 shard_floor = 8
             max_num_files = max(shard_floor, unit_max_repeat)
-            destination_index = f"{source_unit_index:0{EXECUTION_UNIT_INDEX_WIDTH}d}"
+            destination_index = f"{unit_index:0{EXECUTION_UNIT_INDEX_WIDTH}d}"
             destination = f"{dataset_root}/{source_layout_prefix}/{destination_index}"
             config = {
                 "destination_prefix": destination,
@@ -1970,7 +1996,10 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "mix_name": mix_name,
                 "category_index": category_index,
                 "category_name": category_name,
-                "source_directory": source_directory,
+                "source_directories": ";".join(
+                    sorted({row["source_directory"] for row in unit_rows})
+                ),
+                "source_directory_count": len({row["source_directory"] for row in unit_rows}),
                 "source_layout_prefix": source_layout_prefix,
                 "destination_index": destination_index,
                 "unit_index": unit_number,
@@ -2124,7 +2153,7 @@ def propose_configs(args: argparse.Namespace) -> None:
             f"{report_totals['source_uint32_values']:,} != {inventoried_source:,}"
         )
     target_residual = total_planned - report_totals["target_uint32_values"]
-    whole_document_sample_count = sum(
+    source_shards_with_document_selection = sum(
         int(row.get("partial_target_uint32_values", 0)) > 0 for row in object_use_rows
     )
     _write_json(
@@ -2152,7 +2181,7 @@ def propose_configs(args: argparse.Namespace) -> None:
             "token_change_from_source": total_planned - report_totals["source_uint32_values"],
             "target_residual_uint32_values": target_residual,
             "nominal_target_residual_uint32_values": total_planned - int(settings["target_uint32_values"]),
-            "partial_object_count": whole_document_sample_count,
+            "source_shards_with_document_selection": source_shards_with_document_selection,
             "document_selection_algorithm": DOCUMENT_SELECTION_ALGORITHM,
             "max_materialized_unit_target_residual_fraction": float(
                 settings["max_materialized_unit_target_residual_fraction"]
@@ -2168,7 +2197,6 @@ def propose_configs(args: argparse.Namespace) -> None:
     print(
         f"Execution plan ready: {_human_token_count(total_planned)} tokens across "
         f"{len(config_index):,} execution units; "
-        f"{whole_document_sample_count:,} whole-document shard samples; "
         f"target residual: {target_residual:,} tokens.\n"
         f"Review: {build / '01-plan/report.html'}"
     )
@@ -2213,7 +2241,7 @@ def _validate_proposal(
         if not row["destination_prefix"].endswith(expected_destination_suffix):
             failures.append(
                 {
-                    "check": "source_relative_destination",
+                    "check": "category_output_destination",
                     "detail": row["destination_prefix"],
                 }
             )
@@ -2234,24 +2262,20 @@ def _validate_proposal(
             failures.append({"check": "manifest_exists", "detail": str(manifest_path)})
         else:
             manifest_rows = _read_csv(manifest_path.resolve())
+            manifest_source_directories = sorted(
+                {manifest_row["npy_uri"].rsplit("/", 1)[0] for manifest_row in manifest_rows}
+            )
+            indexed_source_directories = row["source_directories"].split(";")
+            if manifest_source_directories != indexed_source_directories or len(
+                manifest_source_directories
+            ) != int(row["source_directory_count"]):
+                failures.append(
+                    {
+                        "check": "unit_source_directories_match_manifest",
+                        "detail": str(manifest_path),
+                    }
+                )
             for manifest_row in manifest_rows:
-                parsed_source = urlparse(manifest_row["npy_uri"])
-                manifest_source_directory_uri = manifest_row["npy_uri"].rsplit("/", 1)[0]
-                if manifest_source_directory_uri != row["source_directory"]:
-                    failures.append(
-                        {
-                            "check": "unit_has_one_source_directory",
-                            "detail": str(manifest_path),
-                        }
-                    )
-                manifest_source_directory = _source_relative_directory(parsed_source.path.lstrip("/"))
-                if manifest_source_directory != row["source_layout_prefix"]:
-                    failures.append(
-                        {
-                            "check": "unit_preserves_source_directory",
-                            "detail": str(manifest_path),
-                        }
-                    )
                 partial_target = int(manifest_row.get("partial_target_uint32_values", 0))
                 if partial_target and (
                     manifest_row.get("selection_algorithm") != DOCUMENT_SELECTION_ALGORITHM
@@ -2550,7 +2574,7 @@ def preflight_build(args: argparse.Namespace) -> None:
                         "leaf_id": row["leaf_id"],
                         "mix_name": row["mix_name"],
                         "category_name": row["category_name"],
-                        "source_directory": row["source_directory"],
+                        "source_directories": row["source_directories"],
                         "destination_prefix": row["destination_prefix"],
                         "status": "occupied" if contents else "empty",
                         "first_existing_key": contents[0]["Key"] if contents else "",
@@ -2586,7 +2610,7 @@ def preflight_build(args: argparse.Namespace) -> None:
             "leaf_id",
             "mix_name",
             "category_name",
-            "source_directory",
+            "source_directories",
             "destination_prefix",
             "status",
             "first_existing_key",
@@ -3291,7 +3315,7 @@ def _render_execution_proposal_html(
     metrics = render_metrics(
         [
             ("Execution units", f"{len(ordered_units):,}"),
-            ("Units with partial-document work", f"{partial_units:,}"),
+            ("Units using document selection", f"{partial_units:,}"),
             ("Planned output", f"{_human_token_count(planned_total)} tokens"),
         ]
     )
@@ -3355,7 +3379,7 @@ def _render_execution_proposal_html(
             f'<strong>{_human_token_count(int(row["planned_uint32_values"]))}</strong></div>'
             '<div class="unit-metric"><span>Source shard downloads</span>'
             f'<strong>{int(row["unique_object_count"]):,}</strong></div>'
-            '<div class="unit-metric"><span>Partial-document shards</span>'
+            '<div class="unit-metric"><span>Source shards using document selection</span>'
             f'<strong>{int(row["partial_object_count"]):,}</strong></div>'
             '<div class="unit-metric"><span>Output shard cap</span>'
             f'<strong>{int(row["max_num_files"]):,}</strong></div>'
@@ -3392,14 +3416,14 @@ def _render_execution_proposal_html(
         + "<h2>Worker storage</h2>"
         + storage_metrics
         + f'<div class="utilization-bands">{band_html}</div>'
-        + "<h2>Categories split across workers</h2>"
+        + "<h2>Categories requiring multiple execution units</h2>"
         + split_html
         + '<div class="unit-heading"><h2>Execution units</h2>'
         f'<span class="visible-count" id="visible-unit-count">{len(ordered_units):,} of '
         f"{len(ordered_units):,} units</span></div>"
         '<div class="unit-controls"><input id="unit-search" type="search" '
         'placeholder="Filter by source, category, or unit ID" aria-label="Filter execution units">'
-        '<label><input id="split-only" type="checkbox"> Only categories split across workers</label></div>'
+        '<label><input id="split-only" type="checkbox"> Only categories with multiple units</label></div>'
         f'<div class="unit-list">{"".join(unit_cards)}</div>' + _execution_proposal_script() + "</body></html>\n"
     )
 
