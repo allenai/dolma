@@ -16,6 +16,7 @@ from xml.etree import ElementTree
 
 import numpy as np
 import yaml
+from rich.console import Console
 
 WORKER_STORAGE_SCRIPT = Path(__file__).resolve().parents[2] / "scripts/dolma3p5_resharding/setup_worker_storage.sh"
 
@@ -31,6 +32,8 @@ from dolma.tokenizer.reshard import (
 from scripts.dolma3p5_resharding.materialize import (
     ClusterInstance,
     _prepare_workers,
+    _print_dispatch,
+    _run_compact_process,
     _safe_path_launcher_payload,
 )
 from scripts.dolma3p5_resharding.materialize import (
@@ -64,6 +67,105 @@ from scripts.dolma3p5_resharding.workflow import (
 
 
 class TestDolma35ReshardingPreparation(unittest.TestCase):
+    def test_materialize_dry_run_uses_terse_cli_output(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            _print_dispatch(
+                "category-example",
+                [
+                    {
+                        "leaf_id": "000:example",
+                        "unit_id": "00000000",
+                        "planned_uint32_values": "1000000000",
+                        "estimated_peak_local_bytes": "2000000000",
+                        "destination_prefix": "s3://bucket/output/00000000",
+                    }
+                ],
+                Path("/tmp/launchers"),
+                [("create missing workers", ["pmr", "create", "--number", "1"])],
+                1,
+                False,
+            )
+        rendered = output.getvalue()
+        self.assertIn("dry-run selection=category-example categories=1 units=1 workers=1", rendered)
+        self.assertIn("commands:\npmr create --number 1", rendered)
+        self.assertNotIn("Worker lifecycle", rendered)
+        self.assertNotIn("create missing workers:", rendered)
+
+    def test_materialize_execute_summary_omits_dry_run_details(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            _print_dispatch(
+                "category-example",
+                [
+                    {
+                        "leaf_id": "000:example",
+                        "unit_id": "00000000",
+                        "planned_uint32_values": "1000000000",
+                        "estimated_peak_local_bytes": "2000000000",
+                        "destination_prefix": "s3://bucket/output/00000000",
+                    }
+                ],
+                Path("/tmp/launchers"),
+                [("create missing workers", ["pmr", "create", "--number", "1"])],
+                1,
+                True,
+            )
+        rendered = output.getvalue()
+        self.assertIn("execute selection=category-example categories=1 units=1 workers=1", rendered)
+        self.assertNotIn("commands:", rendered)
+        self.assertNotIn("pmr create", rendered)
+        self.assertNotIn("units:", rendered)
+
+    def test_compact_process_discards_success_output(self):
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=False, color_system=None)
+        return_code = _run_compact_process(
+            "wait for workers",
+            [
+                sys.executable,
+                "-c",
+                (
+                    "print('Waiting for instances... 0/2 ready (0s)'); "
+                    "print('  · worker-0000 [running]'); "
+                    "print('Waiting for instances... 2/2 ready (10s)')"
+                ),
+            ],
+            console=console,
+        )
+        rendered = output.getvalue()
+        self.assertEqual(return_code, 0)
+        self.assertIn("wait for workers", rendered)
+        self.assertIn("✓", rendered)
+        self.assertNotIn("Waiting for instances", rendered)
+        self.assertNotIn("worker-0000", rendered)
+
+    def test_compact_process_bounds_and_redacts_failure_output(self):
+        output = io.StringIO()
+        console = Console(file=output, force_terminal=False, color_system=None)
+        return_code = _run_compact_process(
+            "create workers",
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import sys; "
+                    "[print(f'line-{index}') for index in range(20)]; "
+                    "print('aws_secret_access_key=do-not-print'); "
+                    "sys.exit(3)"
+                ),
+            ],
+            console=console,
+        )
+        rendered = output.getvalue()
+        self.assertEqual(return_code, 3)
+        self.assertIn("✗ create workers", rendered)
+        self.assertIn("last output:", rendered)
+        self.assertNotIn("line-0\n", rendered)
+        self.assertIn("line-19", rendered)
+        self.assertIn("aws_secret_access_key=<redacted>", rendered)
+        self.assertNotIn("do-not-print", rendered)
+
     def test_generated_materialize_launcher_uses_safe_import_directory(self):
         launcher = _self_contained_launcher(
             unit_id="00000000",

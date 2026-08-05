@@ -4,6 +4,7 @@
 #   "boto3",
 #   "poormanray",
 #   "PyYAML",
+#   "rich",
 # ]
 # ///
 
@@ -16,11 +17,13 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
 import sys
-from collections import defaultdict
+import time
+from collections import defaultdict, deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -28,6 +31,8 @@ from typing import Any
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
+from rich.console import Console
+from rich.text import Text
 
 scripts_root = Path(__file__).resolve().parents[1]
 if str(scripts_root) not in sys.path:
@@ -184,6 +189,18 @@ DOCUMENT_SELECTION_MODULE = REPOSITORY_ROOT / "python/dolma/tokenizer/document_s
 REMOTE_STORAGE_SCRIPT = "/tmp/dolma3p5-setup-worker-storage.sh"
 REMOTE_RESHARD_MODULE = "/tmp/dolma3p5-runtime/reshard.py"
 REMOTE_DOCUMENT_SELECTION_MODULE = "/tmp/dolma3p5-runtime/document_selection.py"
+ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+WAIT_STATUS = re.compile(
+    r"Waiting for instances\.\.\.\s*(?P<ready>\d+/\d+ ready)"
+    r"(?:\s*\((?P<elapsed>[^)]+)\))?",
+    re.IGNORECASE,
+)
+AWS_ACCESS_KEY = re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")
+SECRET_VALUE = re.compile(
+    r"(?i)\b(aws_secret_access_key|aws_session_token|secret_access_key)"
+    r"(\s*[=:]\s*)\S+"
+)
+PROCESS_TAIL_LINES = 12
 
 
 @dataclass(frozen=True)
@@ -235,12 +252,113 @@ def _describe_cluster_instances(
     return sorted(instances, key=lambda instance: instance.instance_id)
 
 
+def _clean_process_line(raw_line: str) -> str:
+    line = ANSI_ESCAPE.sub("", raw_line).replace("\r", "").strip()
+    line = AWS_ACCESS_KEY.sub("<redacted-aws-key>", line)
+    return SECRET_VALUE.sub(r"\1\2<redacted>", line)
+
+
+def _status_detail(stage: str, line: str) -> str | None:
+    if not line:
+        return None
+    if stage == "wait for workers":
+        match = WAIT_STATUS.search(line)
+        if match:
+            elapsed = match.group("elapsed")
+            return f"{match.group('ready')} · {elapsed}" if elapsed else match.group("ready")
+        if line.startswith(("·", "•")):
+            return None
+    return line if len(line) <= 120 else f"{line[:117]}..."
+
+
+def _stage_status(stage: str, detail: str | None = None) -> Text:
+    status = Text(stage, style="bold")
+    if detail:
+        status.append("  ", style="dim")
+        status.append(detail, style="dim")
+    return status
+
+
+def _elapsed_time(started_at: float) -> str:
+    elapsed = max(0, round(time.monotonic() - started_at))
+    minutes, seconds = divmod(elapsed, 60)
+    if minutes:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
+
+
+def _run_compact_process(
+    stage: str,
+    command: Sequence[str],
+    *,
+    console: Console | None = None,
+) -> int:
+    """Run a command with one in-place status and a bounded failure log."""
+
+    output = console or Console(stderr=True, highlight=False)
+    started_at = time.monotonic()
+    tail: deque[str] = deque(maxlen=PROCESS_TAIL_LINES)
+    process: subprocess.Popen[str] | None = None
+    live_status = output.status(_stage_status(stage), spinner="dots") if output.is_terminal else None
+    if live_status is None:
+        output.print(Text.assemble(("…", "cyan"), " ", (stage, "bold")))
+
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        if live_status is not None:
+            live_status.start()
+        assert process.stdout is not None
+        for raw_line in process.stdout:
+            line = _clean_process_line(raw_line)
+            if not line:
+                continue
+            if not tail or tail[-1] != line:
+                tail.append(line)
+            detail = _status_detail(stage, line)
+            if live_status is not None and detail:
+                live_status.update(_stage_status(stage, detail))
+        return_code = process.wait()
+    except BaseException:
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+        raise
+    finally:
+        if live_status is not None:
+            live_status.stop()
+
+    duration = _elapsed_time(started_at)
+    if return_code == 0:
+        output.print(Text.assemble(("✓", "bold green"), " ", stage, (f"  {duration}", "dim")))
+        return return_code
+
+    output.print(Text.assemble(("✗", "bold red"), " ", stage, (f"  {duration}", "dim")))
+    if tail:
+        output.print(Text("last output:", style="bold red"))
+        for line in tail:
+            output.print(Text(f"  {line[:240]}", style="dim"))
+    return return_code
+
+
 def _run_lifecycle_command(stage: str, command: Sequence[str]) -> None:
-    print(f"\n[{stage}]")
-    print(shlex.join(command), flush=True)
-    result = subprocess.run(command, check=False)
-    if result.returncode:
-        raise PreparationError(f"{stage} failed with exit code {result.returncode}")
+    try:
+        return_code = _run_compact_process(stage, command)
+    except OSError as exc:
+        raise PreparationError(f"could not start {stage}: {exc}") from exc
+    if return_code:
+        raise PreparationError(f"{stage} failed with exit code {return_code}")
 
 
 def _instance_options(args: argparse.Namespace, instance_ids: Sequence[str]) -> dict[str, Any]:
@@ -344,19 +462,18 @@ def _runtime_transfer_command(
 def _runtime_validation_command(
     args: argparse.Namespace, instance_ids: Sequence[str]
 ) -> list[str]:
-    remote_command = """set -euo pipefail
-export PYTHONSAFEPATH=1
-cd /tmp
-python_bin="$HOME/.venv/bin/python"
-module_dir=$(
-  "$python_bin" -P -c 'import pathlib, dolma.tokenizer; print(pathlib.Path(dolma.tokenizer.__file__).parent)'
-)
-install -m 0644 /tmp/dolma3p5-runtime/reshard.py "$module_dir/reshard.py"
-install -m 0644 /tmp/dolma3p5-runtime/document_selection.py "$module_dir/document_selection.py"
-"$python_bin" -P -c 'from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2'
-s5cmd version
-findmnt /mnt/dolma
-test -w /mnt/dolma/dolma3p5-resharding"""
+    remote_command = (
+        "set -euo pipefail; export PYTHONSAFEPATH=1; cd /tmp; "
+        'python_bin="$HOME/.venv/bin/python"; '
+        "module_dir=$(\"$python_bin\" -P -c 'import pathlib, dolma.tokenizer; "
+        "print(pathlib.Path(dolma.tokenizer.__file__).parent)'); "
+        'install -m 0644 /tmp/dolma3p5-runtime/reshard.py "$module_dir/reshard.py"; '
+        "install -m 0644 /tmp/dolma3p5-runtime/document_selection.py "
+        '"$module_dir/document_selection.py"; '
+        "\"$python_bin\" -P -c 'from dolma.tokenizer.reshard import "
+        "RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2'; "
+        "s5cmd version; findmnt /mnt/dolma; test -w /mnt/dolma/dolma3p5-resharding"
+    )
     return build_poormanray_run_command(
         remote_command=remote_command,
         **_instance_options(args, instance_ids),
@@ -579,12 +696,18 @@ def _pause_workers_after_failure(args: argparse.Namespace, instance_ids: Sequenc
     if not instance_ids:
         return
     command = _pause_command(args, instance_ids)
-    print("\n[cleanup: pause workers after failure]", file=sys.stderr)
-    print(shlex.join(command), file=sys.stderr, flush=True)
-    result = subprocess.run(command, check=False)
-    if result.returncode:
+    try:
+        return_code = _run_compact_process("pause workers after failure", command)
+    except OSError as exc:
         print(
-            f"WARNING: worker cleanup failed with exit code {result.returncode}; "
+            f"WARNING: worker cleanup could not start: {exc}; "
+            f"pause cluster {args.cluster!r} immediately",
+            file=sys.stderr,
+        )
+        return
+    if return_code:
+        print(
+            f"WARNING: worker cleanup failed with exit code {return_code}; "
             f"pause cluster {args.cluster!r} immediately",
             file=sys.stderr,
         )
@@ -703,19 +826,17 @@ def _print_dispatch(
     category_count = len({row["leaf_id"] for row in rows})
     planned_tokens = sum(int(row["planned_uint32_values"]) for row in rows)
     largest_unit = max(int(row["estimated_peak_local_bytes"]) for row in rows)
-    print("EXECUTE" if execute else "DRY RUN — poormanray will not be invoked")
-    print(f"Selection: {label}")
-    print(f"Categories: {category_count:,}")
-    print(f"Execution units: {len(rows):,}")
-    print(f"Workers: {worker_count:,}")
-    print(f"Planned output: {_human_token_count(planned_tokens)} tokens")
-    print(f"Largest local working set: {_human_byte_count(largest_unit)}")
-    print(f"Staged launchers: {script_dir}")
-    print("\nWorker lifecycle:")
-    for stage, command in lifecycle_commands:
-        print(f"\n{stage}:")
+    print(
+        f"{'execute' if execute else 'dry-run'} selection={label} categories={category_count} "
+        f"units={len(rows)} workers={worker_count} tokens={_human_token_count(planned_tokens)} "
+        f"max_working={_human_byte_count(largest_unit)}"
+    )
+    if execute:
+        return
+    print("\ncommands:")
+    for _, command in lifecycle_commands:
         print(shlex.join(command))
-    print("\nUnits:")
+    print("\nunits:")
     for row in sorted(rows, key=lambda item: item["unit_id"]):
         print(
             f'{row["unit_id"]}\t{_human_token_count(int(row["planned_uint32_values"]))} tokens\t'
@@ -768,7 +889,7 @@ def main() -> None:
                 raise PreparationError(f"Required reviewed worker file is missing or unsafe: {required_path}")
         if args.profile:
             os.environ["AWS_PROFILE"] = args.profile
-        print(f"\nPreflight passed: {preflight_created_at}")
+        print(f"preflight=passed created_at={preflight_created_at}")
         worker_ids = _prepare_workers(args, worker_count)
         try:
             _run_lifecycle_command(
@@ -794,8 +915,8 @@ def main() -> None:
             _pause_workers_after_failure(args, worker_ids)
             raise
         print(
-            f"Dispatched {len(selected):,} execution unit(s) across {worker_count:,} worker(s); "
-            "each worker will stop after its assigned units finish"
+            f"dispatch=started units={len(selected)} workers={worker_count} "
+            "shutdown=after_assigned_units"
         )
     except PreparationError as exc:
         parser.exit(2, f"error: {exc}\n")
