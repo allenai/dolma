@@ -289,6 +289,7 @@ SECRET_VALUE = re.compile(
 )
 PROCESS_TAIL_LINES = 12
 WORKER_LOG_PAGE_BYTES = 16 * 1024
+PMR_DISCOVERY_WORKER_LIMIT = 90
 WORKER_LOG_STYLES = (
     "bold bright_cyan",
     "bold bright_magenta",
@@ -427,14 +428,17 @@ def _retag_cluster_instances(
     *,
     names: dict[str, str] | None = None,
 ) -> None:
-    """Apply accounting and cluster tags, replacing poormanray's project misuse."""
+    """Apply bounded discovery, accounting, and cluster tags."""
 
     if not instance_ids:
         return
     session = boto3.Session(profile_name=args.profile, region_name=args.region)
     client = session.client("ec2", region_name=args.region)
     required_tags = {
-        "project": args.project,
+        # Poormanray discovers existing AWS instances through this tag before
+        # applying explicit instance IDs. Keep each discovery group below the
+        # provider's 100-ID DescribeInstanceStatus limit.
+        "project": _pmr_discovery_name(args),
         "ai2-project": args.project,
         "cluster": args.cluster,
     }
@@ -634,10 +638,10 @@ def _instance_options(
     args: argparse.Namespace, instance_ids: Sequence[str]
 ) -> dict[str, Any]:
     return {
-        # Poormanray selects existing AWS instances through the `project` tag
-        # supplied as --name. Our workers use the accounting project there and
-        # are isolated by explicit instance IDs plus the separate `cluster` tag.
-        "cluster": args.project,
+        # Poormanray selects existing AWS instances through the canonical
+        # `project` tag supplied as --name. `ai2-project` remains the accounting
+        # project and is passed independently as --project.
+        "cluster": _pmr_discovery_name(args),
         "project": args.project,
         "region": args.region,
         "instance_ids": instance_ids,
@@ -648,6 +652,21 @@ def _instance_options(
         ),
         "ssh_key_path": args.ssh_key_path,
     }
+
+
+def _pmr_discovery_name(args: argparse.Namespace) -> str:
+    """Return the bounded poormanray discovery group for one worker class."""
+
+    instance_type = getattr(args, "instance_type", None)
+    storage_layout = getattr(args, "storage_layout", None)
+    if not instance_type or not storage_layout or storage_layout == "auto":
+        return args.cluster
+    suffix = re.sub(
+        r"[^a-z0-9]+",
+        "-",
+        f"{instance_type}-{storage_layout}".lower(),
+    ).strip("-")
+    return f"{args.cluster}-{suffix}"
 
 
 def _create_command(
@@ -684,7 +703,7 @@ def _provision_batches(worker_count: int, batch_size: int) -> tuple[int, ...]:
 def _wait_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
     return build_poormanray_instance_command(
         "wait",
-        cluster=args.project,
+        cluster=_pmr_discovery_name(args),
         project=args.project,
         region=args.region,
         instance_ids=instance_ids,
@@ -784,7 +803,7 @@ def _map_command(
     instance_ids: Sequence[str] = (),
 ) -> list[str]:
     return build_poormanray_map_command(
-        cluster=args.project,
+        cluster=_pmr_discovery_name(args),
         project=args.project,
         region=args.region,
         script_dir=script_dir,
@@ -887,13 +906,16 @@ def _worker_counts_for_groups(
             "worker groups concurrently"
         )
 
-    total_units = sum(len(group.rows) for group in groups)
-    remaining = min(maximum_workers, total_units) - len(groups)
+    capacities = [
+        min(len(group.rows), PMR_DISCOVERY_WORKER_LIMIT) for group in groups
+    ]
+    total_capacity = sum(capacities)
+    remaining = min(maximum_workers, total_capacity) - len(groups)
     counts = [1] * len(groups)
     while remaining:
         allocated = False
         for index, group in enumerate(groups):
-            if counts[index] >= len(group.rows):
+            if counts[index] >= capacities[index]:
                 continue
             counts[index] += 1
             remaining -= 1
@@ -1451,7 +1473,7 @@ fi
 {log_reader}
 PY"""
     return build_poormanray_run_command(
-        cluster=args.project,
+        cluster=_pmr_discovery_name(args),
         project=args.project,
         region=args.region,
         remote_command=f"bash -lc {shlex.quote(remote_script)}",
@@ -1562,6 +1584,7 @@ def _wait_for_workers_to_stop(
     stage_lock: Lock | None = None,
     all_dispatched: Event | None = None,
     abort: Event | None = None,
+    worker_args: dict[str, argparse.Namespace] | None = None,
 ) -> None:
     """Monitor mixed worker stages until every dispatched worker has stopped."""
 
@@ -1675,12 +1698,23 @@ def _wait_for_workers_to_stop(
                     )
                 )
                 if running_ids:
-                    snapshots = _worker_log_snapshots(
-                        args,
-                        running_ids,
-                        status_run_id,
-                        log_byte_offsets,
-                    )
+                    snapshots: dict[str, dict[str, Any]] = {}
+                    log_groups: dict[str, tuple[argparse.Namespace, list[str]]] = {}
+                    for instance_id in running_ids:
+                        log_args = (worker_args or {}).get(instance_id, args)
+                        selector = _pmr_discovery_name(log_args)
+                        if selector not in log_groups:
+                            log_groups[selector] = (log_args, [])
+                        log_groups[selector][1].append(instance_id)
+                    for log_args, group_instance_ids in log_groups.values():
+                        snapshots.update(
+                            _worker_log_snapshots(
+                                log_args,
+                                group_instance_ids,
+                                status_run_id,
+                                log_byte_offsets,
+                            )
+                        )
                     for instance_id in sorted(snapshots):
                         worker_tag, worker_style = worker_tags[instance_id]
                         snapshot = snapshots[instance_id]
@@ -1952,8 +1986,9 @@ def _print_dispatch(
     largest_unit = max(int(row["estimated_peak_local_bytes"]) for row in rows)
     display_label = label.removeprefix("category-") if label.startswith("category-") else label
 
-    def count(value: int, noun: str) -> str:
-        return f"{value:,} {noun if value == 1 else noun + 's'}"
+    def count(value: int, singular: str, plural: str | None = None) -> str:
+        noun = singular if value == 1 else plural or f"{singular}s"
+        return f"{value:,} {noun}"
 
     summary = Table.grid(padding=(0, 2))
     summary.add_column(style="dim", no_wrap=True)
@@ -1963,7 +1998,7 @@ def _print_dispatch(
         "Work",
         " · ".join(
             (
-                count(category_count, "category"),
+                count(category_count, "category", "categories"),
                 count(len(rows), "unit"),
                 count(worker_count, "worker"),
             )
@@ -2095,25 +2130,28 @@ def _execute_materialization_groups(
 
     prepared: list[tuple[MaterializationGroup, list[str]]] = []
     all_worker_ids: list[str] = []
-    resume_ids: list[str] = []
+    deferred_resumes: list[tuple[argparse.Namespace, list[str]]] = []
     assignment_queues = [deque(_stage_worker_assignments(group)) for group in groups]
     try:
         for group_index, group in enumerate(groups):
+            group_resume_ids: list[str] = []
             worker_ids = _prepare_workers(
                 group.args,
                 group.worker_count,
                 owned_instance_ids=all_worker_ids,
                 wait_for_ready=False,
                 delay_after_last_batch=group_index < len(groups) - 1,
-                deferred_resume_ids=resume_ids,
+                deferred_resume_ids=group_resume_ids,
             )
             prepared.append((group, worker_ids))
             all_worker_ids.extend(worker_ids)
+            if group_resume_ids:
+                deferred_resumes.append((group.args, group_resume_ids))
 
-        if resume_ids:
+        for group_args, resume_ids in deferred_resumes:
             _run_lifecycle_command(
-                "resume workers",
-                _resume_command(args, resume_ids, detach=True),
+                f"resume {_pmr_discovery_name(group_args)} workers",
+                _resume_command(group_args, resume_ids, detach=True),
                 verbose=args.verbose,
             )
 
@@ -2126,6 +2164,11 @@ def _execute_materialization_groups(
         worker_group_index = {
             instance_id: group_index
             for group_index, (_, worker_ids) in enumerate(prepared)
+            for instance_id in worker_ids
+        }
+        worker_args = {
+            instance_id: group.args
+            for group, worker_ids in prepared
             for instance_id in worker_ids
         }
         futures: dict[Future[None], str] = {}
@@ -2141,6 +2184,7 @@ def _execute_materialization_groups(
             all_dispatched=all_dispatched,
             abort=abort,
             console=lifecycle_console,
+            worker_args=worker_args,
         )
         try:
             bootstrap_workers = min(args.bootstrap_parallelism, len(all_worker_ids))
@@ -2200,7 +2244,8 @@ def _execute_materialization_groups(
             raise PreparationError("Not every execution-unit assignment was dispatched")
         _verify_materialized_units(args, selected)
     except BaseException:
-        _pause_workers_after_failure(args, all_worker_ids)
+        for group, worker_ids in prepared:
+            _pause_workers_after_failure(group.args, worker_ids)
         raise
 
 

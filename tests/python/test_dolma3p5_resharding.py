@@ -261,6 +261,33 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("us-east-1", rendered)
         self.assertNotIn("category-example", rendered)
         self.assertNotIn("commands:", rendered)
+
+    def test_materialize_summary_pluralizes_categories(self):
+        output = io.StringIO()
+        rows = [
+            {
+                "leaf_id": f"{index:03d}:example",
+                "unit_id": f"{index:08d}",
+                "planned_uint32_values": "1000000000",
+                "planned_output_shard_count": "1",
+                "estimated_peak_local_bytes": "2000000000",
+                "destination_prefix": f"s3://bucket/output/{index:08d}",
+            }
+            for index in range(2)
+        ]
+        with redirect_stdout(output):
+            _print_dispatch(
+                "all",
+                rows,
+                Path("/tmp/launchers"),
+                [],
+                2,
+                True,
+            )
+
+        rendered = output.getvalue()
+        self.assertIn("2 categories · 2 units · 2 workers", rendered)
+        self.assertNotIn("categorys", rendered)
         self.assertNotIn("pmr create", rendered)
         self.assertNotIn("units:", rendered)
 
@@ -860,6 +887,15 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with self.assertRaisesRegex(PreparationError, "must be at least 2"):
             _worker_counts_for_groups(groups, 1)
 
+        large_group = [
+            PlannedWorkerGroup(
+                "i4i.2xlarge",
+                "single",
+                tuple({"unit_id": f"small-{index}"} for index in range(128)),
+            )
+        ]
+        self.assertEqual(_worker_counts_for_groups(large_group, 128), [90])
+
     def test_materialize_batches_provider_create_requests(self):
         self.assertEqual(_provision_batches(0, 5), ())
         self.assertEqual(_provision_batches(3, 5), (3,))
@@ -901,6 +937,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             region="us-east-1",
             parallelism=8,
             instance_type="i4i.2xlarge",
+            storage_layout="single",
             root_storage_type="gp3",
             root_storage_size=200,
             ssh_key_path=None,
@@ -927,7 +964,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(create_command[create_command.index("--number") + 1], "2")
         self.assertIn("--detach", create_command)
         wait_command = run.call_args_list[1].args[1]
-        self.assertEqual(wait_command[wait_command.index("--name") + 1], "oe-other")
+        self.assertEqual(
+            wait_command[wait_command.index("--name") + 1],
+            "dolma3p5-14t-i4i-2xlarge-single",
+        )
         self.assertEqual(wait_command.count("--instance-id"), 2)
         retag.assert_called_once_with(
             args,
@@ -1001,7 +1041,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                         {
                             "InstanceId": "i-first",
                             "Tags": [
-                                {"Key": "project", "Value": "oe-other"},
+                                {
+                                    "Key": "project",
+                                    "Value": "dolma3p5-14t-i4i-2xlarge-single",
+                                },
                                 {"Key": "ai2-project", "Value": "oe-other"},
                                 {"Key": "cluster", "Value": "dolma3p5-14t"},
                                 {"Key": "Name", "Value": "dolma3p5-14t-0000"},
@@ -1015,6 +1058,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             cluster="dolma3p5-14t",
             project="oe-other",
             region="us-east-1",
+            instance_type="i4i.2xlarge",
+            storage_layout="single",
             profile=None,
         )
 
@@ -1029,7 +1074,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             call(
                 Resources=["i-first"],
                 Tags=[
-                    {"Key": "project", "Value": "oe-other"},
+                    {
+                        "Key": "project",
+                        "Value": "dolma3p5-14t-i4i-2xlarge-single",
+                    },
                     {"Key": "ai2-project", "Value": "oe-other"},
                     {"Key": "cluster", "Value": "dolma3p5-14t"},
                 ],
@@ -1046,6 +1094,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             region="us-east-1",
             parallelism=8,
             instance_type="i4i.2xlarge",
+            storage_layout="single",
             root_storage_type="gp3",
             root_storage_size=200,
             ssh_key_path=None,
@@ -1070,7 +1119,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         for lifecycle_call in run.call_args_list:
             command = lifecycle_call.args[1]
-            self.assertEqual(command[command.index("--name") + 1], "oe-other")
+            self.assertEqual(
+                command[command.index("--name") + 1],
+                "dolma3p5-14t-i4i-2xlarge-single",
+            )
             self.assertEqual(command[command.index("--instance-id") + 1], "i-reused")
 
     def test_existing_worker_commands_use_project_selector_and_explicit_ids(self):
@@ -1079,13 +1131,18 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             project="oe-other",
             region="us-east-1",
             parallelism=8,
+            instance_type="i4i.2xlarge",
+            storage_layout="single",
             ssh_key_path=None,
         )
         wait_command = _wait_command(args, ["i-first"])
         map_command = _map_command(args, Path("/tmp/launchers"), ["i-first"])
         log_command = _worker_log_command(args, ["i-first"], "test-run")
         for command in (wait_command, map_command, log_command):
-            self.assertEqual(command[command.index("--name") + 1], "oe-other")
+            self.assertEqual(
+                command[command.index("--name") + 1],
+                "dolma3p5-14t-i4i-2xlarge-single",
+            )
             self.assertEqual(command[command.index("--project") + 1], "oe-other")
             self.assertEqual(command[command.index("--instance-id") + 1], "i-first")
 
@@ -1238,15 +1295,27 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 "estimated_work_uint32_values": "40",
             },
         ]
+        small_args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            instance_type="i4i.2xlarge",
+            storage_layout="single",
+        )
+        large_args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            instance_type="i4i.8xlarge",
+            storage_layout="raid0",
+        )
         groups = [
             MaterializationGroup(
-                args=SimpleNamespace(instance_type="i4i.2xlarge"),
+                args=small_args,
                 rows=(selected[0],),
                 script_dir=Path("/tmp/small"),
                 worker_count=1,
             ),
             MaterializationGroup(
-                args=SimpleNamespace(instance_type="i4i.8xlarge"),
+                args=large_args,
                 rows=(selected[1],),
                 script_dir=Path("/tmp/large"),
                 worker_count=1,
@@ -1298,8 +1367,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 ("prepare", "i4i.8xlarge", ("i-small",), False, False),
             ],
         )
-        resume_command.assert_called_once_with(
-            args, ["i-small", "i-large"], detach=True
+        self.assertEqual(
+            resume_command.call_args_list,
+            [
+                call(small_args, ["i-small"], detach=True),
+                call(large_args, ["i-large"], detach=True),
+            ],
         )
         self.assertEqual(
             [event for event in events if event[0] == "dispatch"],
@@ -1322,9 +1395,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         prepare.side_effect = [["i-small"], PreparationError("create failed")]
         args = SimpleNamespace(verbose=False)
         selected = [{"unit_id": "small"}, {"unit_id": "large"}]
+        small_args = SimpleNamespace(instance_type="i4i.2xlarge")
         groups = [
             MaterializationGroup(
-                args=SimpleNamespace(instance_type="i4i.2xlarge"),
+                args=small_args,
                 rows=(selected[0],),
                 script_dir=Path("/tmp/small"),
                 worker_count=1,
@@ -1344,7 +1418,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with self.assertRaisesRegex(PreparationError, "create failed"):
             _execute_materialization_groups(args, groups, selected, "test-run")
 
-        pause.assert_called_once_with(args, ["i-small"])
+        pause.assert_called_once_with(small_args, ["i-small"])
 
     def test_region_defaults_to_us_east_1_and_allows_override(self):
         self.assertEqual(normalize_region(None), DEFAULT_REGION)
