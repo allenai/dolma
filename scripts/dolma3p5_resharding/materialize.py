@@ -67,6 +67,7 @@ try:
         _validate_execution_layout,
         _validate_preparation_build,
         normalize_region,
+        preflight_build,
     )
 except ImportError:
     from workflow import (
@@ -83,6 +84,7 @@ except ImportError:
         _validate_execution_layout,
         _validate_preparation_build,
         normalize_region,
+        preflight_build,
     )
 
 
@@ -180,6 +182,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--verbose",
         action="store_true",
         help="stream poormanray output and periodically show worker resharding logs",
+    )
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="run the selected read-only preflight immediately before --execute",
     )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
@@ -921,8 +928,8 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
     summary_path = build / "02-preflight/preflight-summary.json"
     if summary_path.is_symlink() or not summary_path.is_file():
         raise PreparationError(
-            "A passing preflight is required before --execute. Run "
-            "python scripts/dolma3p5_resharding/preflight.py immediately before dispatch."
+            "A passing preflight is required before --execute. Add --preflight to this command "
+            "or run python scripts/dolma3p5_resharding/preflight.py immediately before dispatch."
         )
     try:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -954,6 +961,20 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
             f"Preflight does not show an empty destination for {len(invalid):,} selected unit(s)"
         )
     return str(summary.get("created_at", "unknown"))
+
+
+def _run_selected_preflight(args: argparse.Namespace, build: Path) -> None:
+    preflight_build(
+        argparse.Namespace(
+            build=build,
+            profile=args.profile,
+            region=args.region,
+            max_workers=None,
+            category=args.category,
+            unit=args.unit,
+            quiet=True,
+        )
+    )
 
 
 def _pause_workers_after_failure(
@@ -1580,6 +1601,8 @@ def main() -> None:
     try:
         args = parser.parse_args()
         args.region = normalize_region(args.region)
+        if args.preflight and not args.execute:
+            raise PreparationError("--preflight requires --execute")
         build = args.build.resolve()
         rows = _load_execution_units(build)
         if args.list_categories is not None:
@@ -1590,7 +1613,6 @@ def main() -> None:
         worker_groups = _planned_worker_groups(args, selected)
         status_run_id = f"{int(time.time())}-{uuid.uuid4().hex[:12]}" if args.execute else None
         if args.execute:
-            preflight_created_at = _require_preflight(build, selected)
             if shutil.which("pmr") is None:
                 raise PreparationError(
                     "pmr is unavailable; run materialize.py with uv so its inline dependencies are installed"
@@ -1604,6 +1626,9 @@ def main() -> None:
                     raise PreparationError(f"Required worker runtime file is missing or unsafe: {required_path}")
             if args.profile:
                 os.environ["AWS_PROFILE"] = args.profile
+            if args.preflight:
+                _run_selected_preflight(args, build)
+            preflight_created_at = _require_preflight(build, selected)
             print(f"preflight=passed created_at={preflight_created_at}")
 
         for group in worker_groups:

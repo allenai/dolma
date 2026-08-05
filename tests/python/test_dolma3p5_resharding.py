@@ -40,6 +40,7 @@ from scripts.dolma3p5_resharding.materialize import (
     _print_dispatch,
     _retag_cluster_instances,
     _run_compact_process,
+    _run_selected_preflight,
     _safe_path_launcher_payload,
     _status_detail,
     _verify_materialized_units,
@@ -546,6 +547,35 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(args.storage_layout, "auto")
         self.assertEqual(args.completion_poll_seconds, 30)
         self.assertFalse(args.verbose)
+        self.assertFalse(args.preflight)
+
+    @patch("scripts.dolma3p5_resharding.materialize.preflight_build")
+    def test_materialize_can_run_selection_aware_preflight(self, preflight):
+        args = SimpleNamespace(
+            profile="read-only",
+            region="us-east-1",
+            category="dolma3_finemath_v3:finemath::default",
+            unit=None,
+        )
+
+        _run_selected_preflight(args, Path("/tmp/build"))
+
+        inline_args = preflight.call_args.args[0]
+        self.assertEqual(inline_args.build, Path("/tmp/build"))
+        self.assertEqual(inline_args.profile, "read-only")
+        self.assertEqual(inline_args.region, "us-east-1")
+        self.assertEqual(
+            inline_args.category,
+            "dolma3_finemath_v3:finemath::default",
+        )
+        self.assertIsNone(inline_args.unit)
+        self.assertIsNone(inline_args.max_workers)
+        self.assertTrue(inline_args.quiet)
+
+        parsed = build_materialize_parser().parse_args(
+            ["--all", "--execute", "--preflight"]
+        )
+        self.assertTrue(parsed.preflight)
 
     def test_materialize_groups_units_by_planned_worker(self):
         args = build_materialize_parser().parse_args(["--all"])

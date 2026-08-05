@@ -3198,10 +3198,10 @@ def preflight_build(args: argparse.Namespace) -> None:
     _write_json(phase / "preflight-summary.json", summary)
     if not passed:
         raise PreparationError(f"Preflight failed; inspect artifacts in {phase}")
-    print(
-        f"Preflight passed for {len(config_index):,} selected execution unit(s) "
-        f"without materializing data: {phase}"
-    )
+    if not getattr(args, "quiet", False):
+        print(
+            f"Preflight passed for {len(config_index):,} selected execution unit(s): {phase}"
+        )
 
 
 def verify_output(args: argparse.Namespace) -> None:

@@ -98,12 +98,13 @@ uv run scripts/dolma3p5_resharding/materialize.py \
   --dry-run
 ```
 
-Launch that category after its matching preflight passes:
+Run its matching preflight and launch the category:
 
 ```bash
 uv run scripts/dolma3p5_resharding/materialize.py \
   --category 'dolma3_finemath_v3:finemath::default' \
   --parallelism 1 \
+  --preflight \
   --execute
 ```
 
@@ -118,6 +119,7 @@ uv run scripts/dolma3p5_resharding/materialize.py \
 uv run scripts/dolma3p5_resharding/materialize.py \
   --all \
   --parallelism 128 \
+  --preflight \
   --execute
 ```
 
@@ -125,6 +127,8 @@ The important worker options are:
 
 - `--parallelism` is the maximum number of concurrent workers. The actual
   count is the smaller of this value and the selected execution-unit count.
+- `--preflight` reruns the read-only source and destination checks for the exact
+  selection immediately before provisioning workers. It requires `--execute`.
 - `--cluster` defaults to `dolma3p5-14t` and sets the worker `cluster` tag.
 - `--project` defaults to `oe-other` and sets the worker `project` tag.
 - `--region` defaults to `us-east-1` and can be overridden directly or with
