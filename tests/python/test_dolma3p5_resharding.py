@@ -49,6 +49,7 @@ from scripts.dolma3p5_resharding.materialize import (
     _run_compact_process,
     _run_selected_preflight,
     _safe_path_launcher_payload,
+    _select_units,
     _status_detail,
     _verify_materialized_units,
     _wait_command,
@@ -636,6 +637,52 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(args.completion_poll_seconds, 30)
         self.assertFalse(args.verbose)
         self.assertFalse(args.preflight)
+        self.assertEqual(args.exclude_category, [])
+
+    def test_materialize_all_can_exclude_completed_categories(self):
+        rows = [
+            {
+                "unit_id": "00000001",
+                "leaf_id": "001:00",
+                "mix_name": "one:category",
+                "category_name": "default",
+            },
+            {
+                "unit_id": "00000002",
+                "leaf_id": "002:00",
+                "mix_name": "two:category",
+                "category_name": "high",
+            },
+            {
+                "unit_id": "00000003",
+                "leaf_id": "002:01",
+                "mix_name": "two:category",
+                "category_name": "mid",
+            },
+        ]
+        args = build_materialize_parser().parse_args(
+            ["--all", "--exclude-category", "one:category"]
+        )
+
+        label, selected = _select_units(args, rows)
+
+        self.assertEqual(label, "all-except-1-categories")
+        self.assertEqual(
+            [row["unit_id"] for row in selected], ["00000002", "00000003"]
+        )
+
+    def test_materialize_rejects_category_exclusion_without_all(self):
+        args = build_materialize_parser().parse_args(
+            [
+                "--category",
+                "one:category",
+                "--exclude-category",
+                "two:category",
+            ]
+        )
+
+        with self.assertRaisesRegex(PreparationError, "only be used with --all"):
+            _select_units(args, [])
 
     @patch("scripts.dolma3p5_resharding.materialize.preflight_build")
     def test_materialize_can_run_selection_aware_preflight(self, preflight):
@@ -646,7 +693,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             unit=None,
         )
 
-        _run_selected_preflight(args, Path("/tmp/build"))
+        selected = [{"unit_id": "00000136"}, {"unit_id": "00000137"}]
+        _run_selected_preflight(args, Path("/tmp/build"), selected)
 
         inline_args = preflight.call_args.args[0]
         self.assertEqual(inline_args.build, Path("/tmp/build"))
@@ -657,6 +705,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             "dolma3_finemath_v3:finemath::default",
         )
         self.assertIsNone(inline_args.unit)
+        self.assertEqual(
+            inline_args.selected_unit_ids, ("00000136", "00000137")
+        )
         self.assertIsNone(inline_args.max_workers)
         self.assertTrue(inline_args.quiet)
 

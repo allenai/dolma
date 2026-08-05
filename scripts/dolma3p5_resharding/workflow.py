@@ -2965,15 +2965,32 @@ def preflight_build(args: argparse.Namespace) -> None:
     all_config_index = _read_csv(build / "01-plan/execution/config-index.csv")
     category = getattr(args, "category", None)
     unit = getattr(args, "unit", None)
-    config_index = _filter_execution_units(
-        all_config_index, category=category, unit=unit
-    )
-    selection_scope = (
-        "unit" if unit is not None else "category" if category is not None else "all"
-    )
-    selection_value = (
-        unit if unit is not None else category if category is not None else "all"
-    )
+    selected_unit_ids = getattr(args, "selected_unit_ids", None)
+    if selected_unit_ids is not None:
+        requested_ids = set(selected_unit_ids)
+        config_index = [
+            row for row in all_config_index if row["unit_id"] in requested_ids
+        ]
+        resolved_ids = {row["unit_id"] for row in config_index}
+        if not requested_ids:
+            raise PreparationError("Preflight execution-unit selection is empty")
+        if resolved_ids != requested_ids:
+            unknown = sorted(requested_ids - resolved_ids)
+            raise PreparationError(
+                "Preflight received unknown execution-unit IDs: " + ", ".join(unknown)
+            )
+        selection_scope = "explicit_units"
+        selection_value = f"{len(config_index)} execution units"
+    else:
+        config_index = _filter_execution_units(
+            all_config_index, category=category, unit=unit
+        )
+        selection_scope = (
+            "unit" if unit is not None else "category" if category is not None else "all"
+        )
+        selection_value = (
+            unit if unit is not None else category if category is not None else "all"
+        )
 
     full_listing_plan = _read_csv(build / "01-plan/resolution/listing-plan.csv")
     approved_inventory = _read_csv(

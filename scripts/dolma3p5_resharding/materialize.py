@@ -123,6 +123,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="list category selectors, optionally filtered by a case-insensitive substring",
     )
     parser.add_argument(
+        "--exclude-category",
+        action="append",
+        default=[],
+        metavar="SELECTOR",
+        help=(
+            "exclude an exact mix name, leaf ID, or MIX_NAME::CATEGORY_NAME from --all; "
+            "repeat for multiple completed categories"
+        ),
+    )
+    parser.add_argument(
         "--cluster",
         default="dolma3p5-14t",
         help="poormanray cluster name",
@@ -945,8 +955,21 @@ def _print_categories(rows: Sequence[dict[str, str]], filter_text: str) -> None:
 def _select_units(
     args: argparse.Namespace, rows: Sequence[dict[str, str]]
 ) -> tuple[str, list[dict[str, str]]]:
+    exclusions = list(getattr(args, "exclude_category", ()))
+    if exclusions and not args.all:
+        raise PreparationError("--exclude-category can only be used with --all")
     if args.all:
-        return "all", list(rows)
+        excluded_unit_ids: set[str] = set()
+        for selector in exclusions:
+            excluded_unit_ids.update(
+                row["unit_id"]
+                for row in _filter_execution_units(rows, category=selector)
+            )
+        selected = [row for row in rows if row["unit_id"] not in excluded_unit_ids]
+        if not selected:
+            raise PreparationError("Category exclusions removed every execution unit")
+        label = "all" if not exclusions else f"all-except-{len(exclusions)}-categories"
+        return label, selected
     if args.unit:
         selected = _filter_execution_units(rows, unit=args.unit)
         return f"unit-{args.unit}", selected
@@ -1142,8 +1165,8 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
         and summary.get("selected_unit_ids_sha256") != selected_digest
     ):
         raise PreparationError(
-            "Preflight selection does not match this dispatch. Rerun preflight.py with the same "
-            "--category or --unit selector."
+            "Preflight selection does not match this dispatch. Rerun preflight for the same "
+            "materialization selection."
         )
 
     destination_rows = _read_csv(build / "02-preflight/destination-status.csv")
@@ -1158,7 +1181,11 @@ def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
     return str(summary.get("created_at", "unknown"))
 
 
-def _run_selected_preflight(args: argparse.Namespace, build: Path) -> None:
+def _run_selected_preflight(
+    args: argparse.Namespace,
+    build: Path,
+    selected: Sequence[dict[str, str]],
+) -> None:
     preflight_build(
         argparse.Namespace(
             build=build,
@@ -1167,6 +1194,7 @@ def _run_selected_preflight(args: argparse.Namespace, build: Path) -> None:
             max_workers=None,
             category=args.category,
             unit=args.unit,
+            selected_unit_ids=tuple(row["unit_id"] for row in selected),
             quiet=True,
         )
     )
@@ -2126,7 +2154,7 @@ def main() -> None:
             if args.profile:
                 os.environ["AWS_PROFILE"] = args.profile
             if args.preflight:
-                _run_selected_preflight(args, build)
+                _run_selected_preflight(args, build, selected)
             preflight_created_at = _require_preflight(build, selected)
             print(f"preflight=passed created_at={preflight_created_at}")
 
