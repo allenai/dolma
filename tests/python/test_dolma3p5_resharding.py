@@ -28,24 +28,54 @@ from dolma.tokenizer.reshard import (
     upload_to_s3,
 )
 from scripts.dolma3p5_resharding.workflow import (
+    DEFAULT_REGION,
+    EXECUTION_UNIT_INDEX_WIDTH,
     PreparationError,
     S3Object,
     _allocate_object_sampling,
+    _filter_execution_units,
     _finalize_inventory,
     _load_catalog,
     _parse_s5cmd_jsonl,
     _partition_object_uses,
+    _source_relative_directory,
+    _unit_selection_digest,
+    _validate_execution_layout,
     collect_inventory,
     plan_build,
     preflight_build,
     propose_configs,
     refresh_inventory_details,
+    normalize_region,
     validate_build,
     verify_output,
 )
 
 
 class TestDolma35ReshardingPreparation(unittest.TestCase):
+    def test_region_defaults_to_us_east_1_and_allows_override(self):
+        self.assertEqual(normalize_region(None), DEFAULT_REGION)
+        self.assertEqual(normalize_region(""), DEFAULT_REGION)
+        self.assertEqual(normalize_region("  "), DEFAULT_REGION)
+        self.assertEqual(normalize_region(" us-west-2 "), "us-west-2")
+
+    def test_source_layout_preserves_exact_source_directory(self):
+        self.assertEqual(
+            _source_relative_directory(
+                "preprocessed/dolma3-0625/v0.1-official/allenai/"
+                "dolma3-tokenizer/finemath-3plus/000000.npy"
+            ),
+            "dolma3-0625/v0.1-official/allenai/dolma3-tokenizer/finemath-3plus",
+        )
+        self.assertEqual(
+            _source_relative_directory(
+                "preprocessed/cc_all_dressed/all_dressed_v5/topic/health/"
+                "vigintile_0016/allenai/dolma2-tokenizer/000000.npy"
+            ),
+            "cc_all_dressed/all_dressed_v5/topic/health/"
+            "vigintile_0016/allenai/dolma2-tokenizer",
+        )
+
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
@@ -387,6 +417,40 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
         self.assertEqual(rows[0]["key"], "preprocessed/the-stack-v2/C++/0000.npy")
 
+    def test_execution_units_support_exact_category_and_unit_selection(self):
+        rows = [
+            {
+                "unit_id": "finemath-0001",
+                "leaf_id": "060:00",
+                "mix_name": "dolma3_finemath_v3:finemath",
+                "category_name": "default",
+            },
+            {
+                "unit_id": "finemath-0002",
+                "leaf_id": "060:00",
+                "mix_name": "dolma3_finemath_v3:finemath",
+                "category_name": "default",
+            },
+            {
+                "unit_id": "stack-0001",
+                "leaf_id": "061:00",
+                "mix_name": "the-stack-v2:Python",
+                "category_name": "high",
+            },
+        ]
+        selected_mix = _filter_execution_units(rows, category="dolma3_finemath_v3:finemath")
+        selected_leaf = _filter_execution_units(rows, category="060:00")
+        selected_full = _filter_execution_units(
+            rows,
+            category="the-stack-v2:Python::high",
+        )
+        selected_unit = _filter_execution_units(rows, unit="finemath-0002")
+
+        self.assertEqual([row["unit_id"] for row in selected_mix], ["finemath-0001", "finemath-0002"])
+        self.assertEqual(_unit_selection_digest(selected_mix), _unit_selection_digest(selected_leaf))
+        self.assertEqual([row["unit_id"] for row in selected_full], ["stack-0001"])
+        self.assertEqual([row["unit_id"] for row in selected_unit], ["finemath-0002"])
+
     def test_s5cmd_listing_commands_use_literal_s3_keys(self):
         mix = self.root / "encoded-mix.yaml"
         catalog = self.root / "encoded-command-catalog.csv"
@@ -614,6 +678,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             )
         with (self.build / "01-plan/execution/config-index.csv").open() as f:
             execution_units = list(csv.DictReader(f))
+        self.assertEqual(
+            [row["unit_id"] for row in execution_units],
+            [f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}" for index in range(len(execution_units))],
+        )
         self.assertTrue(
             all(
                 int(row["estimated_peak_local_bytes"]) <= int(row["max_unit_working_bytes"])
@@ -623,6 +691,15 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         dataset_layout = json.loads((self.build / "01-plan/execution/dataset-layout.json").read_text())
         self.assertEqual(dataset_layout["category_count"], 3)
         self.assertEqual(dataset_layout["execution_unit_count"], 4)
+        self.assertEqual(dataset_layout["schema_version"], 1)
+        self.assertRegex(
+            dataset_layout["dataset_root"],
+            r"^s3://test-bucket/new-datasets/dolma3p5/dolma3p5-14t-[0-9a-f]{12}$",
+        )
+        self.assertEqual(dataset_layout["layout"], "build-scoped-source-root-replacement-v1")
+        self.assertEqual(dataset_layout["execution_unit_index_width"], EXECUTION_UNIT_INDEX_WIDTH)
+        self.assertEqual(dataset_layout["execution_unit_id_width"], EXECUTION_UNIT_INDEX_WIDTH)
+        self.assertEqual(_validate_execution_layout(self.build), dataset_layout)
         runtime_requirements = json.loads((self.build / "01-plan/execution/runtime-requirements.json").read_text())
         self.assertEqual(runtime_requirements["required_resharding_manifest_schema_version"], 2)
         for config_path in configs:
@@ -632,7 +709,17 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             parsed = ReshardingConfig.from_file(config_path)
             self.assertEqual(len(parsed.source_manifests), 1)
             self.assertTrue(Path(parsed.source_manifests[0].manifest).is_file())
-            self.assertIn("/new-datasets/dolma3p5/dolma3p5-14t-", config["destination_prefix"])
+            destination = config["destination_prefix"]
+            self.assertRegex(
+                destination,
+                r"^s3://test-bucket/new-datasets/dolma3p5/dolma3p5-14t-[0-9a-f]{12}/",
+            )
+            self.assertRegex(destination, rf"/[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}$")
+            self.assertNotIn("/categories/", destination)
+            self.assertNotIn("/unit-", destination)
+        for row in execution_units:
+            expected_suffix = f'/{row["source_layout_prefix"]}/{row["destination_index"]}'
+            self.assertIn(expected_suffix, row["destination_prefix"])
         for manifest_path in (self.build / "01-plan/execution/manifests").glob("*.csv"):
             with manifest_path.open() as handle:
                 fields = csv.DictReader(handle).fieldnames
@@ -766,6 +853,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                     max_workers=2,
                 )
             )
+        self.assertFalse((self.build / "02-preflight/plots").exists())
+        self.assertFalse((self.build / "02-preflight/plot-data").exists())
+        self.assertFalse((self.build / "02-preflight/report.html").exists())
 
         with (self.build / "01-plan/execution/config-index.csv").open() as f:
             config_index = list(csv.DictReader(f))

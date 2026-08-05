@@ -34,7 +34,11 @@ import yaml
 
 UINT32_BYTES = 4
 DOCUMENT_SELECTION_ALGORITHM = "document_hash_bucket_v1"
+EXECUTION_UNIT_INDEX_WIDTH = 8
+EXECUTION_LAYOUT_SCHEMA_VERSION = 1
+DESTINATION_LAYOUT = "build-scoped-source-root-replacement-v1"
 DEFAULT_TARGET = 14_000_000_000_000
+DEFAULT_REGION = "us-east-1"
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BUILD_PATH = REPOSITORY_ROOT / "runs/dolma3p5-resharding/14t"
 PREPARATION_PHASES = (
@@ -71,6 +75,13 @@ DEFAULT_SETTINGS: dict[str, Any] = {
 
 class PreparationError(RuntimeError):
     """A user-actionable preparation or validation failure."""
+
+
+def normalize_region(region: str | None) -> str:
+    """Return the configured region, falling back to the workflow default."""
+
+    normalized = (region or "").strip()
+    return normalized or DEFAULT_REGION
 
 
 @dataclass(frozen=True)
@@ -176,6 +187,40 @@ def _validate_preparation_build(path: Path) -> dict[str, Any]:
         if phase.exists() and (phase.is_symlink() or not phase.is_dir()):
             raise PreparationError(f"Refusing to replace an unsafe preparation phase path: {phase}")
     return manifest
+
+
+def _validate_execution_layout(build: Path) -> dict[str, Any]:
+    """Refuse stale execution artifacts before checking or writing destinations."""
+
+    manifest = _validate_preparation_build(build)
+    layout_path = build / "01-plan/execution/dataset-layout.json"
+    if layout_path.is_symlink() or not layout_path.is_file():
+        raise PreparationError(
+            "Execution layout is missing. Rerun scripts/dolma3p5_resharding/plan.py before preflight "
+            "or materialization."
+        )
+    try:
+        layout = json.loads(layout_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise PreparationError(f"Invalid execution layout: {layout_path}") from exc
+    expected = {
+        "build_id": manifest["build_id"],
+        "layout": DESTINATION_LAYOUT,
+        "execution_unit_index_width": EXECUTION_UNIT_INDEX_WIDTH,
+        "execution_unit_id_width": EXECUTION_UNIT_INDEX_WIDTH,
+    }
+    mismatches = [name for name, value in expected.items() if layout.get(name) != value]
+    dataset_root = layout.get("dataset_root")
+    if not isinstance(dataset_root, str) or not dataset_root.endswith(f'/{manifest["build_id"]}'):
+        mismatches.append("dataset_root")
+    if mismatches:
+        found_layout = layout.get("layout", "missing")
+        raise PreparationError(
+            "Execution plan uses an obsolete destination layout "
+            f"(layout={found_layout}). Rerun "
+            "scripts/dolma3p5_resharding/plan.py before preflight or materialization."
+        )
+    return layout
 
 
 def _remove_generated_phase(path: Path) -> None:
@@ -886,13 +931,14 @@ def _run_s5cmd_inventory(
 def collect_inventory(args: argparse.Namespace) -> None:
     build = args.build.resolve()
     manifest = _load_build(build)
+    region = normalize_region(args.region)
     if shutil.which("s5cmd") is None:
         raise PreparationError("s5cmd is required for inventory collection and was not found on PATH")
     phase = _reset_plan_stage(build, "inventory", "execution")
     listing_plan = _read_csv(build / "01-plan/resolution/listing-plan.csv")
 
     session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
-    client = session.client("s3", region_name=args.region)
+    client = session.client("s3", region_name=region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     listed: dict[tuple[str, str], S3Object] = {}
     errors: list[dict[str, str]] = []
@@ -911,9 +957,8 @@ def collect_inventory(args: argparse.Namespace) -> None:
     environment = os.environ.copy()
     if args.profile:
         environment["AWS_PROFILE"] = args.profile
-    if args.region:
-        environment["AWS_REGION"] = args.region
-        environment["AWS_DEFAULT_REGION"] = args.region
+    environment["AWS_REGION"] = region
+    environment["AWS_DEFAULT_REGION"] = region
     _inventory_status(
         1,
         f"Bulk listing: {len(listing_plan):,} commands, "
@@ -1477,7 +1522,7 @@ def _execution_unit_sizes(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
 def _partition_object_uses(
     rows: Sequence[dict[str, Any]], max_unit_working_bytes: int
 ) -> list[list[dict[str, Any]]]:
-    """Partition one category into deterministic worker-sized execution units."""
+    """Partition one source-directory group into deterministic worker-sized units."""
 
     if max_unit_working_bytes <= 0:
         raise ValueError("max_unit_working_bytes must be positive")
@@ -1629,6 +1674,23 @@ def _validate_destination_root(destination_root: str) -> str:
     return f"s3://{parsed.netloc}/{prefix}"
 
 
+def _source_relative_directory(source_key: str) -> str:
+    """Return a source directory relative to its top-level storage prefix."""
+
+    components = tuple(source_key.split("/"))
+    if len(components) < 3 or any(component in {"", ".", ".."} for component in components):
+        raise PreparationError(f"Source object has an unsafe path: {source_key}")
+    directory = components[1:-1]
+    return "/".join(directory)
+
+
+def _source_root_uri(bucket: str, source_key: str) -> str:
+    top_level = source_key.split("/", 1)[0]
+    if not bucket or not top_level or top_level in {".", ".."}:
+        raise PreparationError(f"Cannot derive source root for s3://{bucket}/{source_key}")
+    return f"s3://{bucket}/{top_level}"
+
+
 def propose_configs(args: argparse.Namespace) -> None:
     build = args.build.resolve()
     manifest = _load_build(build)
@@ -1682,6 +1744,13 @@ def propose_configs(args: argparse.Namespace) -> None:
         object_id = (row["bucket"], row["key"])
         by_leaf[row["leaf_id"]][object_id] = row
         memberships[object_id].add(row["leaf_id"])
+    source_roots = sorted(
+        {
+            _source_root_uri(row["bucket"], row["key"])
+            for row in inventory
+            if row["active"] == "true"
+        }
+    )
     overlaps = [
         {"bucket": bucket, "key": key, "leaf_ids": ";".join(sorted(leaves))}
         for (bucket, key), leaves in memberships.items()
@@ -1698,6 +1767,7 @@ def propose_configs(args: argparse.Namespace) -> None:
     config_index: list[dict[str, Any]] = []
     category_execution_rows: list[dict[str, Any]] = []
     local_unit_commands: list[str] = []
+    next_execution_unit_index = 0
 
     settings = manifest["settings"]
     total_planned = 0
@@ -1716,6 +1786,7 @@ def propose_configs(args: argparse.Namespace) -> None:
         "leaf_id",
         "mix_name",
         "category_name",
+        "source_directory",
     ]
     active_leaves = sorted(
         (row for row in normalized_mix if row["active"] == "true"),
@@ -1784,6 +1855,8 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "mix_name": mix_name,
                 "category_index": category_index,
                 "category_name": category_name,
+                "source_directory": obj["npy_uri"].rsplit("/", 1)[0],
+                "source_layout_prefix": _source_relative_directory(obj["key"]),
                 "path_id": obj["path_id"],
                 "lower_group": _path_subgroup(obj["yaml_path"]),
                 "yaml_path": obj["yaml_path"],
@@ -1804,18 +1877,49 @@ def propose_configs(args: argparse.Namespace) -> None:
             if repeat_count > 0 or partial_target > 0:
                 leaf_object_uses.append(object_use)
 
-        units = _partition_object_uses(leaf_object_uses, max_unit_working_bytes)
-        category_slug = (
-            f"{mix_index:03d}-{_slug(mix_name, 60)}--" f"{category_index:02d}-{_slug(category_name, 40)}"
-        )
+        uses_by_source_path: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+        for object_use in leaf_object_uses:
+            source_identity = (
+                object_use["source_directory"],
+                object_use["source_layout_prefix"],
+            )
+            uses_by_source_path[source_identity].append(object_use)
+        path_units: list[tuple[str, str, int, list[dict[str, Any]]]] = []
+        for source_directory, source_layout_prefix in sorted(uses_by_source_path):
+            source_units = _partition_object_uses(
+                uses_by_source_path[(source_directory, source_layout_prefix)],
+                max_unit_working_bytes,
+            )
+            if len(source_units) > 10**EXECUTION_UNIT_INDEX_WIDTH:
+                raise PreparationError(
+                    f"Source path {source_layout_prefix} needs {len(source_units):,} execution units, "
+                    f"which exceeds the {EXECUTION_UNIT_INDEX_WIDTH}-digit destination counter"
+                )
+            path_units.extend(
+                (source_directory, source_layout_prefix, source_unit_index, unit_rows)
+                for source_unit_index, unit_rows in enumerate(source_units)
+            )
+
+        units = [unit_rows for _, _, _, unit_rows in path_units]
         unit_planned_values = [_execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES for unit in units]
         unit_targets = unit_planned_values
 
         unit_peak_bytes: list[int] = []
         unit_input_bytes: list[int] = []
-        for unit_index, (unit_rows, unit_target) in enumerate(zip(units, unit_targets)):
+        dataset_root = f"{destination_root}/{manifest['build_id']}"
+        for unit_index, (
+            (source_directory, source_layout_prefix, source_unit_index, unit_rows),
+            unit_target,
+        ) in enumerate(
+            zip(path_units, unit_targets)
+        ):
             unit_number = unit_index + 1
-            unit_id = f"{category_slug}--unit-{unit_number:04d}-of-{len(units):04d}"
+            if next_execution_unit_index >= 10**EXECUTION_UNIT_INDEX_WIDTH:
+                raise PreparationError(
+                    f"Execution plan exceeds the {EXECUTION_UNIT_INDEX_WIDTH}-digit unit ID counter"
+                )
+            unit_id = f"{next_execution_unit_index:0{EXECUTION_UNIT_INDEX_WIDTH}d}"
+            next_execution_unit_index += 1
             unit_sizes = _execution_unit_sizes(unit_rows)
             unit_peak_bytes.append(unit_sizes["estimated_peak_local_bytes"])
             unit_input_bytes.append(unit_sizes["input_npy_bytes"] + unit_sizes["input_metadata_bytes"])
@@ -1831,9 +1935,8 @@ def propose_configs(args: argparse.Namespace) -> None:
             else:
                 shard_floor = 8
             max_num_files = max(shard_floor, unit_max_repeat)
-            destination = (
-                f"{destination_root}/{manifest['build_id']}/categories/" f"{category_slug}/unit-{unit_number:04d}"
-            )
+            destination_index = f"{source_unit_index:0{EXECUTION_UNIT_INDEX_WIDTH}d}"
+            destination = f"{dataset_root}/{source_layout_prefix}/{destination_index}"
             config = {
                 "destination_prefix": destination,
                 "source_manifests": [{"manifest": f"../manifests/{manifest_path.name}"}],
@@ -1867,6 +1970,9 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "mix_name": mix_name,
                 "category_index": category_index,
                 "category_name": category_name,
+                "source_directory": source_directory,
+                "source_layout_prefix": source_layout_prefix,
+                "destination_index": destination_index,
                 "unit_index": unit_number,
                 "unit_count_for_category": len(units),
                 "config_path": str(config_path.relative_to(build)),
@@ -1963,9 +2069,13 @@ def propose_configs(args: argparse.Namespace) -> None:
     _write_json(
         phase / "dataset-layout.json",
         {
-            "schema_version": 1,
+            "schema_version": EXECUTION_LAYOUT_SCHEMA_VERSION,
             "build_id": manifest["build_id"],
-            "dataset_root": f"{destination_root}/{manifest['build_id']}/categories",
+            "dataset_root": f"{destination_root}/{manifest['build_id']}",
+            "layout": DESTINATION_LAYOUT,
+            "source_roots": source_roots,
+            "execution_unit_index_width": EXECUTION_UNIT_INDEX_WIDTH,
+            "execution_unit_id_width": EXECUTION_UNIT_INDEX_WIDTH,
             "category_count": len(category_execution_rows),
             "execution_unit_count": len(config_index),
             "nominal_target_uint32_values": int(settings["target_uint32_values"]),
@@ -2023,6 +2133,11 @@ def propose_configs(args: argparse.Namespace) -> None:
             "created_at": _utc_now(),
             "build_id": manifest["build_id"],
             "destination_root": destination_root,
+            "dataset_root": f"{destination_root}/{manifest['build_id']}",
+            "destination_layout": DESTINATION_LAYOUT,
+            "source_roots": source_roots,
+            "execution_unit_index_width": EXECUTION_UNIT_INDEX_WIDTH,
+            "execution_unit_id_width": EXECUTION_UNIT_INDEX_WIDTH,
             "category_count": len(category_execution_rows),
             "execution_unit_count": len(config_index),
             "config_count": len(config_index),
@@ -2075,10 +2190,43 @@ def _validate_proposal(
     for unit_id, count in Counter(unit_ids).items():
         if count != 1:
             failures.append({"check": "unique_unit_id", "detail": unit_id})
+        if not re.fullmatch(rf"[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}", unit_id):
+            failures.append({"check": "numeric_unit_id", "detail": unit_id})
+    expected_unit_ids = [f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}" for index in range(len(config_index))]
+    if unit_ids != expected_unit_ids:
+        failures.append(
+            {
+                "check": "sequential_unit_ids",
+                "detail": f"expected {len(expected_unit_ids):,} globally sequential IDs",
+            }
+        )
     for row in config_index:
+        destination_index = row.get("destination_index", "")
+        if not re.fullmatch(rf"[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}", destination_index):
+            failures.append(
+                {
+                    "check": "destination_index",
+                    "detail": row["unit_id"],
+                }
+            )
+        expected_destination_suffix = f'/{row["source_layout_prefix"]}/{destination_index}'
+        if not row["destination_prefix"].endswith(expected_destination_suffix):
+            failures.append(
+                {
+                    "check": "source_relative_destination",
+                    "detail": row["destination_prefix"],
+                }
+            )
         config_path = build / row["config_path"]
         with config_path.open() as f:
             config = yaml.safe_load(f)
+        if config.get("destination_prefix") != row["destination_prefix"]:
+            failures.append(
+                {
+                    "check": "config_destination_matches_index",
+                    "detail": str(config_path),
+                }
+            )
         if config.get("allow_existing_destination") is not False:
             failures.append({"check": "no_existing_destination", "detail": str(config_path)})
         manifest_path = config_path.parent / config["source_manifests"][0]["manifest"]
@@ -2087,6 +2235,23 @@ def _validate_proposal(
         else:
             manifest_rows = _read_csv(manifest_path.resolve())
             for manifest_row in manifest_rows:
+                parsed_source = urlparse(manifest_row["npy_uri"])
+                manifest_source_directory_uri = manifest_row["npy_uri"].rsplit("/", 1)[0]
+                if manifest_source_directory_uri != row["source_directory"]:
+                    failures.append(
+                        {
+                            "check": "unit_has_one_source_directory",
+                            "detail": str(manifest_path),
+                        }
+                    )
+                manifest_source_directory = _source_relative_directory(parsed_source.path.lstrip("/"))
+                if manifest_source_directory != row["source_layout_prefix"]:
+                    failures.append(
+                        {
+                            "check": "unit_preserves_source_directory",
+                            "detail": str(manifest_path),
+                        }
+                    )
                 partial_target = int(manifest_row.get("partial_target_uint32_values", 0))
                 if partial_target and (
                     manifest_row.get("selection_algorithm") != DOCUMENT_SELECTION_ALGORITHM
@@ -2195,21 +2360,102 @@ def _validate_proposal(
         raise PreparationError(f"Proposal validation failed; inspect {phase / 'validation-failures.csv'}")
 
 
+def _filter_execution_units(
+    rows: Sequence[dict[str, str]],
+    *,
+    category: str | None = None,
+    unit: str | None = None,
+) -> list[dict[str, str]]:
+    if category is not None and unit is not None:
+        raise PreparationError("Choose either a category or an execution unit, not both")
+    if unit is not None:
+        selected = [row for row in rows if row["unit_id"] == unit]
+        if not selected:
+            raise PreparationError(f"Unknown execution-unit ID: {unit}")
+        return selected
+    if category is None:
+        return list(rows)
+    selected = [row for row in rows if row["leaf_id"] == category]
+    if not selected:
+        selected = [row for row in rows if row["mix_name"] == category]
+    if not selected:
+        selected = [
+            row
+            for row in rows
+            if f'{row["mix_name"]}::{row["category_name"]}' == category
+        ]
+    if not selected:
+        raise PreparationError(
+            f"Unknown category selector: {category}. "
+            "Use materialize.py --list-categories FILTER to find the exact selector."
+        )
+    return selected
+
+
+def _unit_selection_digest(rows: Sequence[dict[str, str]]) -> str:
+    return hashlib.sha256(
+        "\n".join(sorted(row["unit_id"] for row in rows)).encode()
+    ).hexdigest()
+
+
 def preflight_build(args: argparse.Namespace) -> None:
-    """Re-inventory approved inputs and verify that all destinations are empty."""
+    """Re-inventory selected inputs and verify that selected destinations are empty."""
 
     build = args.build.resolve()
     manifest = _load_build(build)
+    region = normalize_region(args.region)
     proposal_summary = build / "01-plan/execution/proposal-summary.json"
     if not proposal_summary.is_file():
         raise PreparationError("Proposal is missing; run propose first")
+    _validate_execution_layout(build)
     phase = _reset_preparation_phase(build, "02-preflight", "03-output-validation")
-    listing_plan = _read_csv(build / "01-plan/resolution/listing-plan.csv")
+    all_config_index = _read_csv(build / "01-plan/execution/config-index.csv")
+    category = getattr(args, "category", None)
+    unit = getattr(args, "unit", None)
+    config_index = _filter_execution_units(all_config_index, category=category, unit=unit)
+    selection_scope = "unit" if unit is not None else "category" if category is not None else "all"
+    selection_value = unit if unit is not None else category if category is not None else "all"
+
+    full_listing_plan = _read_csv(build / "01-plan/resolution/listing-plan.csv")
     approved_inventory = _read_csv(build / "01-plan/inventory/normalized-s3-inventory.csv")
-    approved = {(row["bucket"], row["key"]): row for row in approved_inventory if row["required"] == "true"}
+    approved_all = {
+        (row["bucket"], row["key"]): row
+        for row in approved_inventory
+        if row["required"] == "true"
+    }
+    if selection_scope == "all":
+        approved = approved_all
+    else:
+        selected_identities: set[tuple[str, str]] = set()
+        manifest_root = (build / "01-plan/execution/manifests").resolve()
+        for config_row in config_index:
+            manifest_path = (build / config_row["manifest_path"]).resolve()
+            if manifest_path.parent != manifest_root or manifest_path.is_symlink() or not manifest_path.is_file():
+                raise PreparationError(f"Unsafe or missing execution manifest: {manifest_path}")
+            for manifest_row in _read_csv(manifest_path):
+                for field in ("npy_uri", "metadata_uri"):
+                    parsed = urlparse(manifest_row[field])
+                    if parsed.scheme != "s3" or not parsed.netloc or not parsed.path:
+                        raise PreparationError(f"Unsupported source URI in {manifest_path}: {manifest_row[field]}")
+                    selected_identities.add((parsed.netloc, parsed.path.lstrip("/")))
+        missing_approved = selected_identities - set(approved_all)
+        if missing_approved:
+            raise PreparationError(
+                f"Selected manifests contain {len(missing_approved):,} objects outside the approved inventory"
+            )
+        approved = {identity: approved_all[identity] for identity in selected_identities}
+
+    listing_plan = [
+        row
+        for row in full_listing_plan
+        if any(
+            bucket == row["bucket"] and key.startswith(row["listing_prefix"])
+            for bucket, key in approved
+        )
+    ]
 
     session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
-    client = session.client("s3", region_name=args.region)
+    client = session.client("s3", region_name=region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     current: dict[tuple[str, str], S3Object] = {}
     errors: list[dict[str, str]] = []
@@ -2280,7 +2526,6 @@ def preflight_build(args: argparse.Namespace) -> None:
             }
         )
 
-    config_index = _read_csv(build / "01-plan/execution/config-index.csv")
     destination_rows: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {}
@@ -2305,6 +2550,7 @@ def preflight_build(args: argparse.Namespace) -> None:
                         "leaf_id": row["leaf_id"],
                         "mix_name": row["mix_name"],
                         "category_name": row["category_name"],
+                        "source_directory": row["source_directory"],
                         "destination_prefix": row["destination_prefix"],
                         "status": "occupied" if contents else "empty",
                         "first_existing_key": contents[0]["Key"] if contents else "",
@@ -2340,6 +2586,7 @@ def preflight_build(args: argparse.Namespace) -> None:
             "leaf_id",
             "mix_name",
             "category_name",
+            "source_directory",
             "destination_prefix",
             "status",
             "first_existing_key",
@@ -2351,6 +2598,11 @@ def preflight_build(args: argparse.Namespace) -> None:
     passed = not errors and not drifted and not occupied and len(destination_rows) == len(config_index)
     summary = {
         "created_at": _utc_now(),
+        "selection_scope": selection_scope,
+        "selection_value": selection_value,
+        "selected_execution_units": len(config_index),
+        "total_execution_units": len(all_config_index),
+        "selected_unit_ids_sha256": _unit_selection_digest(config_index),
         "approved_input_objects": len(approved),
         "drifted_input_objects": drifted,
         "destinations_checked": len(destination_rows),
@@ -2360,38 +2612,12 @@ def preflight_build(args: argparse.Namespace) -> None:
         "materialization_executed": False,
     }
     _write_json(phase / "preflight-summary.json", summary)
-    status_rows = [
-        {"state": "unchanged inputs", "count": len(drift_rows) - drifted},
-        {"state": "drifted inputs", "count": drifted},
-        {"state": "empty destinations", "count": len(destination_rows) - occupied},
-        {"state": "occupied destinations", "count": occupied},
-        {"state": "request errors", "count": len(errors)},
-    ]
-    plots = phase / "plots"
-    plot_data = phase / "plot-data"
-    plots.mkdir(exist_ok=False)
-    plot_data.mkdir(exist_ok=False)
-    _write_csv(plot_data / "preflight-counts.csv", status_rows, ["state", "count"])
-    _write_text(
-        plots / "preflight-counts.svg",
-        _svg_bar_chart(
-            "Preflight input and destination status",
-            [row["state"] for row in status_rows],
-            [row["count"] for row in status_rows],
-            "items",
-        ),
-    )
-    _write_text(
-        phase / "report.html",
-        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 preflight</title></head><body>'
-        "<h1>Pre-materialization preflight</h1>"
-        f"<p>Passed: {str(passed).lower()}. This command made read-only S3 requests and did not materialize data.</p>"
-        '<img src="plots/preflight-counts.svg" alt="Preflight status counts">'
-        "</body></html>\n",
-    )
     if not passed:
         raise PreparationError(f"Preflight failed; inspect artifacts in {phase}")
-    print(f"Preflight passed without materializing data: {phase}")
+    print(
+        f"Preflight passed for {len(config_index):,} selected execution unit(s) "
+        f"without materializing data: {phase}"
+    )
 
 
 def verify_output(args: argparse.Namespace) -> None:
@@ -2399,13 +2625,15 @@ def verify_output(args: argparse.Namespace) -> None:
 
     build = args.build.resolve()
     manifest = _load_build(build)
+    region = normalize_region(args.region)
+    _validate_execution_layout(build)
     settings = manifest["settings"]
     config_index = _read_csv(build / "01-plan/execution/config-index.csv")
     if not config_index:
         raise PreparationError("Proposal config index is empty or missing")
     phase = _reset_preparation_phase(build, "03-output-validation")
     session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
-    client = session.client("s3", region_name=args.region)
+    client = session.client("s3", region_name=region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     output_objects: list[dict[str, Any]] = []
     validation_rows: list[dict[str, Any]] = []
@@ -4695,6 +4923,11 @@ def validate_build(args: argparse.Namespace) -> None:
         with validation_path.open() as f:
             proposal = json.load(f)
         checks.append(("execution_passed", bool(proposal["passed"]), str(proposal)))
+        try:
+            layout = _validate_execution_layout(build)
+            checks.append(("execution_layout_current", True, str(layout)))
+        except PreparationError as exc:
+            checks.append(("execution_layout_current", False, str(exc)))
     combined_report_path = build / "01-plan/report.html"
     checks.append(("combined_plan_report_exists", combined_report_path.is_file(), str(combined_report_path)))
     checks.append(

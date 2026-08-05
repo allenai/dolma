@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from workflow import DEFAULT_BUILD_PATH, PreparationError, verify_output
+from workflow import DEFAULT_BUILD_PATH, DEFAULT_REGION, PreparationError, verify_output
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,7 +20,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="local preparation build directory",
     )
     parser.add_argument("--profile", help="optional AWS profile")
-    parser.add_argument("--region", help="optional AWS region")
+    parser.add_argument(
+        "--region",
+        default=DEFAULT_REGION,
+        help="AWS region; override when the destination store is in another region",
+    )
     parser.add_argument("--max-workers", type=int)
     return parser
 

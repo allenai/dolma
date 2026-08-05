@@ -9,6 +9,7 @@ from pathlib import Path
 try:
     from .workflow import (
         DEFAULT_BUILD_PATH,
+        DEFAULT_REGION,
         PreparationError,
         collect_inventory,
         plan_build,
@@ -17,6 +18,7 @@ try:
 except ImportError:
     from workflow import (
         DEFAULT_BUILD_PATH,
+        DEFAULT_REGION,
         PreparationError,
         collect_inventory,
         plan_build,
@@ -57,7 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="local preparation build directory",
     )
     parser.add_argument("--profile", help="optional AWS profile")
-    parser.add_argument("--region", help="optional AWS region")
+    parser.add_argument(
+        "--region",
+        default=DEFAULT_REGION,
+        help="AWS region; override when the source store is in another region",
+    )
     parser.add_argument(
         "--max-workers",
         type=int,

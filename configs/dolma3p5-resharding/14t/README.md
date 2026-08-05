@@ -18,6 +18,15 @@ This one command resolves the mix, inventories its source objects, calculates
 sampling, and creates the execution-unit configs. Inventory access is
 read-only, and the destination is not written.
 
+The build ID is appended to the destination root. That dataset root replaces
+each source's top-level storage prefix (for example,
+`s3://ai2-llm/preprocessed`). The remaining source directory, including lower
+groups such as vigintiles, is unchanged. Execution units are partitioned within
+those source directories and numbered with eight-digit directories
+(`00000000`, `00000001`, ...). Execution-unit IDs use the same globally
+incrementing eight-digit format; category names and hashes are not embedded in
+IDs.
+
 The output is grouped by purpose:
 
 ```text
@@ -123,13 +132,9 @@ concurrency is added, the combined working sets of simultaneous units must stay
 below the array's measured usable capacity.
 
 ```bash
-PMR_REGION=$(aws s3api get-bucket-location \
-  --bucket ai2-llm \
-  --query LocationConstraint \
-  --output text)
-case "$PMR_REGION" in
-  None|null|"") PMR_REGION=us-east-1 ;;
-esac
+# All preparation and launch commands default to us-east-1. Set this to
+# override the region for the cluster and object store.
+export PMR_REGION="${PMR_REGION:-us-east-1}"
 
 pmr create \
   --name dolma3p5-14t \
@@ -234,20 +239,73 @@ pmr run \
   --command '$HOME/.venv/bin/python -c "from dolma.tokenizer.reshard import RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2; print(\"manifest resharder: ready\")" && s5cmd version'
 ```
 
-Run preflight again immediately before dispatch, then map the reviewed unit
-scripts:
+Find the exact category selector before dispatch. The filter is optional and
+does not contact AWS:
 
 ```bash
-python scripts/dolma3p5_resharding/preflight.py
-
-pmr map \
-  --name dolma3p5-14t \
-  --region "$PMR_REGION" \
-  --script runs/dolma3p5-resharding/14t/01-plan/execution/launcher-scripts
+python scripts/dolma3p5_resharding/materialize.py \
+  --list-categories finemath
 ```
 
-`pmr map` distributes scripts across workers; each worker processes its
-assigned units sequentially and returns after dispatch. Each unit records
+Use the printed `MIX_NAME::CATEGORY_NAME` value for one exact YAML category. An
+exact mix name without the final `::CATEGORY_NAME` selects all categories
+under that mix entry.
+
+Dry-run one category. This stages only its reviewed launchers locally and
+prints every selected unit, destination, working-set estimate, and the exact
+`pmr map` command. It does not invoke poormanray:
+
+```bash
+python scripts/dolma3p5_resharding/materialize.py \
+  --category 'dolma3_finemath_v3:finemath::default' \
+  --cluster dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --dry-run
+```
+
+Run a matching read-only preflight immediately before launching that category:
+
+```bash
+python scripts/dolma3p5_resharding/preflight.py \
+  --category 'dolma3_finemath_v3:finemath::default' \
+  --region "$PMR_REGION"
+```
+
+Launch only that category by repeating the reviewed command with `--execute`:
+
+```bash
+python scripts/dolma3p5_resharding/materialize.py \
+  --category 'dolma3_finemath_v3:finemath::default' \
+  --cluster dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --execute
+```
+
+For the complete dataset, dry-run and preflight the full selection first:
+
+```bash
+python scripts/dolma3p5_resharding/materialize.py \
+  --all \
+  --cluster dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --dry-run
+
+python scripts/dolma3p5_resharding/preflight.py \
+  --all \
+  --region "$PMR_REGION"
+
+python scripts/dolma3p5_resharding/materialize.py \
+  --all \
+  --cluster dolma3p5-14t \
+  --region "$PMR_REGION" \
+  --execute
+```
+
+`materialize.py` refuses `--execute` unless the most recent preflight covers
+the same selection (or all units), every selected destination is empty, and
+the selected inputs are unchanged. `pmr map` then distributes only the staged
+selection across workers; each worker processes its assigned units
+sequentially and returns after dispatch. Each unit records
 `running`, `succeeded`, or `failed EXIT_CODE` in
 `~/dolma3p5-resharding-status/`.
 
