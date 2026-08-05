@@ -91,6 +91,7 @@ class TestReshardDispatch(unittest.TestCase):
             storage_type="gp3",
             storage_size_gib=200,
             parallelism=2,
+            detach=True,
         )
         self.assertEqual(
             create,
@@ -111,6 +112,7 @@ class TestReshardDispatch(unittest.TestCase):
                 "gp3",
                 "--storage-size",
                 "200",
+                "--detach",
                 "--parallelism",
                 "2",
             ],

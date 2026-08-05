@@ -54,6 +54,7 @@ def build_poormanray_create_command(
     storage_type: str,
     storage_size_gib: int,
     parallelism: int | None = None,
+    detach: bool = False,
     ssh_key_path: str | Path | None = None,
     runner: Sequence[str] | None = None,
 ) -> list[str]:
@@ -78,6 +79,8 @@ def build_poormanray_create_command(
             str(storage_size_gib),
         )
     )
+    if detach:
+        command.append("--detach")
     return _add_instance_options(
         command,
         parallelism=parallelism,

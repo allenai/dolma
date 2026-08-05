@@ -142,7 +142,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--parallelism",
         type=lambda value: _positive_integer(value, "parallelism"),
         default=128,
-        help="maximum number of workers to provision and run concurrently",
+        help="maximum number of materialization workers kept active concurrently",
+    )
+    parser.add_argument(
+        "--provision-batch-size",
+        type=lambda value: _positive_integer(value, "provision-batch-size"),
+        default=5,
+        help="maximum VM create requests submitted concurrently in one launch batch",
+    )
+    parser.add_argument(
+        "--provision-batch-delay-seconds",
+        type=lambda value: _nonnegative_float(value, "provision-batch-delay-seconds"),
+        default=3.0,
+        metavar="SECONDS",
+        help="delay between VM launch batches so provider API quotas can refill",
     )
     parser.add_argument(
         "--instance-type",
@@ -210,6 +223,16 @@ def _positive_integer(value: str, name: str) -> int:
         raise argparse.ArgumentTypeError(f"{name} must be an integer") from exc
     if parsed <= 0:
         raise argparse.ArgumentTypeError(f"{name} must be positive")
+    return parsed
+
+
+def _nonnegative_float(value: str, name: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"{name} must be a number") from exc
+    if parsed < 0:
+        raise argparse.ArgumentTypeError(f"{name} must not be negative")
     return parsed
 
 
@@ -586,7 +609,12 @@ def _instance_options(
     }
 
 
-def _create_command(args: argparse.Namespace, number: int) -> list[str]:
+def _create_command(
+    args: argparse.Namespace,
+    number: int,
+    *,
+    detach: bool = False,
+) -> list[str]:
     return build_poormanray_create_command(
         cluster=args.cluster,
         project=args.project,
@@ -595,9 +623,21 @@ def _create_command(args: argparse.Namespace, number: int) -> list[str]:
         instance_type=args.instance_type,
         storage_type=args.root_storage_type,
         storage_size_gib=args.root_storage_size,
-        parallelism=min(args.parallelism, number),
+        parallelism=min(getattr(args, "provision_batch_size", 5), number),
+        detach=detach,
         ssh_key_path=args.ssh_key_path,
     )
+
+
+def _provision_batches(worker_count: int, batch_size: int) -> tuple[int, ...]:
+    """Split worker creation into bounded provider-API launch batches."""
+
+    if worker_count < 0:
+        raise ValueError("worker_count must not be negative")
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    full_batches, remainder = divmod(worker_count, batch_size)
+    return (batch_size,) * full_batches + ((remainder,) if remainder else ())
 
 
 def _wait_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
@@ -1072,8 +1112,10 @@ def _prepare_workers(
     worker_count: int,
     *,
     owned_instance_ids: Sequence[str] = (),
+    wait_for_ready: bool = True,
+    delay_after_last_batch: bool = False,
 ) -> list[str]:
-    """Resume stopped compatible workers and create any remaining workers."""
+    """Resume stopped compatible workers and create missing workers in batches."""
 
     try:
         before = _describe_cluster_instances(args.cluster, args.region, args.profile)
@@ -1124,10 +1166,15 @@ def _prepare_workers(
             )
 
         missing = worker_count - len(selected_ids)
-        if missing:
+        batches = _provision_batches(
+            missing,
+            int(getattr(args, "provision_batch_size", 5)),
+        )
+        created_count = 0
+        for batch_index, batch_count in enumerate(batches, start=1):
             _run_lifecycle_command(
-                "create workers",
-                _create_command(args, missing),
+                f"create worker batch {batch_index}/{len(batches)}",
+                _create_command(args, batch_count, detach=True),
                 verbose=getattr(args, "verbose", False),
             )
             after = _describe_cluster_instances(args.cluster, args.region, args.profile)
@@ -1139,29 +1186,45 @@ def _prepare_workers(
                 and instance.instance_type == args.instance_type
                 and instance.project == args.project
             ]
-            if len(created) != missing:
-                selected_ids.extend(instance.instance_id for instance in created)
+            new_created = sorted(
+                instance.instance_id
+                for instance in created
+                if instance.instance_id not in selected_ids
+            )
+            if len(new_created) != batch_count:
+                selected_ids.extend(new_created)
                 raise PreparationError(
-                    f"Expected poormanray to create {missing:,} worker(s), but found "
-                    f"{len(created):,} new matching worker(s)"
+                    f"Expected poormanray to create {batch_count:,} worker(s) in batch "
+                    f"{batch_index:,}/{len(batches):,}, but found {len(new_created):,}"
                 )
-            created_ids = sorted(instance.instance_id for instance in created)
             created_names = {
-                instance_id: f"{args.cluster}-{next_name_index + offset:04d}"
-                for offset, instance_id in enumerate(created_ids)
+                instance_id: (
+                    f"{args.cluster}-{next_name_index + created_count + offset:04d}"
+                )
+                for offset, instance_id in enumerate(new_created)
             }
-            _retag_cluster_instances(args, created_ids, names=created_names)
-            selected_ids.extend(created_ids)
+            _retag_cluster_instances(args, new_created, names=created_names)
+            selected_ids.extend(new_created)
+            created_count += len(new_created)
+
+            should_delay = batch_index < len(batches) or (
+                delay_after_last_batch and batch_index == len(batches)
+            )
+            if should_delay:
+                time.sleep(
+                    float(getattr(args, "provision_batch_delay_seconds", 3.0))
+                )
 
         if len(selected_ids) != worker_count:
             raise PreparationError(
                 f"Worker lifecycle selected {len(selected_ids):,} workers; expected {worker_count:,}"
             )
-        _run_lifecycle_command(
-            "wait for workers",
-            _wait_command(args, selected_ids),
-            verbose=getattr(args, "verbose", False),
-        )
+        if wait_for_ready:
+            _run_lifecycle_command(
+                "wait for workers",
+                _wait_command(args, selected_ids),
+                verbose=getattr(args, "verbose", False),
+            )
         return sorted(selected_ids)
     except BaseException:
         if len(selected_ids) < worker_count:
@@ -1586,8 +1649,19 @@ def _dry_run_lifecycle_commands(
 ) -> list[tuple[str, list[str]]]:
     """Show the create path; execute may resume compatible stopped workers instead."""
 
+    batches = _provision_batches(
+        worker_count,
+        int(getattr(args, "provision_batch_size", 5)),
+    )
+    create_commands = [
+        (
+            f"create worker batch {index}/{len(batches)}",
+            _create_command(args, count, detach=True),
+        )
+        for index, count in enumerate(batches, start=1)
+    ]
     return [
-        ("create missing workers", _create_command(args, worker_count)),
+        *create_commands,
         ("wait for selected workers", _wait_command(args, ())),
         ("upload storage setup", _storage_transfer_command(args, ())),
         ("prepare local NVMe", _storage_setup_command(args, (), rows)),
@@ -1682,14 +1756,22 @@ def _execute_materialization_groups(
     prepared: list[tuple[MaterializationGroup, list[str]]] = []
     all_worker_ids: list[str] = []
     try:
-        for group in groups:
+        for group_index, group in enumerate(groups):
             worker_ids = _prepare_workers(
                 group.args,
                 group.worker_count,
                 owned_instance_ids=all_worker_ids,
+                wait_for_ready=False,
+                delay_after_last_batch=group_index < len(groups) - 1,
             )
             prepared.append((group, worker_ids))
             all_worker_ids.extend(worker_ids)
+
+        _run_lifecycle_command(
+            "wait for all workers",
+            _wait_command(args, all_worker_ids),
+            verbose=args.verbose,
+        )
 
         for group, worker_ids in prepared:
             _run_lifecycle_command(

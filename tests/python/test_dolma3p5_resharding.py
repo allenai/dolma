@@ -41,6 +41,7 @@ from scripts.dolma3p5_resharding.materialize import (
     _planned_worker_groups,
     _prepare_workers,
     _print_dispatch,
+    _provision_batches,
     _retag_cluster_instances,
     _run_compact_process,
     _run_selected_preflight,
@@ -559,6 +560,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(args.project, "oe-other")
         self.assertEqual(args.region, "us-east-1")
         self.assertEqual(args.parallelism, 128)
+        self.assertEqual(args.provision_batch_size, 5)
+        self.assertEqual(args.provision_batch_delay_seconds, 3.0)
         self.assertIsNone(args.instance_type)
         self.assertEqual(args.storage_layout, "auto")
         self.assertEqual(args.completion_poll_seconds, 30)
@@ -637,6 +640,11 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with self.assertRaisesRegex(PreparationError, "must be at least 2"):
             _worker_counts_for_groups(groups, 1)
 
+    def test_materialize_batches_provider_create_requests(self):
+        self.assertEqual(_provision_batches(0, 5), ())
+        self.assertEqual(_provision_batches(3, 5), (3,))
+        self.assertEqual(_provision_batches(12, 5), (5, 5, 2))
+
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
@@ -665,7 +673,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(_prepare_workers(args, 2), ["i-first", "i-second"])
         self.assertEqual(
             [call.args[0] for call in run.call_args_list],
-            ["create workers", "wait for workers"],
+            ["create worker batch 1/1", "wait for workers"],
         )
         create_command = run.call_args_list[0].args[1]
         self.assertEqual(
@@ -673,6 +681,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         self.assertIn("--number", create_command)
         self.assertEqual(create_command[create_command.index("--number") + 1], "2")
+        self.assertIn("--detach", create_command)
         wait_command = run.call_args_list[1].args[1]
         self.assertEqual(wait_command[wait_command.index("--name") + 1], "oe-other")
         self.assertEqual(wait_command.count("--instance-id"), 2)
@@ -684,6 +693,59 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 "i-second": "dolma3p5-14t-0001",
             },
         )
+
+    @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
+    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
+    def test_materialize_launches_large_fleets_in_detached_batches(
+        self, describe, run, retag
+    ):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=5,
+            provision_batch_size=2,
+            provision_batch_delay_seconds=0,
+            instance_type="i4i.2xlarge",
+            root_storage_type="gp3",
+            root_storage_size=200,
+            ssh_key_path=None,
+            profile=None,
+        )
+        workers = [
+            ClusterInstance(
+                f"i-{index}", "pending", "i4i.2xlarge", "oe-other"
+            )
+            for index in range(5)
+        ]
+        describe.side_effect = [[], workers[:2], workers[:4], workers]
+
+        self.assertEqual(
+            _prepare_workers(args, 5),
+            [f"i-{index}" for index in range(5)],
+        )
+
+        self.assertEqual(
+            [call.args[0] for call in run.call_args_list],
+            [
+                "create worker batch 1/3",
+                "create worker batch 2/3",
+                "create worker batch 3/3",
+                "wait for workers",
+            ],
+        )
+        create_commands = [call.args[1] for call in run.call_args_list[:3]]
+        self.assertEqual(
+            [command[command.index("--number") + 1] for command in create_commands],
+            ["2", "2", "1"],
+        )
+        self.assertTrue(all("--detach" in command for command in create_commands))
+        self.assertEqual(
+            [command[command.index("--parallelism") + 1] for command in create_commands],
+            ["2", "2", "1"],
+        )
+        self.assertEqual(retag.call_count, 3)
 
     @patch("scripts.dolma3p5_resharding.materialize.boto3.Session")
     def test_materialize_retags_project_and_cluster_before_dispatch(self, session):
@@ -837,6 +899,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")
     @patch("scripts.dolma3p5_resharding.materialize._verify_materialized_units")
     @patch("scripts.dolma3p5_resharding.materialize._wait_for_workers_to_stop")
+    @patch("scripts.dolma3p5_resharding.materialize._wait_command", return_value=["wait-ready"])
     @patch("scripts.dolma3p5_resharding.materialize._map_command", return_value=["map"])
     @patch("scripts.dolma3p5_resharding.materialize._runtime_validation_command", return_value=["validate"])
     @patch("scripts.dolma3p5_resharding.materialize._runtime_transfer_command", return_value=["runtime-transfer"])
@@ -855,14 +918,30 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         runtime_transfer,
         runtime_validation,
         map_command,
+        wait_command,
         wait,
         verify,
         pause,
     ):
         events = []
 
-        def prepare_group(group_args, worker_count, *, owned_instance_ids=()):
-            events.append(("prepare", group_args.instance_type, tuple(owned_instance_ids)))
+        def prepare_group(
+            group_args,
+            worker_count,
+            *,
+            owned_instance_ids=(),
+            wait_for_ready=True,
+            delay_after_last_batch=False,
+        ):
+            events.append(
+                (
+                    "prepare",
+                    group_args.instance_type,
+                    tuple(owned_instance_ids),
+                    wait_for_ready,
+                    delay_after_last_batch,
+                )
+            )
             return [
                 "i-small" if group_args.instance_type == "i4i.2xlarge" else "i-large"
             ]
@@ -901,10 +980,11 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(
             events[:2],
             [
-                ("prepare", "i4i.2xlarge", ()),
-                ("prepare", "i4i.8xlarge", ("i-small",)),
+                ("prepare", "i4i.2xlarge", (), False, True),
+                ("prepare", "i4i.8xlarge", ("i-small",), False, False),
             ],
         )
+        wait_command.assert_called_once_with(args, ["i-small", "i-large"])
         wait.assert_called_once_with(
             args,
             ["i-small", "i-large"],
