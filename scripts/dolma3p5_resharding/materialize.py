@@ -29,6 +29,7 @@ from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -223,8 +224,11 @@ REMOTE_RESHARD_MODULE = "/tmp/dolma3p5-runtime/reshard.py"
 REMOTE_DOCUMENT_SELECTION_MODULE = "/tmp/dolma3p5-runtime/document_selection.py"
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 DOLMA_LOG_PREFIX = re.compile(
-    r"^\[\d{4}-\d{2}-\d{2} [^\]]+ "
+    r"^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) [^\]]+ "
     r"(?P<level>TRACE|DEBUG|INFO|WARNING|ERROR|CRITICAL)\]\s*"
+)
+COMPACT_LOG_PREFIX = re.compile(
+    r"^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]\s*"
 )
 WAIT_STATUS = re.compile(
     r"Waiting for instances\.\.\.\s*(?P<ready>\d+/\d+ ready)"
@@ -272,24 +276,44 @@ class PlannedWorkerGroup:
     rows: tuple[dict[str, str], ...]
 
 
-def _worker_log_line(tag: str, style: str, message: str, *, bold: bool = False) -> Text:
+def _worker_log_line(
+    tag: str,
+    style: str,
+    message: str,
+    *,
+    timestamp: str | None = None,
+    bold: bool = False,
+) -> Text:
     line = Text()
+    rendered_timestamp = timestamp or datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    line.append(f"[{rendered_timestamp}]", style="dim")
+    line.append(" ")
     line.append(f"[{tag}]", style=style)
     line.append(" ")
     line.append(message, style="bold" if bold else None)
     return line
 
 
-def _worker_log_message(message: str) -> str:
-    """Remove Dolma's logger envelope; the colored instance tag supplies context."""
+def _worker_log_parts(message: str) -> tuple[str | None, str]:
+    """Extract the source timestamp and remove logger metadata from one worker line."""
 
     match = DOLMA_LOG_PREFIX.match(message)
-    if match is None:
-        return message
-    rendered = message[match.end() :]
-    if match.group("level") in {"WARNING", "ERROR", "CRITICAL"}:
-        return f"{match.group('level').lower()} · {rendered}"
-    return rendered
+    if match is not None:
+        rendered = message[match.end() :]
+        if match.group("level") in {"WARNING", "ERROR", "CRITICAL"}:
+            rendered = f"{match.group('level').lower()} · {rendered}"
+        return match.group("timestamp"), rendered
+
+    compact_match = COMPACT_LOG_PREFIX.match(message)
+    if compact_match is not None:
+        return compact_match.group("timestamp"), message[compact_match.end() :]
+    return None, message
+
+
+def _worker_log_message(message: str) -> str:
+    """Remove Dolma's module and level metadata from one worker line."""
+
+    return _worker_log_parts(message)[1]
 
 
 def _describe_cluster_instances(
@@ -1248,7 +1272,7 @@ def _wait_for_workers_to_stop(
     previous_state_signature: tuple[tuple[str, int], ...] | None = None
     worker_tags = {
         instance_id: (
-            instance_id,
+            instance_id[-6:],
             WORKER_LOG_STYLES[(index - 1) % len(WORKER_LOG_STYLES)],
         )
         for index, instance_id in enumerate(sorted(expected_ids), start=1)
@@ -1341,11 +1365,13 @@ def _wait_for_workers_to_stop(
                                         )
                                     )
                                 for line in new_lines:
+                                    timestamp, message = _worker_log_parts(line)
                                     output.print(
                                         _worker_log_line(
                                             worker_tag,
                                             worker_style,
-                                            _worker_log_message(line),
+                                            message,
+                                            timestamp=timestamp,
                                         )
                                     )
                             emitted_log_lines[log_key] = len(log_lines)

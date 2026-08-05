@@ -48,6 +48,7 @@ from scripts.dolma3p5_resharding.materialize import (
     _wait_for_workers_to_stop,
     _worker_log_command,
     _worker_log_message,
+    _worker_log_parts,
     _worker_log_snapshots,
 )
 from scripts.dolma3p5_resharding.materialize import (
@@ -331,6 +332,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
     def test_worker_log_message_removes_envelope_but_preserves_errors(self):
         self.assertEqual(
+            _worker_log_parts(
+                "[2026-08-05 15:38:11 main.dolma.__main__ INFO] merge 50.0%"
+            ),
+            ("2026-08-05 15:38:11", "merge 50.0%"),
+        )
+        self.assertEqual(
             _worker_log_message(
                 "[2026-08-05 15:38:11 main.dolma.__main__ INFO] merge 50.0%"
             ),
@@ -415,14 +422,19 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(sleep.call_args_list, [call(30), call(30)])
         rendered = output.getvalue()
         self.assertIn("2 units · 1 running · 1 stopping · 0 stopped", rendered)
-        self.assertIn("[i-first] 00000000 · running", rendered)
-        self.assertIn("[i-first] unit 00000000", rendered)
+        self.assertIn("] [-first] 00000000 · running", rendered)
+        self.assertIn("] [-first] unit 00000000", rendered)
         self.assertEqual(rendered.count("unit 00000000"), 1)
         self.assertIn("Downloading exact manifest objects", rendered)
         self.assertEqual(rendered.count("Downloading exact manifest objects"), 1)
         self.assertIn("merge 50.0% · 10B/20B tokens · 40M tokens/s", rendered)
         self.assertNotIn("main.dolma.__main__ INFO", rendered)
-        self.assertIn("[i-second] Other worker progress", rendered)
+        self.assertIn("] [second] Other worker progress", rendered)
+        self.assertIn(
+            "[2026-08-05 15:38:11] [-first] merge 50.0%", rendered
+        )
+        self.assertNotIn("[i-first]", rendered)
+        self.assertNotIn("[i-second]", rendered)
         self.assertNotIn("worker 01", rendered)
         self.assertIn("materialization workers stopped", rendered)
 
