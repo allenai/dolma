@@ -135,6 +135,11 @@ The important worker options are:
 - `--provision-batch-delay-seconds` controls the pause between launch batches;
   it defaults to 3 seconds. Increase it when a provider reports API throttling,
   or reduce it only after checking the applicable project/account quotas.
+- `--bootstrap-parallelism` limits concurrent worker setup and dispatch; it
+  defaults to 32. Ready workers beyond this limit remain queued until a setup
+  slot is available.
+- `--readiness-poll-seconds` controls how often newly healthy workers are
+  detected; it defaults to 10 seconds.
 - `--preflight` reruns the read-only source and destination checks for the exact
   selection immediately before provisioning workers. It requires `--execute`.
 - `--cluster` defaults to `dolma3p5-14t` and sets the worker `cluster` tag.
@@ -158,9 +163,13 @@ The important worker options are:
 
 At execution time, the materializer refuses a cluster containing active or
 transitioning workers. Compatible stopped workers are reused; missing workers
-are launched in bounded, detached batches. All planned worker types are
-submitted before one combined readiness wait. Every setup and dispatch command
-is scoped to the exact selected instance IDs so unrelated stopped workers
+are launched in bounded, detached batches. There is no fleet-wide readiness
+barrier: each healthy worker claims one prebalanced assignment, completes its
+own setup, and starts materializing while other workers are still booting.
+Status can therefore show workers waiting, queued, bootstrapping,
+materializing, stopping, and stopped at the same time. Verbose resharding logs
+are collected from every worker that has started materializing. Every setup
+and dispatch command is scoped to one exact instance ID so unrelated workers
 cannot be resumed or assigned work.
 If setup or dispatch fails, the materializer attempts to pause the workers it
 started. The command does not treat poormanray's detached job submission as

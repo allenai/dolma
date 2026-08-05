@@ -96,6 +96,7 @@ def build_poormanray_instance_command(
     region: str,
     instance_ids: Sequence[str],
     parallelism: int | None = None,
+    detach: bool = False,
     ssh_key_path: str | Path | None = None,
     runner: Sequence[str] | None = None,
 ) -> list[str]:
@@ -106,6 +107,8 @@ def build_poormanray_instance_command(
     command = _base_command(
         action, cluster=cluster, project=project, region=region, runner=runner
     )
+    if detach and action != "wait":
+        command.append("--detach")
     return _add_instance_options(
         command,
         instance_ids=instance_ids,

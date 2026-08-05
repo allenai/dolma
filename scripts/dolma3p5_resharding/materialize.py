@@ -27,10 +27,11 @@ import time
 import uuid
 from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Event, Lock
 from typing import Any
 from urllib.parse import urlparse
 
@@ -156,6 +157,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=3.0,
         metavar="SECONDS",
         help="delay between VM launch batches so provider API quotas can refill",
+    )
+    parser.add_argument(
+        "--bootstrap-parallelism",
+        type=lambda value: _positive_integer(value, "bootstrap-parallelism"),
+        default=32,
+        help="maximum ready workers bootstrapped and dispatched concurrently",
+    )
+    parser.add_argument(
+        "--readiness-poll-seconds",
+        type=lambda value: _positive_integer(value, "readiness-poll-seconds"),
+        default=10,
+        metavar="SECONDS",
+        help="interval for detecting newly ready workers",
     )
     parser.add_argument(
         "--instance-type",
@@ -305,6 +319,13 @@ class MaterializationGroup:
     rows: tuple[dict[str, str], ...]
     script_dir: Path
     worker_count: int
+
+
+@dataclass(frozen=True)
+class WorkerAssignment:
+    group: MaterializationGroup
+    rows: tuple[dict[str, str], ...]
+    script_dir: Path
 
 
 def _worker_log_line(
@@ -505,6 +526,7 @@ def _run_compact_process(
     *,
     console: Console | None = None,
     verbose: bool = False,
+    live: bool = True,
 ) -> int:
     """Run a command with one in-place status and a bounded failure log."""
 
@@ -514,7 +536,7 @@ def _run_compact_process(
     process: subprocess.Popen[str] | None = None
     live_status = (
         output.status(_stage_status(stage), spinner="dots")
-        if output.is_terminal and not verbose
+        if output.is_terminal and not verbose and live
         else None
     )
     if verbose:
@@ -579,10 +601,18 @@ def _run_lifecycle_command(
     stage: str,
     command: Sequence[str],
     *,
+    console: Console | None = None,
     verbose: bool = False,
+    live: bool = True,
 ) -> None:
     try:
-        return_code = _run_compact_process(stage, command, verbose=verbose)
+        return_code = _run_compact_process(
+            stage,
+            command,
+            console=console,
+            verbose=verbose,
+            live=live,
+        )
     except OSError as exc:
         raise PreparationError(f"could not start {stage}: {exc}") from exc
     if return_code:
@@ -651,10 +681,15 @@ def _wait_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list
     )
 
 
-def _resume_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
+def _resume_command(
+    args: argparse.Namespace,
+    instance_ids: Sequence[str],
+    *,
+    detach: bool = False,
+) -> list[str]:
     options = _instance_options(args, instance_ids)
     options.pop("ssh_key_path")
-    return build_poormanray_instance_command("resume", **options)
+    return build_poormanray_instance_command("resume", detach=detach, **options)
 
 
 def _pause_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
@@ -1027,6 +1062,63 @@ def _stage_selection(
     return selection_dir
 
 
+def _partition_worker_rows(
+    rows: Sequence[dict[str, str]], worker_count: int
+) -> tuple[tuple[dict[str, str], ...], ...]:
+    """Balance execution units over persistent worker slots by estimated work."""
+
+    if worker_count <= 0 or worker_count > len(rows):
+        raise PreparationError(
+            f"Cannot assign {len(rows):,} execution unit(s) to {worker_count:,} worker(s)"
+        )
+    slots: list[list[dict[str, str]]] = [[] for _ in range(worker_count)]
+    totals = [0] * worker_count
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            int(row.get("estimated_work_uint32_values") or row["planned_uint32_values"]),
+            row["unit_id"],
+        ),
+        reverse=True,
+    )
+    for row in ordered:
+        slot = min(range(worker_count), key=lambda index: (totals[index], index))
+        slots[slot].append(row)
+        totals[slot] += int(
+            row.get("estimated_work_uint32_values") or row["planned_uint32_values"]
+        )
+    return tuple(tuple(slot) for slot in slots)
+
+
+def _stage_worker_assignments(
+    group: MaterializationGroup,
+) -> tuple[WorkerAssignment, ...]:
+    """Create one immutable launcher directory for each worker slot."""
+
+    row_slots = _partition_worker_rows(group.rows, group.worker_count)
+    assignment_root = group.script_dir.with_name(f"{group.script_dir.name}-workers")
+    if assignment_root.exists():
+        raise PreparationError(
+            f"Worker assignment directory already exists: {assignment_root}"
+        )
+    assignment_root.mkdir(exist_ok=False)
+    assignments: list[WorkerAssignment] = []
+    for slot_index, slot_rows in enumerate(row_slots):
+        slot_dir = assignment_root / f"worker-{slot_index:08d}"
+        slot_dir.mkdir()
+        for row in sorted(slot_rows, key=lambda item: item["unit_id"]):
+            source = group.script_dir / Path(row["launcher_path"]).name
+            if source.is_symlink() or not source.is_file():
+                raise PreparationError(
+                    f"Staged execution-unit launcher is missing or unsafe: {source}"
+                )
+            destination = slot_dir / source.name
+            destination.write_bytes(source.read_bytes())
+            destination.chmod(source.stat().st_mode & 0o777)
+        assignments.append(WorkerAssignment(group, slot_rows, slot_dir))
+    return tuple(assignments)
+
+
 def _require_preflight(build: Path, selected: Sequence[dict[str, str]]) -> str:
     summary_path = build / "02-preflight/preflight-summary.json"
     if summary_path.is_symlink() or not summary_path.is_file():
@@ -1375,8 +1467,12 @@ def _wait_for_workers_to_stop(
     describe: Callable[[str, str, str | None], list[ClusterInstance]] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     console: Console | None = None,
+    worker_stages: dict[str, str] | None = None,
+    stage_lock: Lock | None = None,
+    all_dispatched: Event | None = None,
+    abort: Event | None = None,
 ) -> None:
-    """Wait for PMR spindown so detached dispatch is not mistaken for completion."""
+    """Monitor mixed worker stages until every dispatched worker has stopped."""
 
     describe_instances = describe or _describe_cluster_instances
     output = console or Console(stderr=True, highlight=False)
@@ -1386,6 +1482,7 @@ def _wait_for_workers_to_stop(
     previous_statuses: dict[tuple[str, str], str] = {}
     emitted_log_lines: dict[tuple[str, str], int] = {}
     previous_state_signature: tuple[tuple[str, int], ...] | None = None
+    aborted = False
     worker_tags = {
         instance_id: (
             instance_id[-6:],
@@ -1394,17 +1491,20 @@ def _wait_for_workers_to_stop(
         for index, instance_id in enumerate(sorted(expected_ids), start=1)
     }
     live_status = (
-        output.status(_stage_status("materializing"), spinner="dots")
+        output.status(_stage_status("workers"), spinner="dots")
         if output.is_terminal
         else None
     )
     if live_status is None:
-        output.print(Text.assemble(("…", "cyan"), " ", ("materializing", "bold")))
+        output.print(Text.assemble(("…", "cyan"), " ", ("workers", "bold")))
     else:
         live_status.start()
 
     try:
         while True:
+            if abort is not None and abort.is_set():
+                aborted = True
+                break
             cluster = describe_instances(args.cluster, args.region, args.profile)
             selected = {
                 instance.instance_id: instance
@@ -1419,27 +1519,67 @@ def _wait_for_workers_to_stop(
                 )
             state_counts = Counter(instance.state for instance in selected.values())
             stopped = state_counts["stopped"]
-            detail = " · ".join(
-                (
-                    f"{unit_count:,} units",
-                    f"{state_counts['running']:,} running",
-                    f"{state_counts['stopping']:,} stopping",
-                    f"{stopped:,} stopped",
-                    _elapsed_time(started_at),
+            lifecycle_counts: Counter[str] | None = None
+            stage_snapshot: dict[str, str] = {}
+            if worker_stages is not None:
+                if stage_lock is not None:
+                    with stage_lock:
+                        for instance_id, instance in selected.items():
+                            current = worker_stages.get(instance_id, "waiting")
+                            base = current.split(":", 1)[0]
+                            if base in {"materializing", "stopping"} and instance.state in {
+                                "stopping",
+                                "stopped",
+                            }:
+                                worker_stages[instance_id] = instance.state
+                        stage_snapshot = dict(worker_stages)
+                else:
+                    stage_snapshot = dict(worker_stages)
+                lifecycle_counts = Counter(
+                    value.split(":", 1)[0] for value in stage_snapshot.values()
                 )
-            )
-            if live_status is not None:
-                live_status.update(_stage_status("materializing", detail))
+                detail = " · ".join(
+                    (
+                        f"{unit_count:,} units",
+                        f"{lifecycle_counts['waiting']:,} waiting",
+                        f"{lifecycle_counts['queued']:,} queued",
+                        f"{lifecycle_counts['bootstrapping']:,} bootstrapping",
+                        f"{lifecycle_counts['materializing']:,} materializing",
+                        f"{lifecycle_counts['stopping']:,} stopping",
+                        f"{lifecycle_counts['stopped']:,} stopped",
+                        f"{lifecycle_counts['failed']:,} failed",
+                        _elapsed_time(started_at),
+                    )
+                )
             else:
-                state_signature = tuple(sorted(state_counts.items()))
+                detail = " · ".join(
+                    (
+                        f"{unit_count:,} units",
+                        f"{state_counts['running']:,} running",
+                        f"{state_counts['stopping']:,} stopping",
+                        f"{stopped:,} stopped",
+                        _elapsed_time(started_at),
+                    )
+                )
+            if live_status is not None:
+                live_status.update(_stage_status("workers", detail))
+            else:
+                state_signature = tuple(
+                    sorted((lifecycle_counts or state_counts).items())
+                )
                 if state_signature != previous_state_signature:
-                    output.print(Text(f"materializing  {detail}", style="dim"))
+                    output.print(Text(f"workers  {detail}", style="dim"))
                     previous_state_signature = state_signature
             if verbose:
                 running_ids = sorted(
                     instance.instance_id
                     for instance in selected.values()
                     if instance.state == "running"
+                    and (
+                        worker_stages is None
+                        or stage_snapshot.get(instance.instance_id, "").split(":", 1)[0]
+                        == "materializing"
+                    )
                 )
                 if running_ids:
                     snapshots = _worker_log_snapshots(args, running_ids, status_run_id)
@@ -1491,20 +1631,25 @@ def _wait_for_workers_to_stop(
                                         )
                                     )
                             emitted_log_lines[log_key] = len(log_lines)
-            if stopped == len(expected_ids):
+            dispatch_complete = all_dispatched is None or all_dispatched.is_set()
+            if dispatch_complete and stopped == len(expected_ids):
                 break
-            sleep(args.completion_poll_seconds)
+            if abort is not None:
+                abort.wait(args.completion_poll_seconds)
+            else:
+                sleep(args.completion_poll_seconds)
     finally:
         if live_status is not None:
             live_status.stop()
 
-    output.print(
-        Text.assemble(
-            ("✓", "bold green"),
-            " materialization workers stopped",
-            (f"  {_elapsed_time(started_at)}", "dim"),
+    if not aborted:
+        output.print(
+            Text.assemble(
+                ("✓", "bold green"),
+                " materialization workers stopped",
+                (f"  {_elapsed_time(started_at)}", "dim"),
+            )
         )
-    )
 
 
 def _check_materialized_unit(client: Any, row: dict[str, str]) -> MaterializedUnitCheck:
@@ -1666,7 +1811,6 @@ def _dry_run_lifecycle_commands(
     ]
     return [
         *create_commands,
-        ("wait for selected workers", _wait_command(args, ())),
         ("upload storage setup", _storage_transfer_command(args, ())),
         ("prepare local NVMe", _storage_setup_command(args, (), rows)),
         ("install Dolma and s5cmd", _runtime_setup_command(args, ())),
@@ -1749,17 +1893,101 @@ def _print_dispatch(
         )
 
 
+def _ready_worker_ids(
+    args: argparse.Namespace, instance_ids: Sequence[str]
+) -> set[str]:
+    """Return workers whose provider health checks have passed."""
+
+    if not instance_ids:
+        return set()
+    session = boto3.Session(profile_name=args.profile, region_name=args.region)
+    client = session.client("ec2", region_name=args.region)
+    ready: set[str] = set()
+    ordered = sorted(set(instance_ids))
+    for offset in range(0, len(ordered), 100):
+        response = client.describe_instance_status(
+            InstanceIds=ordered[offset : offset + 100],
+            IncludeAllInstances=True,
+        )
+        for status in response.get("InstanceStatuses", []):
+            if (
+                status.get("InstanceState", {}).get("Name") == "running"
+                and status.get("InstanceStatus", {}).get("Status") == "ok"
+                and status.get("SystemStatus", {}).get("Status") == "ok"
+            ):
+                instance_id = status.get("InstanceId")
+                if isinstance(instance_id, str):
+                    ready.add(instance_id)
+    return ready
+
+
+def _set_worker_stage(
+    stages: dict[str, str], lock: Lock, instance_id: str, stage: str
+) -> None:
+    with lock:
+        stages[instance_id] = stage
+
+
+def _bootstrap_and_dispatch_worker(
+    args: argparse.Namespace,
+    instance_id: str,
+    assignment: WorkerAssignment,
+    stages: dict[str, str],
+    stage_lock: Lock,
+    console: Console | None = None,
+) -> None:
+    """Prepare one ready worker and dispatch only its assigned execution units."""
+
+    tag = instance_id[-6:]
+
+    def run(stage: str, command: Sequence[str]) -> None:
+        _set_worker_stage(stages, stage_lock, instance_id, f"bootstrapping:{stage}")
+        _run_lifecycle_command(
+            f"{tag} · {stage}",
+            command,
+            console=console,
+            verbose=args.verbose,
+            live=False,
+        )
+
+    group_args = assignment.group.args
+    try:
+        run("upload storage setup", _storage_transfer_command(group_args, [instance_id]))
+        run(
+            "prepare local NVMe",
+            _storage_setup_command(group_args, [instance_id], assignment.rows),
+        )
+        run("install Dolma and s5cmd", _runtime_setup_command(group_args, [instance_id]))
+        run(
+            "upload resharding runtime",
+            _runtime_transfer_command(group_args, [instance_id]),
+        )
+        run(
+            "validate resharding runtime",
+            _runtime_validation_command(group_args, [instance_id]),
+        )
+        run(
+            f"dispatch {len(assignment.rows):,} unit(s)",
+            _map_command(group_args, assignment.script_dir, [instance_id]),
+        )
+        _set_worker_stage(stages, stage_lock, instance_id, "materializing")
+    except BaseException:
+        _set_worker_stage(stages, stage_lock, instance_id, "failed")
+        raise
+
+
 def _execute_materialization_groups(
     args: argparse.Namespace,
     groups: Sequence[MaterializationGroup],
     selected: Sequence[dict[str, str]],
     status_run_id: str,
 ) -> None:
-    """Prepare and dispatch every group before waiting for the combined selection."""
+    """Dispatch each worker as soon as it becomes ready."""
 
     prepared: list[tuple[MaterializationGroup, list[str]]] = []
     all_worker_ids: list[str] = []
     resume_ids: list[str] = []
+    assignment_queues = [deque(_stage_worker_assignments(group)) for group in groups]
     try:
         for group_index, group in enumerate(groups):
             worker_ids = _prepare_workers(
@@ -1776,58 +2004,91 @@ def _execute_materialization_groups(
         if resume_ids:
             _run_lifecycle_command(
                 "resume workers",
-                _resume_command(args, resume_ids),
+                _resume_command(args, resume_ids, detach=True),
                 verbose=args.verbose,
             )
 
-        _run_lifecycle_command(
-            "wait for all workers",
-            _wait_command(args, all_worker_ids),
-            verbose=args.verbose,
-        )
-
-        _run_lifecycle_command(
-            "upload storage setup",
-            _storage_transfer_command(args, all_worker_ids),
-            verbose=args.verbose,
-        )
-
-        for group, worker_ids in prepared:
-            _run_lifecycle_command(
-                f"prepare local NVMe ({group.args.instance_type})",
-                _storage_setup_command(group.args, worker_ids, group.rows),
-                verbose=args.verbose,
-            )
-
-        _run_lifecycle_command(
-            "install Dolma and s5cmd",
-            _runtime_setup_command(args, all_worker_ids),
-            verbose=args.verbose,
-        )
-        _run_lifecycle_command(
-            "upload resharding runtime",
-            _runtime_transfer_command(args, all_worker_ids),
-            verbose=args.verbose,
-        )
-        _run_lifecycle_command(
-            "install and validate resharding runtime",
-            _runtime_validation_command(args, all_worker_ids),
-            verbose=args.verbose,
-        )
-
-        for group, worker_ids in prepared:
-            _run_lifecycle_command(
-                f"submit materialization ({group.args.instance_type})",
-                _map_command(group.args, group.script_dir, worker_ids),
-                verbose=args.verbose,
-            )
-
-        _wait_for_workers_to_stop(
+        worker_stages = {instance_id: "waiting" for instance_id in all_worker_ids}
+        stage_lock = Lock()
+        all_dispatched = Event()
+        abort = Event()
+        lifecycle_console = Console(stderr=True, highlight=False)
+        pending = set(all_worker_ids)
+        worker_group_index = {
+            instance_id: group_index
+            for group_index, (_, worker_ids) in enumerate(prepared)
+            for instance_id in worker_ids
+        }
+        futures: dict[Future[None], str] = {}
+        monitor_pool = ThreadPoolExecutor(max_workers=1)
+        monitor = monitor_pool.submit(
+            _wait_for_workers_to_stop,
             args,
             all_worker_ids,
             len(selected),
             status_run_id,
+            worker_stages=worker_stages,
+            stage_lock=stage_lock,
+            all_dispatched=all_dispatched,
+            abort=abort,
+            console=lifecycle_console,
         )
+        try:
+            bootstrap_workers = min(args.bootstrap_parallelism, len(all_worker_ids))
+            with ThreadPoolExecutor(max_workers=bootstrap_workers) as pool:
+                while pending or futures:
+                    newly_ready = (
+                        _ready_worker_ids(args, sorted(pending)) if pending else set()
+                    )
+                    for instance_id in sorted(newly_ready):
+                        group_index = worker_group_index[instance_id]
+                        if not assignment_queues[group_index]:
+                            raise PreparationError(
+                                f"No execution-unit assignment remains for worker {instance_id}"
+                            )
+                        assignment = assignment_queues[group_index].popleft()
+                        pending.remove(instance_id)
+                        _set_worker_stage(
+                            worker_stages, stage_lock, instance_id, "queued"
+                        )
+                        future = pool.submit(
+                            _bootstrap_and_dispatch_worker,
+                            args,
+                            instance_id,
+                            assignment,
+                            worker_stages,
+                            stage_lock,
+                            lifecycle_console,
+                        )
+                        futures[future] = instance_id
+
+                    completed = [future for future in futures if future.done()]
+                    for future in completed:
+                        future.result()
+                        del futures[future]
+
+                    if pending:
+                        if futures:
+                            wait(
+                                futures,
+                                timeout=args.readiness_poll_seconds,
+                                return_when=FIRST_COMPLETED,
+                            )
+                        else:
+                            time.sleep(args.readiness_poll_seconds)
+                    elif futures:
+                        wait(futures, return_when=FIRST_COMPLETED)
+
+            all_dispatched.set()
+            monitor.result()
+        except BaseException:
+            abort.set()
+            raise
+        finally:
+            monitor_pool.shutdown(wait=True)
+
+        if any(assignment_queues):
+            raise PreparationError("Not every execution-unit assignment was dispatched")
         _verify_materialized_units(args, selected)
     except BaseException:
         _pause_workers_after_failure(args, all_worker_ids)

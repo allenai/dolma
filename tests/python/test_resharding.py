@@ -19,6 +19,7 @@ from dolma.tokenizer.reshard import (
 )
 from scripts.resharding.dispatch import (
     build_poormanray_create_command,
+    build_poormanray_instance_command,
     build_poormanray_map_command,
     build_poormanray_run_command,
 )
@@ -137,6 +138,18 @@ class TestReshardDispatch(unittest.TestCase):
                 "2",
             ],
         )
+
+        resume = build_poormanray_instance_command(
+            "resume",
+            cluster="resharding",
+            project="oe-other",
+            region="us-east-1",
+            instance_ids=("i-first", "i-second"),
+            parallelism=2,
+            detach=True,
+        )
+        self.assertIn("--detach", resume)
+        self.assertEqual(resume.count("--instance-id"), 2)
 
         command = build_poormanray_map_command(
             cluster="resharding",

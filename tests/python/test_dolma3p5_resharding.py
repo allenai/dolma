@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from threading import Event, Lock
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 from xml.etree import ElementTree
@@ -36,8 +37,10 @@ from scripts.dolma3p5_resharding.materialize import (
     ClusterInstance,
     MaterializationGroup,
     PlannedWorkerGroup,
+    WorkerAssignment,
     _execute_materialization_groups,
     _map_command,
+    _partition_worker_rows,
     _planned_worker_groups,
     _prepare_workers,
     _print_dispatch,
@@ -443,6 +446,70 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertNotIn("worker 01", rendered)
         self.assertIn("materialization workers stopped", rendered)
 
+    def test_materialize_status_tracks_workers_in_different_lifecycle_stages(self):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            profile=None,
+            completion_poll_seconds=30,
+            verbose=False,
+        )
+        describe = MagicMock(
+            side_effect=[
+                [
+                    ClusterInstance("i-ready", "running", "i4i.2xlarge", "oe-other"),
+                    ClusterInstance("i-slow", "running", "i4i.2xlarge", "oe-other"),
+                ],
+                [
+                    ClusterInstance("i-ready", "stopped", "i4i.2xlarge", "oe-other"),
+                    ClusterInstance("i-slow", "running", "i4i.2xlarge", "oe-other"),
+                ],
+                [
+                    ClusterInstance("i-ready", "stopped", "i4i.2xlarge", "oe-other"),
+                    ClusterInstance("i-slow", "stopped", "i4i.2xlarge", "oe-other"),
+                ],
+            ]
+        )
+        worker_stages = {"i-ready": "materializing", "i-slow": "waiting"}
+        stage_lock = Lock()
+        all_dispatched = Event()
+
+        sleep_calls = 0
+
+        def advance_slow_worker(_seconds):
+            nonlocal sleep_calls
+            sleep_calls += 1
+            if sleep_calls == 1:
+                with stage_lock:
+                    worker_stages["i-slow"] = "materializing"
+                all_dispatched.set()
+
+        sleep = MagicMock(side_effect=advance_slow_worker)
+        output = io.StringIO()
+
+        _wait_for_workers_to_stop(
+            args,
+            ["i-ready", "i-slow"],
+            2,
+            "test-run",
+            describe=describe,
+            sleep=sleep,
+            console=Console(
+                file=output, force_terminal=False, color_system=None, width=300
+            ),
+            worker_stages=worker_stages,
+            stage_lock=stage_lock,
+            all_dispatched=all_dispatched,
+        )
+
+        rendered = output.getvalue()
+        self.assertIn("1 waiting", rendered)
+        self.assertIn("1 materializing", rendered)
+        self.assertIn("1 stopped", rendered)
+        self.assertIn("2 stopped", rendered)
+        self.assertIn("materialization workers stopped", rendered)
+
     @patch("scripts.dolma3p5_resharding.materialize.subprocess.run")
     def test_verbose_worker_logs_are_complete_for_every_worker(self, run):
         run.return_value = SimpleNamespace(
@@ -562,6 +629,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(args.parallelism, 128)
         self.assertEqual(args.provision_batch_size, 5)
         self.assertEqual(args.provision_batch_delay_seconds, 3.0)
+        self.assertEqual(args.bootstrap_parallelism, 32)
+        self.assertEqual(args.readiness_poll_seconds, 10)
         self.assertIsNone(args.instance_type)
         self.assertEqual(args.storage_layout, "auto")
         self.assertEqual(args.completion_poll_seconds, 30)
@@ -644,6 +713,30 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(_provision_batches(0, 5), ())
         self.assertEqual(_provision_batches(3, 5), (3,))
         self.assertEqual(_provision_batches(12, 5), (5, 5, 2))
+
+    def test_materialize_balances_execution_units_across_worker_slots(self):
+        rows = [
+            {
+                "unit_id": unit_id,
+                "estimated_work_uint32_values": str(work),
+                "planned_uint32_values": str(work),
+            }
+            for unit_id, work in (("a", 10), ("b", 9), ("c", 2), ("d", 1))
+        ]
+
+        slots = _partition_worker_rows(rows, 2)
+
+        self.assertEqual(
+            sorted(
+                sum(int(row["estimated_work_uint32_values"]) for row in slot)
+                for slot in slots
+            ),
+            [11, 11],
+        )
+        self.assertEqual(
+            sorted(row["unit_id"] for slot in slots for row in slot),
+            ["a", "b", "c", "d"],
+        )
 
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
@@ -935,29 +1028,21 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")
     @patch("scripts.dolma3p5_resharding.materialize._verify_materialized_units")
     @patch("scripts.dolma3p5_resharding.materialize._wait_for_workers_to_stop")
-    @patch("scripts.dolma3p5_resharding.materialize._wait_command", return_value=["wait-ready"])
+    @patch("scripts.dolma3p5_resharding.materialize._bootstrap_and_dispatch_worker")
+    @patch("scripts.dolma3p5_resharding.materialize._ready_worker_ids")
+    @patch("scripts.dolma3p5_resharding.materialize._stage_worker_assignments")
     @patch("scripts.dolma3p5_resharding.materialize._resume_command", return_value=["resume"])
-    @patch("scripts.dolma3p5_resharding.materialize._map_command", return_value=["map"])
-    @patch("scripts.dolma3p5_resharding.materialize._runtime_validation_command", return_value=["validate"])
-    @patch("scripts.dolma3p5_resharding.materialize._runtime_transfer_command", return_value=["runtime-transfer"])
-    @patch("scripts.dolma3p5_resharding.materialize._runtime_setup_command", return_value=["runtime-setup"])
-    @patch("scripts.dolma3p5_resharding.materialize._storage_setup_command", return_value=["storage-setup"])
-    @patch("scripts.dolma3p5_resharding.materialize._storage_transfer_command", return_value=["storage-transfer"])
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
     @patch("scripts.dolma3p5_resharding.materialize._prepare_workers")
-    def test_materialize_dispatches_every_worker_group_before_waiting(
+    def test_materialize_dispatches_workers_as_each_becomes_ready(
         self,
         prepare,
         run,
-        storage_transfer,
-        storage_setup,
-        runtime_setup,
-        runtime_transfer,
-        runtime_validation,
-        map_command,
         resume_command,
-        wait_command,
-        wait,
+        stage_assignments,
+        ready_worker_ids,
+        bootstrap,
+        monitor,
         verify,
         pause,
     ):
@@ -990,10 +1075,18 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
         prepare.side_effect = prepare_group
         run.side_effect = lambda stage, command, **kwargs: events.append(("run", stage))
-        wait.side_effect = lambda *args, **kwargs: events.append(("wait",))
-        verify.side_effect = lambda *args, **kwargs: events.append(("verify",))
-        args = SimpleNamespace(verbose=True)
-        selected = [{"unit_id": "small"}, {"unit_id": "large"}]
+        selected = [
+            {
+                "unit_id": "small",
+                "planned_uint32_values": "10",
+                "estimated_work_uint32_values": "20",
+            },
+            {
+                "unit_id": "large",
+                "planned_uint32_values": "20",
+                "estimated_work_uint32_values": "40",
+            },
+        ]
         groups = [
             MaterializationGroup(
                 args=SimpleNamespace(instance_type="i4i.2xlarge"),
@@ -1008,17 +1101,45 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 worker_count=1,
             ),
         ]
+        stage_assignments.side_effect = [
+            (
+                WorkerAssignment(
+                    groups[0], groups[0].rows, Path("/tmp/small-assignment")
+                ),
+            ),
+            (
+                WorkerAssignment(
+                    groups[1], groups[1].rows, Path("/tmp/large-assignment")
+                ),
+            ),
+        ]
+        ready_worker_ids.side_effect = [{"i-small"}, {"i-large"}]
+
+        def dispatch_worker(
+            dispatch_args, instance_id, assignment, stages, stage_lock, console
+        ):
+            events.append(("dispatch", instance_id, assignment.rows[0]["unit_id"]))
+            with stage_lock:
+                stages[instance_id] = "materializing"
+
+        bootstrap.side_effect = dispatch_worker
+
+        def monitor_workers(*monitor_args, **monitor_kwargs):
+            self.assertTrue(monitor_kwargs["all_dispatched"].wait(timeout=2))
+            events.append(("monitor-complete",))
+
+        monitor.side_effect = monitor_workers
+        verify.side_effect = lambda *verify_args, **verify_kwargs: events.append(
+            ("verify",)
+        )
+        args = SimpleNamespace(
+            verbose=True,
+            bootstrap_parallelism=2,
+            readiness_poll_seconds=1,
+        )
 
         _execute_materialization_groups(args, groups, selected, "test-run")
 
-        submit_indices = [
-            index
-            for index, event in enumerate(events)
-            if event[0] == "run" and event[1].startswith("submit materialization")
-        ]
-        wait_index = events.index(("wait",))
-        self.assertEqual(len(submit_indices), 2)
-        self.assertTrue(all(index < wait_index for index in submit_indices))
         self.assertEqual(
             events[:2],
             [
@@ -1026,30 +1147,26 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 ("prepare", "i4i.8xlarge", ("i-small",), False, False),
             ],
         )
+        resume_command.assert_called_once_with(
+            args, ["i-small", "i-large"], detach=True
+        )
         self.assertEqual(
-            events[2:4],
-            [("run", "resume workers"), ("run", "wait for all workers")],
+            [event for event in events if event[0] == "dispatch"],
+            [("dispatch", "i-small", "small"), ("dispatch", "i-large", "large")],
         )
-        resume_command.assert_called_once_with(args, ["i-small", "i-large"])
-        wait_command.assert_called_once_with(args, ["i-small", "i-large"])
-        storage_transfer.assert_called_once_with(args, ["i-small", "i-large"])
-        self.assertEqual(storage_setup.call_count, 2)
-        runtime_setup.assert_called_once_with(args, ["i-small", "i-large"])
-        runtime_transfer.assert_called_once_with(args, ["i-small", "i-large"])
-        runtime_validation.assert_called_once_with(args, ["i-small", "i-large"])
-        wait.assert_called_once_with(
-            args,
-            ["i-small", "i-large"],
-            2,
-            "test-run",
+        self.assertEqual(
+            ready_worker_ids.call_args_list,
+            [call(args, ["i-large", "i-small"]), call(args, ["i-large"])],
         )
+        monitor.assert_called_once()
         verify.assert_called_once_with(args, selected)
         pause.assert_not_called()
 
     @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")
+    @patch("scripts.dolma3p5_resharding.materialize._stage_worker_assignments")
     @patch("scripts.dolma3p5_resharding.materialize._prepare_workers")
     def test_materialize_cleans_up_prepared_groups_if_later_provisioning_fails(
-        self, prepare, pause
+        self, prepare, stage_assignments, pause
     ):
         prepare.side_effect = [["i-small"], PreparationError("create failed")]
         args = SimpleNamespace(verbose=False)
@@ -1067,6 +1184,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 script_dir=Path("/tmp/large"),
                 worker_count=1,
             ),
+        ]
+        stage_assignments.side_effect = [
+            (WorkerAssignment(groups[0], groups[0].rows, Path("/tmp/small-worker")),),
+            (WorkerAssignment(groups[1], groups[1].rows, Path("/tmp/large-worker")),),
         ]
 
         with self.assertRaisesRegex(PreparationError, "create failed"):
