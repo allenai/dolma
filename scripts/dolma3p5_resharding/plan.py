@@ -1,4 +1,4 @@
-"""Resolve the Dolma 3.5 mix, inventory sources, and build the sampling plan."""
+"""Build the complete Dolma 3.5 sampling and materialization plan."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ try:
         PreparationError,
         collect_inventory,
         plan_build,
+        propose_configs,
     )
 except ImportError:
     from workflow import (
@@ -19,6 +20,7 @@ except ImportError:
         PreparationError,
         collect_inventory,
         plan_build,
+        propose_configs,
     )
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -61,6 +63,23 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="override concurrent read-only exact-object requests",
     )
+    parser.add_argument(
+        "--destination-root",
+        required=True,
+        help="new object-store prefix below which every execution unit gets a unique destination",
+    )
+    parser.add_argument(
+        "--local-temp-root",
+        type=Path,
+        required=True,
+        help="absolute worker-local directory used while materializing one execution unit",
+    )
+    parser.add_argument(
+        "--max-unit-working-bytes",
+        type=int,
+        required=True,
+        help="maximum estimated local working set for one execution unit",
+    )
     return parser
 
 
@@ -69,9 +88,7 @@ def main() -> None:
     try:
         args = parser.parse_args()
         if shutil.which("s5cmd") is None:
-            raise PreparationError(
-                "s5cmd is required for planning and was not found on PATH"
-            )
+            raise PreparationError("s5cmd is required for planning and was not found on PATH")
         plan_build(args)
         collect_inventory(
             argparse.Namespace(
@@ -79,6 +96,14 @@ def main() -> None:
                 profile=args.profile,
                 region=args.region,
                 max_workers=args.max_workers,
+            )
+        )
+        propose_configs(
+            argparse.Namespace(
+                build=args.output,
+                destination_root=args.destination_root,
+                local_temp_root=args.local_temp_root,
+                max_unit_working_bytes=args.max_unit_working_bytes,
             )
         )
     except PreparationError as exc:

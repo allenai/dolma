@@ -4,121 +4,85 @@ Run every command from the repository root and complete the review gate before
 moving to the next step. Preparation artifacts are written to
 `runs/dolma3p5-resharding/14t/` by default.
 
-## 1. Build the inventory-backed sampling plan
+## 1. Build and review the complete plan
 
 ```bash
 python scripts/dolma3p5_resharding/plan.py \
-  --profile YOUR_READ_ONLY_PROFILE
+  --profile YOUR_READ_ONLY_PROFILE \
+  --destination-root s3://ai2-llm/preprocessed/dolma3p5-14t/materialized \
+  --local-temp-root /mnt/dolma/dolma3p5-resharding \
+  --max-unit-working-bytes 1500000000000
 ```
 
-This resolves the checked-in YAML paths, inventories their source objects with
-`s5cmd`, estimates token counts from uint32 file sizes, and builds the
-source-to-target sampling report. It makes only read-only metadata requests.
+This one command resolves the mix, inventories its source objects, calculates
+sampling, and creates the execution-unit configs. Inventory access is
+read-only, and the destination is not written.
+
+The output is grouped by purpose:
+
+```text
+01-plan/
+  resolution/   normalized mix, path matches, corrections, and failures
+  inventory/    source sizes, source-to-target sampling report, and audits
+  execution/    worker plan, exact manifests, configs, and launchers
+```
 
 Before continuing:
 
-- Open `02-inventory/report.html`. Review the source families, then click into
-  each subcategory and its categories/lower groups. Confirm the source and
-  target tokens, sampling ratio, and each level's distribution.
-- Inspect `02-inventory/inventory-details.json` for the same hierarchy and exact
-  numeric values in machine-readable form.
-- In `02-inventory/inventory-summary.json`, confirm the aggregate source,
+- Open `01-plan/inventory/report.html`. Review the source families, then click
+  into each subcategory and its categories/lower groups. Confirm the source
+  and target tokens, sampling ratio, and each level's distribution.
+- In `01-plan/inventory/inventory-summary.json`, confirm the aggregate source,
   target, token delta, sampling ratio, and source-family/subcategory/category/
   lower-group counts.
-- Confirm `01-plan/resolution-failures.csv` is empty.
-- Confirm `01-plan/corrections.csv` and `01-plan/duplicate-paths.csv` contain
+- Confirm `01-plan/resolution/resolution-failures.csv` is empty.
+- Confirm `01-plan/resolution/corrections.csv` and
+  `01-plan/resolution/duplicate-paths.csv` contain
   only changes you explicitly intend.
 - In the same summary, confirm all five values are zero: `missing_objects`,
   `path_resolution_failures`, `invalid_npy_sizes`, `head_errors`, and
   `sampling_rate_limit_failures`.
-- Review `02-inventory/sampling-rate-audit.csv`. Any category above the
+- Review `01-plan/inventory/sampling-rate-audit.csv`. Any category above the
   configured expected maximum indicates that the YAML's source-size basis and
-  the resolved source objects disagree; do not generate configs until it is
-  reconciled.
-- Spot-check `02-inventory/required-objects.csv`, including the NPY/metadata
+  the resolved source objects disagree. The command must stop before creating
+  the execution stage in this case.
+- Spot-check `01-plan/inventory/required-objects.csv`, including the NPY/metadata
   pairings, sizes, and paths for large or unusual categories.
+- Open `01-plan/execution/report.html`. Review the worker-disk distribution,
+  categories split across workers, and the concrete execution units.
+- Inspect `01-plan/execution/config-index.csv`. Confirm every unit is within
+  the working-set budget and every destination is correct and unique.
+- Confirm the worker temporary path has more usable space than the largest
+  estimated unit.
+- Confirm `01-plan/execution/validation-summary.json` has `passed: true` and
+  `validation-failures.csv` is empty.
 
-Do not generate configs with missing objects, missing metadata partners, failed
-path resolutions, invalid NPY sizes, or sampling rates above the configured
-review bound.
-
-## 2. Generate the distributed materialization proposal
-
-This concrete proposal uses a new build-specific prefix below
-`s3://ai2-llm/preprocessed/dolma3p5-14t/materialized`, the worker's local NVMe
-instance store mounted at `/mnt/dolma`, and a 1.5 TB per-unit working-set
-ceiling:
+For exact totals:
 
 ```bash
-python scripts/dolma3p5_resharding/propose.py \
-  --destination-root s3://ai2-llm/preprocessed/dolma3p5-14t/materialized \
-  --local-temp-root /mnt/dolma/dolma3p5-resharding \
-  --max-unit-working-bytes 1500000000000
-
-open runs/dolma3p5-resharding/14t/03-proposal/report.html
 python -m json.tool \
-  runs/dolma3p5-resharding/14t/03-proposal/proposal-summary.json
+  runs/dolma3p5-resharding/14t/01-plan/execution/proposal-summary.json
 ```
 
-The destination is not written by this command. Change it before proposal if
-that is not the intended materialized dataset root. The build ID is appended to
-the destination automatically, and every unit gets a unique prefix below it.
-
-The working-set estimate includes unique input files and planned output files,
-including metadata. Set the limit below usable worker storage so the OS,
-tokenizer cache, logs, and other runtime files still have headroom. Large
-categories are divided into multiple independent units to stay under this
-limit.
-
-This command creates configs and manifests but does not materialize data.
-
-Before continuing:
-
-- Open `03-proposal/report.html`. Compare source, proposed, and target counts at
-  the source-family, subcategory, category, and lower-group levels. Confirm each
-  lower group retains its intended share. The proposal uses full copies plus a
-  proportional partial-document quota for each object, so every active category
-  should have a zero proposal target residual.
-- In `03-proposal/proposal-summary.json`, confirm the source, proposed, and
-  target totals; token change from the source; destination; unit count; and
-  largest working set are acceptable.
-- Inspect `03-proposal/plot-data/proposed-sampling-by-category.csv` and
-  `proposed-sampling-by-lower-group.csv` when exact numeric review is easier
-  than the HTML. Inspect `03-proposal/category-allocation.csv` for full-copy
-  counts, partial selections, and zero target residuals.
-- Inspect `03-proposal/config-index.csv`. Confirm every unit is within the
-  working-set budget, large categories were split sensibly, and every S3
-  destination is correct and unique.
-- Confirm the configured worker temporary path exists on the intended instance
-  type and has more usable space than the largest estimated unit.
-
 The materialization inputs are the exact files under
-`03-proposal/manifests/`; the runnable units are the executable files under
-`03-proposal/launcher-scripts/`.
+`01-plan/execution/manifests/`; the runnable units are under
+`01-plan/execution/launcher-scripts/`.
 
-## 3. Validate the complete preparation build
+## 2. Validate the complete preparation build
 
 ```bash
 python scripts/dolma3p5_resharding/validate.py
-
-python -m json.tool \
-  runs/dolma3p5-resharding/14t/03-proposal/validation-summary.json
 ```
 
-Continue only if the printed result contains `"passed": true`. Also confirm
-`03-proposal/validation-summary.json` has `passed: true` and
-`03-proposal/validation-failures.csv` is empty.
+Continue only if the printed result contains `"passed": true`.
 
-Validation checks category coverage, unit totals, working-set limits, unique
-destinations, exact manifests, and executable launchers.
-
-## 4. Run the preflight immediately before materialization
+## 3. Run the preflight immediately before materialization
 
 ```bash
 python scripts/dolma3p5_resharding/preflight.py
 
 python -m json.tool \
-  runs/dolma3p5-resharding/14t/04-preflight/preflight-summary.json
+  runs/dolma3p5-resharding/14t/02-preflight/preflight-summary.json
 ```
 
 Preflight repeats the approved source inventory and checks every proposed
@@ -126,14 +90,14 @@ destination. It makes read-only AWS requests.
 
 Before continuing:
 
-- Confirm `04-preflight/preflight-summary.json` has `passed: true`, zero
+- Confirm `02-preflight/preflight-summary.json` has `passed: true`, zero
   `drifted_input_objects`, zero `occupied_destinations`, and zero `errors`.
-- Confirm every row in `04-preflight/input-drift.csv` is `unchanged`.
-- Confirm every row in `04-preflight/destination-status.csv` is `empty`.
+- Confirm every row in `02-preflight/input-drift.csv` is `unchanged`.
+- Confirm every row in `02-preflight/destination-status.csv` is `empty`.
 
 Do not launch if a source changed or any destination contains an object.
 
-## 5. Materialize the execution units
+## 4. Materialize the execution units
 
 Workers need:
 
@@ -278,7 +242,7 @@ python scripts/dolma3p5_resharding/preflight.py
 pmr map \
   --name dolma3p5-14t \
   --region "$PMR_REGION" \
-  --script runs/dolma3p5-resharding/14t/03-proposal/launcher-scripts
+  --script runs/dolma3p5-resharding/14t/01-plan/execution/launcher-scripts
 ```
 
 `pmr map` distributes scripts across workers; each worker processes its
@@ -289,7 +253,7 @@ assigned units sequentially and returns after dispatch. Each unit records
 For partial copies, each worker reads the paired metadata twice, selects a
 deterministic hash-ranked set of whole documents, and logs the realized token
 count and residual before writing output. Source token volume is still derived
-from file size; the proposal never tokenizes or scans arrays to count tokens.
+from file size; the planner never tokenizes or scans arrays to count tokens.
 
 Check aggregate worker status with:
 
@@ -301,15 +265,15 @@ pmr run \
 ```
 
 Do not verify until the total `succeeded` count equals the execution-unit count
-in `03-proposal/proposal-summary.json`, with no `running` or `failed` statuses.
-Per-unit logs are beside the status files with a `.log` suffix.
+in `01-plan/execution/proposal-summary.json`, with no `running` or `failed`
+statuses. Per-unit logs are beside the status files with a `.log` suffix.
 
 Each unit rechecks its source objects and refuses an occupied destination.
 Uploads use no-clobber semantics. If a failed unit wrote nothing, it can be
 retried after confirming its destination is still empty. Never blindly retry a
 partially written destination; investigate it and prepare a new destination.
 
-## 6. Verify the materialized dataset
+## 5. Verify the materialized dataset
 
 After every unit completes, run:
 
@@ -317,9 +281,9 @@ After every unit completes, run:
 python scripts/dolma3p5_resharding/verify.py
 
 python -m json.tool \
-  runs/dolma3p5-resharding/14t/05-output-validation/output-summary.json
+  runs/dolma3p5-resharding/14t/03-output-validation/output-summary.json
 
-open runs/dolma3p5-resharding/14t/05-output-validation/report.html
+open runs/dolma3p5-resharding/14t/03-output-validation/report.html
 ```
 
 Verification lists output objects and estimates token counts from uint32 file
@@ -328,14 +292,14 @@ modify source data.
 
 Accept the dataset only when:
 
-- `05-output-validation/output-summary.json` has `passed: true`, zero errors,
+- `03-output-validation/output-summary.json` has `passed: true`, zero errors,
   zero failed destinations, and equal expected and checked destination counts.
 - `aggregate_target_residual_within_bound` is `true`. Whole-document boundaries
   can make the materialized count differ slightly from the exact proposal; the
   summary records both the realized residual and the allowed bound.
-- Every row in `05-output-validation/output-validation.csv` is `passed`.
-- `05-output-validation/output-problems.csv` and `output-errors.csv` are empty.
-- The plots and totals in `05-output-validation/report.html` match the reviewed
+- Every row in `03-output-validation/output-validation.csv` is `passed`.
+- `03-output-validation/output-problems.csv` and `output-errors.csv` are empty.
+- The plots and totals in `03-output-validation/report.html` match the reviewed
   proposal.
 
 ## Rerunning preparation
@@ -343,9 +307,7 @@ Accept the dataset only when:
 Local artifacts created by this workflow are replaceable. Rerunning a phase
 also removes later local phases that would otherwise be stale:
 
-- `plan.py` replaces the complete local preparation build.
-- `inventory.py` replaces inventory, proposal, preflight, and verification.
-- `propose.py` replaces proposal, preflight, and verification.
+- `plan.py` replaces the complete plan plus preflight and verification output.
 - `preflight.py` replaces preflight and verification.
 - `verify.py` replaces verification only.
 
@@ -355,7 +317,11 @@ a different local path:
 
 ```bash
 python scripts/dolma3p5_resharding/plan.py \
-  --output runs/dolma3p5-resharding/14t-NEW-LABEL
+  --output runs/dolma3p5-resharding/14t-NEW-LABEL \
+  --profile YOUR_READ_ONLY_PROFILE \
+  --destination-root s3://ai2-llm/preprocessed/dolma3p5-14t/materialized \
+  --local-temp-root /mnt/dolma/dolma3p5-resharding \
+  --max-unit-working-bytes 1500000000000
 ```
 
 Pass that same path with `--build` to each later preparation command.

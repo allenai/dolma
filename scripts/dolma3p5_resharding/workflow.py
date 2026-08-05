@@ -39,6 +39,11 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_BUILD_PATH = REPOSITORY_ROOT / "runs/dolma3p5-resharding/14t"
 PREPARATION_PHASES = (
     "01-plan",
+    "02-preflight",
+    "03-output-validation",
+)
+PLAN_STAGES = ("resolution", "inventory", "execution")
+LEGACY_PREPARATION_PHASES = (
     "02-inventory",
     "03-proposal",
     "04-preflight",
@@ -155,16 +160,17 @@ def _validate_preparation_build(path: Path) -> dict[str, Any]:
         expected_build_id = f"dolma3p5-14t-{hashlib.sha256(seed).hexdigest()[:12]}"
     if manifest.get("schema_version") != 1 or not isinstance(build_id, str) or build_id != expected_build_id:
         raise PreparationError(f"Refusing to replace an unrecognized preparation build: {path}")
+    recognized_phases = {*PREPARATION_PHASES, *LEGACY_PREPARATION_PHASES}
     unknown = sorted(
         child.name
         for child in path.iterdir()
-        if child.name not in {"build.json", *PREPARATION_PHASES, *PRESERVED_BUILD_METADATA}
+        if child.name not in {"build.json", *recognized_phases, *PRESERVED_BUILD_METADATA}
     )
     if unknown:
         raise PreparationError(
             "Refusing to reset a preparation build containing unknown top-level " f"entries: {', '.join(unknown)}"
         )
-    for phase_name in PREPARATION_PHASES:
+    for phase_name in recognized_phases:
         phase = path / phase_name
         if phase.exists() and (phase.is_symlink() or not phase.is_dir()):
             raise PreparationError(f"Refusing to replace an unsafe preparation phase path: {phase}")
@@ -190,7 +196,7 @@ def _reset_preparation_build(path: Path) -> None:
     if not any(path.iterdir()):
         return
     _validate_preparation_build(path)
-    for phase_name in PREPARATION_PHASES:
+    for phase_name in dict.fromkeys((*PREPARATION_PHASES, *LEGACY_PREPARATION_PHASES)):
         _remove_generated_phase(path / phase_name)
     (path / "build.json").unlink()
 
@@ -207,6 +213,30 @@ def _reset_preparation_phase(build: Path, phase_name: str, *downstream_phase_nam
     phase = build / phase_name
     phase.mkdir(exist_ok=False)
     return phase
+
+
+def _reset_plan_stage(build: Path, stage_name: str, *downstream_stage_names: str) -> Path:
+    """Replace generated plan stages while preserving earlier reviewed stages."""
+
+    _validate_preparation_build(build)
+    plan_root = build / "01-plan"
+    if plan_root.is_symlink() or not plan_root.is_dir():
+        raise PreparationError(f"Plan output is not a real directory: {plan_root}")
+    unknown = sorted(
+        child.name for child in plan_root.iterdir() if child.name not in {*PLAN_STAGES, *PRESERVED_BUILD_METADATA}
+    )
+    if unknown:
+        raise PreparationError("Refusing to reset a plan containing unknown entries: " + ", ".join(unknown))
+    names = (stage_name, *downstream_stage_names)
+    if any(name not in PLAN_STAGES for name in names):
+        raise ValueError(f"Unknown plan stage: {names}")
+    for name in names:
+        _remove_generated_phase(plan_root / name)
+    for phase_name in ("02-preflight", "03-output-validation"):
+        _remove_generated_phase(build / phase_name)
+    stage = plan_root / stage_name
+    stage.mkdir(exist_ok=False)
+    return stage
 
 
 def _write_text(path: Path, value: str) -> None:
@@ -650,7 +680,9 @@ def plan_build(args: argparse.Namespace) -> None:
         },
     }
     _reset_preparation_build(output)
-    phase = output / "01-plan"
+    plan_root = output / "01-plan"
+    plan_root.mkdir(exist_ok=False)
+    phase = plan_root / "resolution"
     phase.mkdir(exist_ok=False)
     _write_json(output / "build.json", manifest)
     _write_csv(phase / "normalized-mix.csv", normalized_mix, list(normalized_mix[0]))
@@ -847,14 +879,8 @@ def collect_inventory(args: argparse.Namespace) -> None:
     manifest = _load_build(build)
     if shutil.which("s5cmd") is None:
         raise PreparationError("s5cmd is required for inventory collection and was not found on PATH")
-    phase = _reset_preparation_phase(
-        build,
-        "02-inventory",
-        "03-proposal",
-        "04-preflight",
-        "05-output-validation",
-    )
-    listing_plan = _read_csv(build / "01-plan/listing-plan.csv")
+    phase = _reset_plan_stage(build, "inventory", "execution")
+    listing_plan = _read_csv(build / "01-plan/resolution/listing-plan.csv")
 
     session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
     client = session.client("s3", region_name=args.region)
@@ -862,7 +888,7 @@ def collect_inventory(args: argparse.Namespace) -> None:
     listed: dict[tuple[str, str], S3Object] = {}
     errors: list[dict[str, str]] = []
     raw_output = phase / "raw-listings.jsonl"
-    commands_path = build / "01-plan/bulk-listing-commands.txt"
+    commands_path = build / "01-plan/resolution/bulk-listing-commands.txt"
     command = [
         "s5cmd",
         "--json",
@@ -1042,9 +1068,9 @@ def _finalize_inventory(
     status: Callable[[int, str], None] | None = None,
 ) -> dict[str, Any]:
     emit = status or (lambda _step, _message: None)
-    catalog_matches = _read_csv(build / "01-plan/catalog-matches.csv")
-    direct_patterns = _read_csv(build / "01-plan/direct-s3-patterns.csv")
-    normalized_paths = _read_csv(build / "01-plan/normalized-paths.csv")
+    catalog_matches = _read_csv(build / "01-plan/resolution/catalog-matches.csv")
+    direct_patterns = _read_csv(build / "01-plan/resolution/direct-s3-patterns.csv")
+    normalized_paths = _read_csv(build / "01-plan/resolution/normalized-paths.csv")
     emit(
         2,
         f"Resolving required objects for {len(normalized_paths):,} YAML paths",
@@ -1256,7 +1282,7 @@ def _finalize_inventory(
     original_by_leaf: dict[str, dict[str, int]] = defaultdict(dict)
     for row in required_rows:
         original_by_leaf[row["leaf_id"]][row["npy_uri"]] = int(row["estimated_uint32_values"])
-    normalized_mix = _read_csv(build / "01-plan/normalized-mix.csv")
+    normalized_mix = _read_csv(build / "01-plan/resolution/normalized-mix.csv")
     original_total = sum(sum(objects.values()) for objects in original_by_leaf.values())
     target_total = sum(int(row["target_uint32_values"]) for row in normalized_mix)
     maximum_expected_upsample_rate = _load_build(build)["settings"].get("maximum_expected_upsample_rate")
@@ -1601,9 +1627,9 @@ def _validate_destination_root(destination_root: str) -> str:
 def propose_configs(args: argparse.Namespace) -> None:
     build = args.build.resolve()
     manifest = _load_build(build)
-    inventory_phase = build / "02-inventory"
+    inventory_phase = build / "01-plan/inventory"
     if not (inventory_phase / "inventory-summary.json").is_file():
-        raise PreparationError("Inventory is missing; run scripts/dolma3p5_resharding/inventory.py first")
+        raise PreparationError("Inventory is missing; rerun scripts/dolma3p5_resharding/plan.py")
     with (inventory_phase / "inventory-summary.json").open() as f:
         inventory_summary = json.load(f)
     blocking = sum(
@@ -1624,7 +1650,7 @@ def propose_configs(args: argparse.Namespace) -> None:
             f"{inventory_phase / 'sampling-rate-audit.csv'}"
         )
 
-    phase = _reset_preparation_phase(build, "03-proposal", "04-preflight", "05-output-validation")
+    phase = _reset_plan_stage(build, "execution")
     configs_dir = phase / "config"
     manifests_dir = phase / "manifests"
     plots_dir = phase / "plots"
@@ -1641,7 +1667,7 @@ def propose_configs(args: argparse.Namespace) -> None:
     if max_unit_working_bytes <= 0:
         raise PreparationError("max-unit-working-bytes must be positive")
 
-    normalized_mix = _read_csv(build / "01-plan/normalized-mix.csv")
+    normalized_mix = _read_csv(build / "01-plan/resolution/normalized-mix.csv")
     inventory = _read_csv(inventory_phase / "required-objects.csv")
     by_leaf: dict[str, dict[tuple[str, str], dict[str, str]]] = defaultdict(dict)
     memberships: dict[tuple[str, str], set[str]] = defaultdict(set)
@@ -2018,7 +2044,7 @@ def propose_configs(args: argparse.Namespace) -> None:
         },
     )
     print(
-        f"Proposal ready: {_human_token_count(total_planned)} tokens across "
+        f"Execution plan ready: {_human_token_count(total_planned)} tokens across "
         f"{len(config_index):,} execution units; "
         f"{whole_document_sample_count:,} whole-document shard samples; "
         f"target residual: {target_residual:,} tokens.\n"
@@ -2076,7 +2102,9 @@ def _validate_proposal(
                 }
             )
     active_leaf_ids = {
-        row["leaf_id"] for row in _read_csv(build / "01-plan/normalized-mix.csv") if row["active"] == "true"
+        row["leaf_id"]
+        for row in _read_csv(build / "01-plan/resolution/normalized-mix.csv")
+        if row["active"] == "true"
     }
     allocated_leaf_ids = {row["leaf_id"] for row in allocations}
     for leaf_id in sorted(active_leaf_ids - allocated_leaf_ids):
@@ -2139,7 +2167,7 @@ def _validate_proposal(
     planned_uses = {(row["leaf_id"], row["npy_uri"]) for row in object_uses}
     required_uses = {
         (row["leaf_id"], row["npy_uri"])
-        for row in _read_csv(build / "02-inventory/required-objects.csv")
+        for row in _read_csv(build / "01-plan/inventory/required-objects.csv")
         if row["active"] == "true"
     }
     for leaf_id, uri in sorted(required_uses - planned_uses):
@@ -2165,12 +2193,12 @@ def preflight_build(args: argparse.Namespace) -> None:
 
     build = args.build.resolve()
     manifest = _load_build(build)
-    proposal_summary = build / "03-proposal/proposal-summary.json"
+    proposal_summary = build / "01-plan/execution/proposal-summary.json"
     if not proposal_summary.is_file():
         raise PreparationError("Proposal is missing; run propose first")
-    phase = _reset_preparation_phase(build, "04-preflight", "05-output-validation")
-    listing_plan = _read_csv(build / "01-plan/listing-plan.csv")
-    approved_inventory = _read_csv(build / "02-inventory/normalized-s3-inventory.csv")
+    phase = _reset_preparation_phase(build, "02-preflight", "03-output-validation")
+    listing_plan = _read_csv(build / "01-plan/resolution/listing-plan.csv")
+    approved_inventory = _read_csv(build / "01-plan/inventory/normalized-s3-inventory.csv")
     approved = {(row["bucket"], row["key"]): row for row in approved_inventory if row["required"] == "true"}
 
     session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
@@ -2245,7 +2273,7 @@ def preflight_build(args: argparse.Namespace) -> None:
             }
         )
 
-    config_index = _read_csv(build / "03-proposal/config-index.csv")
+    config_index = _read_csv(build / "01-plan/execution/config-index.csv")
     destination_rows: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {}
@@ -2365,10 +2393,10 @@ def verify_output(args: argparse.Namespace) -> None:
     build = args.build.resolve()
     manifest = _load_build(build)
     settings = manifest["settings"]
-    config_index = _read_csv(build / "03-proposal/config-index.csv")
+    config_index = _read_csv(build / "01-plan/execution/config-index.csv")
     if not config_index:
         raise PreparationError("Proposal config index is empty or missing")
-    phase = _reset_preparation_phase(build, "05-output-validation")
+    phase = _reset_preparation_phase(build, "03-output-validation")
     session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
     client = session.client("s3", region_name=args.region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
@@ -2676,63 +2704,6 @@ def _svg_bar_chart(
     )
 
 
-def _svg_paired_token_chart(
-    title: str,
-    rows: Sequence[tuple[str, int, int]],
-    width: int = 1400,
-) -> str:
-    label_x = 12
-    margin_left = 540
-    margin_right = 300
-    plot_width = width - margin_left - margin_right
-    row_height = 48
-    first_row_y = 78
-    height = first_row_y + row_height * len(rows) + 20
-    original_total = sum(original for _, original, _ in rows)
-    target_total = sum(target for _, _, target in rows)
-    maximum = max([max(original, target) for _, original, target in rows] or [1]) or 1
-    svg_rows: list[str] = []
-    for index, (label, original, target) in enumerate(rows):
-        y = first_row_y + index * row_height
-        original_width = plot_width * original / maximum
-        target_width = plot_width * target / maximum
-        sampling_rate, _ = _sampling_rate_label(original, target)
-        original_percent = 100 * original / original_total if original_total else 0.0
-        target_percent = 100 * target / target_total if target_total else 0.0
-        svg_rows.append(
-            f'<text class="family" x="{label_x}" y="{y + 20}">'
-            f"{html.escape(label)}</text>"
-            f'<rect class="original" x="{margin_left}" y="{y}" '
-            f'width="{original_width:.2f}" height="13"><title>'
-            f"{html.escape(label)} original: {original:,} tokens</title></rect>"
-            f'<rect class="target" x="{margin_left}" y="{y + 17}" '
-            f'width="{target_width:.2f}" height="13"><title>'
-            f"{html.escape(label)} target: {target:,} tokens</title></rect>"
-            f'<text class="value" x="{margin_left + plot_width + 10}" y="{y + 11}">'
-            f"{_human_token_count(original)} original · {original_percent:.2f}%</text>"
-            f'<text class="value" x="{margin_left + plot_width + 10}" y="{y + 28}">'
-            f"{_human_token_count(target)} target · {target_percent:.2f}% · "
-            f"{html.escape(sampling_rate)}</text>"
-        )
-    summary = (
-        f"Original: {_human_token_count(original_total)} tokens ({original_total:,}) · "
-        f"Target: {_human_token_count(target_total)} tokens ({target_total:,})"
-    )
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-        f'role="img" aria-label="{html.escape(title)}"><title>{html.escape(title)}</title>'
-        "<style>text{font:12px sans-serif;fill:#222}.heading{font-size:16px;font-weight:600}"
-        ".summary{font-size:13px;fill:#4b5f5b}.family{font-weight:500}.value{fill:#4b5f5b}"
-        ".original{fill:#71817e}.target{fill:#24a69a}</style>"
-        f'<text class="heading" x="{label_x}" y="22">{html.escape(title)}</text>'
-        f'<text class="summary" x="{label_x}" y="44">{html.escape(summary)}</text>'
-        f'<rect class="original" x="{margin_left}" y="48" width="13" height="9"/>'
-        f'<text x="{margin_left + 19}" y="57">Original</text>'
-        f'<rect class="target" x="{margin_left + 88}" y="48" width="13" height="9"/>'
-        f'<text x="{margin_left + 107}" y="57">Target</text>' + "".join(svg_rows) + "</svg>\n"
-    )
-
-
 def _human_token_count(value: int) -> str:
     for scale, suffix in (
         (1_000_000_000_000, "T"),
@@ -2973,6 +2944,229 @@ document.querySelectorAll('.subcategory-row').forEach((button) => {
 });
 </script>
 """
+
+
+def _human_byte_count(value: int) -> str:
+    for scale, suffix in (
+        (1_000_000_000_000, "TB"),
+        (1_000_000_000, "GB"),
+        (1_000_000, "MB"),
+        (1_000, "KB"),
+    ):
+        if abs(value) >= scale:
+            return f"{value / scale:.3g} {suffix}"
+    return f"{value:,} B"
+
+
+def _percentile(values: Sequence[int], percentile: float) -> int:
+    if not values:
+        return 0
+    ordered = sorted(values)
+    index = max(0, min(len(ordered) - 1, math.ceil(percentile * len(ordered)) - 1))
+    return ordered[index]
+
+
+def _proposal_artifact_href(path: Any) -> str:
+    relative = Path(str(path)).as_posix()
+    prefix = "01-plan/execution/"
+    if relative.startswith(prefix):
+        relative = relative[len(prefix) :]
+    return html.escape(relative, quote=True)
+
+
+def _execution_proposal_style() -> str:
+    return """
+<style>
+:root{color-scheme:light dark;--muted:#536965;--surface:#edf6f4;--surface-hover:#e4f0ed;--track:#d2e1de;--source:#71817e;--output:#218f84;--selection:#d28a32;--link:#126a63}
+@media(prefers-color-scheme:dark){:root{--muted:#a7bbb7;--surface:#142420;--surface-hover:#1a2d29;--track:#2a403c;--source:#91a29f;--output:#5cc8bb;--selection:#e5a456;--link:#74d7cb}}
+*{box-sizing:border-box}body{max-width:1240px;margin:0 auto;padding:34px 26px 72px;background:Canvas;color:CanvasText;font:14px/1.45 system-ui,sans-serif}h1{margin:0;font-size:28px;line-height:1.2}h2{margin:34px 0 14px;font-size:20px}.lede{max-width:820px;margin:8px 0 0;color:var(--muted)}.execution-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px 28px;margin:20px 0}.execution-metric{min-width:0}.metric-label{display:block;color:var(--muted)}.metric-value{display:block;margin-top:2px;font-size:18px;font-weight:600;font-variant-numeric:tabular-nums}.storage-note{margin:0 0 16px;color:var(--muted)}.utilization-bands{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.utilization-band{padding:12px 14px;border-radius:8px;background:var(--surface)}.utilization-band strong{display:block;font-size:18px;font-variant-numeric:tabular-nums}.utilization-band span{color:var(--muted)}.split-list{display:grid;gap:6px}.split-category{display:grid;grid-template-columns:minmax(0,1fr) repeat(3,minmax(115px,auto));gap:12px 24px;align-items:center;padding:11px 14px;border-radius:8px;background:var(--surface)}.split-name{overflow-wrap:anywhere;font-weight:600}.split-value{font-variant-numeric:tabular-nums}.split-value span{display:block;color:var(--muted);font-size:12px}.unit-heading{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:end;justify-content:space-between}.unit-heading h2{margin-bottom:0}.visible-count{color:var(--muted);font-variant-numeric:tabular-nums}.unit-controls{display:grid;grid-template-columns:minmax(220px,1fr) auto;gap:10px 20px;margin:14px 0}.unit-controls input[type=search]{width:100%;padding:9px 11px;border:0;border-radius:7px;background:var(--surface);color:inherit;font:inherit}.unit-controls label{display:flex;gap:8px;align-items:center;color:var(--muted)}.unit-list{display:grid;gap:6px}.execution-unit{border:0;border-radius:9px;background:var(--surface)}.execution-unit[hidden]{display:none}.execution-unit summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,260px);gap:10px 28px;padding:14px 16px;cursor:pointer;list-style-position:inside}.execution-unit summary:hover{background:var(--surface-hover);border-radius:9px}.unit-title{min-width:0;overflow-wrap:anywhere;font-weight:600}.unit-position{display:block;margin:2px 0 0 18px;color:var(--muted);font-size:12px;font-weight:400}.unit-disk{font-variant-numeric:tabular-nums}.unit-disk strong,.unit-disk span{display:block}.unit-disk span{color:var(--muted);font-size:12px}.unit-body{padding:2px 16px 17px}.unit-metrics{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:12px 24px;margin:6px 0 16px}.unit-metric{min-width:0}.unit-metric span{display:block;color:var(--muted);font-size:12px}.unit-metric strong{display:block;margin-top:2px;font-weight:600;font-variant-numeric:tabular-nums}.disk-breakdown{display:flex;height:9px;overflow:hidden;border-radius:999px;background:var(--track)}.disk-segment{display:block;height:100%}.disk-source{background:var(--source)}.disk-output{background:var(--output)}.disk-selection{background:var(--selection)}.disk-legend{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px 22px;margin:7px 0 16px;color:var(--muted);font-variant-numeric:tabular-nums}.disk-legend span::before{display:inline-block;width:8px;height:8px;margin-right:6px;border-radius:2px;content:""}.legend-source::before{background:var(--source)}.legend-output::before{background:var(--output)}.legend-selection::before{background:var(--selection)}.unit-paths{display:grid;gap:8px;margin:0}.unit-paths div{min-width:0}.unit-paths dt{color:var(--muted);font-size:12px}.unit-paths dd{margin:2px 0 0}.unit-paths code{display:block;padding:8px 10px;border-radius:6px;background:Canvas;overflow-wrap:anywhere;font:12px/1.4 ui-monospace,monospace}.artifact-links{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}.artifact-links a{color:var(--link);font-weight:600;text-decoration:none}.artifact-links a:hover{text-decoration:underline}
+@media(max-width:760px){body{padding:24px 16px 48px}.utilization-bands{grid-template-columns:repeat(2,1fr)}.split-category{grid-template-columns:1fr 1fr}.execution-unit summary{grid-template-columns:1fr}.unit-metrics{grid-template-columns:repeat(2,1fr)}.disk-legend{grid-template-columns:1fr}.unit-controls{grid-template-columns:1fr}}
+</style>
+"""
+
+
+def _execution_proposal_script() -> str:
+    return """
+<script>
+const unitSearch = document.getElementById('unit-search');
+const splitOnly = document.getElementById('split-only');
+const unitCards = Array.from(document.querySelectorAll('.execution-unit'));
+const visibleCount = document.getElementById('visible-unit-count');
+function filterUnits() {
+  const query = unitSearch.value.trim().toLowerCase();
+  let visible = 0;
+  unitCards.forEach((card) => {
+    const matchesText = !query || card.dataset.search.includes(query);
+    const matchesSplit = !splitOnly.checked || card.dataset.split === 'true';
+    card.hidden = !(matchesText && matchesSplit);
+    if (!card.hidden) visible += 1;
+  });
+  visibleCount.textContent = `${visible.toLocaleString()} of ${unitCards.length.toLocaleString()} units`;
+}
+unitSearch.addEventListener('input', filterUnits);
+splitOnly.addEventListener('change', filterUnits);
+filterUnits();
+</script>
+"""
+
+
+def _render_execution_proposal_html(
+    execution_units: Sequence[dict[str, Any]],
+    category_execution: Sequence[dict[str, Any]],
+    planned_total: int,
+) -> str:
+    def render_metrics(items: Sequence[tuple[str, str]]) -> str:
+        return (
+            '<div class="execution-metrics">'
+            + "".join(
+                '<div class="execution-metric">'
+                f'<span class="metric-label">{html.escape(label)}</span>'
+                f'<span class="metric-value">{html.escape(value)}</span></div>'
+                for label, value in items
+            )
+            + "</div>"
+        )
+
+    ordered_units = sorted(
+        execution_units,
+        key=lambda row: (int(row["estimated_peak_local_bytes"]), row["unit_id"]),
+        reverse=True,
+    )
+    peak_values = [int(row["estimated_peak_local_bytes"]) for row in ordered_units]
+    max_budget = max((int(row["max_unit_working_bytes"]) for row in ordered_units), default=0)
+    split_categories = sorted(
+        (row for row in category_execution if int(row["execution_unit_count"]) > 1),
+        key=lambda row: (
+            int(row["execution_unit_count"]),
+            int(row["largest_estimated_peak_local_bytes"]),
+            row["leaf_id"],
+        ),
+        reverse=True,
+    )
+    partial_units = sum(int(row["partial_object_count"]) > 0 for row in ordered_units)
+    utilizations = [
+        int(row["estimated_peak_local_bytes"]) / int(row["max_unit_working_bytes"]) for row in ordered_units
+    ]
+    utilization_bands = [
+        ("Below 50%", sum(value < 0.5 for value in utilizations)),
+        ("50–75%", sum(0.5 <= value < 0.75 for value in utilizations)),
+        ("75–90%", sum(0.75 <= value < 0.9 for value in utilizations)),
+        ("90% or higher", sum(value >= 0.9 for value in utilizations)),
+    ]
+    metrics = render_metrics(
+        [
+            ("Execution units", f"{len(ordered_units):,}"),
+            ("Units with partial-document work", f"{partial_units:,}"),
+            ("Planned output", f"{_human_token_count(planned_total)} tokens"),
+        ]
+    )
+    storage_metrics = render_metrics(
+        [
+            ("Worker disk budget", _human_byte_count(max_budget)),
+            ("Median unit", _human_byte_count(_percentile(peak_values, 0.5))),
+            ("P95 unit", _human_byte_count(_percentile(peak_values, 0.95))),
+            ("Largest unit", _human_byte_count(max(peak_values, default=0))),
+        ]
+    )
+    band_html = "".join(
+        f'<div class="utilization-band"><strong>{count:,}</strong><span>{label}</span></div>'
+        for label, count in utilization_bands
+    )
+    split_html = (
+        '<div class="split-list">'
+        + "".join(
+            '<article class="split-category">'
+            f'<span class="split-name">{html.escape(str(row["mix_name"]))} / '
+            f'{html.escape(str(row["category_name"]))}</span>'
+            f'<span class="split-value"><span>Units</span>{int(row["execution_unit_count"]):,}</span>'
+            f'<span class="split-value"><span>Output</span>'
+            f'{_human_token_count(int(row["planned_uint32_values"]))} tokens</span>'
+            f'<span class="split-value"><span>Largest unit</span>'
+            f'{_human_byte_count(int(row["largest_estimated_peak_local_bytes"]))}</span>'
+            "</article>"
+            for row in split_categories
+        )
+        + "</div>"
+        if split_categories
+        else '<p class="storage-note">No category requires more than one execution unit.</p>'
+    )
+    unit_cards: list[str] = []
+    for row in ordered_units:
+        input_bytes = int(row["input_npy_bytes"]) + int(row["input_metadata_bytes"])
+        output_bytes = int(row["output_npy_bytes"]) + int(row["estimated_output_metadata_bytes"])
+        selection_bytes = int(row["estimated_selection_index_bytes"])
+        peak_bytes = int(row["estimated_peak_local_bytes"])
+        budget_bytes = int(row["max_unit_working_bytes"])
+        utilization = peak_bytes / budget_bytes
+        source_width = 100 * input_bytes / budget_bytes
+        output_width = 100 * output_bytes / budget_bytes
+        selection_width = 100 * selection_bytes / budget_bytes
+        category_label = f'{row["mix_name"]} / {row["category_name"]}'
+        searchable = html.escape(
+            f'{row["unit_id"]} {row["mix_name"]} {row["category_name"]}'.lower(),
+            quote=True,
+        )
+        split = int(row["unit_count_for_category"]) > 1
+        unit_cards.append(
+            f'<details class="execution-unit" data-search="{searchable}" '
+            f'data-split="{str(split).lower()}"><summary>'
+            f'<span class="unit-title">{html.escape(category_label)}'
+            f'<span class="unit-position">Unit {int(row["unit_index"]):,} of '
+            f'{int(row["unit_count_for_category"]):,}</span></span>'
+            f'<span class="unit-disk"><strong>{_human_byte_count(peak_bytes)}</strong>'
+            f"<span>{utilization:.1%} of worker disk budget</span></span></summary>"
+            '<div class="unit-body"><div class="unit-metrics">'
+            '<div class="unit-metric"><span>Output tokens</span>'
+            f'<strong>{_human_token_count(int(row["planned_uint32_values"]))}</strong></div>'
+            '<div class="unit-metric"><span>Source shard downloads</span>'
+            f'<strong>{int(row["unique_object_count"]):,}</strong></div>'
+            '<div class="unit-metric"><span>Partial-document shards</span>'
+            f'<strong>{int(row["partial_object_count"]):,}</strong></div>'
+            '<div class="unit-metric"><span>Output shard cap</span>'
+            f'<strong>{int(row["max_num_files"]):,}</strong></div>'
+            "</div>"
+            '<div class="disk-breakdown" aria-label="Estimated local disk composition">'
+            f'<span class="disk-segment disk-source" style="width:{source_width:.8f}%"></span>'
+            f'<span class="disk-segment disk-output" style="width:{output_width:.8f}%"></span>'
+            f'<span class="disk-segment disk-selection" style="width:{selection_width:.8f}%"></span>'
+            "</div>"
+            '<div class="disk-legend">'
+            f'<span class="legend-source">Source download: {_human_byte_count(input_bytes)}</span>'
+            f'<span class="legend-output">Materialized output: {_human_byte_count(output_bytes)}</span>'
+            f'<span class="legend-selection">Selection indexes: {_human_byte_count(selection_bytes)}</span>'
+            "</div>"
+            '<dl class="unit-paths"><div><dt>Unit ID</dt>'
+            f'<dd><code>{html.escape(str(row["unit_id"]))}</code></dd></div>'
+            "<div><dt>Destination</dt>"
+            f'<dd><code>{html.escape(str(row["destination_prefix"]))}</code></dd></div></dl>'
+            '<nav class="artifact-links" aria-label="Execution-unit artifacts">'
+            f'<a href="{_proposal_artifact_href(row["config_path"])}">Config</a>'
+            f'<a href="{_proposal_artifact_href(row["manifest_path"])}">Manifest</a>'
+            f'<a href="{_proposal_artifact_href(row["launcher_path"])}">Launcher</a>'
+            "</nav></div></details>"
+        )
+    return (
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        "<title>Dolma 3.5 materialization execution proposal</title>"
+        + _execution_proposal_style()
+        + "</head><body><h1>Dolma 3.5 Materialization Execution Proposal</h1>"
+        '<p class="lede">Worker partitioning, local-disk requirements, and runnable artifacts for the '
+        "materialization phase.</p>"
+        + metrics
+        + "<h2>Worker storage</h2>"
+        + storage_metrics
+        + f'<div class="utilization-bands">{band_html}</div>'
+        + "<h2>Categories split across workers</h2>"
+        + split_html
+        + '<div class="unit-heading"><h2>Execution units</h2>'
+        f'<span class="visible-count" id="visible-unit-count">{len(ordered_units):,} of '
+        f"{len(ordered_units):,} units</span></div>"
+        '<div class="unit-controls"><input id="unit-search" type="search" '
+        'placeholder="Filter by source, category, or unit ID" aria-label="Filter execution units">'
+        '<label><input id="split-only" type="checkbox"> Only categories split across workers</label></div>'
+        f'<div class="unit-list">{"".join(unit_cards)}</div>' + _execution_proposal_script() + "</body></html>\n"
+    )
 
 
 def _render_plan_report(
@@ -3340,7 +3534,7 @@ def _build_inventory_details(
 
 def _replace_inventory_json(build: Path, path: Path, value: Any) -> None:
     _validate_preparation_build(build)
-    phase = build / "02-inventory"
+    phase = build / "01-plan/inventory"
     if path.parent != phase or path.name not in {
         "inventory-summary.json",
         "inventory-details.json",
@@ -3361,15 +3555,15 @@ def _replace_inventory_json(build: Path, path: Path, value: Any) -> None:
 def refresh_inventory_details(build: Path) -> dict[str, Any]:
     build = build.resolve()
     _validate_preparation_build(build)
-    phase = build / "02-inventory"
+    phase = build / "01-plan/inventory"
     summary_path = phase / "inventory-summary.json"
     if not summary_path.is_file() or summary_path.is_symlink():
         raise PreparationError(f"Inventory summary is missing: {summary_path}")
     with summary_path.open(encoding="utf-8") as f:
         summary = json.load(f)
     details = _build_inventory_details(
-        normalized_mix=_read_csv(build / "01-plan/normalized-mix.csv"),
-        normalized_paths=_read_csv(build / "01-plan/normalized-paths.csv"),
+        normalized_mix=_read_csv(build / "01-plan/resolution/normalized-mix.csv"),
+        normalized_paths=_read_csv(build / "01-plan/resolution/normalized-paths.csv"),
         required_rows=_read_csv(phase / "required-objects.csv"),
     )
     summary_source = int(
@@ -3562,25 +3756,6 @@ def _render_inventory_report(
         key=lambda row: int(row["available_uint32_values"]),
         reverse=True,
     )[:40]
-    unique_sizes = {
-        row["key"]: int(row["size_bytes"])
-        for row in all_objects
-        if row["required"] == "true" and row["key"].endswith(".npy")
-    }
-    sizes = list(unique_sizes.values())
-    bins = [0] * 20
-    maximum = max(sizes, default=0)
-    if maximum:
-        for size in sizes:
-            bins[min(19, int(20 * size / maximum))] += 1
-    size_rows = [
-        {
-            "bin_start_bytes": round(index * maximum / 20),
-            "bin_end_bytes": round((index + 1) * maximum / 20),
-            "object_count": count,
-        }
-        for index, count in enumerate(bins)
-    ]
     _write_csv(plot_data / "coverage.csv", coverage_rows, ["state", "count"])
     _write_csv(
         plot_data / "available-by-mix.csv",
@@ -3594,11 +3769,6 @@ def _render_inventory_report(
             "sampling_ratio",
             "sampling_rate",
         ],
-    )
-    _write_csv(
-        plot_data / "object-size-bins.csv",
-        size_rows,
-        ["bin_start_bytes", "bin_end_bytes", "object_count"],
     )
     _write_text(
         plots / "coverage.svg",
@@ -3620,15 +3790,6 @@ def _render_inventory_report(
                 _mix_plot_value_label(row["available_uint32_values"], original_total) for row in available_rows
             ],
             summary=(f"Source aggregate: {_human_token_count(original_total)} tokens " f"({original_total:,})"),
-        ),
-    )
-    _write_text(
-        plots / "object-size-histogram.svg",
-        _svg_bar_chart(
-            "Required NPY object-size histogram",
-            [f"{row['bin_start_bytes'] / 1e9:.1f}–{row['bin_end_bytes'] / 1e9:.1f} GB" for row in size_rows],
-            [row["object_count"] for row in size_rows],
-            "objects",
         ),
     )
     chart_rows = _interactive_chart_rows(
@@ -3901,7 +4062,7 @@ def _render_report(
     plots = phase / "plots"
     plot_data = phase / "plot-data"
     plot_data.mkdir(exist_ok=False)
-    normalized_mix = _read_csv(build / "01-plan/normalized-mix.csv")
+    normalized_mix = _read_csv(build / "01-plan/resolution/normalized-mix.csv")
     largest_units = sorted(
         execution_units,
         key=lambda row: int(row["estimated_peak_local_bytes"]),
@@ -3933,51 +4094,6 @@ def _render_report(
             [row["unit_id"] for row in largest_units],
             [int(row["estimated_peak_local_bytes"]) / 1e9 for row in largest_units],
             "GB",
-        ),
-    )
-    active_category_count = len(category_execution)
-    execution_unit_count = sum(int(row["execution_unit_count"]) for row in category_execution)
-    unit_count_distribution = Counter(int(row["execution_unit_count"]) for row in category_execution)
-    unit_distribution_rows = [
-        {
-            "execution_units_per_category": units,
-            "category_count": category_count,
-            "category_percent": (
-                f"{100 * category_count / active_category_count:.8f}" if active_category_count else "0"
-            ),
-        }
-        for units, category_count in sorted(unit_count_distribution.items())
-    ]
-    _write_csv(
-        plot_data / "category-execution-unit-distribution.csv",
-        unit_distribution_rows,
-        [
-            "execution_units_per_category",
-            "category_count",
-            "category_percent",
-        ],
-    )
-    _write_text(
-        plots / "execution-units-per-category.svg",
-        _svg_bar_chart(
-            "Active categories by execution-unit count",
-            [
-                (
-                    f"{row['execution_units_per_category']} execution unit"
-                    if int(row["execution_units_per_category"]) == 1
-                    else f"{row['execution_units_per_category']} execution units"
-                )
-                for row in unit_distribution_rows
-            ],
-            [int(row["category_count"]) for row in unit_distribution_rows],
-            "categories",
-            value_labels=[
-                f"{int(row['category_count']):,} categories · " f"{float(row['category_percent']):.2f}%"
-                for row in unit_distribution_rows
-            ],
-            summary=(
-                f"{active_category_count:,} active categories · " f"{execution_unit_count:,} execution units"
-            ),
         ),
     )
     by_mix: dict[str, dict[str, Any]] = defaultdict(lambda: {"target": 0, "planned": 0})
@@ -4022,51 +4138,6 @@ def _render_report(
             summary=(f"Total target: {_human_token_count(target_total)} tokens " f"({target_total:,})"),
         ),
     )
-    inventory_tokens_by_leaf: dict[str, dict[str, int]] = defaultdict(dict)
-    for row in inventory:
-        inventory_tokens_by_leaf[row["leaf_id"]][row["npy_uri"]] = int(row["estimated_uint32_values"])
-    source_family_totals: dict[str, dict[str, int]] = defaultdict(lambda: {"original": 0, "target": 0})
-    for row in normalized_mix:
-        source_family, _ = _split_mix_name(str(row["mix_name"]))
-        source_family_totals[source_family]["original"] += sum(inventory_tokens_by_leaf[row["leaf_id"]].values())
-        source_family_totals[source_family]["target"] += int(row["target_uint32_values"])
-    source_target_rows = [
-        {
-            "source_family": source_family,
-            "original_uint32_values": totals["original"],
-            "target_uint32_values": totals["target"],
-            "sampling_rate": _sampling_rate_label(totals["original"], totals["target"])[0],
-        }
-        for source_family, totals in sorted(
-            source_family_totals.items(),
-            key=lambda item: (item[1]["target"], item[0]),
-            reverse=True,
-        )
-    ]
-    _write_csv(
-        plot_data / "source-vs-target.csv",
-        source_target_rows,
-        [
-            "source_family",
-            "original_uint32_values",
-            "target_uint32_values",
-            "sampling_rate",
-        ],
-    )
-    _write_text(
-        plots / "source-vs-target.svg",
-        _svg_paired_token_chart(
-            "Original vs target tokens by source family",
-            [
-                (
-                    str(row["source_family"]),
-                    int(row["original_uint32_values"]),
-                    int(row["target_uint32_values"]),
-                )
-                for row in source_target_rows
-            ],
-        ),
-    )
     _write_csv(
         plot_data / "proposal-target-residuals.csv",
         allocations,
@@ -4081,36 +4152,7 @@ def _render_report(
             "target_residual_fraction",
         ],
     )
-    sizes = list({row["npy_uri"]: int(row["npy_size_bytes"]) for row in inventory}.values())
-    if sizes:
-        bins = [0] * 20
-        maximum = max(sizes)
-        for size in sizes:
-            bins[min(19, int(20 * size / max(1, maximum)))] += 1
-        size_rows = [
-            {
-                "bin_start_bytes": round(index * maximum / 20),
-                "bin_end_bytes": round((index + 1) * maximum / 20),
-                "object_count": count,
-            }
-            for index, count in enumerate(bins)
-        ]
-        _write_csv(
-            plot_data / "object-size-bins.csv",
-            size_rows,
-            ["bin_start_bytes", "bin_end_bytes", "object_count"],
-        )
-        _write_text(
-            plots / "object-size-histogram.svg",
-            _svg_bar_chart(
-                "NPY object-size histogram",
-                [f"{i * maximum / 20 / 1e9:.1f}–{(i + 1) * maximum / 20 / 1e9:.1f} GB" for i in range(20)],
-                bins,
-                "objects",
-            ),
-        )
-
-    normalized_paths = _read_csv(build / "01-plan/normalized-paths.csv")
+    normalized_paths = _read_csv(build / "01-plan/resolution/normalized-paths.csv")
     allocation_by_leaf = {row["leaf_id"]: row for row in allocations}
     inventory_by_leaf: dict[str, list[dict[str, Any]]] = defaultdict(list)
     inventory_by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -4432,11 +4474,6 @@ def _render_report(
                     f'<span class="path-detail-metric">Repeats: {repeat_range}</span>'
                     f"</span>{source_details}</code></details>"
                 )
-            repeat_range = (
-                f"{minimum_repetition}×"
-                if minimum_repetition == maximum_repetition
-                else f"{minimum_repetition}–{maximum_repetition}×"
-            )
             category_sections.append(
                 '<section class="category">'
                 '<div class="category-head">'
@@ -4453,14 +4490,9 @@ def _render_report(
                 f'<span class="mix-metric-value sampling {sampling_class}">'
                 f"{html.escape(sampling_label)}</span></span></div>"
                 + _comparison_bars(original, planned)
-                + '<div class="repetition-line">'
-                f"<span>full copies per object {repeat_range}</span>"
-                f"<span>partial selections: {partial_object_count:,} · "
-                f"NPYs repeated: {repeated_object_count:,} · "
-                f"dropped: {dropped_object_count:,} · "
-                f"{total_object_uses:,} total object uses across "
-                f"{unique_object_count:,} source NPYs</span></div>"
-                '<div class="path-list">' + "".join(path_rows) + "</div></section>"
+                + '<div class="path-list">'
+                + "".join(path_rows)
+                + "</div></section>"
             )
         subcategory_detail_by_mix[mix_name] = (
             f'<section class="subcategory-detail" id="{mix_row["detail_id"]}" hidden>'
@@ -4505,23 +4537,10 @@ def _render_report(
         path_sampling_rows,
         list(path_sampling_rows[0]) if path_sampling_rows else [],
     )
-    aggregate_rate, _ = _sampling_rate_label(original_total, proposed_total)
-    report = (
-        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 sampling proposal</title>'
-        + _interactive_report_style()
-        + "</head><body><h1>Dolma 3.5 Pre-materialization Sampling Proposal</h1>"
-        + _summary_metrics(
-            [
-                ("Source tokens", _human_token_count(original_total)),
-                ("Proposed tokens", _human_token_count(proposed_total)),
-                ("Target tokens", _human_token_count(target_total)),
-                ("Overall sampling", aggregate_rate),
-            ]
-        )
-        + f'<div class="mix-chart">{chart_rows}</div>'
-        + "".join(detail_sections)
-        + _interactive_report_script()
-        + "</body></html>\n"
+    report = _render_execution_proposal_html(
+        execution_units=execution_units,
+        category_execution=category_execution,
+        planned_total=proposed_total,
     )
     _write_text(phase / "report.html", report)
     return {
@@ -4535,9 +4554,9 @@ def validate_build(args: argparse.Namespace) -> None:
     build = args.build.resolve()
     manifest = _load_build(build)
     checks: list[tuple[str, bool, str]] = []
-    plan_failures = _read_csv(build / "01-plan/resolution-failures.csv")
+    plan_failures = _read_csv(build / "01-plan/resolution/resolution-failures.csv")
     checks.append(("plan_failures", not plan_failures, str(len(plan_failures))))
-    inventory_summary_path = build / "02-inventory/inventory-summary.json"
+    inventory_summary_path = build / "01-plan/inventory/inventory-summary.json"
     checks.append(
         (
             "inventory_exists",
@@ -4560,18 +4579,18 @@ def validate_build(args: argparse.Namespace) -> None:
                 summary.get("direct_resolution_failures", 0) if name == "path_resolution_failures" else 0,
             )
             checks.append((name, int(value) == 0, str(value)))
-    validation_path = build / "03-proposal/validation-summary.json"
-    checks.append(("proposal_exists", validation_path.is_file(), str(validation_path)))
+    validation_path = build / "01-plan/execution/validation-summary.json"
+    checks.append(("execution_exists", validation_path.is_file(), str(validation_path)))
     if validation_path.is_file():
         with validation_path.open() as f:
             proposal = json.load(f)
-        checks.append(("proposal_passed", bool(proposal["passed"]), str(proposal)))
-    preflight_path = build / "04-preflight/preflight-summary.json"
+        checks.append(("execution_passed", bool(proposal["passed"]), str(proposal)))
+    preflight_path = build / "02-preflight/preflight-summary.json"
     if preflight_path.is_file():
         with preflight_path.open() as f:
             preflight = json.load(f)
         checks.append(("preflight_passed", bool(preflight["passed"]), str(preflight)))
-    output_path = build / "05-output-validation/output-summary.json"
+    output_path = build / "03-output-validation/output-summary.json"
     if output_path.is_file():
         with output_path.open() as f:
             output = json.load(f)

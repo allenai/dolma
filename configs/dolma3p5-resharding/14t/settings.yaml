@@ -17,7 +17,7 @@ max_listing_overfetch_ratio: 8.0
 minimum_catalog_prefix_components: 4
 
 # Deterministic per-execution-unit config values. Worker storage is deliberately
-# not defaulted here; propose.py requires an explicit planning budget.
+# not defaulted here; plan.py requires an explicit planning budget.
 random_seed: 42
 max_workers_per_reshard: 8
 tokenizer_name_or_path: allenai/dolma2-tokenizer
