@@ -896,10 +896,47 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             ["resume workers", "wait for workers"],
         )
 
+    @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
+    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
+    def test_materialize_can_defer_reused_worker_resume(
+        self, describe, run, retag
+    ):
+        describe.return_value = [
+            ClusterInstance("i-reused", "stopped", "i4i.2xlarge", "oe-other")
+        ]
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=2,
+            instance_type="i4i.2xlarge",
+            root_storage_type="gp3",
+            root_storage_size=200,
+            ssh_key_path=None,
+            profile=None,
+        )
+        resume_ids = []
+
+        self.assertEqual(
+            _prepare_workers(
+                args,
+                1,
+                wait_for_ready=False,
+                deferred_resume_ids=resume_ids,
+            ),
+            ["i-reused"],
+        )
+
+        self.assertEqual(resume_ids, ["i-reused"])
+        retag.assert_called_once_with(args, ["i-reused"])
+        run.assert_not_called()
+
     @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")
     @patch("scripts.dolma3p5_resharding.materialize._verify_materialized_units")
     @patch("scripts.dolma3p5_resharding.materialize._wait_for_workers_to_stop")
     @patch("scripts.dolma3p5_resharding.materialize._wait_command", return_value=["wait-ready"])
+    @patch("scripts.dolma3p5_resharding.materialize._resume_command", return_value=["resume"])
     @patch("scripts.dolma3p5_resharding.materialize._map_command", return_value=["map"])
     @patch("scripts.dolma3p5_resharding.materialize._runtime_validation_command", return_value=["validate"])
     @patch("scripts.dolma3p5_resharding.materialize._runtime_transfer_command", return_value=["runtime-transfer"])
@@ -918,6 +955,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         runtime_transfer,
         runtime_validation,
         map_command,
+        resume_command,
         wait_command,
         wait,
         verify,
@@ -932,7 +970,11 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             owned_instance_ids=(),
             wait_for_ready=True,
             delay_after_last_batch=False,
+            deferred_resume_ids=None,
         ):
+            instance_id = (
+                "i-small" if group_args.instance_type == "i4i.2xlarge" else "i-large"
+            )
             events.append(
                 (
                     "prepare",
@@ -942,9 +984,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                     delay_after_last_batch,
                 )
             )
-            return [
-                "i-small" if group_args.instance_type == "i4i.2xlarge" else "i-large"
-            ]
+            if deferred_resume_ids is not None:
+                deferred_resume_ids.append(instance_id)
+            return [instance_id]
 
         prepare.side_effect = prepare_group
         run.side_effect = lambda stage, command, **kwargs: events.append(("run", stage))
@@ -984,7 +1026,17 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 ("prepare", "i4i.8xlarge", ("i-small",), False, False),
             ],
         )
+        self.assertEqual(
+            events[2:4],
+            [("run", "resume workers"), ("run", "wait for all workers")],
+        )
+        resume_command.assert_called_once_with(args, ["i-small", "i-large"])
         wait_command.assert_called_once_with(args, ["i-small", "i-large"])
+        storage_transfer.assert_called_once_with(args, ["i-small", "i-large"])
+        self.assertEqual(storage_setup.call_count, 2)
+        runtime_setup.assert_called_once_with(args, ["i-small", "i-large"])
+        runtime_transfer.assert_called_once_with(args, ["i-small", "i-large"])
+        runtime_validation.assert_called_once_with(args, ["i-small", "i-large"])
         wait.assert_called_once_with(
             args,
             ["i-small", "i-large"],

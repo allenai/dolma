@@ -1114,6 +1114,7 @@ def _prepare_workers(
     owned_instance_ids: Sequence[str] = (),
     wait_for_ready: bool = True,
     delay_after_last_batch: bool = False,
+    deferred_resume_ids: list[str] | None = None,
 ) -> list[str]:
     """Resume stopped compatible workers and create missing workers in batches."""
 
@@ -1159,11 +1160,14 @@ def _prepare_workers(
     try:
         if selected_ids:
             _retag_cluster_instances(args, selected_ids)
-            _run_lifecycle_command(
-                "resume workers",
-                _resume_command(args, selected_ids),
-                verbose=getattr(args, "verbose", False),
-            )
+            if deferred_resume_ids is None:
+                _run_lifecycle_command(
+                    "resume workers",
+                    _resume_command(args, selected_ids),
+                    verbose=getattr(args, "verbose", False),
+                )
+            else:
+                deferred_resume_ids.extend(selected_ids)
 
         missing = worker_count - len(selected_ids)
         batches = _provision_batches(
@@ -1755,6 +1759,7 @@ def _execute_materialization_groups(
 
     prepared: list[tuple[MaterializationGroup, list[str]]] = []
     all_worker_ids: list[str] = []
+    resume_ids: list[str] = []
     try:
         for group_index, group in enumerate(groups):
             worker_ids = _prepare_workers(
@@ -1763,9 +1768,17 @@ def _execute_materialization_groups(
                 owned_instance_ids=all_worker_ids,
                 wait_for_ready=False,
                 delay_after_last_batch=group_index < len(groups) - 1,
+                deferred_resume_ids=resume_ids,
             )
             prepared.append((group, worker_ids))
             all_worker_ids.extend(worker_ids)
+
+        if resume_ids:
+            _run_lifecycle_command(
+                "resume workers",
+                _resume_command(args, resume_ids),
+                verbose=args.verbose,
+            )
 
         _run_lifecycle_command(
             "wait for all workers",
@@ -1773,32 +1786,34 @@ def _execute_materialization_groups(
             verbose=args.verbose,
         )
 
+        _run_lifecycle_command(
+            "upload storage setup",
+            _storage_transfer_command(args, all_worker_ids),
+            verbose=args.verbose,
+        )
+
         for group, worker_ids in prepared:
-            _run_lifecycle_command(
-                f"upload storage setup ({group.args.instance_type})",
-                _storage_transfer_command(group.args, worker_ids),
-                verbose=args.verbose,
-            )
             _run_lifecycle_command(
                 f"prepare local NVMe ({group.args.instance_type})",
                 _storage_setup_command(group.args, worker_ids, group.rows),
                 verbose=args.verbose,
             )
-            _run_lifecycle_command(
-                f"install Dolma and s5cmd ({group.args.instance_type})",
-                _runtime_setup_command(group.args, worker_ids),
-                verbose=args.verbose,
-            )
-            _run_lifecycle_command(
-                f"upload resharding runtime ({group.args.instance_type})",
-                _runtime_transfer_command(group.args, worker_ids),
-                verbose=args.verbose,
-            )
-            _run_lifecycle_command(
-                f"install and validate resharding runtime ({group.args.instance_type})",
-                _runtime_validation_command(group.args, worker_ids),
-                verbose=args.verbose,
-            )
+
+        _run_lifecycle_command(
+            "install Dolma and s5cmd",
+            _runtime_setup_command(args, all_worker_ids),
+            verbose=args.verbose,
+        )
+        _run_lifecycle_command(
+            "upload resharding runtime",
+            _runtime_transfer_command(args, all_worker_ids),
+            verbose=args.verbose,
+        )
+        _run_lifecycle_command(
+            "install and validate resharding runtime",
+            _runtime_validation_command(args, all_worker_ids),
+            verbose=args.verbose,
+        )
 
         for group, worker_ids in prepared:
             _run_lifecycle_command(
