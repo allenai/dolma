@@ -314,6 +314,10 @@ execution units because poormanray does not stop instances that receive no
 script. Each unit records `running`, `succeeded`, or `failed EXIT_CODE` in
 `~/dolma3p5-resharding-status/`.
 
+The dispatcher runs both poormanray inspection and launch commands through
+`uv run --isolated --no-project --with poormanray`. Poormanray does not need to
+be installed in the Dolma environment or directly available on `PATH`.
+
 For partial copies, each worker reads the paired metadata twice, selects a
 deterministic hash-ranked set of whole documents, and logs the realized token
 count and residual before writing output. Source token volume is still derived

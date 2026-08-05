@@ -1,10 +1,12 @@
 import csv
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from typing import NamedTuple
+from unittest.mock import patch
 
 import numpy as np
 import smart_open
@@ -12,7 +14,7 @@ import smart_open
 from dolma.cli.__main__ import main as cli_main
 from dolma.tokenizer import Tokenizer
 from dolma.tokenizer.reshard import ReshardingConfig, reshard
-from scripts.resharding.dispatch import build_poormanray_map_command
+from scripts.resharding.dispatch import build_poormanray_map_command, require_spindown_coverage
 
 DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2-test-tokenizer.json"
 
@@ -26,7 +28,71 @@ class TestReshardDispatch(unittest.TestCase):
             script_dir="/tmp/dispatch",
             spindown=True,
         )
-        self.assertEqual(command[-1], "--spindown")
+        self.assertEqual(
+            command,
+            [
+                "uv",
+                "run",
+                "--isolated",
+                "--no-project",
+                "--with",
+                "poormanray",
+                "--",
+                "pmr",
+                "map",
+                "--name",
+                "resharding",
+                "--region",
+                "us-east-1",
+                "--script",
+                "/tmp/dispatch",
+                "--spindown",
+            ],
+        )
+
+    @patch("scripts.resharding.dispatch.subprocess.run")
+    def test_spindown_coverage_uses_isolated_pmr_cli(self, run):
+        run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "Id:      i-active\n"
+                "Name:    worker-0\n"
+                "State:   running\n\n"
+                "Id:      i-stopped\n"
+                "Name:    worker-1\n"
+                "State:   stopped\n"
+            ),
+            stderr="",
+        )
+        self.assertEqual(
+            require_spindown_coverage(
+                cluster="resharding",
+                region="us-east-1",
+                script_count=1,
+            ),
+            1,
+        )
+        run.assert_called_once_with(
+            [
+                "uv",
+                "run",
+                "--isolated",
+                "--no-project",
+                "--with",
+                "poormanray",
+                "--",
+                "pmr",
+                "list",
+                "--name",
+                "resharding",
+                "--region",
+                "us-east-1",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
 
 
 class Sequence(NamedTuple):

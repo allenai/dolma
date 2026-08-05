@@ -298,6 +298,7 @@ def _require_every_cluster_node_has_work(
             cluster=args.cluster,
             region=args.region,
             script_count=len(selected),
+            project=args.project,
         )
     except PoormanrayDispatchError as exc:
         raise PreparationError(str(exc)) from exc
@@ -355,8 +356,8 @@ def main() -> None:
         if not args.execute:
             return
         preflight_created_at = _require_preflight(build, selected)
-        if shutil.which("pmr") is None:
-            raise PreparationError("pmr is required for --execute and was not found on PATH")
+        if shutil.which("uv") is None:
+            raise PreparationError("uv is required for --execute and was not found on PATH")
         _require_every_cluster_node_has_work(args, selected)
         print(f"\nPreflight passed: {preflight_created_at}")
         result = subprocess.run(command, check=False)
