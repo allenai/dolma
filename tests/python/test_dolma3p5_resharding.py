@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -41,7 +42,6 @@ from scripts.dolma3p5_resharding.materialize import (
     WorkerAssignment,
     _execute_materialization_groups,
     _map_command,
-    _partition_worker_rows,
     _pause_workers_after_failure,
     _planned_worker_groups,
     _prepare_workers,
@@ -54,6 +54,7 @@ from scripts.dolma3p5_resharding.materialize import (
     _run_selected_preflight,
     _safe_path_launcher_payload,
     _select_units,
+    _stage_worker_assignments,
     _status_detail,
     _verify_materialized_units,
     _wait_command,
@@ -1053,29 +1054,53 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         sleep.assert_has_calls([call(3.0), call(3.0)])
 
-    def test_materialize_balances_execution_units_across_worker_slots(self):
-        rows = [
-            {
-                "unit_id": unit_id,
-                "estimated_work_uint32_values": str(work),
-                "planned_uint32_values": str(work),
-            }
-            for unit_id, work in (("a", 10), ("b", 9), ("c", 2), ("d", 1))
-        ]
+    def test_materialize_queues_individual_units_largest_first(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            script_dir = Path(temp_dir)
+            rows = tuple(
+                {
+                    "unit_id": unit_id,
+                    "launcher_path": f"launchers/{unit_id}.sh",
+                    "planned_uint32_values": str(work),
+                    "estimated_work_uint32_values": str(work),
+                }
+                for unit_id, work in (("small", 10), ("large", 30), ("medium", 20))
+            )
+            for row in rows:
+                (script_dir / f"{row['unit_id']}.sh").write_text("#!/bin/bash\n")
+            group = MaterializationGroup(
+                args=SimpleNamespace(),
+                rows=rows,
+                script_dir=script_dir,
+                worker_count=2,
+            )
 
-        slots = _partition_worker_rows(rows, 2)
+            assignments = _stage_worker_assignments(group)
 
         self.assertEqual(
-            sorted(
-                sum(int(row["estimated_work_uint32_values"]) for row in slot)
-                for slot in slots
-            ),
-            [11, 11],
+            [assignment.rows[0]["unit_id"] for assignment in assignments],
+            ["large", "medium", "small"],
         )
-        self.assertEqual(
-            sorted(row["unit_id"] for slot in slots for row in slot),
-            ["a", "b", "c", "d"],
+        self.assertTrue(all(len(assignment.rows) == 1 for assignment in assignments))
+
+    def test_dynamic_dispatch_does_not_spindown_between_units(self):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            parallelism=1,
+            instance_type="i4i.2xlarge",
+            storage_layout="single",
+            ssh_key_path=None,
         )
+        command = _map_command(
+            args,
+            Path("/tmp/unit.sh"),
+            ["i-first"],
+            spindown=False,
+        )
+
+        self.assertNotIn("--spindown", command)
 
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
@@ -1391,6 +1416,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")
     @patch("scripts.dolma3p5_resharding.materialize._verify_materialized_units")
     @patch("scripts.dolma3p5_resharding.materialize._wait_for_workers_to_stop")
+    @patch("scripts.dolma3p5_resharding.materialize._stop_worker_after_work")
+    @patch("scripts.dolma3p5_resharding.materialize._dispatch_assignment_to_worker")
     @patch("scripts.dolma3p5_resharding.materialize._bootstrap_and_dispatch_worker")
     @patch("scripts.dolma3p5_resharding.materialize._ready_worker_ids")
     @patch("scripts.dolma3p5_resharding.materialize._stage_worker_assignments")
@@ -1403,6 +1430,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         stage_assignments,
         ready_worker_ids,
         bootstrap,
+        dispatch,
+        stop_worker,
         monitor,
         verify,
         pause,
@@ -1497,6 +1526,23 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         bootstrap.side_effect = dispatch_worker
 
         def monitor_workers(*monitor_args, **monitor_kwargs):
+            deadline = time.monotonic() + 2
+            while True:
+                with monitor_kwargs["stage_lock"]:
+                    stages = dict(monitor_kwargs["worker_stages"])
+                if set(stages.values()) == {"materializing"}:
+                    break
+                if time.monotonic() >= deadline:
+                    self.fail("workers were not dispatched")
+                time.sleep(0.01)
+            with monitor_kwargs["unit_status_lock"]:
+                monitor_kwargs["unit_statuses"].update(
+                    {
+                        ("i-small", "small"): "succeeded",
+                        ("i-large", "large"): "succeeded",
+                    }
+                )
+            monitor_kwargs["status_changed"].set()
             self.assertTrue(monitor_kwargs["all_dispatched"].wait(timeout=2))
             events.append(("monitor-complete",))
 
@@ -1532,7 +1578,134 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             [call(args, ["i-large", "i-small"]), call(args, ["i-large"])],
         )
         monitor.assert_called_once()
+        self.assertEqual(stop_worker.call_count, 2)
+        dispatch.assert_not_called()
         verify.assert_called_once_with(args, selected)
+        pause.assert_not_called()
+
+    @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")
+    @patch("scripts.dolma3p5_resharding.materialize._verify_materialized_units")
+    @patch("scripts.dolma3p5_resharding.materialize._wait_for_workers_to_stop")
+    @patch("scripts.dolma3p5_resharding.materialize._stop_worker_after_work")
+    @patch("scripts.dolma3p5_resharding.materialize._dispatch_assignment_to_worker")
+    @patch("scripts.dolma3p5_resharding.materialize._bootstrap_and_dispatch_worker")
+    @patch("scripts.dolma3p5_resharding.materialize._ready_worker_ids")
+    @patch("scripts.dolma3p5_resharding.materialize._stage_worker_assignments")
+    @patch("scripts.dolma3p5_resharding.materialize._resume_worker_groups_in_batches")
+    @patch("scripts.dolma3p5_resharding.materialize._prepare_workers")
+    def test_materialize_reuses_free_workers_for_the_next_unit(
+        self,
+        prepare,
+        resume_workers,
+        stage_assignments,
+        ready_worker_ids,
+        bootstrap,
+        dispatch,
+        stop_worker,
+        monitor,
+        verify,
+        pause,
+    ):
+        rows = tuple(
+            {
+                "unit_id": f"unit-{index}",
+                "planned_uint32_values": "10",
+                "estimated_work_uint32_values": "10",
+            }
+            for index in range(4)
+        )
+        group_args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            instance_type="i4i.2xlarge",
+            storage_layout="single",
+        )
+        group = MaterializationGroup(
+            args=group_args,
+            rows=rows,
+            script_dir=Path("/tmp/dynamic"),
+            worker_count=2,
+        )
+        assignments = tuple(
+            WorkerAssignment(group, (row,), Path(f"/tmp/{row['unit_id']}.sh"))
+            for row in rows
+        )
+        stage_assignments.return_value = assignments
+
+        def prepare_workers(*_args, deferred_resume_ids=None, **_kwargs):
+            if deferred_resume_ids is not None:
+                deferred_resume_ids.extend(["i-first", "i-second"])
+            return ["i-first", "i-second"]
+
+        prepare.side_effect = prepare_workers
+        ready_worker_ids.return_value = {"i-first", "i-second"}
+        assigned: list[tuple[str, str]] = []
+        assigned_lock = Lock()
+
+        def record_assignment(instance_id, assignment, stages, stage_lock):
+            with assigned_lock:
+                assigned.append((instance_id, assignment.rows[0]["unit_id"]))
+            with stage_lock:
+                stages[instance_id] = "materializing"
+
+        def bootstrap_worker(
+            _args, instance_id, assignment, stages, stage_lock, _console
+        ):
+            record_assignment(instance_id, assignment, stages, stage_lock)
+
+        def dispatch_worker(instance_id, assignment, stages, stage_lock, _console):
+            record_assignment(instance_id, assignment, stages, stage_lock)
+
+        bootstrap.side_effect = bootstrap_worker
+        dispatch.side_effect = dispatch_worker
+
+        def wait_for_assignment_count(count):
+            deadline = time.monotonic() + 2
+            while True:
+                with assigned_lock:
+                    if len(assigned) >= count:
+                        return list(assigned)
+                if time.monotonic() >= deadline:
+                    self.fail(f"only {len(assigned)} assignments were dispatched")
+                time.sleep(0.01)
+
+        def monitor_workers(*_args, **monitor_kwargs):
+            initial = wait_for_assignment_count(2)
+            with monitor_kwargs["unit_status_lock"]:
+                monitor_kwargs["unit_statuses"].update(
+                    {(instance_id, unit_id): "succeeded" for instance_id, unit_id in initial}
+                )
+            monitor_kwargs["status_changed"].set()
+
+            all_assignments = wait_for_assignment_count(4)
+            with monitor_kwargs["unit_status_lock"]:
+                monitor_kwargs["unit_statuses"].update(
+                    {
+                        (instance_id, unit_id): "succeeded"
+                        for instance_id, unit_id in all_assignments[2:]
+                    }
+                )
+            monitor_kwargs["status_changed"].set()
+            self.assertTrue(monitor_kwargs["all_dispatched"].wait(timeout=2))
+
+        monitor.side_effect = monitor_workers
+        args = SimpleNamespace(
+            verbose=False,
+            bootstrap_parallelism=2,
+            readiness_poll_seconds=1,
+        )
+
+        _execute_materialization_groups(args, [group], rows, "test-run")
+
+        with assigned_lock:
+            assigned_units = [unit_id for _, unit_id in assigned]
+        self.assertEqual(len(assigned_units), 4)
+        self.assertEqual(set(assigned_units), {row["unit_id"] for row in rows})
+        self.assertEqual(bootstrap.call_count, 2)
+        self.assertEqual(dispatch.call_count, 2)
+        self.assertEqual(stop_worker.call_count, 2)
+        resume_workers.assert_called_once()
+        verify.assert_called_once_with(args, rows)
         pause.assert_not_called()
 
     @patch("scripts.dolma3p5_resharding.materialize._pause_workers_after_failure")

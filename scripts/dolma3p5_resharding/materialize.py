@@ -951,13 +951,15 @@ def _map_command(
     args: argparse.Namespace,
     script_dir: Path,
     instance_ids: Sequence[str] = (),
+    *,
+    spindown: bool = True,
 ) -> list[str]:
     return build_poormanray_map_command(
         cluster=_pmr_discovery_name(args),
         project=args.project,
         region=args.region,
         script_dir=script_dir,
-        spindown=True,
+        spindown=spindown,
         instance_ids=instance_ids,
         ssh_key_path=args.ssh_key_path,
     )
@@ -1258,19 +1260,14 @@ def _stage_selection(
     return selection_dir
 
 
-def _partition_worker_rows(
-    rows: Sequence[dict[str, str]], worker_count: int
-) -> tuple[tuple[dict[str, str], ...], ...]:
-    """Balance execution units over persistent worker slots by estimated work."""
+def _stage_worker_assignments(
+    group: MaterializationGroup,
+) -> tuple[WorkerAssignment, ...]:
+    """Create a largest-first queue of individual execution units."""
 
-    if worker_count <= 0 or worker_count > len(rows):
-        raise PreparationError(
-            f"Cannot assign {len(rows):,} execution unit(s) to {worker_count:,} worker(s)"
-        )
-    slots: list[list[dict[str, str]]] = [[] for _ in range(worker_count)]
-    totals = [0] * worker_count
+    assignments: list[WorkerAssignment] = []
     ordered = sorted(
-        rows,
+        group.rows,
         key=lambda row: (
             int(row.get("estimated_work_uint32_values") or row["planned_uint32_values"]),
             row["unit_id"],
@@ -1278,40 +1275,12 @@ def _partition_worker_rows(
         reverse=True,
     )
     for row in ordered:
-        slot = min(range(worker_count), key=lambda index: (totals[index], index))
-        slots[slot].append(row)
-        totals[slot] += int(
-            row.get("estimated_work_uint32_values") or row["planned_uint32_values"]
-        )
-    return tuple(tuple(slot) for slot in slots)
-
-
-def _stage_worker_assignments(
-    group: MaterializationGroup,
-) -> tuple[WorkerAssignment, ...]:
-    """Create one immutable launcher directory for each worker slot."""
-
-    row_slots = _partition_worker_rows(group.rows, group.worker_count)
-    assignment_root = group.script_dir.with_name(f"{group.script_dir.name}-workers")
-    if assignment_root.exists():
-        raise PreparationError(
-            f"Worker assignment directory already exists: {assignment_root}"
-        )
-    assignment_root.mkdir(exist_ok=False)
-    assignments: list[WorkerAssignment] = []
-    for slot_index, slot_rows in enumerate(row_slots):
-        slot_dir = assignment_root / f"worker-{slot_index:08d}"
-        slot_dir.mkdir()
-        for row in sorted(slot_rows, key=lambda item: item["unit_id"]):
-            source = group.script_dir / Path(row["launcher_path"]).name
-            if source.is_symlink() or not source.is_file():
-                raise PreparationError(
-                    f"Staged execution-unit launcher is missing or unsafe: {source}"
-                )
-            destination = slot_dir / source.name
-            destination.write_bytes(source.read_bytes())
-            destination.chmod(source.stat().st_mode & 0o777)
-        assignments.append(WorkerAssignment(group, slot_rows, slot_dir))
+        launcher = group.script_dir / Path(row["launcher_path"]).name
+        if launcher.is_symlink() or not launcher.is_file():
+            raise PreparationError(
+                f"Staged execution-unit launcher is missing or unsafe: {launcher}"
+            )
+        assignments.append(WorkerAssignment(group, (row,), launcher))
     return tuple(assignments)
 
 
@@ -1591,6 +1560,8 @@ def _worker_log_command(
     instance_ids: Sequence[str],
     status_run_id: str,
     log_offsets: dict[tuple[str, str], int] | None = None,
+    *,
+    include_logs: bool = True,
 ) -> list[str]:
     status_root = f"$HOME/dolma3p5-resharding-status/{status_run_id}"
     active_instance_ids = set(instance_ids)
@@ -1637,6 +1608,17 @@ for path in sorted(root.glob("*.log")):
     print(f"@@DOLMA_LOG_END@@\t{path.name}\t{end}\tOK")
     budget -= len(data)
 '''
+    log_section = (
+        f'''python_bin="${{DOLMA_PYTHON:-$HOME/.venv/bin/python}}"
+if [[ ! -x "$python_bin" ]]; then
+  python_bin=$(command -v python3.12 || command -v python3 || command -v python)
+fi
+"$python_bin" - "$status_root" {shlex.quote(offset_payload)} {WORKER_LOG_PAGE_BYTES} <<'PY'
+{log_reader}
+PY'''
+        if include_logs
+        else ""
+    )
     remote_script = f"""status_root=\"{status_root}\"
 shopt -s nullglob
 status_files=(\"$status_root\"/*.status)
@@ -1649,13 +1631,7 @@ else
     printf '\n'
   done
 fi
-python_bin=\"${{DOLMA_PYTHON:-$HOME/.venv/bin/python}}\"
-if [[ ! -x \"$python_bin\" ]]; then
-  python_bin=$(command -v python3.12 || command -v python3 || command -v python)
-fi
-\"$python_bin\" - \"$status_root\" {shlex.quote(offset_payload)} {WORKER_LOG_PAGE_BYTES} <<'PY'
-{log_reader}
-PY"""
+{log_section}"""
     return build_poormanray_run_command(
         cluster=_pmr_discovery_name(args),
         project=args.project,
@@ -1672,12 +1648,20 @@ def _worker_log_snapshots(
     instance_ids: Sequence[str],
     status_run_id: str,
     log_offsets: dict[tuple[str, str], int] | None = None,
+    *,
+    include_logs: bool = True,
 ) -> dict[str, dict[str, Any]]:
     """Read one acknowledged page of new log bytes from every active worker."""
 
     try:
         result = subprocess.run(
-            _worker_log_command(args, instance_ids, status_run_id, log_offsets),
+            _worker_log_command(
+                args,
+                instance_ids,
+                status_run_id,
+                log_offsets,
+                include_logs=include_logs,
+            ),
             check=False,
             capture_output=True,
             text=True,
@@ -1769,6 +1753,9 @@ def _wait_for_workers_to_stop(
     all_dispatched: Event | None = None,
     abort: Event | None = None,
     worker_args: dict[str, argparse.Namespace] | None = None,
+    unit_statuses: dict[tuple[str, str], str] | None = None,
+    unit_status_lock: Lock | None = None,
+    status_changed: Event | None = None,
 ) -> None:
     """Monitor mixed worker stages until every dispatched worker has stopped."""
 
@@ -1838,9 +1825,23 @@ def _wait_for_workers_to_stop(
                 lifecycle_counts = Counter(
                     value.split(":", 1)[0] for value in stage_snapshot.values()
                 )
+                if unit_statuses is not None:
+                    if unit_status_lock is not None:
+                        with unit_status_lock:
+                            completed_units = sum(
+                                status == "succeeded"
+                                for status in unit_statuses.values()
+                            )
+                    else:
+                        completed_units = sum(
+                            status == "succeeded" for status in unit_statuses.values()
+                        )
+                    unit_detail = f"{completed_units:,}/{unit_count:,} units"
+                else:
+                    unit_detail = f"{unit_count:,} units"
                 detail = " · ".join(
                     (
-                        f"{unit_count:,} units",
+                        unit_detail,
                         f"{lifecycle_counts['waiting']:,} waiting",
                         f"{lifecycle_counts['queued']:,} queued",
                         f"{lifecycle_counts['bootstrapping']:,} bootstrapping",
@@ -1870,101 +1871,118 @@ def _wait_for_workers_to_stop(
                 if state_signature != previous_state_signature:
                     output.print(Text(f"workers  {detail}", style="dim"))
                     previous_state_signature = state_signature
-            if verbose:
-                running_ids = sorted(
-                    instance.instance_id
-                    for instance in selected.values()
-                    if instance.state == "running"
-                    and (
-                        worker_stages is None
-                        or stage_snapshot.get(instance.instance_id, "").split(":", 1)[0]
-                        == "materializing"
-                    )
+            running_ids = sorted(
+                instance.instance_id
+                for instance in selected.values()
+                if instance.state == "running"
+                and (
+                    worker_stages is None
+                    or stage_snapshot.get(instance.instance_id, "").split(":", 1)[0]
+                    == "materializing"
                 )
-                if running_ids:
-                    snapshots: dict[str, dict[str, Any]] = {}
-                    log_groups: dict[str, tuple[argparse.Namespace, list[str]]] = {}
-                    for instance_id in running_ids:
-                        log_args = (worker_args or {}).get(instance_id, args)
-                        selector = _pmr_discovery_name(log_args)
-                        if selector not in log_groups:
-                            log_groups[selector] = (log_args, [])
-                        log_groups[selector][1].append(instance_id)
-                    for log_args, group_instance_ids in log_groups.values():
-                        snapshots.update(
-                            _worker_log_snapshots(
-                                log_args,
-                                group_instance_ids,
-                                status_run_id,
-                                log_byte_offsets,
-                            )
+            )
+            if running_ids and (verbose or unit_statuses is not None):
+                snapshots: dict[str, dict[str, Any]] = {}
+                log_groups: dict[str, tuple[argparse.Namespace, list[str]]] = {}
+                for instance_id in running_ids:
+                    log_args = (worker_args or {}).get(instance_id, args)
+                    selector = _pmr_discovery_name(log_args)
+                    if selector not in log_groups:
+                        log_groups[selector] = (log_args, [])
+                    log_groups[selector][1].append(instance_id)
+                for log_args, group_instance_ids in log_groups.values():
+                    snapshots.update(
+                        _worker_log_snapshots(
+                            log_args,
+                            group_instance_ids,
+                            status_run_id,
+                            log_byte_offsets,
+                            include_logs=verbose,
                         )
-                    for instance_id in sorted(snapshots):
-                        worker_tag, worker_style = worker_tags[instance_id]
-                        snapshot = snapshots[instance_id]
-                        statuses = snapshot["statuses"]
-                        assert isinstance(statuses, dict)
-                        for unit_id, status in sorted(statuses.items()):
-                            assert isinstance(status, str)
-                            status_key = (instance_id, unit_id)
-                            if previous_statuses.get(status_key) != status:
-                                previous_statuses[status_key] = status
+                    )
+                statuses_changed = False
+                for instance_id in sorted(snapshots):
+                    worker_tag, worker_style = worker_tags[instance_id]
+                    snapshot = snapshots[instance_id]
+                    statuses = snapshot["statuses"]
+                    assert isinstance(statuses, dict)
+                    for unit_id, status in sorted(statuses.items()):
+                        assert isinstance(status, str)
+                        status_key = (instance_id, unit_id)
+                        if unit_statuses is not None:
+                            if unit_status_lock is not None:
+                                with unit_status_lock:
+                                    if unit_statuses.get(status_key) != status:
+                                        unit_statuses[status_key] = status
+                                        statuses_changed = True
+                            elif unit_statuses.get(status_key) != status:
+                                unit_statuses[status_key] = status
+                                statuses_changed = True
+                        if verbose and previous_statuses.get(status_key) != status:
+                            previous_statuses[status_key] = status
+                            output.print(
+                                _worker_log_line(
+                                    worker_tag,
+                                    worker_style,
+                                    f"{unit_id} · {status}",
+                                    bold=True,
+                                )
+                            )
+                    if not verbose:
+                        continue
+                    logs = snapshot["logs"]
+                    assert isinstance(logs, dict)
+                    offsets = snapshot.get("offsets", {})
+                    assert isinstance(offsets, dict)
+                    for log_name, log_lines in sorted(logs.items()):
+                        assert isinstance(log_lines, tuple)
+                        log_key = (instance_id, log_name)
+                        if log_name in offsets:
+                            new_lines = log_lines
+                        else:
+                            # Backward compatibility for old worker-log
+                            # envelopes without acknowledged byte offsets.
+                            emitted = emitted_log_lines.get(log_key, 0)
+                            if len(log_lines) < emitted:
+                                emitted = 0
+                            new_lines = log_lines[emitted:]
+                        if new_lines:
+                            if log_key not in announced_logs:
+                                announced_logs.add(log_key)
                                 output.print(
                                     _worker_log_line(
                                         worker_tag,
                                         worker_style,
-                                        f"{unit_id} · {status}",
+                                        f"unit {Path(log_name).stem}",
                                         bold=True,
                                     )
                                 )
-                        logs = snapshot["logs"]
-                        assert isinstance(logs, dict)
-                        offsets = snapshot.get("offsets", {})
-                        assert isinstance(offsets, dict)
-                        for log_name, log_lines in sorted(logs.items()):
-                            assert isinstance(log_lines, tuple)
-                            log_key = (instance_id, log_name)
-                            if log_name in offsets:
-                                new_lines = log_lines
-                            else:
-                                # Backward compatibility for old worker-log
-                                # envelopes without acknowledged byte offsets.
-                                emitted = emitted_log_lines.get(log_key, 0)
-                                if len(log_lines) < emitted:
-                                    emitted = 0
-                                new_lines = log_lines[emitted:]
-                            if new_lines:
-                                if log_key not in announced_logs:
-                                    announced_logs.add(log_key)
-                                    output.print(
-                                        _worker_log_line(
-                                            worker_tag,
-                                            worker_style,
-                                            f"unit {Path(log_name).stem}",
-                                            bold=True,
-                                        )
+                            for line in new_lines:
+                                timestamp, message = _worker_log_parts(line)
+                                output.print(
+                                    _worker_log_line(
+                                        worker_tag,
+                                        worker_style,
+                                        message,
+                                        timestamp=timestamp,
                                     )
-                                for line in new_lines:
-                                    timestamp, message = _worker_log_parts(line)
-                                    output.print(
-                                        _worker_log_line(
-                                            worker_tag,
-                                            worker_style,
-                                            message,
-                                            timestamp=timestamp,
-                                        )
-                                    )
-                            if log_name in offsets:
-                                log_byte_offsets[log_key] = int(offsets[log_name])
-                            else:
-                                emitted_log_lines[log_key] = len(log_lines)
+                                )
+                        if log_name in offsets:
+                            log_byte_offsets[log_key] = int(offsets[log_name])
+                        else:
+                            emitted_log_lines[log_key] = len(log_lines)
+                if statuses_changed and status_changed is not None:
+                    status_changed.set()
             dispatch_complete = all_dispatched is None or all_dispatched.is_set()
             if dispatch_complete and stopped == len(expected_ids):
                 break
+            poll_seconds = args.completion_poll_seconds
+            if unit_statuses is not None:
+                poll_seconds = min(poll_seconds, args.readiness_poll_seconds)
             if abort is not None:
-                abort.wait(args.completion_poll_seconds)
+                abort.wait(poll_seconds)
             else:
-                sleep(args.completion_poll_seconds)
+                sleep(poll_seconds)
     finally:
         if live_status is not None:
             live_status.stop()
@@ -2283,7 +2301,7 @@ def _bootstrap_and_dispatch_worker(
         run("upload storage setup", _storage_transfer_command(group_args, [instance_id]))
         run(
             "prepare local NVMe",
-            _storage_setup_command(group_args, [instance_id], assignment.rows),
+            _storage_setup_command(group_args, [instance_id], assignment.group.rows),
         )
         run("install Dolma and s5cmd", _runtime_setup_command(group_args, [instance_id]))
         run(
@@ -2296,9 +2314,67 @@ def _bootstrap_and_dispatch_worker(
         )
         run(
             f"dispatch {len(assignment.rows):,} unit(s)",
-            _map_command(group_args, assignment.script_dir, [instance_id]),
+            _map_command(
+                group_args,
+                assignment.script_dir,
+                [instance_id],
+                spindown=False,
+            ),
         )
         _set_worker_stage(stages, stage_lock, instance_id, "materializing")
+    except BaseException:
+        _set_worker_stage(stages, stage_lock, instance_id, "failed")
+        raise
+
+
+def _dispatch_assignment_to_worker(
+    instance_id: str,
+    assignment: WorkerAssignment,
+    stages: dict[str, str],
+    stage_lock: Lock,
+    console: Console,
+) -> None:
+    """Dispatch the next unit without rebuilding or stopping the warm worker."""
+
+    unit_id = assignment.rows[0]["unit_id"]
+    _set_worker_stage(stages, stage_lock, instance_id, f"queued:{unit_id}")
+    try:
+        _run_lifecycle_command(
+            f"{instance_id[-6:]} · dispatch {unit_id}",
+            _map_command(
+                assignment.group.args,
+                assignment.script_dir,
+                [instance_id],
+                spindown=False,
+            ),
+            console=console,
+            verbose=assignment.group.args.verbose,
+            live=False,
+        )
+        _set_worker_stage(stages, stage_lock, instance_id, "materializing")
+    except BaseException:
+        _set_worker_stage(stages, stage_lock, instance_id, "failed")
+        raise
+
+
+def _stop_worker_after_work(
+    instance_id: str,
+    group_args: argparse.Namespace,
+    stages: dict[str, str],
+    stage_lock: Lock,
+    console: Console,
+) -> None:
+    """Stop one warm worker after its compatible unit queue is empty."""
+
+    _set_worker_stage(stages, stage_lock, instance_id, "stopping")
+    try:
+        _run_lifecycle_command(
+            f"{instance_id[-6:]} · stop",
+            _pause_command(group_args, [instance_id]),
+            console=console,
+            verbose=False,
+            live=False,
+        )
     except BaseException:
         _set_worker_stage(stages, stage_lock, instance_id, "failed")
         raise
@@ -2334,6 +2410,9 @@ def _execute_materialization_groups(
 
         worker_stages = {instance_id: "waiting" for instance_id in all_worker_ids}
         stage_lock = Lock()
+        unit_statuses: dict[tuple[str, str], str] = {}
+        unit_status_lock = Lock()
+        status_changed = Event()
         all_dispatched = Event()
         abort = Event()
         lifecycle_console = Console(stderr=True, highlight=False)
@@ -2349,6 +2428,8 @@ def _execute_materialization_groups(
             for instance_id in worker_ids
         }
         futures: dict[Future[None], str] = {}
+        current_assignments: dict[str, WorkerAssignment] = {}
+        completed_unit_ids: set[str] = set()
         resume_pool = ThreadPoolExecutor(max_workers=1)
         resume_futures = (
             {
@@ -2374,11 +2455,20 @@ def _execute_materialization_groups(
             abort=abort,
             console=lifecycle_console,
             worker_args=worker_args,
+            unit_statuses=unit_statuses,
+            unit_status_lock=unit_status_lock,
+            status_changed=status_changed,
         )
         try:
             bootstrap_workers = min(args.bootstrap_parallelism, len(all_worker_ids))
             with ThreadPoolExecutor(max_workers=bootstrap_workers) as pool:
-                while pending or futures or resume_futures:
+                while (
+                    pending
+                    or futures
+                    or resume_futures
+                    or current_assignments
+                    or any(assignment_queues)
+                ):
                     completed_resumes = [
                         future for future in resume_futures if future.done()
                     ]
@@ -2386,17 +2476,81 @@ def _execute_materialization_groups(
                         future.result()
                         del resume_futures[future]
 
+                    completed = [future for future in futures if future.done()]
+                    for future in completed:
+                        future.result()
+                        del futures[future]
+
+                    inflight_ids = set(futures.values())
+                    with unit_status_lock:
+                        status_snapshot = dict(unit_statuses)
+                    status_changed.clear()
+                    with stage_lock:
+                        stage_snapshot = dict(worker_stages)
+                    for instance_id, assignment in list(current_assignments.items()):
+                        if instance_id in inflight_ids:
+                            continue
+                        unit_id = assignment.rows[0]["unit_id"]
+                        status = status_snapshot.get((instance_id, unit_id))
+                        if status == "succeeded":
+                            completed_unit_ids.add(unit_id)
+                            del current_assignments[instance_id]
+                            group_index = worker_group_index[instance_id]
+                            if assignment_queues[group_index]:
+                                next_assignment = assignment_queues[group_index].popleft()
+                                current_assignments[instance_id] = next_assignment
+                                future = pool.submit(
+                                    _dispatch_assignment_to_worker,
+                                    instance_id,
+                                    next_assignment,
+                                    worker_stages,
+                                    stage_lock,
+                                    lifecycle_console,
+                                )
+                                futures[future] = instance_id
+                            else:
+                                future = pool.submit(
+                                    _stop_worker_after_work,
+                                    instance_id,
+                                    worker_args[instance_id],
+                                    worker_stages,
+                                    stage_lock,
+                                    lifecycle_console,
+                                )
+                                futures[future] = instance_id
+                        elif status is not None and status.startswith("failed"):
+                            _set_worker_stage(
+                                worker_stages, stage_lock, instance_id, "failed"
+                            )
+                            raise PreparationError(
+                                f"Execution unit {unit_id} failed on {instance_id}: {status}"
+                            )
+                        elif stage_snapshot.get(instance_id) in {"stopping", "stopped"}:
+                            raise PreparationError(
+                                f"Worker {instance_id} stopped before execution unit "
+                                f"{unit_id} reported success"
+                            )
+
                     newly_ready = (
                         _ready_worker_ids(args, sorted(pending)) if pending else set()
                     )
                     for instance_id in sorted(newly_ready):
                         group_index = worker_group_index[instance_id]
                         if not assignment_queues[group_index]:
-                            raise PreparationError(
-                                f"No execution-unit assignment remains for worker {instance_id}"
+                            pending.remove(instance_id)
+                            future = pool.submit(
+                                _stop_worker_after_work,
+                                instance_id,
+                                worker_args[instance_id],
+                                worker_stages,
+                                stage_lock,
+                                lifecycle_console,
                             )
+                            futures[future] = instance_id
+                            continue
                         assignment = assignment_queues[group_index].popleft()
                         pending.remove(instance_id)
+                        current_assignments[instance_id] = assignment
                         _set_worker_stage(
                             worker_stages, stage_lock, instance_id, "queued"
                         )
@@ -2410,11 +2564,6 @@ def _execute_materialization_groups(
                             lifecycle_console,
                         )
                         futures[future] = instance_id
-
-                    completed = [future for future in futures if future.done()]
-                    for future in completed:
-                        future.result()
-                        del futures[future]
 
                     if pending:
                         active_futures = [*futures, *resume_futures]
@@ -2430,6 +2579,8 @@ def _execute_materialization_groups(
                         wait(futures, return_when=FIRST_COMPLETED)
                     elif resume_futures:
                         wait(resume_futures, return_when=FIRST_COMPLETED)
+                    elif current_assignments:
+                        status_changed.wait(args.readiness_poll_seconds)
 
             all_dispatched.set()
             monitor.result()
@@ -2442,6 +2593,11 @@ def _execute_materialization_groups(
 
         if any(assignment_queues):
             raise PreparationError("Not every execution-unit assignment was dispatched")
+        if len(completed_unit_ids) != len(selected):
+            raise PreparationError(
+                f"Only {len(completed_unit_ids):,}/{len(selected):,} execution units "
+                "reported success"
+            )
         _verify_materialized_units(args, selected)
     except BaseException:
         for group, worker_ids in prepared:

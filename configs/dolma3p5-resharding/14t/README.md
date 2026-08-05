@@ -104,9 +104,9 @@ uv run scripts/dolma3p5_resharding/materialize.py \
 
 `--parallelism` caps active workers. VM creation defaults to batches of five
 with a three-second delay, and worker setup defaults to 32 concurrent workers.
-Each healthy worker starts its assignment immediately; it does not wait for the
-rest of the fleet. Defaults are cluster `dolma3p5-14t`, project `oe-other`, and
-region `us-east-1`.
+Each healthy worker starts one unit immediately and receives another compatible
+unit whenever it finishes. It remains warm until its queue is empty, then stops.
+Defaults are cluster `dolma3p5-14t`, project `oe-other`, and region `us-east-1`.
 
 ## 4. Verify outputs
 
