@@ -4,6 +4,7 @@ import gzip
 import io
 import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -1317,6 +1318,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         for config_path in configs:
             config = yaml.safe_load(config_path.read_text())
             self.assertFalse(config["allow_existing_destination"])
+            self.assertEqual(config["s5cmd_download_concurrency"], 32)
             self.assertTrue(config["source_manifests"])
             parsed = ReshardingConfig.from_file(config_path)
             self.assertEqual(len(parsed.source_manifests), 1)
@@ -1854,6 +1856,66 @@ class TestReshardingSafety(unittest.TestCase):
                     self.root / "remote-input", max_workers=1
                 )
 
+    def test_remote_manifest_streams_s5cmd_with_large_file_concurrency(self):
+        manifest_path = self.root / "remote-manifest.csv"
+        with manifest_path.open("x", newline="") as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=[
+                    "npy_uri",
+                    "metadata_uri",
+                    "repeat_count",
+                    "npy_size_bytes",
+                    "metadata_size_bytes",
+                ],
+            )
+            writer.writeheader()
+            writer.writerow(
+                {
+                    "npy_uri": "s3://source-bucket/path/tokens.npy",
+                    "metadata_uri": "s3://source-bucket/path/tokens.csv.gz",
+                    "repeat_count": 1,
+                    "npy_size_bytes": 16,
+                    "metadata_size_bytes": 12,
+                }
+            )
+
+        client = MagicMock()
+        client.head_object.side_effect = lambda **request: {
+            "ContentLength": 16 if request["Key"].endswith(".npy") else 12,
+            "ETag": '"source"',
+        }
+
+        def emulate_s5cmd(command: list[str], phase: str) -> None:
+            self.assertEqual(
+                command[:5], ["s5cmd", "--stat", "--numworkers", "3", "run"]
+            )
+            self.assertEqual(phase, "source download")
+            command_lines = Path(command[-1]).read_text().splitlines()
+            self.assertEqual(len(command_lines), 2)
+            for command_line, expected_size in zip(command_lines, (16, 12)):
+                arguments = shlex.split(command_line)
+                self.assertEqual(
+                    arguments[:5],
+                    ["cp", "--raw", "--no-clobber", "--concurrency", "17"],
+                )
+                destination = Path(arguments[-1])
+                destination.write_bytes(b"\x00" * expected_size)
+
+        with (
+            patch("dolma.tokenizer.reshard.boto3.client", return_value=client),
+            patch("dolma.tokenizer.reshard._run_s5cmd", side_effect=emulate_s5cmd),
+        ):
+            paths = ReshardingManifestConfig(manifest_path).take(
+                self.root / "remote-input",
+                max_workers=3,
+                s5cmd_concurrency=17,
+            )
+
+        self.assertEqual(len(paths), 1)
+        self.assertEqual(Path(paths[0].npy_path).stat().st_size, 16)
+        self.assertEqual(Path(paths[0].csv_path).stat().st_size, 12)
+
     def test_existing_local_destination_is_refused(self):
         destination = self.root / "existing"
         destination.mkdir()
@@ -1889,14 +1951,11 @@ class TestReshardingSafety(unittest.TestCase):
         self.assertEqual([path.name for path in temp_base.iterdir()], ["keep-me"])
 
     def test_upload_always_uses_no_clobber(self):
-        with (
-            patch("dolma.tokenizer.reshard.boto3.client"),
-            patch("dolma.tokenizer.reshard._run_with_progress") as run,
-        ):
+        with patch("dolma.tokenizer.reshard._run_s5cmd") as run:
             upload_to_s3(self.root, "s3://test-bucket/new/prefix", max_workers=3)
         command = run.call_args.args[0]
         self.assertIn("--no-clobber", command)
-        self.assertEqual(command[:3], ["s5cmd", "--numworkers", "3"])
+        self.assertEqual(command[:5], ["s5cmd", "--stat", "--numworkers", "3", "cp"])
 
     def test_s3_bucket_root_is_refused_before_listing(self):
         with self.assertRaises(ValueError):

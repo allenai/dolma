@@ -33,6 +33,10 @@ Review `runs/dolma3p5-resharding/14t/01-plan/report.html`:
 The materializer consumes the exact manifests and launchers under
 `01-plan/execution/`.
 
+Download concurrency is set in `settings.yaml`. `max_workers_per_reshard`
+controls concurrent object copies; `s5cmd_download_concurrency` controls the
+multipart ranges used for each large object.
+
 ## 2. Validate the preparation build
 
 ```bash
@@ -122,9 +126,10 @@ The important worker options are:
 - `--region` defaults to `us-east-1` and can be overridden directly or with
   `PMR_REGION`.
 - `--verbose` streams poormanray output and every new resharding-log line from
-  active workers. Worker logs report source
-  validation, object/byte download progress, document-selection passes, merge
-  completion by output shard, and output-upload progress.
+  active workers. Source downloads show s5cmd's per-file logs and final
+  statistics instead of inferred transfer progress. Resharding logs cover
+  source validation, document-selection passes, merge completion by output
+  shard, and output upload progress.
 - `--completion-poll-seconds` controls the worker-state and log polling
   interval; it defaults to 30 seconds.
 - `--profile` selects the AWS profile used for provisioning and worker setup.

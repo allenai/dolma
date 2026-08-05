@@ -51,7 +51,6 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable
 from concurrent.futures import (
     FIRST_COMPLETED,
     ProcessPoolExecutor,
@@ -115,100 +114,15 @@ def _elapsed(started_at: float) -> str:
     return f"{seconds}s"
 
 
-def _local_progress(expectations: list[tuple[Path, int]]) -> tuple[int, int]:
-    completed = 0
-    current_bytes = 0
-    for path, expected_size in expectations:
-        try:
-            size = path.stat().st_size
-        except FileNotFoundError:
-            continue
-        current_bytes += min(size, expected_size)
-        completed += size == expected_size
-    return completed, current_bytes
+def _run_s5cmd(command: list[str], phase: str) -> None:
+    """Run s5cmd with its stdout and stderr attached directly to the worker log."""
 
-
-def _s3_progress(client, bucket: str, prefix: str) -> tuple[int, int]:
-    object_count = 0
-    size_bytes = 0
-    continuation_token: str | None = None
-    while True:
-        request = {"Bucket": bucket, "Prefix": prefix}
-        if continuation_token:
-            request["ContinuationToken"] = continuation_token
-        response = client.list_objects_v2(**request)
-        contents = response.get("Contents", [])
-        object_count += len(contents)
-        size_bytes += sum(int(obj["Size"]) for obj in contents)
-        if not response.get("IsTruncated"):
-            return object_count, size_bytes
-        continuation_token = response.get("NextContinuationToken")
-        if not continuation_token:
-            raise RuntimeError("S3 listing was truncated without a continuation token")
-
-
-def _run_with_progress(
-    command: list[str],
-    *,
-    phase: str,
-    expected_objects: int,
-    expected_bytes: int,
-    progress: Callable[[], tuple[int, int]],
-    interval_seconds: float = PROGRESS_INTERVAL_SECONDS,
-) -> None:
-    """Run a command while reporting object and byte progress at a fixed interval."""
-
-    started_at = time.monotonic()
-    logger.info(
-        "%s started: %s objects · %s · command=%s",
-        phase,
-        expected_objects,
-        _human_bytes(expected_bytes),
-        shlex.join(command),
-    )
-    process = subprocess.Popen(command)
-    completed = 0
-    current_bytes = 0
-    while True:
-        try:
-            return_code = process.wait(timeout=interval_seconds)
-        except subprocess.TimeoutExpired:
-            return_code = None
-        try:
-            completed, current_bytes = progress()
-        except Exception as exc:
-            logger.warning("%s progress check failed: %s", phase, exc)
-            completed, current_bytes = 0, 0
-        percent = 100 * current_bytes / expected_bytes if expected_bytes else 100.0
-        elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
-        logger.info(
-            "%s progress: %s/%s objects · %s/%s · %.1f%% · %s/s · elapsed %s",
-            phase,
-            completed,
-            expected_objects,
-            _human_bytes(current_bytes),
-            _human_bytes(expected_bytes),
-            percent,
-            _human_bytes(round(current_bytes / elapsed_seconds)),
-            _elapsed(started_at),
-        )
-        if return_code is not None:
-            break
-    if return_code:
+    logger.info("s5cmd %s: %s", phase, shlex.join(command))
+    result = subprocess.run(command, check=False)
+    if result.returncode:
         raise RuntimeError(
-            f"{phase} failed with exit code {return_code}; inspect the worker log"
+            f"s5cmd {phase} failed with exit code {result.returncode}; inspect the worker log"
         )
-    elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
-    logger.info(
-        "%s complete: %s/%s objects · %s/%s · average %s/s · elapsed %s",
-        phase,
-        completed,
-        expected_objects,
-        _human_bytes(current_bytes),
-        _human_bytes(expected_bytes),
-        _human_bytes(round(current_bytes / elapsed_seconds)),
-        _elapsed(started_at),
-    )
 
 
 @dataclass(frozen=True)
@@ -880,7 +794,10 @@ class ReshardingManifestConfig:
     manifest: str | Path
 
     def take(
-        self, local_prefix: str | Path, max_workers: int
+        self,
+        local_prefix: str | Path,
+        max_workers: int,
+        s5cmd_concurrency: int = 32,
     ) -> list[TokensMetadataPaths]:
         manifest = Path(self.manifest)
         if not manifest.is_file():
@@ -1106,8 +1023,14 @@ class ReshardingManifestConfig:
             if npy_scheme == "s3" and metadata_scheme == "s3":
                 remote_commands.extend(
                     [
-                        f"cp --raw --no-clobber {shlex.quote(npy_uri)} {shlex.quote(str(local_npy))}",
-                        f"cp --raw --no-clobber {shlex.quote(metadata_uri)} {shlex.quote(str(local_metadata))}",
+                        (
+                            f"cp --raw --no-clobber --concurrency {s5cmd_concurrency} "
+                            f"{shlex.quote(npy_uri)} {shlex.quote(str(local_npy))}"
+                        ),
+                        (
+                            f"cp --raw --no-clobber --concurrency {s5cmd_concurrency} "
+                            f"{shlex.quote(metadata_uri)} {shlex.quote(str(local_metadata))}"
+                        ),
                     ]
                 )
             elif npy_scheme in {"", "file"} and metadata_scheme in {"", "file"}:
@@ -1143,24 +1066,15 @@ class ReshardingManifestConfig:
             commands_path = local_prefix / "s5cmd-download-commands.txt"
             with commands_path.open("x") as f:
                 f.write("\n".join(remote_commands) + "\n")
-            cmd = ["s5cmd", "--numworkers", str(max_workers), "run", str(commands_path)]
-            download_expectations = [
-                (path, expected_size)
-                for entry, npy_path, metadata_path, _, expected_npy_size, expected_metadata_size in downloaded_pairs
-                if urlparse(entry.npy_uri).scheme == "s3"
-                for path, expected_size in (
-                    (npy_path, expected_npy_size),
-                    (metadata_path, expected_metadata_size),
-                )
-                if expected_size is not None
+            cmd = [
+                "s5cmd",
+                "--stat",
+                "--numworkers",
+                str(max_workers),
+                "run",
+                str(commands_path),
             ]
-            _run_with_progress(
-                cmd,
-                phase="Source download",
-                expected_objects=len(download_expectations),
-                expected_bytes=sum(size for _, size in download_expectations),
-                progress=lambda: _local_progress(download_expectations),
-            )
+            _run_s5cmd(cmd, "source download")
 
             missing = [
                 (npy_path, metadata_path)
@@ -1333,6 +1247,7 @@ class ReshardingConfig:
     max_size_bytes: int | None = None
     max_num_files: int | None = None
     max_workers: int = os.cpu_count() or 1
+    s5cmd_download_concurrency: int = 32
     random_seed: int = 42
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer"
     allow_existing_destination: bool = False
@@ -1350,6 +1265,8 @@ class ReshardingConfig:
             raise ValueError("Overwriting an existing destination is not supported")
         if self.max_workers <= 0:
             raise ValueError("max_workers must be positive")
+        if self.s5cmd_download_concurrency <= 0:
+            raise ValueError("s5cmd_download_concurrency must be positive")
 
         if self.local_tempdir is None:
             logging.warning("No local tempdir provided; using a temporary directory")
@@ -1388,6 +1305,7 @@ class ReshardingConfig:
                 int(n) if (n := d.get("max_num_files")) is not None else None
             ),
             max_workers=int(d.get("max_workers", 1)),
+            s5cmd_download_concurrency=int(d.get("s5cmd_download_concurrency", 32)),
             random_seed=int(d.get("random_seed", 42)),
             tokenizer_name_or_path=str(
                 d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer")
@@ -1416,6 +1334,7 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
     remote_prefix_no_trailing_slash = str(remote_prefix).rstrip("/")
     cmd = [
         "s5cmd",
+        "--stat",
         "--numworkers",
         str(max_workers),
         "cp",
@@ -1424,18 +1343,7 @@ def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int)
         f"{local_prefix_no_star}/*",
         f"{remote_prefix_no_trailing_slash}/",
     ]
-    local_files = [path for path in Path(local_prefix).rglob("*") if path.is_file()]
-    expected_bytes = sum(path.stat().st_size for path in local_files)
-    parsed = urlparse(remote_prefix)
-    client = boto3.client("s3")
-    remote_key_prefix = parsed.path.lstrip("/").rstrip("/") + "/"
-    _run_with_progress(
-        cmd,
-        phase="Output upload",
-        expected_objects=len(local_files),
-        expected_bytes=expected_bytes,
-        progress=lambda: _s3_progress(client, parsed.netloc, remote_key_prefix),
-    )
+    _run_s5cmd(cmd, "output upload")
 
 
 def destination_has_objects(destination: str | Path) -> bool:
@@ -1516,6 +1424,7 @@ def reshard(config: ReshardingConfig):
                 source_manifest.take(
                     run_tempdir / f"manifest-input/{i:06d}",
                     max_workers=config.max_workers,
+                    s5cmd_concurrency=config.s5cmd_download_concurrency,
                 )
             )
 

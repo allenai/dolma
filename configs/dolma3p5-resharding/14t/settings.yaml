@@ -20,6 +20,7 @@ minimum_catalog_prefix_components: 4
 # not defaulted here; plan.py requires an explicit planning budget.
 random_seed: 42
 max_workers_per_reshard: 8
+s5cmd_download_concurrency: 32
 tokenizer_name_or_path: allenai/dolma2-tokenizer
 
 # Partial copies are selected on whole-document boundaries while materializing.

@@ -66,6 +66,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "minimum_catalog_prefix_components": 4,
     "random_seed": 42,
     "max_workers_per_reshard": 8,
+    "s5cmd_download_concurrency": 32,
     "tokenizer_name_or_path": "allenai/dolma2-tokenizer",
     "maximum_expected_upsample_rate": None,
     "max_materialized_unit_target_residual_fraction": 0.001,
@@ -159,33 +160,46 @@ def _validate_preparation_build(path: Path) -> dict[str, Any]:
         with manifest_path.open(encoding="utf-8") as f:
             manifest = json.load(f)
     except (OSError, json.JSONDecodeError) as exc:
-        raise PreparationError(f"Invalid preparation build marker: {manifest_path}") from exc
+        raise PreparationError(
+            f"Invalid preparation build marker: {manifest_path}"
+        ) from exc
     build_id = manifest.get("build_id")
     mix_sha256 = manifest.get("mix_sha256")
     catalog_sha256 = manifest.get("catalog_sha256")
     hashes_are_valid = all(
-        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) for value in (mix_sha256, catalog_sha256)
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+        for value in (mix_sha256, catalog_sha256)
     )
     expected_build_id = ""
     if hashes_are_valid:
         seed = f"{mix_sha256}:{catalog_sha256}".encode()
         expected_build_id = f"dolma3p5-14t-{hashlib.sha256(seed).hexdigest()[:12]}"
-    if manifest.get("schema_version") != 1 or not isinstance(build_id, str) or build_id != expected_build_id:
-        raise PreparationError(f"Refusing to replace an unrecognized preparation build: {path}")
+    if (
+        manifest.get("schema_version") != 1
+        or not isinstance(build_id, str)
+        or build_id != expected_build_id
+    ):
+        raise PreparationError(
+            f"Refusing to replace an unrecognized preparation build: {path}"
+        )
     recognized_phases = {*PREPARATION_PHASES, *LEGACY_PREPARATION_PHASES}
     unknown = sorted(
         child.name
         for child in path.iterdir()
-        if child.name not in {"build.json", *recognized_phases, *PRESERVED_BUILD_METADATA}
+        if child.name
+        not in {"build.json", *recognized_phases, *PRESERVED_BUILD_METADATA}
     )
     if unknown:
         raise PreparationError(
-            "Refusing to reset a preparation build containing unknown top-level " f"entries: {', '.join(unknown)}"
+            "Refusing to reset a preparation build containing unknown top-level "
+            f"entries: {', '.join(unknown)}"
         )
     for phase_name in recognized_phases:
         phase = path / phase_name
         if phase.exists() and (phase.is_symlink() or not phase.is_dir()):
-            raise PreparationError(f"Refusing to replace an unsafe preparation phase path: {phase}")
+            raise PreparationError(
+                f"Refusing to replace an unsafe preparation phase path: {phase}"
+            )
     return manifest
 
 
@@ -211,7 +225,9 @@ def _validate_execution_layout(build: Path) -> dict[str, Any]:
     }
     mismatches = [name for name, value in expected.items() if layout.get(name) != value]
     dataset_root = layout.get("dataset_root")
-    if not isinstance(dataset_root, str) or not dataset_root.endswith(f'/{manifest["build_id"]}'):
+    if not isinstance(dataset_root, str) or not dataset_root.endswith(
+        f"/{manifest['build_id']}"
+    ):
         mismatches.append("dataset_root")
     if mismatches:
         found_layout = layout.get("layout", "missing")
@@ -227,7 +243,9 @@ def _remove_generated_phase(path: Path) -> None:
     if not path.exists():
         return
     if path.is_symlink() or not path.is_dir():
-        raise PreparationError(f"Refusing to replace an unsafe preparation phase path: {path}")
+        raise PreparationError(
+            f"Refusing to replace an unsafe preparation phase path: {path}"
+        )
     shutil.rmtree(path)
 
 
@@ -247,7 +265,9 @@ def _reset_preparation_build(path: Path) -> None:
     (path / "build.json").unlink()
 
 
-def _reset_preparation_phase(build: Path, phase_name: str, *downstream_phase_names: str) -> Path:
+def _reset_preparation_phase(
+    build: Path, phase_name: str, *downstream_phase_names: str
+) -> Path:
     """Replace generated local phases after verifying the build ownership marker."""
 
     _validate_preparation_build(build)
@@ -261,7 +281,9 @@ def _reset_preparation_phase(build: Path, phase_name: str, *downstream_phase_nam
     return phase
 
 
-def _reset_plan_stage(build: Path, stage_name: str, *downstream_stage_names: str) -> Path:
+def _reset_plan_stage(
+    build: Path, stage_name: str, *downstream_stage_names: str
+) -> Path:
     """Replace generated plan stages while preserving earlier reviewed stages."""
 
     _validate_preparation_build(build)
@@ -271,10 +293,13 @@ def _reset_plan_stage(build: Path, stage_name: str, *downstream_stage_names: str
     unknown = sorted(
         child.name
         for child in plan_root.iterdir()
-        if child.name not in {*PLAN_STAGES, *PLAN_ROOT_ARTIFACTS, *PRESERVED_BUILD_METADATA}
+        if child.name
+        not in {*PLAN_STAGES, *PLAN_ROOT_ARTIFACTS, *PRESERVED_BUILD_METADATA}
     )
     if unknown:
-        raise PreparationError("Refusing to reset a plan containing unknown entries: " + ", ".join(unknown))
+        raise PreparationError(
+            "Refusing to reset a plan containing unknown entries: " + ", ".join(unknown)
+        )
     names = (stage_name, *downstream_stage_names)
     if any(name not in PLAN_STAGES for name in names):
         raise ValueError(f"Unknown plan stage: {names}")
@@ -282,7 +307,9 @@ def _reset_plan_stage(build: Path, stage_name: str, *downstream_stage_names: str
         artifact = plan_root / artifact_name
         if artifact.exists():
             if artifact.is_symlink() or not artifact.is_file():
-                raise PreparationError(f"Refusing to replace an unsafe plan artifact: {artifact}")
+                raise PreparationError(
+                    f"Refusing to replace an unsafe plan artifact: {artifact}"
+                )
             artifact.unlink()
     for name in names:
         _remove_generated_phase(plan_root / name)
@@ -299,19 +326,25 @@ def _write_text(path: Path, value: str) -> None:
         with path.open("x", encoding="utf-8") as f:
             f.write(value)
     except FileExistsError as exc:
-        raise PreparationError(f"Refusing to replace existing artifact: {path}") from exc
+        raise PreparationError(
+            f"Refusing to replace existing artifact: {path}"
+        ) from exc
 
 
 def _write_json(path: Path, value: Any) -> None:
     _write_text(path, json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
-def _write_csv(path: Path, rows: Iterable[dict[str, Any]], fieldnames: Sequence[str]) -> None:
+def _write_csv(
+    path: Path, rows: Iterable[dict[str, Any]], fieldnames: Sequence[str]
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         f = path.open("x", newline="", encoding="utf-8")
     except FileExistsError as exc:
-        raise PreparationError(f"Refusing to replace existing artifact: {path}") from exc
+        raise PreparationError(
+            f"Refusing to replace existing artifact: {path}"
+        ) from exc
     with f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
@@ -336,6 +369,9 @@ def _load_settings(path: Path | None) -> dict[str, Any]:
         settings.update(loaded)
     if int(settings["target_uint32_values"]) <= 0:
         raise PreparationError("target_uint32_values must be positive")
+    for name in ("max_workers_per_reshard", "s5cmd_download_concurrency"):
+        if int(settings[name]) <= 0:
+            raise PreparationError(f"{name} must be positive")
     for name in (
         "max_materialized_unit_target_residual_fraction",
         "max_materialized_total_target_residual_fraction",
@@ -344,8 +380,13 @@ def _load_settings(path: Path | None) -> dict[str, Any]:
         if not 0 < value < 1:
             raise PreparationError(f"{name} must be between zero and one")
     maximum_expected_upsample_rate = settings["maximum_expected_upsample_rate"]
-    if maximum_expected_upsample_rate is not None and float(maximum_expected_upsample_rate) <= 1:
-        raise PreparationError("maximum_expected_upsample_rate must be greater than one")
+    if (
+        maximum_expected_upsample_rate is not None
+        and float(maximum_expected_upsample_rate) <= 1
+    ):
+        raise PreparationError(
+            "maximum_expected_upsample_rate must be greater than one"
+        )
     return settings
 
 
@@ -357,22 +398,34 @@ def _load_catalog(path: Path) -> list[dict[str, str]]:
             if not row or all(not value.strip() for value in row):
                 continue
             if len(row) < 2:
-                raise PreparationError(f"Catalog row {line_number} has fewer than two columns")
+                raise PreparationError(
+                    f"Catalog row {line_number} has fewer than two columns"
+                )
             bucket, encoded_key = row[0].strip(), row[1].strip()
-            if line_number == 1 and bucket.lower() == "bucket" and encoded_key.lower() in {"key", "path"}:
+            if (
+                line_number == 1
+                and bucket.lower() == "bucket"
+                and encoded_key.lower() in {"key", "path"}
+            ):
                 continue
             key = unquote(encoded_key)
             if not bucket:
-                raise PreparationError(f"Invalid catalog object on row {line_number}: {row[:2]}")
+                raise PreparationError(
+                    f"Invalid catalog object on row {line_number}: {row[:2]}"
+                )
             if any(ord(char) < 32 for char in bucket + key):
-                raise PreparationError(f"Control character in catalog object on row {line_number}")
+                raise PreparationError(
+                    f"Control character in catalog object on row {line_number}"
+                )
             if not key.endswith(".npy"):
                 # The reference file is nominally an NPY catalog but currently
                 # contains at least one metadata row. Metadata never defines
                 # membership, so ignore it here and verify the derived partner
                 # against S3 during inventory.
                 continue
-            rows.append({"bucket": bucket, "key": key, "catalog_line": str(line_number)})
+            rows.append(
+                {"bucket": bucket, "key": key, "catalog_line": str(line_number)}
+            )
     if not rows:
         raise PreparationError(f"Catalog contains no NPY objects: {path}")
     return rows
@@ -380,7 +433,9 @@ def _load_catalog(path: Path) -> list[dict[str, str]]:
 
 def _catalog_pattern(yaml_path: str) -> str:
     relative = yaml_path.removeprefix("dolma3p5_pool/")
-    return relative if relative.startswith("preprocessed/") else f"preprocessed/{relative}"
+    return (
+        relative if relative.startswith("preprocessed/") else f"preprocessed/{relative}"
+    )
 
 
 def _direct_s3_pattern(yaml_path: str, bucket: str) -> tuple[str, str]:
@@ -549,7 +604,9 @@ def plan_build(args: argparse.Namespace) -> None:
                 resolution_route = (
                     "catalog"
                     if yaml_path.startswith("dolma3p5_pool/")
-                    else "direct_s3" if yaml_path.startswith("preprocessed/") else "unsupported"
+                    else "direct_s3"
+                    if yaml_path.startswith("preprocessed/")
+                    else "unsupported"
                 )
                 normalized_paths.append(
                     {
@@ -565,7 +622,9 @@ def plan_build(args: argparse.Namespace) -> None:
                 )
                 if resolution_route == "catalog":
                     pattern = _catalog_pattern(yaml_path)
-                    matched = [row for row in catalog if _matches_key(row["key"], pattern)]
+                    matched = [
+                        row for row in catalog if _matches_key(row["key"], pattern)
+                    ]
                     if not matched:
                         failures.append(
                             {
@@ -592,7 +651,9 @@ def plan_build(args: argparse.Namespace) -> None:
                             }
                         )
                 elif resolution_route == "direct_s3":
-                    bucket, pattern = _direct_s3_pattern(yaml_path, str(settings["direct_s3_bucket"]))
+                    bucket, pattern = _direct_s3_pattern(
+                        yaml_path, str(settings["direct_s3_bucket"])
+                    )
                     direct_patterns.append(
                         {
                             "path_id": path_id,
@@ -657,7 +718,11 @@ def plan_build(args: argparse.Namespace) -> None:
         for subgroup in subgroups:
             subgroup_prefix = _common_directory_prefix([row["key"] for row in subgroup])
             required = {(row["bucket"], row["key"]) for row in subgroup}
-            estimated = sum(1 for row in catalog_by_bucket[bucket] if row["key"].startswith(subgroup_prefix))
+            estimated = sum(
+                1
+                for row in catalog_by_bucket[bucket]
+                if row["key"].startswith(subgroup_prefix)
+            )
             overfetch = estimated / max(1, len(required))
             if (
                 estimated > int(settings["max_listing_catalog_objects"])
@@ -667,7 +732,9 @@ def plan_build(args: argparse.Namespace) -> None:
             else:
                 final_groups = [subgroup]
             for final_group in final_groups:
-                final_prefix = _common_directory_prefix([row["key"] for row in final_group])
+                final_prefix = _common_directory_prefix(
+                    [row["key"] for row in final_group]
+                )
                 key = (bucket, final_prefix)
                 entry = listing_groups.setdefault(
                     key,
@@ -692,8 +759,12 @@ def plan_build(args: argparse.Namespace) -> None:
         entry["leaf_ids"].add(row["leaf_id"])
 
     listing_plan: list[dict[str, Any]] = []
-    for listing_id, ((bucket, prefix), entry) in enumerate(sorted(listing_groups.items())):
-        estimated = sum(1 for row in catalog_by_bucket[bucket] if row["key"].startswith(prefix))
+    for listing_id, ((bucket, prefix), entry) in enumerate(
+        sorted(listing_groups.items())
+    ):
+        estimated = sum(
+            1 for row in catalog_by_bucket[bucket] if row["key"].startswith(prefix)
+        )
         required = {
             (row["bucket"], row["key"])
             for row in catalog_matches
@@ -740,7 +811,9 @@ def plan_build(args: argparse.Namespace) -> None:
     phase.mkdir(exist_ok=False)
     _write_json(output / "build.json", manifest)
     _write_csv(phase / "normalized-mix.csv", normalized_mix, list(normalized_mix[0]))
-    _write_csv(phase / "normalized-paths.csv", normalized_paths, list(normalized_paths[0]))
+    _write_csv(
+        phase / "normalized-paths.csv", normalized_paths, list(normalized_paths[0])
+    )
     _write_csv(
         phase / "catalog-matches.csv",
         catalog_matches,
@@ -797,7 +870,8 @@ def plan_build(args: argparse.Namespace) -> None:
     )
 
     commands = [
-        "ls --etag --storage-class " + shlex.quote("s3://" + row["bucket"] + "/" + row["listing_prefix"] + "*")
+        "ls --etag --storage-class "
+        + shlex.quote("s3://" + row["bucket"] + "/" + row["listing_prefix"] + "*")
         for row in listing_plan
     ]
     _write_text(
@@ -812,11 +886,16 @@ def plan_build(args: argparse.Namespace) -> None:
         direct_patterns=direct_patterns,
     )
 
-    catalog_summary = _count_label(len(catalog_matches), "catalog NPY match", "catalog NPY matches")
+    catalog_summary = _count_label(
+        len(catalog_matches), "catalog NPY match", "catalog NPY matches"
+    )
     pattern_summary = _count_label(len(direct_patterns), "direct S3 pattern")
     correction_summary = _count_label(len(corrections), "correction")
     failure_summary = _count_label(len(failures), "blocking failure")
-    print(f"Plan summary: {catalog_summary}, {pattern_summary}, " f"{correction_summary}, {failure_summary}")
+    print(
+        f"Plan summary: {catalog_summary}, {pattern_summary}, "
+        f"{correction_summary}, {failure_summary}"
+    )
     if failures:
         raise PreparationError(
             f"Plan contains {len(failures)} validation failure(s); inspect {phase / 'resolution-failures.csv'}"
@@ -933,11 +1012,15 @@ def collect_inventory(args: argparse.Namespace) -> None:
     manifest = _load_build(build)
     region = normalize_region(args.region)
     if shutil.which("s5cmd") is None:
-        raise PreparationError("s5cmd is required for inventory collection and was not found on PATH")
+        raise PreparationError(
+            "s5cmd is required for inventory collection and was not found on PATH"
+        )
     phase = _reset_plan_stage(build, "inventory", "execution")
     listing_plan = _read_csv(build / "01-plan/resolution/listing-plan.csv")
 
-    session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
+    session = (
+        boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
+    )
     client = session.client("s3", region_name=region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     listed: dict[tuple[str, str], S3Object] = {}
@@ -1015,10 +1098,13 @@ def collect_inventory(args: argparse.Namespace) -> None:
             f"FAILED: s5cmd exit {result.returncode}; {len(errors):,} listing errors. "
             f"Inspect {phase / 'inventory-errors.csv'} and {raw_output}",
         )
-        raise PreparationError(f"S3 listing failed; inspect {phase / 'inventory-errors.csv'}")
+        raise PreparationError(
+            f"S3 listing failed; inspect {phase / 'inventory-errors.csv'}"
+        )
     _inventory_status(
         1,
-        f"Complete: {len(listed):,} unique objects parsed in " f"{result.elapsed_seconds:,.1f}s",
+        f"Complete: {len(listed):,} unique objects parsed in "
+        f"{result.elapsed_seconds:,.1f}s",
     )
     summary = _finalize_inventory(
         build,
@@ -1078,7 +1164,9 @@ def _parse_s5cmd_jsonl(
             try:
                 record = json.loads(line)
             except json.JSONDecodeError as exc:
-                errors.append({"line": str(line_number), "error": f"invalid JSON: {exc}"})
+                errors.append(
+                    {"line": str(line_number), "error": f"invalid JSON: {exc}"}
+                )
                 continue
             if record.get("error"):
                 errors.append({"line": str(line_number), "error": str(record["error"])})
@@ -1089,11 +1177,21 @@ def _parse_s5cmd_jsonl(
             bucket_value = _first_value(nodes, {"bucket"})
             if isinstance(key_value, str) and key_value.startswith("s3://"):
                 uri = key_value
-            elif not (isinstance(uri, str) and uri.startswith("s3://")) and bucket_value and key_value:
+            elif (
+                not (isinstance(uri, str) and uri.startswith("s3://"))
+                and bucket_value
+                and key_value
+            ):
                 uri = f"s3://{bucket_value}/{key_value}"
-            if not isinstance(uri, str) or not uri.startswith("s3://") or any(c in uri for c in "*?["):
+            if (
+                not isinstance(uri, str)
+                or not uri.startswith("s3://")
+                or any(c in uri for c in "*?[")
+            ):
                 continue
-            size = _first_value(nodes, {"size", "size_bytes", "content_length", "contentlength"})
+            size = _first_value(
+                nodes, {"size", "size_bytes", "content_length", "contentlength"}
+            )
             try:
                 size_int = int(size)
             except (TypeError, ValueError):
@@ -1105,8 +1203,13 @@ def _parse_s5cmd_jsonl(
                 key=key,
                 size_bytes=size_int,
                 etag=str(_first_value(nodes, {"etag", "e_tag"}) or "").strip('"'),
-                last_modified=str(_first_value(nodes, {"last_modified", "lastmodified", "modtime"}) or ""),
-                storage_class=str(_first_value(nodes, {"storage_class", "storageclass"}) or ""),
+                last_modified=str(
+                    _first_value(nodes, {"last_modified", "lastmodified", "modtime"})
+                    or ""
+                ),
+                storage_class=str(
+                    _first_value(nodes, {"storage_class", "storageclass"}) or ""
+                ),
                 source="s5cmd",
             )
     return objects, errors
@@ -1143,7 +1246,9 @@ def _finalize_inventory(
         matched = [
             obj
             for (bucket, key), obj in listed.items()
-            if bucket in buckets and key.endswith(".npy") and _matches_key(key, key_pattern)
+            if bucket in buckets
+            and key.endswith(".npy")
+            and _matches_key(key, key_pattern)
         ]
         if not matched:
             resolution_failures.append(
@@ -1166,7 +1271,9 @@ def _finalize_inventory(
         matches = [
             obj
             for (bucket, key), obj in listed.items()
-            if bucket == pattern["bucket"] and key.endswith(".npy") and _matches_key(key, pattern["key_pattern"])
+            if bucket == pattern["bucket"]
+            and key.endswith(".npy")
+            and _matches_key(key, pattern["key_pattern"])
         ]
         if not matches:
             resolution_failures.append(
@@ -1215,7 +1322,10 @@ def _finalize_inventory(
             f"{max_workers:,} concurrent HeadObject requests",
         )
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {pool.submit(_head_object, client, bucket, key): (bucket, key) for bucket, key in missing}
+            futures = {
+                pool.submit(_head_object, client, bucket, key): (bucket, key)
+                for bucket, key in missing
+            }
             for future in as_completed(futures):
                 bucket, key = futures[future]
                 try:
@@ -1231,7 +1341,10 @@ def _finalize_inventory(
                         }
                     )
                 completed_heads += 1
-                if completed_heads == head_total or completed_heads % progress_interval == 0:
+                if (
+                    completed_heads == head_total
+                    or completed_heads % progress_interval == 0
+                ):
                     emit(
                         2,
                         f"Exact checks: {completed_heads:,}/{head_total:,} complete",
@@ -1320,7 +1433,9 @@ def _finalize_inventory(
         list(all_objects[0]) if all_objects else [],
     )
     _write_csv(phase / "required-objects.csv", required_rows, required_fields)
-    _write_csv(phase / "missing-objects.csv", missing_rows, ["bucket", "key", "object_type"])
+    _write_csv(
+        phase / "missing-objects.csv", missing_rows, ["bucket", "key", "object_type"]
+    )
     _write_csv(
         phase / "invalid-npy-sizes.csv",
         invalid_sizes,
@@ -1331,14 +1446,20 @@ def _finalize_inventory(
         resolution_failures,
         ["path_id", "yaml_path", "reason"],
     )
-    _write_csv(phase / "head-errors.csv", head_errors, ["operation", "bucket", "key", "error"])
+    _write_csv(
+        phase / "head-errors.csv", head_errors, ["operation", "bucket", "key", "error"]
+    )
     original_by_leaf: dict[str, dict[str, int]] = defaultdict(dict)
     for row in required_rows:
-        original_by_leaf[row["leaf_id"]][row["npy_uri"]] = int(row["estimated_uint32_values"])
+        original_by_leaf[row["leaf_id"]][row["npy_uri"]] = int(
+            row["estimated_uint32_values"]
+        )
     normalized_mix = _read_csv(build / "01-plan/resolution/normalized-mix.csv")
     original_total = sum(sum(objects.values()) for objects in original_by_leaf.values())
     target_total = sum(int(row["target_uint32_values"]) for row in normalized_mix)
-    maximum_expected_upsample_rate = _load_build(build)["settings"].get("maximum_expected_upsample_rate")
+    maximum_expected_upsample_rate = _load_build(build)["settings"].get(
+        "maximum_expected_upsample_rate"
+    )
     sampling_rate_rows: list[dict[str, Any]] = []
     sampling_rate_limit_failures = 0
     for row in normalized_mix:
@@ -1362,12 +1483,16 @@ def _finalize_inventory(
                 "target_uint32_values": target,
                 "sample_rate": f"{sample_rate:.12g}" if sample_rate is not None else "",
                 "maximum_expected_upsample_rate": (
-                    maximum_expected_upsample_rate if maximum_expected_upsample_rate is not None else ""
+                    maximum_expected_upsample_rate
+                    if maximum_expected_upsample_rate is not None
+                    else ""
                 ),
                 "status": (
                     "above_expected_maximum"
                     if exceeds_limit
-                    else "within_expected_range" if maximum_expected_upsample_rate is not None else "not_checked"
+                    else "within_expected_range"
+                    if maximum_expected_upsample_rate is not None
+                    else "not_checked"
                 ),
             }
         )
@@ -1416,11 +1541,14 @@ def _finalize_inventory(
         f"{len(invalid_sizes):,} invalid NPY sizes, {len(head_errors):,} HEAD errors"
     )
     if maximum_expected_upsample_rate is not None:
-        validation_details += f", {sampling_rate_limit_failures:,} sampling-rate violations"
+        validation_details += (
+            f", {sampling_rate_limit_failures:,} sampling-rate violations"
+        )
     emit(3, validation_details)
     emit(
         3,
-        f"Estimated source tokens: {_human_token_count(original_total)} " f"({original_total:,} uint32 values)",
+        f"Estimated source tokens: {_human_token_count(original_total)} "
+        f"({original_total:,} uint32 values)",
     )
     emit(4, f"Finalizing inventory report and summary in {phase}")
     detail_metadata = _render_inventory_report(
@@ -1439,13 +1567,23 @@ def _finalize_inventory(
         phase / "inventory-summary.json",
         summary,
     )
-    if resolution_failures or missing or invalid_sizes or head_errors or sampling_rate_limit_failures:
+    if (
+        resolution_failures
+        or missing
+        or invalid_sizes
+        or head_errors
+        or sampling_rate_limit_failures
+    ):
         emit(4, f"FAILED: inventory validation did not pass. Inspect {phase}")
-        raise PreparationError(f"Inventory validation failed; inspect artifacts in {phase}")
+        raise PreparationError(
+            f"Inventory validation failed; inspect artifacts in {phase}"
+        )
     return summary
 
 
-def _allocate_object_sampling(target: int, sizes: Sequence[int]) -> tuple[list[int], list[int], int]:
+def _allocate_object_sampling(
+    target: int, sizes: Sequence[int]
+) -> tuple[list[int], list[int], int]:
     """Allocate every shard the same rate, using partial quotas for the residual.
 
     A 0.30 rate assigns roughly 30% of every shard, rather than selecting 30%
@@ -1455,7 +1593,9 @@ def _allocate_object_sampling(target: int, sizes: Sequence[int]) -> tuple[list[i
     """
 
     if target <= 0 or not sizes or any(size <= 0 for size in sizes):
-        raise ValueError("Allocation requires a positive target and positive object sizes")
+        raise ValueError(
+            "Allocation requires a positive target and positive object sizes"
+        )
     available = sum(sizes)
     base = target // available
     repetitions = [base for _ in sizes]
@@ -1467,7 +1607,9 @@ def _allocate_object_sampling(target: int, sizes: Sequence[int]) -> tuple[list[i
         partial_targets.append(partial)
         remainders.append((remainder, index))
     undistributed = residual - sum(partial_targets)
-    for _, index in sorted(remainders, key=lambda item: (-item[0], item[1]))[:undistributed]:
+    for _, index in sorted(remainders, key=lambda item: (-item[0], item[1]))[
+        :undistributed
+    ]:
         partial_targets[index] += 1
 
     for index, size in enumerate(sizes):
@@ -1476,14 +1618,23 @@ def _allocate_object_sampling(target: int, sizes: Sequence[int]) -> tuple[list[i
             partial_targets[index] = 0
         elif partial_targets[index] > size:
             raise AssertionError("Proportional partial target exceeds its source")
-        residual_allocation = (repetitions[index] - base) * size + partial_targets[index]
+        residual_allocation = (repetitions[index] - base) * size + partial_targets[
+            index
+        ]
         if abs(residual_allocation * available - residual * size) >= available:
             raise AssertionError("Per-shard sampling quota is not proportional")
         if residual * size >= available and residual_allocation <= 0:
-            raise AssertionError("A shard with a positive proportional quota was dropped")
-    planned = sum(size * repeat + partial for size, repeat, partial in zip(sizes, repetitions, partial_targets))
+            raise AssertionError(
+                "A shard with a positive proportional quota was dropped"
+            )
+    planned = sum(
+        size * repeat + partial
+        for size, repeat, partial in zip(sizes, repetitions, partial_targets)
+    )
     if planned != target:
-        raise AssertionError(f"Allocation did not preserve target: {planned} != {target}")
+        raise AssertionError(
+            f"Allocation did not preserve target: {planned} != {target}"
+        )
     return repetitions, partial_targets, planned
 
 
@@ -1492,7 +1643,11 @@ def _execution_unit_sizes(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
         partial_target = int(row.get("partial_target_uint32_values", 0))
         if not partial_target:
             return 0
-        return math.ceil(int(row["metadata_size_bytes"]) * partial_target / int(row["estimated_uint32_values"]))
+        return math.ceil(
+            int(row["metadata_size_bytes"])
+            * partial_target
+            / int(row["estimated_uint32_values"])
+        )
 
     input_npy_bytes = sum(int(row["npy_size_bytes"]) for row in rows)
     input_metadata_bytes = sum(int(row["metadata_size_bytes"]) for row in rows)
@@ -1502,7 +1657,9 @@ def _execution_unit_sizes(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
         for row in rows
     )
     estimated_output_metadata_bytes = sum(
-        int(row["metadata_size_bytes"]) * int(row["repeat_count"]) + partial_metadata_bytes(row) for row in rows
+        int(row["metadata_size_bytes"]) * int(row["repeat_count"])
+        + partial_metadata_bytes(row)
+        for row in rows
     )
     estimated_selection_index_bytes = sum(partial_metadata_bytes(row) for row in rows)
     return {
@@ -1529,7 +1686,8 @@ def _partition_object_uses(
     positive = [
         dict(row)
         for row in rows
-        if int(row["repeat_count"]) > 0 or int(row.get("partial_target_uint32_values", 0)) > 0
+        if int(row["repeat_count"]) > 0
+        or int(row.get("partial_target_uint32_values", 0)) > 0
     ]
     if not positive:
         raise ValueError("An execution-unit partition requires a positive object use")
@@ -1548,7 +1706,9 @@ def _partition_object_uses(
         partial_target = int(row.get("partial_target_uint32_values", 0))
         input_bytes = int(row["npy_size_bytes"]) + int(row["metadata_size_bytes"])
         output_bytes_per_repeat = input_bytes
-        maximum_repeats_alone = (max_unit_working_bytes - input_bytes) // output_bytes_per_repeat
+        maximum_repeats_alone = (
+            max_unit_working_bytes - input_bytes
+        ) // output_bytes_per_repeat
         if maximum_repeats_alone < 1:
             raise PreparationError(
                 "One source object cannot fit in an execution unit with one output copy: "
@@ -1558,9 +1718,16 @@ def _partition_object_uses(
 
         whole_row = dict(row)
         whole_row["repeat_count"] = remaining
-        if _execution_unit_sizes([whole_row])["estimated_peak_local_bytes"] <= max_unit_working_bytes:
+        if (
+            _execution_unit_sizes([whole_row])["estimated_peak_local_bytes"]
+            <= max_unit_working_bytes
+        ):
             candidate = [*current, whole_row]
-            if current and _execution_unit_sizes(candidate)["estimated_peak_local_bytes"] > max_unit_working_bytes:
+            if (
+                current
+                and _execution_unit_sizes(candidate)["estimated_peak_local_bytes"]
+                > max_unit_working_bytes
+            ):
                 flush()
             current.append(whole_row)
             continue
@@ -1581,7 +1748,9 @@ def _partition_object_uses(
                     f"{partial_sizes['estimated_peak_local_bytes']} bytes, limit is "
                     f"{max_unit_working_bytes}"
                 )
-            remaining_bytes = max_unit_working_bytes - partial_sizes["estimated_peak_local_bytes"]
+            remaining_bytes = (
+                max_unit_working_bytes - partial_sizes["estimated_peak_local_bytes"]
+            )
             repeat_count = min(
                 remaining,
                 max(0, remaining_bytes // output_bytes_per_repeat),
@@ -1669,11 +1838,17 @@ def _validate_destination_root(destination_root: str) -> str:
     prefix = parsed.path.strip("/")
     components = prefix.split("/")
     if len(components) < 2:
-        raise PreparationError("destination-root must contain at least two path components below the bucket")
+        raise PreparationError(
+            "destination-root must contain at least two path components below the bucket"
+        )
     if any(component in {"", ".", ".."} for component in components):
-        raise PreparationError("destination-root cannot contain empty, '.' or '..' components")
+        raise PreparationError(
+            "destination-root cannot contain empty, '.' or '..' components"
+        )
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]*", prefix):
-        raise PreparationError("destination-root must use only letters, digits, '.', '_', '-', and '/'")
+        raise PreparationError(
+            "destination-root must use only letters, digits, '.', '_', '-', and '/'"
+        )
     return f"s3://{parsed.netloc}/{prefix}"
 
 
@@ -1681,7 +1856,9 @@ def _source_relative_directory(source_key: str) -> str:
     """Return a source directory relative to its top-level storage prefix."""
 
     components = tuple(source_key.split("/"))
-    if len(components) < 3 or any(component in {"", ".", ".."} for component in components):
+    if len(components) < 3 or any(
+        component in {"", ".", ".."} for component in components
+    ):
         raise PreparationError(f"Source object has an unsafe path: {source_key}")
     directory = components[1:-1]
     return "/".join(directory)
@@ -1690,7 +1867,9 @@ def _source_relative_directory(source_key: str) -> str:
 def _source_root_uri(bucket: str, source_key: str) -> str:
     top_level = source_key.split("/", 1)[0]
     if not bucket or not top_level or top_level in {".", ".."}:
-        raise PreparationError(f"Cannot derive source root for s3://{bucket}/{source_key}")
+        raise PreparationError(
+            f"Cannot derive source root for s3://{bucket}/{source_key}"
+        )
     return f"s3://{bucket}/{top_level}"
 
 
@@ -1724,12 +1903,11 @@ def _category_output_directory(
     """Build one source-shaped output directory for a YAML category."""
 
     if not category_name or category_name in {".", ".."} or "/" in category_name:
-        raise PreparationError(f"Category name cannot be used in an output path: {category_name!r}")
+        raise PreparationError(
+            f"Category name cannot be used in an output path: {category_name!r}"
+        )
     directories = sorted(
-        {
-            tuple(_source_relative_directory(row["key"]).split("/"))
-            for row in objects
-        }
+        {tuple(_source_relative_directory(row["key"]).split("/")) for row in objects}
     )
     if len(directories) == 1:
         return "/".join(directories[0])
@@ -1747,7 +1925,9 @@ def propose_configs(args: argparse.Namespace) -> None:
     manifest = _load_build(build)
     inventory_phase = build / "01-plan/inventory"
     if not (inventory_phase / "inventory-summary.json").is_file():
-        raise PreparationError("Inventory is missing; rerun scripts/dolma3p5_resharding/plan.py")
+        raise PreparationError(
+            "Inventory is missing; rerun scripts/dolma3p5_resharding/plan.py"
+        )
     with (inventory_phase / "inventory-summary.json").open() as f:
         inventory_summary = json.load(f)
     blocking = sum(
@@ -1807,7 +1987,9 @@ def propose_configs(args: argparse.Namespace) -> None:
         for (bucket, key), leaves in memberships.items()
         if len(leaves) > 1
     ]
-    _write_csv(phase / "cross-leaf-overlaps.csv", overlaps, ["bucket", "key", "leaf_ids"])
+    _write_csv(
+        phase / "cross-leaf-overlaps.csv", overlaps, ["bucket", "key", "leaf_ids"]
+    )
     if overlaps:
         raise PreparationError(
             f"Found {len(overlaps)} exact NPY object(s) assigned to multiple active categories; inspect cross-leaf-overlaps.csv"
@@ -1853,7 +2035,9 @@ def propose_configs(args: argparse.Namespace) -> None:
             key=lambda row: (row["bucket"], row["key"]),
         )
         if not objects:
-            raise PreparationError(f"Active category has no inventoried objects: {leaf['leaf_id']}")
+            raise PreparationError(
+                f"Active category has no inventoried objects: {leaf['leaf_id']}"
+            )
         sizes = [int(row["estimated_uint32_values"]) for row in objects]
         target = int(leaf["target_uint32_values"])
         repetitions, partial_targets, planned = _allocate_object_sampling(target, sizes)
@@ -1879,25 +2063,34 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "target_residual_fraction": f"{(planned - target) / target:.12g}",
                 "unique_object_count": len(objects),
                 "selected_object_count": sum(
-                    repeat > 0 or partial > 0 for repeat, partial in zip(repetitions, partial_targets)
+                    repeat > 0 or partial > 0
+                    for repeat, partial in zip(repetitions, partial_targets)
                 ),
                 "dropped_object_count": sum(
-                    repeat == 0 and partial == 0 for repeat, partial in zip(repetitions, partial_targets)
+                    repeat == 0 and partial == 0
+                    for repeat, partial in zip(repetitions, partial_targets)
                 ),
                 "repeated_object_count": sum(
                     size * repeat + partial > size
-                    for size, repeat, partial in zip(sizes, repetitions, partial_targets)
+                    for size, repeat, partial in zip(
+                        sizes, repetitions, partial_targets
+                    )
                 ),
                 "partial_object_count": sum(value > 0 for value in partial_targets),
-                "total_object_uses": sum(repetitions) + sum(value > 0 for value in partial_targets),
+                "total_object_uses": sum(repetitions)
+                + sum(value > 0 for value in partial_targets),
                 "minimum_repetition": min(repetitions),
                 "maximum_repetition": max(repetitions),
             }
         )
         leaf_object_uses: list[dict[str, Any]] = []
-        for obj, repeat_count, partial_target in zip(objects, repetitions, partial_targets):
+        for obj, repeat_count, partial_target in zip(
+            objects, repetitions, partial_targets
+        ):
             selection_seed = int(settings["random_seed"]) + int(
-                hashlib.sha256(f"{leaf['leaf_id']}\0{obj['npy_uri']}".encode()).hexdigest()[:16],
+                hashlib.sha256(
+                    f"{leaf['leaf_id']}\0{obj['npy_uri']}".encode()
+                ).hexdigest()[:16],
                 16,
             )
             object_use = {
@@ -1922,7 +2115,9 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "partial_target_uint32_values": partial_target,
                 "selection_seed": selection_seed,
                 "selection_algorithm": DOCUMENT_SELECTION_ALGORITHM,
-                "planned_uint32_values": int(obj["estimated_uint32_values"]) * repeat_count + partial_target,
+                "planned_uint32_values": int(obj["estimated_uint32_values"])
+                * repeat_count
+                + partial_target,
             }
             object_use_rows.append(object_use)
             if repeat_count > 0 or partial_target > 0:
@@ -1935,7 +2130,10 @@ def propose_configs(args: argparse.Namespace) -> None:
                 f"the {EXECUTION_UNIT_INDEX_WIDTH}-digit destination counter"
             )
         source_layout_prefix = _category_output_directory(objects, category_name)
-        unit_planned_values = [_execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES for unit in units]
+        unit_planned_values = [
+            _execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES
+            for unit in units
+        ]
         unit_targets = unit_planned_values
 
         unit_peak_bytes: list[int] = []
@@ -1951,10 +2149,14 @@ def propose_configs(args: argparse.Namespace) -> None:
             next_execution_unit_index += 1
             unit_sizes = _execution_unit_sizes(unit_rows)
             unit_peak_bytes.append(unit_sizes["estimated_peak_local_bytes"])
-            unit_input_bytes.append(unit_sizes["input_npy_bytes"] + unit_sizes["input_metadata_bytes"])
+            unit_input_bytes.append(
+                unit_sizes["input_npy_bytes"] + unit_sizes["input_metadata_bytes"]
+            )
             unit_planned = unit_sizes["output_npy_bytes"] // UINT32_BYTES
             unit_max_repeat = max(int(row["repeat_count"]) for row in unit_rows)
-            unit_partial_objects = sum(int(row.get("partial_target_uint32_values", 0)) > 0 for row in unit_rows)
+            unit_partial_objects = sum(
+                int(row.get("partial_target_uint32_values", 0)) > 0 for row in unit_rows
+            )
             manifest_path = manifests_dir / f"{unit_id}.csv"
             _write_csv(manifest_path, unit_rows, manifest_fields)
             if unit_planned < 10_000_000_000:
@@ -1968,10 +2170,17 @@ def propose_configs(args: argparse.Namespace) -> None:
             destination = f"{dataset_root}/{source_layout_prefix}/{destination_index}"
             config = {
                 "destination_prefix": destination,
-                "source_manifests": [{"manifest": f"../manifests/{manifest_path.name}"}],
+                "source_manifests": [
+                    {"manifest": f"../manifests/{manifest_path.name}"}
+                ],
                 "local_tempdir": str(local_temp_root / manifest["build_id"] / unit_id),
                 "max_num_files": max_num_files,
-                "max_workers": min(int(settings["max_workers_per_reshard"]), max_num_files),
+                "max_workers": min(
+                    int(settings["max_workers_per_reshard"]), max_num_files
+                ),
+                "s5cmd_download_concurrency": int(
+                    settings["s5cmd_download_concurrency"]
+                ),
                 "random_seed": int(settings["random_seed"])
                 + int(hashlib.sha256(unit_id.encode()).hexdigest()[:16], 16),
                 "tokenizer_name_or_path": str(settings["tokenizer_name_or_path"]),
@@ -2002,7 +2211,9 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "source_directories": ";".join(
                     sorted({row["source_directory"] for row in unit_rows})
                 ),
-                "source_directory_count": len({row["source_directory"] for row in unit_rows}),
+                "source_directory_count": len(
+                    {row["source_directory"] for row in unit_rows}
+                ),
                 "source_layout_prefix": source_layout_prefix,
                 "destination_index": destination_index,
                 "unit_index": unit_number,
@@ -2019,15 +2230,24 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "input_npy_bytes": unit_sizes["input_npy_bytes"],
                 "input_metadata_bytes": unit_sizes["input_metadata_bytes"],
                 "output_npy_bytes": unit_sizes["output_npy_bytes"],
-                "estimated_output_metadata_bytes": unit_sizes["estimated_output_metadata_bytes"],
-                "estimated_selection_index_bytes": unit_sizes["estimated_selection_index_bytes"],
+                "estimated_output_metadata_bytes": unit_sizes[
+                    "estimated_output_metadata_bytes"
+                ],
+                "estimated_selection_index_bytes": unit_sizes[
+                    "estimated_selection_index_bytes"
+                ],
                 "estimated_peak_local_bytes": unit_sizes["estimated_peak_local_bytes"],
                 "max_unit_working_bytes": max_unit_working_bytes,
                 "working_budget_utilization": f"{unit_sizes['estimated_peak_local_bytes'] / max_unit_working_bytes:.12g}",
                 "unique_object_count": len(unit_rows),
                 "partial_object_count": unit_partial_objects,
                 "allowed_materialized_target_residual_uint32_values": (
-                    math.ceil(unit_target * float(settings["max_materialized_unit_target_residual_fraction"]))
+                    math.ceil(
+                        unit_target
+                        * float(
+                            settings["max_materialized_unit_target_residual_fraction"]
+                        )
+                    )
                     if unit_partial_objects
                     else 0
                 ),
@@ -2035,7 +2255,9 @@ def propose_configs(args: argparse.Namespace) -> None:
                 "max_num_files": max_num_files,
             }
             config_index.append(unit_row)
-            local_unit_commands.append(f"python -m dolma.tokenizer.reshard {shlex.quote(str(config_path))}")
+            local_unit_commands.append(
+                f"python -m dolma.tokenizer.reshard {shlex.quote(str(config_path))}"
+            )
 
         category_execution_rows.append(
             {
@@ -2080,7 +2302,9 @@ def propose_configs(args: argparse.Namespace) -> None:
         "maximum_repetition",
     ]
     _write_csv(phase / "category-allocation.csv", allocation_rows, allocation_fields)
-    _write_csv(phase / "planned-object-uses.csv", object_use_rows, list(object_use_rows[0]))
+    _write_csv(
+        phase / "planned-object-uses.csv", object_use_rows, list(object_use_rows[0])
+    )
     _write_csv(phase / "config-index.csv", config_index, list(config_index[0]))
     _write_csv(
         phase / "category-execution-summary.csv",
@@ -2111,7 +2335,9 @@ def propose_configs(args: argparse.Namespace) -> None:
             "category_count": len(category_execution_rows),
             "execution_unit_count": len(config_index),
             "nominal_target_uint32_values": int(settings["target_uint32_values"]),
-            "target_uint32_values": sum(int(row["target_uint32_values"]) for row in allocation_rows),
+            "target_uint32_values": sum(
+                int(row["target_uint32_values"]) for row in allocation_rows
+            ),
             "planned_uint32_values": total_planned,
             "max_unit_working_bytes": max_unit_working_bytes,
             "destination_prefixes_file": "dataset-prefixes.txt",
@@ -2181,9 +2407,11 @@ def propose_configs(args: argparse.Namespace) -> None:
             "target_uint32_values": report_totals["target_uint32_values"],
             "source_uint32_values": report_totals["source_uint32_values"],
             "planned_uint32_values": total_planned,
-            "token_change_from_source": total_planned - report_totals["source_uint32_values"],
+            "token_change_from_source": total_planned
+            - report_totals["source_uint32_values"],
             "target_residual_uint32_values": target_residual,
-            "nominal_target_residual_uint32_values": total_planned - int(settings["target_uint32_values"]),
+            "nominal_target_residual_uint32_values": total_planned
+            - int(settings["target_uint32_values"]),
             "source_shards_with_document_selection": source_shards_with_document_selection,
             "document_selection_algorithm": DOCUMENT_SELECTION_ALGORITHM,
             "max_materialized_unit_target_residual_fraction": float(
@@ -2223,7 +2451,9 @@ def _validate_proposal(
             failures.append({"check": "unique_unit_id", "detail": unit_id})
         if not re.fullmatch(rf"[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}", unit_id):
             failures.append({"check": "numeric_unit_id", "detail": unit_id})
-    expected_unit_ids = [f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}" for index in range(len(config_index))]
+    expected_unit_ids = [
+        f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}" for index in range(len(config_index))
+    ]
     if unit_ids != expected_unit_ids:
         failures.append(
             {
@@ -2233,14 +2463,18 @@ def _validate_proposal(
         )
     for row in config_index:
         destination_index = row.get("destination_index", "")
-        if not re.fullmatch(rf"[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}", destination_index):
+        if not re.fullmatch(
+            rf"[0-9]{{{EXECUTION_UNIT_INDEX_WIDTH}}}", destination_index
+        ):
             failures.append(
                 {
                     "check": "destination_index",
                     "detail": row["unit_id"],
                 }
             )
-        expected_destination_suffix = f'/{row["source_layout_prefix"]}/{destination_index}'
+        expected_destination_suffix = (
+            f"/{row['source_layout_prefix']}/{destination_index}"
+        )
         if not row["destination_prefix"].endswith(expected_destination_suffix):
             failures.append(
                 {
@@ -2259,14 +2493,19 @@ def _validate_proposal(
                 }
             )
         if config.get("allow_existing_destination") is not False:
-            failures.append({"check": "no_existing_destination", "detail": str(config_path)})
+            failures.append(
+                {"check": "no_existing_destination", "detail": str(config_path)}
+            )
         manifest_path = config_path.parent / config["source_manifests"][0]["manifest"]
         if not manifest_path.resolve().is_file():
             failures.append({"check": "manifest_exists", "detail": str(manifest_path)})
         else:
             manifest_rows = _read_csv(manifest_path.resolve())
             manifest_source_directories = sorted(
-                {manifest_row["npy_uri"].rsplit("/", 1)[0] for manifest_row in manifest_rows}
+                {
+                    manifest_row["npy_uri"].rsplit("/", 1)[0]
+                    for manifest_row in manifest_rows
+                }
             )
             indexed_source_directories = row["source_directories"].split(";")
             if manifest_source_directories != indexed_source_directories or len(
@@ -2279,9 +2518,12 @@ def _validate_proposal(
                     }
                 )
             for manifest_row in manifest_rows:
-                partial_target = int(manifest_row.get("partial_target_uint32_values", 0))
+                partial_target = int(
+                    manifest_row.get("partial_target_uint32_values", 0)
+                )
                 if partial_target and (
-                    manifest_row.get("selection_algorithm") != DOCUMENT_SELECTION_ALGORITHM
+                    manifest_row.get("selection_algorithm")
+                    != DOCUMENT_SELECTION_ALGORITHM
                     or not manifest_row.get("selection_seed")
                 ):
                     failures.append(
@@ -2292,7 +2534,9 @@ def _validate_proposal(
                     )
         launcher_path = build / row["launcher_path"]
         if not launcher_path.is_file() or not os.access(launcher_path, os.X_OK):
-            failures.append({"check": "launcher_is_executable", "detail": str(launcher_path)})
+            failures.append(
+                {"check": "launcher_is_executable", "detail": str(launcher_path)}
+            )
         if int(row["estimated_peak_local_bytes"]) > int(row["max_unit_working_bytes"]):
             failures.append(
                 {
@@ -2326,17 +2570,25 @@ def _validate_proposal(
         if allocation is None:
             continue
         if planned != int(allocation["planned_uint32_values"]):
-            failures.append({"check": "unit_planned_sum", "detail": f"{leaf_id}: {planned}"})
+            failures.append(
+                {"check": "unit_planned_sum", "detail": f"{leaf_id}: {planned}"}
+            )
         if target != int(allocation["target_uint32_values"]):
-            failures.append({"check": "unit_target_sum", "detail": f"{leaf_id}: {target}"})
+            failures.append(
+                {"check": "unit_target_sum", "detail": f"{leaf_id}: {target}"}
+            )
         if int(allocation["target_residual_uint32_values"]) != 0:
             failures.append(
                 {
                     "check": "exact_proposal_target",
-                    "detail": (f"{leaf_id}: " f"{allocation['target_residual_uint32_values']}"),
+                    "detail": (
+                        f"{leaf_id}: {allocation['target_residual_uint32_values']}"
+                    ),
                 }
             )
-        object_planned = sum(int(row["planned_uint32_values"]) for row in uses_by_leaf.get(leaf_id, []))
+        object_planned = sum(
+            int(row["planned_uint32_values"]) for row in uses_by_leaf.get(leaf_id, [])
+        )
         if object_planned != planned:
             failures.append(
                 {
@@ -2370,7 +2622,9 @@ def _validate_proposal(
         if row["active"] == "true"
     }
     for leaf_id, uri in sorted(required_uses - planned_uses):
-        failures.append({"check": "required_object_considered", "detail": f"{leaf_id}: {uri}"})
+        failures.append(
+            {"check": "required_object_considered", "detail": f"{leaf_id}: {uri}"}
+        )
     _write_csv(phase / "validation-failures.csv", failures, ["check", "detail"])
     _write_json(
         phase / "validation-summary.json",
@@ -2384,7 +2638,9 @@ def _validate_proposal(
         },
     )
     if failures:
-        raise PreparationError(f"Proposal validation failed; inspect {phase / 'validation-failures.csv'}")
+        raise PreparationError(
+            f"Proposal validation failed; inspect {phase / 'validation-failures.csv'}"
+        )
 
 
 def _filter_execution_units(
@@ -2394,7 +2650,9 @@ def _filter_execution_units(
     unit: str | None = None,
 ) -> list[dict[str, str]]:
     if category is not None and unit is not None:
-        raise PreparationError("Choose either a category or an execution unit, not both")
+        raise PreparationError(
+            "Choose either a category or an execution unit, not both"
+        )
     if unit is not None:
         selected = [row for row in rows if row["unit_id"] == unit]
         if not selected:
@@ -2409,7 +2667,7 @@ def _filter_execution_units(
         selected = [
             row
             for row in rows
-            if f'{row["mix_name"]}::{row["category_name"]}' == category
+            if f"{row['mix_name']}::{row['category_name']}" == category
         ]
     if not selected:
         raise PreparationError(
@@ -2439,12 +2697,20 @@ def preflight_build(args: argparse.Namespace) -> None:
     all_config_index = _read_csv(build / "01-plan/execution/config-index.csv")
     category = getattr(args, "category", None)
     unit = getattr(args, "unit", None)
-    config_index = _filter_execution_units(all_config_index, category=category, unit=unit)
-    selection_scope = "unit" if unit is not None else "category" if category is not None else "all"
-    selection_value = unit if unit is not None else category if category is not None else "all"
+    config_index = _filter_execution_units(
+        all_config_index, category=category, unit=unit
+    )
+    selection_scope = (
+        "unit" if unit is not None else "category" if category is not None else "all"
+    )
+    selection_value = (
+        unit if unit is not None else category if category is not None else "all"
+    )
 
     full_listing_plan = _read_csv(build / "01-plan/resolution/listing-plan.csv")
-    approved_inventory = _read_csv(build / "01-plan/inventory/normalized-s3-inventory.csv")
+    approved_inventory = _read_csv(
+        build / "01-plan/inventory/normalized-s3-inventory.csv"
+    )
     approved_all = {
         (row["bucket"], row["key"]): row
         for row in approved_inventory
@@ -2457,20 +2723,30 @@ def preflight_build(args: argparse.Namespace) -> None:
         manifest_root = (build / "01-plan/execution/manifests").resolve()
         for config_row in config_index:
             manifest_path = (build / config_row["manifest_path"]).resolve()
-            if manifest_path.parent != manifest_root or manifest_path.is_symlink() or not manifest_path.is_file():
-                raise PreparationError(f"Unsafe or missing execution manifest: {manifest_path}")
+            if (
+                manifest_path.parent != manifest_root
+                or manifest_path.is_symlink()
+                or not manifest_path.is_file()
+            ):
+                raise PreparationError(
+                    f"Unsafe or missing execution manifest: {manifest_path}"
+                )
             for manifest_row in _read_csv(manifest_path):
                 for field in ("npy_uri", "metadata_uri"):
                     parsed = urlparse(manifest_row[field])
                     if parsed.scheme != "s3" or not parsed.netloc or not parsed.path:
-                        raise PreparationError(f"Unsupported source URI in {manifest_path}: {manifest_row[field]}")
+                        raise PreparationError(
+                            f"Unsupported source URI in {manifest_path}: {manifest_row[field]}"
+                        )
                     selected_identities.add((parsed.netloc, parsed.path.lstrip("/")))
         missing_approved = selected_identities - set(approved_all)
         if missing_approved:
             raise PreparationError(
                 f"Selected manifests contain {len(missing_approved):,} objects outside the approved inventory"
             )
-        approved = {identity: approved_all[identity] for identity in selected_identities}
+        approved = {
+            identity: approved_all[identity] for identity in selected_identities
+        }
 
     listing_plan = [
         row
@@ -2481,14 +2757,17 @@ def preflight_build(args: argparse.Namespace) -> None:
         )
     ]
 
-    session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
+    session = (
+        boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
+    )
     client = session.client("s3", region_name=region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     current: dict[tuple[str, str], S3Object] = {}
     errors: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = {
-            pool.submit(_list_prefix, client, row["bucket"], row["listing_prefix"]): row for row in listing_plan
+            pool.submit(_list_prefix, client, row["bucket"], row["listing_prefix"]): row
+            for row in listing_plan
         }
         for future in as_completed(futures):
             row = futures[future]
@@ -2508,7 +2787,10 @@ def preflight_build(args: argparse.Namespace) -> None:
     missing = sorted(set(approved) - set(current))
     if missing:
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {pool.submit(_head_object, client, bucket, key): (bucket, key) for bucket, key in missing}
+            futures = {
+                pool.submit(_head_object, client, bucket, key): (bucket, key)
+                for bucket, key in missing
+            }
             for future in as_completed(futures):
                 bucket, key = futures[future]
                 try:
@@ -2533,9 +2815,9 @@ def preflight_build(args: argparse.Namespace) -> None:
             status = "size_changed"
         elif expected["etag"] and actual.etag != expected["etag"]:
             status = "etag_changed"
-        elif expected["last_modified"] and _normalize_timestamp(actual.last_modified) != _normalize_timestamp(
-            expected["last_modified"]
-        ):
+        elif expected["last_modified"] and _normalize_timestamp(
+            actual.last_modified
+        ) != _normalize_timestamp(expected["last_modified"]):
             status = "last_modified_changed"
         else:
             status = "unchanged"
@@ -2619,10 +2901,17 @@ def preflight_build(args: argparse.Namespace) -> None:
             "first_existing_key",
         ],
     )
-    _write_csv(phase / "preflight-errors.csv", errors, ["operation", "bucket", "key", "error"])
+    _write_csv(
+        phase / "preflight-errors.csv", errors, ["operation", "bucket", "key", "error"]
+    )
     drifted = sum(row["status"] != "unchanged" for row in drift_rows)
     occupied = sum(row["status"] != "empty" for row in destination_rows)
-    passed = not errors and not drifted and not occupied and len(destination_rows) == len(config_index)
+    passed = (
+        not errors
+        and not drifted
+        and not occupied
+        and len(destination_rows) == len(config_index)
+    )
     summary = {
         "created_at": _utc_now(),
         "selection_scope": selection_scope,
@@ -2668,7 +2957,9 @@ def verify_output(args: argparse.Namespace) -> None:
         config_index = _filter_execution_units(config_index, unit=unit)
         selection_scope = f"unit:{unit}"
     phase = _reset_preparation_phase(build, "03-output-validation")
-    session = boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
+    session = (
+        boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
+    )
     client = session.client("s3", region_name=region)
     max_workers = args.max_workers or int(manifest["settings"]["inventory_max_workers"])
     output_objects: list[dict[str, Any]] = []
@@ -2700,15 +2991,29 @@ def verify_output(args: argparse.Namespace) -> None:
             object_map = {obj.key: obj for obj in objects}
             npys = [obj for obj in objects if obj.key.endswith(".npy")]
             metadata = {obj.key for obj in objects if obj.key.endswith(".csv.gz")}
-            unexpected = [obj for obj in objects if not obj.key.endswith((".npy", ".csv.gz"))]
-            missing_metadata = [
-                _pair_metadata_key(obj.key) for obj in npys if _pair_metadata_key(obj.key) not in metadata
+            unexpected = [
+                obj for obj in objects if not obj.key.endswith((".npy", ".csv.gz"))
             ]
-            orphan_metadata = [key for key in metadata if key[: -len(".csv.gz")] + ".npy" not in object_map]
-            invalid_npys = [obj for obj in npys if obj.size_bytes <= 0 or obj.size_bytes % UINT32_BYTES]
+            missing_metadata = [
+                _pair_metadata_key(obj.key)
+                for obj in npys
+                if _pair_metadata_key(obj.key) not in metadata
+            ]
+            orphan_metadata = [
+                key
+                for key in metadata
+                if key[: -len(".csv.gz")] + ".npy" not in object_map
+            ]
+            invalid_npys = [
+                obj
+                for obj in npys
+                if obj.size_bytes <= 0 or obj.size_bytes % UINT32_BYTES
+            ]
             actual = sum(obj.size_bytes // UINT32_BYTES for obj in npys)
             predicted = int(row["planned_uint32_values"])
-            allowed_residual = int(row["allowed_materialized_target_residual_uint32_values"])
+            allowed_residual = int(
+                row["allowed_materialized_target_residual_uint32_values"]
+            )
             status = (
                 "passed"
                 if npys
@@ -2757,7 +3062,9 @@ def verify_output(args: argparse.Namespace) -> None:
                         "object_type": (
                             "npy"
                             if obj.key.endswith(".npy")
-                            else "metadata" if obj.key.endswith(".csv.gz") else "unexpected"
+                            else "metadata"
+                            if obj.key.endswith(".csv.gz")
+                            else "unexpected"
                         ),
                     }
                 )
@@ -2838,16 +3145,24 @@ def verify_output(args: argparse.Namespace) -> None:
         unexpected_rows,
         ["mix_name", "key", "reason"],
     )
-    _write_csv(phase / "output-errors.csv", errors, ["operation", "bucket", "key", "error"])
+    _write_csv(
+        phase / "output-errors.csv", errors, ["operation", "bucket", "key", "error"]
+    )
     failed = sum(row["status"] != "passed" for row in validation_rows)
     target_total = sum(int(row["target_uint32_values"]) for row in validation_rows)
     actual_total = sum(int(row["actual_uint32_values"]) for row in validation_rows)
     aggregate_residual = actual_total - target_total
     allowed_aggregate_residual = math.ceil(
-        target_total * float(settings["max_materialized_total_target_residual_fraction"])
+        target_total
+        * float(settings["max_materialized_total_target_residual_fraction"])
     )
     aggregate_within_bound = abs(aggregate_residual) <= allowed_aggregate_residual
-    passed = not errors and not failed and len(validation_rows) == len(config_index) and aggregate_within_bound
+    passed = (
+        not errors
+        and not failed
+        and len(validation_rows) == len(config_index)
+        and aggregate_within_bound
+    )
     _write_json(
         phase / "output-summary.json",
         {
@@ -2859,10 +3174,14 @@ def verify_output(args: argparse.Namespace) -> None:
             "failed_destinations": failed,
             "errors": len(errors),
             "target_uint32_values": target_total,
-            "predicted_uint32_values": sum(int(row["predicted_uint32_values"]) for row in validation_rows),
+            "predicted_uint32_values": sum(
+                int(row["predicted_uint32_values"]) for row in validation_rows
+            ),
             "actual_uint32_values": actual_total,
             "materialized_target_residual_uint32_values": aggregate_residual,
-            "allowed_materialized_target_residual_uint32_values": (allowed_aggregate_residual),
+            "allowed_materialized_target_residual_uint32_values": (
+                allowed_aggregate_residual
+            ),
             "aggregate_target_residual_within_bound": aggregate_within_bound,
             "passed": passed,
         },
@@ -2934,7 +3253,9 @@ def verify_output(args: argparse.Namespace) -> None:
         "</body></html>\n",
     )
     if not passed:
-        raise PreparationError(f"Output validation failed; inspect artifacts in {phase}")
+        raise PreparationError(
+            f"Output validation failed; inspect artifacts in {phase}"
+        )
     print(f"Output validation passed using size-only checks: {phase}")
 
 
@@ -2960,7 +3281,9 @@ def _svg_bar_chart(
     for index, (label, value) in enumerate(zip(labels, values)):
         y = 50 + index * row_height
         bar_width = max(0.0, plot_width * value / maximum)
-        displayed_value = value_labels[index] if value_labels is not None else f"{value:.4g} {unit}"
+        displayed_value = (
+            value_labels[index] if value_labels is not None else f"{value:.4g} {unit}"
+        )
         rows.append(
             f'<text x="{label_x}" y="{y + 14}">{html.escape(label[:52])}</text>'
             f'<rect x="{margin_left}" y="{y}" width="{bar_width:.2f}" height="16" />'
@@ -2971,7 +3294,11 @@ def _svg_bar_chart(
         f'aria-label="{html.escape(title)}"><title>{html.escape(title)}</title><style>'
         "text{font:12px sans-serif;fill:#222}rect{fill:#356cb6}"
         ".summary{font-size:14px;font-weight:600}</style>"
-        + (f'<text class="summary" x="{label_x}" y="24">{html.escape(summary)}</text>' if summary else "")
+        + (
+            f'<text class="summary" x="{label_x}" y="24">{html.escape(summary)}</text>'
+            if summary
+            else ""
+        )
         + "".join(rows)
         + "</svg>\n"
     )
@@ -3096,13 +3423,20 @@ def _path_subgroup(yaml_path: str) -> str:
     for index, part in enumerate(parts):
         if part == "allenai" and index:
             return unquote(parts[index - 1])
-    candidates = [part for part in parts if "*" not in part and not part.endswith((".npy", ".csv.gz"))]
+    candidates = [
+        part
+        for part in parts
+        if "*" not in part and not part.endswith((".npy", ".csv.gz"))
+    ]
     return unquote(candidates[-1]) if candidates else yaml_path
 
 
 def _source_uri_details(source_uris: Iterable[str], empty_message: str) -> str:
     resolved_sources = sorted(set(source_uris)) or [empty_message]
-    return "".join(f'<span class="path-detail-uri">{html.escape(uri)}</span>' for uri in resolved_sources)
+    return "".join(
+        f'<span class="path-detail-uri">{html.escape(uri)}</span>'
+        for uri in resolved_sources
+    )
 
 
 def _split_mix_name(mix_name: str) -> tuple[str, str]:
@@ -3142,7 +3476,9 @@ def _interactive_chart_rows(
         percent = float(row[percent_field])
         relative_width = 100 * percent / maximum
         tokens = int(row[value_field])
-        value_label = str(row.get("value_label") or _mix_plot_value_label(tokens, total))
+        value_label = str(
+            row.get("value_label") or _mix_plot_value_label(tokens, total)
+        )
         metric_columns = row.get("metric_columns")
         if metric_columns:
             metrics = (
@@ -3306,7 +3642,9 @@ def _render_execution_proposal_html(
         reverse=True,
     )
     peak_values = [int(row["estimated_peak_local_bytes"]) for row in ordered_units]
-    max_budget = max((int(row["max_unit_working_bytes"]) for row in ordered_units), default=0)
+    max_budget = max(
+        (int(row["max_unit_working_bytes"]) for row in ordered_units), default=0
+    )
     split_categories = sorted(
         (row for row in category_execution if int(row["execution_unit_count"]) > 1),
         key=lambda row: (
@@ -3318,7 +3656,8 @@ def _render_execution_proposal_html(
     )
     partial_units = sum(int(row["partial_object_count"]) > 0 for row in ordered_units)
     utilizations = [
-        int(row["estimated_peak_local_bytes"]) / int(row["max_unit_working_bytes"]) for row in ordered_units
+        int(row["estimated_peak_local_bytes"]) / int(row["max_unit_working_bytes"])
+        for row in ordered_units
     ]
     utilization_bands = [
         ("Below 50%", sum(value < 0.5 for value in utilizations)),
@@ -3350,12 +3689,12 @@ def _render_execution_proposal_html(
         + "".join(
             '<article class="split-category">'
             f'<span class="split-name">{html.escape(str(row["mix_name"]))} / '
-            f'{html.escape(str(row["category_name"]))}</span>'
+            f"{html.escape(str(row['category_name']))}</span>"
             f'<span class="split-value"><span>Units</span>{int(row["execution_unit_count"]):,}</span>'
             f'<span class="split-value"><span>Output</span>'
-            f'{_human_token_count(int(row["planned_uint32_values"]))} tokens</span>'
+            f"{_human_token_count(int(row['planned_uint32_values']))} tokens</span>"
             f'<span class="split-value"><span>Largest unit</span>'
-            f'{_human_byte_count(int(row["largest_estimated_peak_local_bytes"]))}</span>'
+            f"{_human_byte_count(int(row['largest_estimated_peak_local_bytes']))}</span>"
             "</article>"
             for row in split_categories
         )
@@ -3366,7 +3705,9 @@ def _render_execution_proposal_html(
     unit_cards: list[str] = []
     for row in ordered_units:
         input_bytes = int(row["input_npy_bytes"]) + int(row["input_metadata_bytes"])
-        output_bytes = int(row["output_npy_bytes"]) + int(row["estimated_output_metadata_bytes"])
+        output_bytes = int(row["output_npy_bytes"]) + int(
+            row["estimated_output_metadata_bytes"]
+        )
         selection_bytes = int(row["estimated_selection_index_bytes"])
         peak_bytes = int(row["estimated_peak_local_bytes"])
         budget_bytes = int(row["max_unit_working_bytes"])
@@ -3374,9 +3715,9 @@ def _render_execution_proposal_html(
         source_width = 100 * input_bytes / budget_bytes
         output_width = 100 * output_bytes / budget_bytes
         selection_width = 100 * selection_bytes / budget_bytes
-        category_label = f'{row["mix_name"]} / {row["category_name"]}'
+        category_label = f"{row['mix_name']} / {row['category_name']}"
         searchable = html.escape(
-            f'{row["unit_id"]} {row["mix_name"]} {row["category_name"]}'.lower(),
+            f"{row['unit_id']} {row['mix_name']} {row['category_name']}".lower(),
             quote=True,
         )
         split = int(row["unit_count_for_category"]) > 1
@@ -3385,18 +3726,18 @@ def _render_execution_proposal_html(
             f'data-split="{str(split).lower()}"><summary>'
             f'<span class="unit-title">{html.escape(category_label)}'
             f'<span class="unit-position">Unit {int(row["unit_index"]):,} of '
-            f'{int(row["unit_count_for_category"]):,}</span></span>'
+            f"{int(row['unit_count_for_category']):,}</span></span>"
             f'<span class="unit-disk"><strong>{_human_byte_count(peak_bytes)}</strong>'
             f"<span>{utilization:.1%} of worker disk budget</span></span></summary>"
             '<div class="unit-body"><div class="unit-metrics">'
             '<div class="unit-metric"><span>Output tokens</span>'
-            f'<strong>{_human_token_count(int(row["planned_uint32_values"]))}</strong></div>'
+            f"<strong>{_human_token_count(int(row['planned_uint32_values']))}</strong></div>"
             '<div class="unit-metric"><span>Source shard downloads</span>'
-            f'<strong>{int(row["unique_object_count"]):,}</strong></div>'
+            f"<strong>{int(row['unique_object_count']):,}</strong></div>"
             '<div class="unit-metric"><span>Source shards using document selection</span>'
-            f'<strong>{int(row["partial_object_count"]):,}</strong></div>'
+            f"<strong>{int(row['partial_object_count']):,}</strong></div>"
             '<div class="unit-metric"><span>Output shard cap</span>'
-            f'<strong>{int(row["max_num_files"]):,}</strong></div>'
+            f"<strong>{int(row['max_num_files']):,}</strong></div>"
             "</div>"
             '<div class="disk-breakdown" aria-label="Estimated local disk composition">'
             f'<span class="disk-segment disk-source" style="width:{source_width:.8f}%"></span>'
@@ -3409,9 +3750,9 @@ def _render_execution_proposal_html(
             f'<span class="legend-selection">Selection indexes: {_human_byte_count(selection_bytes)}</span>'
             "</div>"
             '<dl class="unit-paths"><div><dt>Unit ID</dt>'
-            f'<dd><code>{html.escape(str(row["unit_id"]))}</code></dd></div>'
+            f"<dd><code>{html.escape(str(row['unit_id']))}</code></dd></div>"
             "<div><dt>Destination</dt>"
-            f'<dd><code>{html.escape(str(row["destination_prefix"]))}</code></dd></div></dl>'
+            f"<dd><code>{html.escape(str(row['destination_prefix']))}</code></dd></div></dl>"
             '<nav class="artifact-links" aria-label="Execution-unit artifacts">'
             f'<a href="{_proposal_artifact_href(row["config_path"])}">Config</a>'
             f'<a href="{_proposal_artifact_href(row["manifest_path"])}">Manifest</a>'
@@ -3438,7 +3779,9 @@ def _render_execution_proposal_html(
         '<div class="unit-controls"><input id="unit-search" type="search" '
         'placeholder="Filter by source, category, or unit ID" aria-label="Filter execution units">'
         '<label><input id="split-only" type="checkbox"> Only categories with multiple units</label></div>'
-        f'<div class="unit-list">{"".join(unit_cards)}</div>' + _execution_proposal_script() + "</body></html>\n"
+        f'<div class="unit-list">{"".join(unit_cards)}</div>'
+        + _execution_proposal_script()
+        + "</body></html>\n"
     )
 
 
@@ -3446,7 +3789,9 @@ def _report_document_with_base(document: str, relative_base: str) -> str:
     marker = "<head>"
     if marker not in document:
         raise PreparationError("Generated report is missing its HTML head")
-    return document.replace(marker, f'<head><base href="{html.escape(relative_base, quote=True)}">', 1)
+    return document.replace(
+        marker, f'<head><base href="{html.escape(relative_base, quote=True)}">', 1
+    )
 
 
 def _combine_plan_reports(build: Path) -> None:
@@ -3458,7 +3803,9 @@ def _combine_plan_reports(build: Path) -> None:
     execution_report_path = plan_root / "execution/report.html"
     for report_path in (inventory_report_path, execution_report_path):
         if report_path.is_symlink() or not report_path.is_file():
-            raise PreparationError(f"Cannot compose missing or unsafe report: {report_path}")
+            raise PreparationError(
+                f"Cannot compose missing or unsafe report: {report_path}"
+            )
 
     inventory_document = _report_document_with_base(
         inventory_report_path.read_text(encoding="utf-8"),
@@ -3541,7 +3888,9 @@ selectReport(location.hash === '#execution' ? 'execution' : 'source', false);
     ):
         if stage_report_path.exists():
             if stage_report_path.is_symlink() or not stage_report_path.is_file():
-                raise PreparationError(f"Refusing to remove an unsafe stage report: {stage_report_path}")
+                raise PreparationError(
+                    f"Refusing to remove an unsafe stage report: {stage_report_path}"
+                )
             stage_report_path.unlink()
 
 
@@ -3564,9 +3913,13 @@ def _render_plan_report(
         {
             "mix_name": name,
             "target_uint32_values": value,
-            "target_percent": f"{100 * value / target_total:.8f}" if target_total else "0",
+            "target_percent": f"{100 * value / target_total:.8f}"
+            if target_total
+            else "0",
         }
-        for name, value in sorted(target_by_mix.items(), key=lambda item: item[1], reverse=True)
+        for name, value in sorted(
+            target_by_mix.items(), key=lambda item: item[1], reverse=True
+        )
     ]
     _write_csv(
         plot_data / "target-mix.csv",
@@ -3599,7 +3952,10 @@ def _render_plan_report(
             row["metric_columns"] = [
                 {
                     "label": "Target",
-                    "value": (f"{_human_token_count(sub_target)} tokens · " f"{sub_percent:.2f}% of family"),
+                    "value": (
+                        f"{_human_token_count(sub_target)} tokens · "
+                        f"{sub_percent:.2f}% of family"
+                    ),
                 }
             ]
         family_rows.append(
@@ -3611,7 +3967,10 @@ def _render_plan_report(
                 "metric_columns": [
                     {
                         "label": "Target",
-                        "value": (f"{_human_token_count(family_target)} tokens · " f"{family_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(family_target)} tokens · "
+                            f"{family_percent:.2f}%"
+                        ),
                     }
                 ],
             }
@@ -3630,8 +3989,14 @@ def _render_plan_report(
             [row["mix_name"] for row in family_rows],
             [float(row["target_percent"]) for row in family_rows],
             "% of target",
-            value_labels=[_mix_plot_value_label(row["target_uint32_values"], target_total) for row in family_rows],
-            summary=(f"Total target: {_human_token_count(target_total)} tokens " f"({target_total:,})"),
+            value_labels=[
+                _mix_plot_value_label(row["target_uint32_values"], target_total)
+                for row in family_rows
+            ],
+            summary=(
+                f"Total target: {_human_token_count(target_total)} tokens "
+                f"({target_total:,})"
+            ),
         ),
     )
     chart_rows = _interactive_chart_rows(
@@ -3656,9 +4021,12 @@ def _render_plan_report(
     catalog_counts = Counter(row["path_id"] for row in catalog_matches)
     catalog_sources_by_path: dict[str, list[str]] = defaultdict(list)
     for row in catalog_matches:
-        catalog_sources_by_path[row["path_id"]].append(f's3://{row["bucket"]}/{row["key"]}')
+        catalog_sources_by_path[row["path_id"]].append(
+            f"s3://{row['bucket']}/{row['key']}"
+        )
     direct_sources_by_path = {
-        row["path_id"]: f's3://{row["bucket"]}/{row["key_pattern"]}' for row in direct_patterns
+        row["path_id"]: f"s3://{row['bucket']}/{row['key_pattern']}"
+        for row in direct_patterns
     }
     categories_by_mix: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in normalized_mix:
@@ -3669,11 +4037,15 @@ def _render_plan_report(
         mix_name = str(target_row["mix_name"])
         mix_target = int(target_row["target_uint32_values"])
         category_sections: list[str] = []
-        for category in sorted(categories_by_mix[mix_name], key=lambda row: int(row["category_index"])):
+        for category in sorted(
+            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
+        ):
             category_target = int(category["target_uint32_values"])
             category_percent = 100 * category_target / mix_target if mix_target else 0
             path_rows: list[str] = []
-            for path in sorted(paths_by_leaf[category["leaf_id"]], key=lambda row: row["path_id"]):
+            for path in sorted(
+                paths_by_leaf[category["leaf_id"]], key=lambda row: row["path_id"]
+            ):
                 active = path["active"] == "true"
                 source_uris = sorted(set(catalog_sources_by_path[path["path_id"]]))
                 direct_source = direct_sources_by_path.get(path["path_id"])
@@ -3684,8 +4056,12 @@ def _render_plan_report(
                 elif direct_source is not None:
                     matched = "pending inventory"
                 else:
-                    matched = _count_label(catalog_counts[path["path_id"]], "matched NPY")
-                source_details = _source_uri_details(source_uris, "No resolved S3 source")
+                    matched = _count_label(
+                        catalog_counts[path["path_id"]], "matched NPY"
+                    )
+                source_details = _source_uri_details(
+                    source_uris, "No resolved S3 source"
+                )
                 path_rows.append(
                     '<details class="path-detail"><summary>'
                     f'<span class="path-name">{html.escape(_path_subgroup(path["yaml_path"]))}</span>'
@@ -3708,10 +4084,13 @@ def _render_plan_report(
         subcategory_detail_by_mix[mix_name] = (
             f'<section class="subcategory-detail" id="{target_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(str(target_row["subcategory_name"]))}</h2>'
+            f"<h2>{html.escape(str(target_row['subcategory_name']))}</h2>"
             f'<div class="detail-total">{_human_token_count(mix_target)} tokens · '
-            f'{float(target_row["target_percent"]):.2f}% of target</div></div>'
-            '<div class="category-grid">' + "".join(category_sections) + "</div>" + "</section>"
+            f"{float(target_row['target_percent']):.2f}% of target</div></div>"
+            '<div class="category-grid">'
+            + "".join(category_sections)
+            + "</div>"
+            + "</section>"
         )
     detail_sections: list[str] = []
     for family_row in family_rows:
@@ -3719,9 +4098,9 @@ def _render_plan_report(
         detail_sections.append(
             f'<section class="mix-detail" id="{family_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(str(family_row["mix_name"]))}</h2>'
+            f"<h2>{html.escape(str(family_row['mix_name']))}</h2>"
             f'<div class="detail-total">{_human_token_count(family_target)} tokens · '
-            f'{float(family_row["target_percent"]):.2f}% of target</div></div>'
+            f"{float(family_row['target_percent']):.2f}% of target</div></div>"
             '<div class="subcategory-list">'
             + str(family_row["subcategory_chart_rows"])
             + "</div>"
@@ -3771,14 +4150,20 @@ def _build_inventory_details(
         for category in sorted(categories, key=lambda row: int(row["category_index"])):
             leaf_id = category["leaf_id"]
             category_objects = {
-                row["npy_uri"]: int(row["estimated_uint32_values"]) for row in rows_by_leaf[leaf_id]
+                row["npy_uri"]: int(row["estimated_uint32_values"])
+                for row in rows_by_leaf[leaf_id]
             }
             source_object_uris.update(category_objects)
             source_tokens = sum(category_objects.values())
             target_tokens = int(category["target_uint32_values"])
-            path_definitions = sorted(paths_by_leaf[leaf_id], key=lambda row: row["path_id"])
+            path_definitions = sorted(
+                paths_by_leaf[leaf_id], key=lambda row: row["path_id"]
+            )
             path_objects = [
-                {row["npy_uri"]: int(row["estimated_uint32_values"]) for row in rows_by_path[path["path_id"]]}
+                {
+                    row["npy_uri"]: int(row["estimated_uint32_values"])
+                    for row in rows_by_path[path["path_id"]]
+                }
                 for path in path_definitions
             ]
             path_source_tokens = [sum(objects.values()) for objects in path_objects]
@@ -3823,19 +4208,27 @@ def _build_inventory_details(
         target_tokens = sum(row["target_uint32_values"] for row in category_rows)
         for category in category_rows:
             category["source_percent_of_parent"] = (
-                100 * category["source_uint32_values"] / source_tokens if source_tokens else 0.0
+                100 * category["source_uint32_values"] / source_tokens
+                if source_tokens
+                else 0.0
             )
             category["target_percent_of_parent"] = (
-                100 * category["target_uint32_values"] / target_tokens if target_tokens else 0.0
+                100 * category["target_uint32_values"] / target_tokens
+                if target_tokens
+                else 0.0
             )
             for lower_group in category["lower_groups"]:
                 lower_group["source_percent_of_parent"] = (
-                    100 * lower_group["source_uint32_values"] / category["source_uint32_values"]
+                    100
+                    * lower_group["source_uint32_values"]
+                    / category["source_uint32_values"]
                     if category["source_uint32_values"]
                     else 0.0
                 )
                 lower_group["implied_target_percent_of_parent"] = (
-                    100 * lower_group["implied_target_uint32_values"] / category["target_uint32_values"]
+                    100
+                    * lower_group["implied_target_uint32_values"]
+                    / category["target_uint32_values"]
                     if category["target_uint32_values"]
                     else 0.0
                 )
@@ -3867,17 +4260,25 @@ def _build_inventory_details(
         )
         for category in source["categories"]:
             category["source_percent_of_total"] = (
-                100 * category["source_uint32_values"] / source_total if source_total else 0.0
+                100 * category["source_uint32_values"] / source_total
+                if source_total
+                else 0.0
             )
             category["target_percent_of_total"] = (
-                100 * category["target_uint32_values"] / target_total if target_total else 0.0
+                100 * category["target_uint32_values"] / target_total
+                if target_total
+                else 0.0
             )
             for lower_group in category["lower_groups"]:
                 lower_group["source_percent_of_total"] = (
-                    100 * lower_group["source_uint32_values"] / source_total if source_total else 0.0
+                    100 * lower_group["source_uint32_values"] / source_total
+                    if source_total
+                    else 0.0
                 )
                 lower_group["implied_target_percent_of_total"] = (
-                    100 * lower_group["implied_target_uint32_values"] / target_total if target_total else 0.0
+                    100 * lower_group["implied_target_uint32_values"] / target_total
+                    if target_total
+                    else 0.0
                 )
 
     source_rows.sort(
@@ -3902,7 +4303,9 @@ def _build_inventory_details(
         "source_count": len(source_rows),
         "category_count": sum(len(row["categories"]) for row in source_rows),
         "lower_group_count": sum(
-            len(category["lower_groups"]) for source in source_rows for category in source["categories"]
+            len(category["lower_groups"])
+            for source in source_rows
+            for category in source["categories"]
         ),
         "sources": source_rows,
     }
@@ -3943,7 +4346,9 @@ def refresh_inventory_details(build: Path) -> dict[str, Any]:
         required_rows=_read_csv(phase / "required-objects.csv"),
     )
     summary_source = int(
-        summary["source_uint32_values"] if "source_uint32_values" in summary else summary["original_uint32_values"]
+        summary["source_uint32_values"]
+        if "source_uint32_values" in summary
+        else summary["original_uint32_values"]
     )
     if summary_source != details["source_uint32_values"]:
         raise PreparationError("Inventory detail source total does not match summary")
@@ -3985,7 +4390,9 @@ def _render_inventory_report(
     plots.mkdir(exist_ok=False)
     plot_data.mkdir(exist_ok=False)
     found_npy = {(row["bucket"], row["key"]) for row in required_rows}
-    found_metadata = {(row["bucket"], _pair_metadata_key(row["key"])) for row in required_rows}
+    found_metadata = {
+        (row["bucket"], _pair_metadata_key(row["key"])) for row in required_rows
+    }
     missing_npy = sum(row["object_type"] == "npy" for row in missing_rows)
     missing_metadata = sum(row["object_type"] == "metadata" for row in missing_rows)
     coverage_rows = [
@@ -4040,11 +4447,17 @@ def _render_inventory_report(
                 "metric_columns": [
                     {
                         "label": "Source",
-                        "value": (f"{_human_token_count(original)} tokens · " f"{source_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(original)} tokens · "
+                            f"{source_percent:.2f}%"
+                        ),
                     },
                     {
                         "label": "Target",
-                        "value": (f"{_human_token_count(target)} tokens · " f"{target_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(target)} tokens · "
+                            f"{target_percent:.2f}%"
+                        ),
                     },
                     {"label": "Sampling", "value": sampling_rate},
                 ],
@@ -4061,11 +4474,15 @@ def _render_inventory_report(
 
     family_rows: list[dict[str, Any]] = []
     for source_family, subcategories in subcategories_by_family.items():
-        family_source = sum(int(row["available_uint32_values"]) for row in subcategories)
+        family_source = sum(
+            int(row["available_uint32_values"]) for row in subcategories
+        )
         family_target = sum(int(row["target_uint32_values"]) for row in subcategories)
         source_percent = 100 * family_source / original_total if original_total else 0.0
         target_percent = 100 * family_target / target_total if target_total else 0.0
-        sampling_rate, sampling_class = _sampling_rate_label(family_source, family_target)
+        sampling_rate, sampling_class = _sampling_rate_label(
+            family_source, family_target
+        )
         ordered_subcategories = sorted(
             subcategories,
             key=lambda row: (
@@ -4078,20 +4495,26 @@ def _render_inventory_report(
         for row in ordered_subcategories:
             sub_source = int(row["available_uint32_values"])
             sub_target = int(row["target_uint32_values"])
-            sub_source_percent = 100 * sub_source / family_source if family_source else 0.0
-            sub_target_percent = 100 * sub_target / family_target if family_target else 0.0
+            sub_source_percent = (
+                100 * sub_source / family_source if family_source else 0.0
+            )
+            sub_target_percent = (
+                100 * sub_target / family_target if family_target else 0.0
+            )
             row["family_target_percent"] = f"{sub_target_percent:.8f}"
             row["metric_columns"] = [
                 {
                     "label": "Source",
                     "value": (
-                        f"{_human_token_count(sub_source)} tokens · " f"{sub_source_percent:.2f}% of source"
+                        f"{_human_token_count(sub_source)} tokens · "
+                        f"{sub_source_percent:.2f}% of source"
                     ),
                 },
                 {
                     "label": "Target",
                     "value": (
-                        f"{_human_token_count(sub_target)} tokens · " f"{sub_target_percent:.2f}% of target"
+                        f"{_human_token_count(sub_target)} tokens · "
+                        f"{sub_target_percent:.2f}% of target"
                     ),
                 },
                 {"label": "Sampling", "value": row["sampling_rate"]},
@@ -4109,11 +4532,17 @@ def _render_inventory_report(
                 "metric_columns": [
                     {
                         "label": "Source",
-                        "value": (f"{_human_token_count(family_source)} tokens · " f"{source_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(family_source)} tokens · "
+                            f"{source_percent:.2f}%"
+                        ),
                     },
                     {
                         "label": "Target",
-                        "value": (f"{_human_token_count(family_target)} tokens · " f"{target_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(family_target)} tokens · "
+                            f"{target_percent:.2f}%"
+                        ),
                     },
                     {"label": "Sampling", "value": sampling_rate},
                 ],
@@ -4163,9 +4592,13 @@ def _render_inventory_report(
             [float(row["available_percent"]) for row in available_rows],
             "% of available tokens",
             value_labels=[
-                _mix_plot_value_label(row["available_uint32_values"], original_total) for row in available_rows
+                _mix_plot_value_label(row["available_uint32_values"], original_total)
+                for row in available_rows
             ],
-            summary=(f"Source aggregate: {_human_token_count(original_total)} tokens " f"({original_total:,})"),
+            summary=(
+                f"Source aggregate: {_human_token_count(original_total)} tokens "
+                f"({original_total:,})"
+            ),
         ),
     )
     chart_rows = _interactive_chart_rows(
@@ -4201,16 +4634,28 @@ def _render_inventory_report(
         mix_original = int(mix_row["available_uint32_values"])
         mix_target = int(mix_row["target_uint32_values"])
         category_sections: list[str] = []
-        for category in sorted(categories_by_mix[mix_name], key=lambda row: int(row["category_index"])):
+        for category in sorted(
+            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
+        ):
             leaf_id = category["leaf_id"]
             leaf_rows = rows_by_leaf[leaf_id]
-            category_objects = {row["npy_uri"]: int(row["estimated_uint32_values"]) for row in leaf_rows}
+            category_objects = {
+                row["npy_uri"]: int(row["estimated_uint32_values"]) for row in leaf_rows
+            }
             category_original = sum(category_objects.values())
             category_target = target_by_leaf[leaf_id]
-            category_source_percent = 100 * category_original / mix_original if mix_original else 0.0
-            category_target_percent = 100 * category_target / mix_target if mix_target else 0.0
-            _, category_class, category_ratio = _sampling_change(category_original, category_target)
-            category_sampling_rate, _ = _sampling_rate_label(category_original, category_target)
+            category_source_percent = (
+                100 * category_original / mix_original if mix_original else 0.0
+            )
+            category_target_percent = (
+                100 * category_target / mix_target if mix_target else 0.0
+            )
+            _, category_class, category_ratio = _sampling_change(
+                category_original, category_target
+            )
+            category_sampling_rate, _ = _sampling_rate_label(
+                category_original, category_target
+            )
             category_comparisons.append(
                 {
                     "leaf_id": leaf_id,
@@ -4220,15 +4665,22 @@ def _render_inventory_report(
                     "source_percent_of_parent": category_source_percent,
                     "target_uint32_values": category_target,
                     "target_percent_of_parent": category_target_percent,
-                    "sampling_ratio": "" if category_ratio is None else f"{category_ratio:.12g}",
+                    "sampling_ratio": ""
+                    if category_ratio is None
+                    else f"{category_ratio:.12g}",
                     "sampling_rate": category_sampling_rate,
                 }
             )
-            path_definitions = sorted(paths_by_leaf[leaf_id], key=lambda row: row["path_id"])
+            path_definitions = sorted(
+                paths_by_leaf[leaf_id], key=lambda row: row["path_id"]
+            )
             path_objects: list[dict[str, int]] = []
             for path in path_definitions:
                 path_objects.append(
-                    {row["npy_uri"]: int(row["estimated_uint32_values"]) for row in rows_by_path[path["path_id"]]}
+                    {
+                        row["npy_uri"]: int(row["estimated_uint32_values"])
+                        for row in rows_by_path[path["path_id"]]
+                    }
                 )
             path_originals = [sum(objects.values()) for objects in path_objects]
             path_targets = _apportion_by_size(category_target, path_originals)
@@ -4238,8 +4690,14 @@ def _render_inventory_report(
             ):
                 _, path_class, path_ratio = _sampling_change(path_original, path_target)
                 path_sampling_rate, _ = _sampling_rate_label(path_original, path_target)
-                path_source_percent = 100 * path_original / category_original if category_original else 0.0
-                path_target_percent = 100 * path_target / category_target if category_target else 0.0
+                path_source_percent = (
+                    100 * path_original / category_original
+                    if category_original
+                    else 0.0
+                )
+                path_target_percent = (
+                    100 * path_target / category_target if category_target else 0.0
+                )
                 path_comparisons.append(
                     {
                         "path_id": path["path_id"],
@@ -4252,7 +4710,9 @@ def _render_inventory_report(
                         "source_percent_of_parent": path_source_percent,
                         "implied_target_uint32_values": path_target,
                         "implied_target_percent_of_parent": path_target_percent,
-                        "sampling_ratio": "" if path_ratio is None else f"{path_ratio:.12g}",
+                        "sampling_ratio": ""
+                        if path_ratio is None
+                        else f"{path_ratio:.12g}",
                         "sampling_rate": path_sampling_rate,
                         "unique_npy_count": len(objects),
                     }
@@ -4304,12 +4764,14 @@ def _render_inventory_report(
         subcategory_detail_by_mix[mix_name] = (
             f'<section class="subcategory-detail" id="{mix_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(str(mix_row["subcategory_name"]))}</h2>'
+            f"<h2>{html.escape(str(mix_row['subcategory_name']))}</h2>"
             f'<div class="detail-total">source {_human_token_count(mix_original)} → '
             f"target {_human_token_count(mix_target)}<br>"
             f'<span class="sampling {mix_row["sampling_class"]}">'
-            f'{html.escape(str(mix_row["sampling_rate"]))}</span></div></div>'
-            '<div class="category-grid">' + "".join(category_sections) + "</div></section>"
+            f"{html.escape(str(mix_row['sampling_rate']))}</span></div></div>"
+            '<div class="category-grid">'
+            + "".join(category_sections)
+            + "</div></section>"
         )
 
     detail_sections: list[str] = []
@@ -4319,11 +4781,11 @@ def _render_inventory_report(
         detail_sections.append(
             f'<section class="mix-detail" id="{family_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(str(family_row["mix_name"]))}</h2>'
+            f"<h2>{html.escape(str(family_row['mix_name']))}</h2>"
             f'<div class="detail-total">source {_human_token_count(family_source)} → '
             f"target {_human_token_count(family_target)}<br>"
             f'<span class="sampling {family_row["sampling_class"]}">'
-            f'{html.escape(str(family_row["sampling_rate"]))}</span></div></div>'
+            f"{html.escape(str(family_row['sampling_rate']))}</span></div></div>"
             '<div class="subcategory-list">'
             + str(family_row["subcategory_chart_rows"])
             + "</div>"
@@ -4369,7 +4831,9 @@ def _render_inventory_report(
         ],
     )
     aggregate_rate, _ = _sampling_rate_label(original_total, target_total)
-    sampling_rate_failures = [row for row in sampling_rate_rows if row["status"] == "above_expected_maximum"]
+    sampling_rate_failures = [
+        row for row in sampling_rate_rows if row["status"] == "above_expected_maximum"
+    ]
     sampling_audit_html = ""
     if sampling_rate_failures:
         configured_maximum = sampling_rate_failures[0]["maximum_expected_upsample_rate"]
@@ -4477,7 +4941,9 @@ def _render_report(
         entry = by_mix[row["mix_name"]]
         entry["target"] += int(row["target_uint32_values"])
         entry["planned"] += int(row["planned_uint32_values"])
-    top_targets = sorted(by_mix.items(), key=lambda item: item[1]["target"], reverse=True)[:40]
+    top_targets = sorted(
+        by_mix.items(), key=lambda item: item[1]["target"], reverse=True
+    )[:40]
     target_rows = [
         {
             "mix_name": name,
@@ -4489,7 +4955,9 @@ def _render_report(
     target_total = sum(values["target"] for values in by_mix.values())
     for row in target_rows:
         row["target_percent"] = (
-            f"{100 * int(row['target_uint32_values']) / target_total:.8f}" if target_total else "0"
+            f"{100 * int(row['target_uint32_values']) / target_total:.8f}"
+            if target_total
+            else "0"
         )
     _write_csv(
         plot_data / "target-by-mix.csv",
@@ -4509,9 +4977,13 @@ def _render_report(
             [float(row["target_percent"]) for row in target_rows],
             "% of target",
             value_labels=[
-                _mix_plot_value_label(int(row["target_uint32_values"]), target_total) for row in target_rows
+                _mix_plot_value_label(int(row["target_uint32_values"]), target_total)
+                for row in target_rows
             ],
-            summary=(f"Total target: {_human_token_count(target_total)} tokens " f"({target_total:,})"),
+            summary=(
+                f"Total target: {_human_token_count(target_total)} tokens "
+                f"({target_total:,})"
+            ),
         ),
     )
     _write_csv(
@@ -4547,15 +5019,20 @@ def _render_report(
     for row in normalized_paths:
         paths_by_leaf[row["leaf_id"]].append(row)
 
-    source_totals: dict[str, dict[str, int]] = defaultdict(lambda: {"original": 0, "target": 0, "planned": 0})
+    source_totals: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"original": 0, "target": 0, "planned": 0}
+    )
     original_by_leaf: dict[str, int] = {}
     for category in normalized_mix:
         leaf_id = category["leaf_id"]
         original_objects = {
-            row["npy_uri"]: int(row["estimated_uint32_values"]) for row in inventory_by_leaf[leaf_id]
+            row["npy_uri"]: int(row["estimated_uint32_values"])
+            for row in inventory_by_leaf[leaf_id]
         }
         original = sum(original_objects.values())
-        planned = sum(int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id])
+        planned = sum(
+            int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id]
+        )
         original_by_leaf[leaf_id] = original
         entry = source_totals[category["mix_name"]]
         entry["original"] += original
@@ -4570,11 +5047,19 @@ def _render_report(
         key=lambda item: (item[1]["planned"], item[1]["target"], item[0]),
         reverse=True,
     ):
-        effective = totals["planned"] / totals["original"] if totals["original"] else 0.0
-        source_percent = 100 * totals["original"] / original_total if original_total else 0.0
-        planned_percent = 100 * totals["planned"] / proposed_total if proposed_total else 0.0
+        effective = (
+            totals["planned"] / totals["original"] if totals["original"] else 0.0
+        )
+        source_percent = (
+            100 * totals["original"] / original_total if original_total else 0.0
+        )
+        planned_percent = (
+            100 * totals["planned"] / proposed_total if proposed_total else 0.0
+        )
         target_percent = 100 * totals["target"] / target_total if target_total else 0.0
-        sampling_rate, sampling_class = _sampling_rate_label(totals["original"], totals["planned"])
+        sampling_rate, sampling_class = _sampling_rate_label(
+            totals["original"], totals["planned"]
+        )
         comparison_rows.append(
             {
                 "mix_name": mix_name,
@@ -4583,15 +5068,24 @@ def _render_report(
                 "metric_columns": [
                     {
                         "label": "Source",
-                        "value": (f"{_human_token_count(totals['original'])} tokens · " f"{source_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(totals['original'])} tokens · "
+                            f"{source_percent:.2f}%"
+                        ),
                     },
                     {
                         "label": "Proposed",
-                        "value": (f"{_human_token_count(totals['planned'])} tokens · " f"{planned_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(totals['planned'])} tokens · "
+                            f"{planned_percent:.2f}%"
+                        ),
                     },
                     {
                         "label": "Target",
-                        "value": (f"{_human_token_count(totals['target'])} tokens · " f"{target_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(totals['target'])} tokens · "
+                            f"{target_percent:.2f}%"
+                        ),
                     },
                     {"label": "Sampling", "value": sampling_rate},
                 ],
@@ -4618,9 +5112,13 @@ def _render_report(
         family_proposed = sum(int(row["planned"]) for row in subcategories)
         family_target = sum(int(row["target"]) for row in subcategories)
         source_percent = 100 * family_source / original_total if original_total else 0.0
-        proposed_percent = 100 * family_proposed / proposed_total if proposed_total else 0.0
+        proposed_percent = (
+            100 * family_proposed / proposed_total if proposed_total else 0.0
+        )
         target_percent = 100 * family_target / target_total if target_total else 0.0
-        sampling_rate, sampling_class = _sampling_rate_label(family_source, family_proposed)
+        sampling_rate, sampling_class = _sampling_rate_label(
+            family_source, family_proposed
+        )
         ordered_subcategories = sorted(
             subcategories,
             key=lambda row: (
@@ -4634,27 +5132,36 @@ def _render_report(
             sub_source = int(row["original"])
             sub_proposed = int(row["planned"])
             sub_target = int(row["target"])
-            sub_source_percent = 100 * sub_source / family_source if family_source else 0.0
-            sub_proposed_percent = 100 * sub_proposed / family_proposed if family_proposed else 0.0
-            sub_target_percent = 100 * sub_target / family_target if family_target else 0.0
+            sub_source_percent = (
+                100 * sub_source / family_source if family_source else 0.0
+            )
+            sub_proposed_percent = (
+                100 * sub_proposed / family_proposed if family_proposed else 0.0
+            )
+            sub_target_percent = (
+                100 * sub_target / family_target if family_target else 0.0
+            )
             row["family_planned_percent"] = f"{sub_proposed_percent:.8f}"
             row["metric_columns"] = [
                 {
                     "label": "Source",
                     "value": (
-                        f"{_human_token_count(sub_source)} tokens · " f"{sub_source_percent:.2f}% of source"
+                        f"{_human_token_count(sub_source)} tokens · "
+                        f"{sub_source_percent:.2f}% of source"
                     ),
                 },
                 {
                     "label": "Proposed",
                     "value": (
-                        f"{_human_token_count(sub_proposed)} tokens · " f"{sub_proposed_percent:.2f}% of proposed"
+                        f"{_human_token_count(sub_proposed)} tokens · "
+                        f"{sub_proposed_percent:.2f}% of proposed"
                     ),
                 },
                 {
                     "label": "Target",
                     "value": (
-                        f"{_human_token_count(sub_target)} tokens · " f"{sub_target_percent:.2f}% of target"
+                        f"{_human_token_count(sub_target)} tokens · "
+                        f"{sub_target_percent:.2f}% of target"
                     ),
                 },
                 {"label": "Sampling", "value": row["sampling_rate"]},
@@ -4673,15 +5180,24 @@ def _render_report(
                 "metric_columns": [
                     {
                         "label": "Source",
-                        "value": (f"{_human_token_count(family_source)} tokens · " f"{source_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(family_source)} tokens · "
+                            f"{source_percent:.2f}%"
+                        ),
                     },
                     {
                         "label": "Proposed",
-                        "value": (f"{_human_token_count(family_proposed)} tokens · " f"{proposed_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(family_proposed)} tokens · "
+                            f"{proposed_percent:.2f}%"
+                        ),
                     },
                     {
                         "label": "Target",
-                        "value": (f"{_human_token_count(family_target)} tokens · " f"{target_percent:.2f}%"),
+                        "value": (
+                            f"{_human_token_count(family_target)} tokens · "
+                            f"{target_percent:.2f}%"
+                        ),
                     },
                     {"label": "Sampling", "value": sampling_rate},
                 ],
@@ -4718,17 +5234,23 @@ def _render_report(
     for mix_row in comparison_rows:
         mix_name = str(mix_row["mix_name"])
         category_sections: list[str] = []
-        for category in sorted(categories_by_mix[mix_name], key=lambda row: int(row["category_index"])):
+        for category in sorted(
+            categories_by_mix[mix_name], key=lambda row: int(row["category_index"])
+        ):
             leaf_id = category["leaf_id"]
             original = original_by_leaf[leaf_id]
             target = int(category["target_uint32_values"])
-            planned = sum(int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id])
+            planned = sum(
+                int(row["planned_uint32_values"]) for row in uses_by_leaf[leaf_id]
+            )
             allocation = allocation_by_leaf.get(leaf_id)
             if allocation is None:
                 minimum_repetition = 0
                 maximum_repetition = 0
                 total_object_uses = 0
-                unique_object_count = len({row["npy_uri"] for row in inventory_by_leaf[leaf_id]})
+                unique_object_count = len(
+                    {row["npy_uri"] for row in inventory_by_leaf[leaf_id]}
+                )
                 selected_object_count = 0
                 dropped_object_count = unique_object_count
                 repeated_object_count = 0
@@ -4772,9 +5294,13 @@ def _render_report(
                 }
                 path_original = sum(path_original_objects.values())
                 path_uses = uses_by_path[path["path_id"]]
-                path_planned = sum(int(row["planned_uint32_values"]) for row in path_uses)
+                path_planned = sum(
+                    int(row["planned_uint32_values"]) for row in path_uses
+                )
                 path_repetitions = [int(row["repeat_count"]) for row in path_uses]
-                path_partials = [int(row.get("partial_target_uint32_values", 0)) for row in path_uses]
+                path_partials = [
+                    int(row.get("partial_target_uint32_values", 0)) for row in path_uses
+                ]
                 if not path_repetitions:
                     path_repetitions = [0 for _ in path_original_objects]
                     path_partials = [0 for _ in path_original_objects]
@@ -4783,16 +5309,22 @@ def _render_report(
                 path_partial_count = sum(value > 0 for value in path_partials)
                 path_total_uses = sum(path_repetitions) + path_partial_count
                 path_selected = sum(
-                    repeat > 0 or partial > 0 for repeat, partial in zip(path_repetitions, path_partials)
+                    repeat > 0 or partial > 0
+                    for repeat, partial in zip(path_repetitions, path_partials)
                 )
                 path_dropped = sum(
-                    repeat == 0 and partial == 0 for repeat, partial in zip(path_repetitions, path_partials)
+                    repeat == 0 and partial == 0
+                    for repeat, partial in zip(path_repetitions, path_partials)
                 )
                 path_repeated = sum(
-                    int(row["planned_uint32_values"]) > int(row["estimated_uint32_values"]) for row in path_uses
+                    int(row["planned_uint32_values"])
+                    > int(row["estimated_uint32_values"])
+                    for row in path_uses
                 )
                 path_effective = path_planned / path_original if path_original else 0.0
-                path_sampling_rate, path_sampling_class = _sampling_rate_label(path_original, path_planned)
+                path_sampling_rate, path_sampling_class = _sampling_rate_label(
+                    path_original, path_planned
+                )
                 path_sampling_rows.append(
                     {
                         "path_id": path["path_id"],
@@ -4816,13 +5348,16 @@ def _render_report(
                     }
                 )
                 repeat_range = (
-                    f"{path_minimum}×" if path_minimum == path_maximum else f"{path_minimum}–{path_maximum}×"
+                    f"{path_minimum}×"
+                    if path_minimum == path_maximum
+                    else f"{path_minimum}–{path_maximum}×"
                 )
                 source_details = _source_uri_details(
                     (
                         row["npy_uri"]
                         for row in path_uses
-                        if int(row["repeat_count"]) > 0 or int(row.get("partial_target_uint32_values", 0)) > 0
+                        if int(row["repeat_count"]) > 0
+                        or int(row.get("partial_target_uint32_values", 0)) > 0
                     ),
                     "No source NPYs selected for materialization",
                 )
@@ -4873,13 +5408,15 @@ def _render_report(
         subcategory_detail_by_mix[mix_name] = (
             f'<section class="subcategory-detail" id="{mix_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(str(mix_row["subcategory_name"]))}</h2>'
+            f"<h2>{html.escape(str(mix_row['subcategory_name']))}</h2>"
             f'<div class="detail-total">{_human_token_count(int(mix_row["original"]))} source → '
-            f'{_human_token_count(int(mix_row["planned"]))} proposed<br>'
-            f'target {_human_token_count(int(mix_row["target"]))} · '
+            f"{_human_token_count(int(mix_row['planned']))} proposed<br>"
+            f"target {_human_token_count(int(mix_row['target']))} · "
             f'<span class="sampling {mix_row["sampling_class"]}">'
-            f'{html.escape(str(mix_row["sampling_rate"]))}</span></div></div>'
-            '<div class="category-grid">' + "".join(category_sections) + "</div></section>"
+            f"{html.escape(str(mix_row['sampling_rate']))}</span></div></div>"
+            '<div class="category-grid">'
+            + "".join(category_sections)
+            + "</div></section>"
         )
 
     detail_sections: list[str] = []
@@ -4887,12 +5424,12 @@ def _render_report(
         detail_sections.append(
             f'<section class="mix-detail" id="{family_row["detail_id"]}" hidden>'
             '<div class="detail-head">'
-            f'<h2>{html.escape(str(family_row["mix_name"]))}</h2>'
+            f"<h2>{html.escape(str(family_row['mix_name']))}</h2>"
             f'<div class="detail-total">{_human_token_count(int(family_row["original"]))} source → '
-            f'{_human_token_count(int(family_row["planned"]))} proposed<br>'
-            f'target {_human_token_count(int(family_row["target"]))} · '
+            f"{_human_token_count(int(family_row['planned']))} proposed<br>"
+            f"target {_human_token_count(int(family_row['target']))} · "
             f'<span class="sampling {family_row["sampling_class"]}">'
-            f'{html.escape(str(family_row["sampling_rate"]))}</span></div></div>'
+            f"{html.escape(str(family_row['sampling_rate']))}</span></div></div>"
             '<div class="subcategory-list">'
             + str(family_row["subcategory_chart_rows"])
             + "</div>"
@@ -4952,7 +5489,9 @@ def validate_build(args: argparse.Namespace) -> None:
         ):
             value = summary.get(
                 name,
-                summary.get("direct_resolution_failures", 0) if name == "path_resolution_failures" else 0,
+                summary.get("direct_resolution_failures", 0)
+                if name == "path_resolution_failures"
+                else 0,
             )
             checks.append((name, int(value) == 0, str(value)))
     validation_path = build / "01-plan/execution/validation-summary.json"
@@ -4967,7 +5506,13 @@ def validate_build(args: argparse.Namespace) -> None:
         except PreparationError as exc:
             checks.append(("execution_layout_current", False, str(exc)))
     combined_report_path = build / "01-plan/report.html"
-    checks.append(("combined_plan_report_exists", combined_report_path.is_file(), str(combined_report_path)))
+    checks.append(
+        (
+            "combined_plan_report_exists",
+            combined_report_path.is_file(),
+            str(combined_report_path),
+        )
+    )
     checks.append(
         (
             "stage_reports_consolidated",
