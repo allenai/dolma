@@ -159,14 +159,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--provision-batch-size",
         type=lambda value: _positive_integer(value, "provision-batch-size"),
         default=5,
-        help="maximum VM create requests submitted concurrently in one launch batch",
+        help="maximum VM lifecycle requests submitted concurrently in one batch",
     )
     parser.add_argument(
         "--provision-batch-delay-seconds",
         type=lambda value: _nonnegative_float(value, "provision-batch-delay-seconds"),
         default=3.0,
         metavar="SECONDS",
-        help="delay between VM launch batches so provider API quotas can refill",
+        help="delay between VM lifecycle batches so provider API quotas can refill",
     )
     parser.add_argument(
         "--bootstrap-parallelism",
@@ -290,6 +290,7 @@ SECRET_VALUE = re.compile(
 PROCESS_TAIL_LINES = 12
 WORKER_LOG_PAGE_BYTES = 16 * 1024
 PMR_DISCOVERY_WORKER_LIMIT = 90
+LIFECYCLE_MAX_ATTEMPTS = 5
 WORKER_LOG_STYLES = (
     "bold bright_cyan",
     "bold bright_magenta",
@@ -720,6 +721,155 @@ def _resume_command(
     options = _instance_options(args, instance_ids)
     options.pop("ssh_key_path")
     return build_poormanray_instance_command("resume", detach=detach, **options)
+
+
+def _resume_workers_in_batches(
+    args: argparse.Namespace,
+    instance_ids: Sequence[str],
+    *,
+    detach: bool = True,
+    console: Console | None = None,
+) -> None:
+    """Resume stopped workers without bursting the provider's start API."""
+
+    ordered = sorted(set(instance_ids))
+    if not ordered:
+        return
+    batch_size = int(getattr(args, "provision_batch_size", 5))
+    delay = float(getattr(args, "provision_batch_delay_seconds", 3.0))
+    batches = [
+        ordered[offset : offset + batch_size]
+        for offset in range(0, len(ordered), batch_size)
+    ]
+    output = console or Console(stderr=True, highlight=False)
+    discovery_name = _pmr_discovery_name(args)
+
+    for batch_index, batch in enumerate(batches, start=1):
+        _resume_worker_batch(
+            args,
+            batch,
+            stage=(
+                f"resume {discovery_name} batch "
+                f"{batch_index:,}/{len(batches):,}"
+            ),
+            detach=detach,
+            console=output,
+        )
+
+        if batch_index < len(batches) and delay:
+            time.sleep(delay)
+
+
+def _resume_worker_batch(
+    args: argparse.Namespace,
+    instance_ids: Sequence[str],
+    *,
+    stage: str,
+    detach: bool,
+    console: Console,
+) -> None:
+    """Resume one provider-sized batch, retrying only workers still stopped."""
+
+    remaining = list(instance_ids)
+    delay = float(getattr(args, "provision_batch_delay_seconds", 3.0))
+    for attempt in range(1, LIFECYCLE_MAX_ATTEMPTS + 1):
+        try:
+            _run_lifecycle_command(
+                stage,
+                _resume_command(args, remaining, detach=detach),
+                console=console,
+                # Per-instance PMR messages overwhelm the materialization logs.
+                verbose=False,
+                live=False,
+            )
+            return
+        except PreparationError:
+            states = {
+                instance.instance_id: instance.state
+                for instance in _describe_cluster_instances(
+                    args.cluster, args.region, args.profile
+                )
+            }
+            remaining = [
+                instance_id
+                for instance_id in remaining
+                if states.get(instance_id) == "stopped"
+            ]
+            if not remaining:
+                return
+            if attempt == LIFECYCLE_MAX_ATTEMPTS:
+                raise PreparationError(
+                    f"Could not resume {len(remaining):,} worker(s) in {stage} "
+                    f"after {attempt:,} attempts: {', '.join(remaining)}"
+                )
+            retry_delay = max(1.0, delay) * (2 ** (attempt - 1))
+            console.print(
+                Text.assemble(
+                    ("↻", "bold yellow"),
+                    f" {stage} incomplete; retrying {len(remaining):,} worker(s) ",
+                    (f"in {retry_delay:g}s", "dim"),
+                )
+            )
+            time.sleep(retry_delay)
+
+
+def _resume_worker_groups_in_batches(
+    groups: Sequence[tuple[argparse.Namespace, Sequence[str]]],
+    *,
+    console: Console,
+) -> None:
+    """Resume all worker classes in globally bounded, round-robin waves."""
+
+    if not groups:
+        return
+    batch_size = min(
+        int(getattr(group_args, "provision_batch_size", 5))
+        for group_args, _ in groups
+    )
+    delay = max(
+        float(getattr(group_args, "provision_batch_delay_seconds", 3.0))
+        for group_args, _ in groups
+    )
+    queues = deque(
+        (group_args, deque(sorted(set(instance_ids))))
+        for group_args, instance_ids in groups
+        if instance_ids
+    )
+    waves: list[list[tuple[argparse.Namespace, list[str]]]] = []
+    while queues:
+        wave_by_group: dict[int, tuple[argparse.Namespace, list[str]]] = {}
+        for _ in range(batch_size):
+            if not queues:
+                break
+            group_args, instance_queue = queues.popleft()
+            key = id(group_args)
+            if key not in wave_by_group:
+                wave_by_group[key] = (group_args, [])
+            wave_by_group[key][1].append(instance_queue.popleft())
+            if instance_queue:
+                queues.append((group_args, instance_queue))
+        waves.append(list(wave_by_group.values()))
+
+    for wave_index, wave in enumerate(waves, start=1):
+        with ThreadPoolExecutor(max_workers=len(wave)) as pool:
+            futures = [
+                pool.submit(
+                    _resume_worker_batch,
+                    group_args,
+                    instance_ids,
+                    stage=(
+                        f"resume batch {wave_index:,}/{len(waves):,} · "
+                        f"{_pmr_discovery_name(group_args)}"
+                    ),
+                    detach=True,
+                    console=console,
+                )
+                for group_args, instance_ids in wave
+            ]
+            for future in as_completed(futures):
+                future.result()
+        if wave_index < len(waves) and delay:
+            time.sleep(delay)
 
 
 def _pause_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
@@ -1228,26 +1378,64 @@ def _pause_workers_after_failure(
 ) -> None:
     if not instance_ids:
         return
-    command = _pause_command(args, instance_ids)
-    try:
-        return_code = _run_compact_process(
-            "pause workers after failure",
-            command,
-            verbose=getattr(args, "verbose", False),
-        )
-    except OSError as exc:
-        print(
-            f"WARNING: worker cleanup could not start: {exc}; "
-            f"run {shlex.join(command)} immediately",
-            file=sys.stderr,
-        )
-        return
-    if return_code:
-        print(
-            f"WARNING: worker cleanup failed with exit code {return_code}; "
-            f"run {shlex.join(command)} immediately",
-            file=sys.stderr,
-        )
+    ordered = sorted(set(instance_ids))
+    batch_size = int(getattr(args, "provision_batch_size", 5))
+    delay = float(getattr(args, "provision_batch_delay_seconds", 3.0))
+    batches = [
+        ordered[offset : offset + batch_size]
+        for offset in range(0, len(ordered), batch_size)
+    ]
+    for batch_index, batch in enumerate(batches, start=1):
+        remaining = list(batch)
+        for attempt in range(1, LIFECYCLE_MAX_ATTEMPTS + 1):
+            command = _pause_command(args, remaining)
+            try:
+                return_code = _run_compact_process(
+                    f"pause workers after failure batch {batch_index}/{len(batches)}",
+                    command,
+                    verbose=False,
+                )
+            except OSError as exc:
+                print(
+                    f"WARNING: worker cleanup could not start: {exc}; "
+                    f"run {shlex.join(command)} immediately",
+                    file=sys.stderr,
+                )
+                return
+            if return_code == 0:
+                break
+            try:
+                states = {
+                    instance.instance_id: instance.state
+                    for instance in _describe_cluster_instances(
+                        args.cluster, args.region, args.profile
+                    )
+                }
+            except Exception as exc:
+                print(
+                    f"WARNING: worker cleanup state check failed: {exc}; "
+                    f"run {shlex.join(command)} immediately",
+                    file=sys.stderr,
+                )
+                return
+            remaining = [
+                instance_id
+                for instance_id in remaining
+                if states.get(instance_id) in {"pending", "running"}
+            ]
+            if not remaining:
+                break
+            if attempt == LIFECYCLE_MAX_ATTEMPTS:
+                retry_command = _pause_command(args, remaining)
+                print(
+                    f"WARNING: worker cleanup failed after {attempt} attempts; "
+                    f"run {shlex.join(retry_command)} immediately",
+                    file=sys.stderr,
+                )
+                return
+            time.sleep(max(1.0, delay) * (2 ** (attempt - 1)))
+        if batch_index < len(batches) and delay:
+            time.sleep(delay)
 
 
 def _prepare_workers(
@@ -1304,11 +1492,7 @@ def _prepare_workers(
         if selected_ids:
             _retag_cluster_instances(args, selected_ids)
             if deferred_resume_ids is None:
-                _run_lifecycle_command(
-                    "resume workers",
-                    _resume_command(args, selected_ids),
-                    verbose=getattr(args, "verbose", False),
-                )
+                _resume_workers_in_batches(args, selected_ids, detach=False)
             else:
                 deferred_resume_ids.extend(selected_ids)
 
@@ -2148,13 +2332,6 @@ def _execute_materialization_groups(
             if group_resume_ids:
                 deferred_resumes.append((group.args, group_resume_ids))
 
-        for group_args, resume_ids in deferred_resumes:
-            _run_lifecycle_command(
-                f"resume {_pmr_discovery_name(group_args)} workers",
-                _resume_command(group_args, resume_ids, detach=True),
-                verbose=args.verbose,
-            )
-
         worker_stages = {instance_id: "waiting" for instance_id in all_worker_ids}
         stage_lock = Lock()
         all_dispatched = Event()
@@ -2172,6 +2349,18 @@ def _execute_materialization_groups(
             for instance_id in worker_ids
         }
         futures: dict[Future[None], str] = {}
+        resume_pool = ThreadPoolExecutor(max_workers=1)
+        resume_futures = (
+            {
+                resume_pool.submit(
+                    _resume_worker_groups_in_batches,
+                    deferred_resumes,
+                    console=lifecycle_console,
+                ): "resume workers"
+            }
+            if deferred_resumes
+            else {}
+        )
         monitor_pool = ThreadPoolExecutor(max_workers=1)
         monitor = monitor_pool.submit(
             _wait_for_workers_to_stop,
@@ -2189,7 +2378,14 @@ def _execute_materialization_groups(
         try:
             bootstrap_workers = min(args.bootstrap_parallelism, len(all_worker_ids))
             with ThreadPoolExecutor(max_workers=bootstrap_workers) as pool:
-                while pending or futures:
+                while pending or futures or resume_futures:
+                    completed_resumes = [
+                        future for future in resume_futures if future.done()
+                    ]
+                    for future in completed_resumes:
+                        future.result()
+                        del resume_futures[future]
+
                     newly_ready = (
                         _ready_worker_ids(args, sorted(pending)) if pending else set()
                     )
@@ -2221,9 +2417,10 @@ def _execute_materialization_groups(
                         del futures[future]
 
                     if pending:
-                        if futures:
+                        active_futures = [*futures, *resume_futures]
+                        if active_futures:
                             wait(
-                                futures,
+                                active_futures,
                                 timeout=args.readiness_poll_seconds,
                                 return_when=FIRST_COMPLETED,
                             )
@@ -2231,6 +2428,8 @@ def _execute_materialization_groups(
                             time.sleep(args.readiness_poll_seconds)
                     elif futures:
                         wait(futures, return_when=FIRST_COMPLETED)
+                    elif resume_futures:
+                        wait(resume_futures, return_when=FIRST_COMPLETED)
 
             all_dispatched.set()
             monitor.result()
@@ -2239,6 +2438,7 @@ def _execute_materialization_groups(
             raise
         finally:
             monitor_pool.shutdown(wait=True)
+            resume_pool.shutdown(wait=True)
 
         if any(assignment_queues):
             raise PreparationError("Not every execution-unit assignment was dispatched")

@@ -13,7 +13,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from threading import Event, Lock
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import ANY, MagicMock, call, patch
 from xml.etree import ElementTree
 
 import numpy as np
@@ -42,10 +42,13 @@ from scripts.dolma3p5_resharding.materialize import (
     _execute_materialization_groups,
     _map_command,
     _partition_worker_rows,
+    _pause_workers_after_failure,
     _planned_worker_groups,
     _prepare_workers,
     _print_dispatch,
     _provision_batches,
+    _resume_worker_groups_in_batches,
+    _resume_workers_in_batches,
     _retag_cluster_instances,
     _run_compact_process,
     _run_selected_preflight,
@@ -901,6 +904,155 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(_provision_batches(3, 5), (3,))
         self.assertEqual(_provision_batches(12, 5), (5, 5, 2))
 
+    @patch("scripts.dolma3p5_resharding.materialize.time.sleep")
+    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    def test_materialize_batches_provider_resume_requests(self, run, sleep):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            profile=None,
+            parallelism=128,
+            provision_batch_size=5,
+            provision_batch_delay_seconds=3,
+            instance_type="i4i.2xlarge",
+            storage_layout="single",
+            ssh_key_path=None,
+        )
+
+        _resume_workers_in_batches(args, [f"i-{index:02d}" for index in range(12)])
+
+        self.assertEqual(
+            [lifecycle_call.args[0] for lifecycle_call in run.call_args_list],
+            [
+                "resume dolma3p5-14t-i4i-2xlarge-single batch 1/3",
+                "resume dolma3p5-14t-i4i-2xlarge-single batch 2/3",
+                "resume dolma3p5-14t-i4i-2xlarge-single batch 3/3",
+            ],
+        )
+        commands = [lifecycle_call.args[1] for lifecycle_call in run.call_args_list]
+        self.assertEqual(
+            [command.count("--instance-id") for command in commands], [5, 5, 2]
+        )
+        self.assertEqual(
+            [command[command.index("--parallelism") + 1] for command in commands],
+            ["5", "5", "2"],
+        )
+        self.assertEqual(sleep.call_args_list, [call(3.0), call(3.0)])
+
+    @patch("scripts.dolma3p5_resharding.materialize.time.sleep")
+    @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
+    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    def test_materialize_retries_only_workers_that_remain_stopped(
+        self, run, describe, sleep
+    ):
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            profile=None,
+            parallelism=128,
+            provision_batch_size=5,
+            provision_batch_delay_seconds=3,
+            instance_type="i4i.2xlarge",
+            storage_layout="single",
+            ssh_key_path=None,
+        )
+        run.side_effect = [PreparationError("throttled"), None]
+        describe.return_value = [
+            ClusterInstance("i-running", "pending", "i4i.2xlarge", "oe-other"),
+            ClusterInstance("i-stopped", "stopped", "i4i.2xlarge", "oe-other"),
+        ]
+
+        _resume_workers_in_batches(args, ["i-running", "i-stopped"])
+
+        self.assertEqual(run.call_count, 2)
+        retry_command = run.call_args_list[1].args[1]
+        retry_ids = [
+            retry_command[index + 1]
+            for index, value in enumerate(retry_command)
+            if value == "--instance-id"
+        ]
+        self.assertEqual(retry_ids, ["i-stopped"])
+        sleep.assert_called_once_with(3.0)
+
+    @patch("scripts.dolma3p5_resharding.materialize.time.sleep")
+    @patch("scripts.dolma3p5_resharding.materialize._resume_worker_batch")
+    def test_materialize_resume_batch_size_is_global_across_worker_classes(
+        self, resume_batch, sleep
+    ):
+        def group_args(instance_type, storage_layout):
+            return SimpleNamespace(
+                cluster="dolma3p5-14t",
+                project="oe-other",
+                region="us-east-1",
+                profile=None,
+                provision_batch_size=5,
+                provision_batch_delay_seconds=3,
+                instance_type=instance_type,
+                storage_layout=storage_layout,
+            )
+
+        small = group_args("i4i.2xlarge", "single")
+        medium = group_args("i4i.4xlarge", "single")
+        large = group_args("i4i.8xlarge", "raid0")
+        _resume_worker_groups_in_batches(
+            [
+                (small, ["i-s1", "i-s2", "i-s3"]),
+                (medium, ["i-m1", "i-m2", "i-m3"]),
+                (large, ["i-l1", "i-l2"]),
+            ],
+            console=Console(file=io.StringIO(), force_terminal=False),
+        )
+
+        calls_by_wave = {1: [], 2: []}
+        for resume_call in resume_batch.call_args_list:
+            stage = resume_call.kwargs["stage"]
+            wave = 1 if "batch 1/2" in stage else 2
+            calls_by_wave[wave].extend(resume_call.args[1])
+        self.assertEqual(len(calls_by_wave[1]), 5)
+        self.assertEqual(len(calls_by_wave[2]), 3)
+        self.assertEqual(
+            sorted(calls_by_wave[1] + calls_by_wave[2]),
+            [
+                "i-l1",
+                "i-l2",
+                "i-m1",
+                "i-m2",
+                "i-m3",
+                "i-s1",
+                "i-s2",
+                "i-s3",
+            ],
+        )
+        sleep.assert_called_once_with(3.0)
+
+    @patch("scripts.dolma3p5_resharding.materialize.time.sleep")
+    @patch("scripts.dolma3p5_resharding.materialize._run_compact_process")
+    def test_materialize_batches_failure_cleanup_requests(self, run, sleep):
+        run.return_value = 0
+        args = SimpleNamespace(
+            cluster="dolma3p5-14t",
+            project="oe-other",
+            region="us-east-1",
+            profile=None,
+            parallelism=128,
+            provision_batch_size=5,
+            provision_batch_delay_seconds=3,
+            instance_type="i4i.2xlarge",
+            storage_layout="single",
+            ssh_key_path=None,
+        )
+
+        _pause_workers_after_failure(args, [f"i-{index:02d}" for index in range(12)])
+
+        self.assertEqual(run.call_count, 3)
+        commands = [cleanup_call.args[1] for cleanup_call in run.call_args_list]
+        self.assertEqual(
+            [command.count("--instance-id") for command in commands], [5, 5, 2]
+        )
+        sleep.assert_has_calls([call(3.0), call(3.0)])
+
     def test_materialize_balances_execution_units_across_worker_slots(self):
         rows = [
             {
@@ -1115,7 +1267,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         retag.assert_called_once_with(args, ["i-reused"])
         self.assertEqual(
             [call.args[0] for call in run.call_args_list],
-            ["resume workers", "wait for workers"],
+            [
+                "resume dolma3p5-14t-i4i-2xlarge-single batch 1/1",
+                "wait for workers",
+            ],
         )
         for lifecycle_call in run.call_args_list:
             command = lifecycle_call.args[1]
@@ -1194,7 +1349,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         retag.assert_called_once_with(args, ["i-large"])
         self.assertEqual(
             [call.args[0] for call in run.call_args_list],
-            ["resume workers", "wait for workers"],
+            ["resume dolma3p5-14t batch 1/1", "wait for workers"],
         )
 
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
@@ -1239,14 +1394,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize._bootstrap_and_dispatch_worker")
     @patch("scripts.dolma3p5_resharding.materialize._ready_worker_ids")
     @patch("scripts.dolma3p5_resharding.materialize._stage_worker_assignments")
-    @patch("scripts.dolma3p5_resharding.materialize._resume_command", return_value=["resume"])
-    @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
+    @patch("scripts.dolma3p5_resharding.materialize._resume_worker_groups_in_batches")
     @patch("scripts.dolma3p5_resharding.materialize._prepare_workers")
     def test_materialize_dispatches_workers_as_each_becomes_ready(
         self,
         prepare,
-        run,
-        resume_command,
+        resume_workers,
         stage_assignments,
         ready_worker_ids,
         bootstrap,
@@ -1282,7 +1435,6 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             return [instance_id]
 
         prepare.side_effect = prepare_group
-        run.side_effect = lambda stage, command, **kwargs: events.append(("run", stage))
         selected = [
             {
                 "unit_id": "small",
@@ -1367,12 +1519,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 ("prepare", "i4i.8xlarge", ("i-small",), False, False),
             ],
         )
-        self.assertEqual(
-            resume_command.call_args_list,
-            [
-                call(small_args, ["i-small"], detach=True),
-                call(large_args, ["i-large"], detach=True),
-            ],
+        resume_workers.assert_called_once_with(
+            [(small_args, ["i-small"]), (large_args, ["i-large"])],
+            console=ANY,
         )
         self.assertEqual(
             [event for event in events if event[0] == "dispatch"],
