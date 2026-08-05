@@ -18,7 +18,10 @@ import numpy as np
 import yaml
 from rich.console import Console
 
-WORKER_STORAGE_SCRIPT = Path(__file__).resolve().parents[2] / "scripts/dolma3p5_resharding/setup_worker_storage.sh"
+WORKER_STORAGE_SCRIPT = (
+    Path(__file__).resolve().parents[2]
+    / "scripts/dolma3p5_resharding/setup_worker_storage.sh"
+)
 
 from dolma.tokenizer.reshard import (
     ReshardingConfig,
@@ -378,12 +381,16 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "launcher.sh"
             path.write_text(launcher)
-            self.assertEqual(subprocess.run(["bash", "-n", path], check=False).returncode, 0)
+            self.assertEqual(
+                subprocess.run(["bash", "-n", path], check=False).returncode, 0
+            )
 
     def test_materialize_forces_safe_path_for_existing_launchers(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             launcher = Path(temp_dir) / "unit.sh"
-            launcher.write_text("#!/usr/bin/env bash\nset -euo pipefail\npython -m dolma\n")
+            launcher.write_text(
+                "#!/usr/bin/env bash\nset -euo pipefail\npython -m dolma\n"
+            )
             payload = _safe_path_launcher_payload(launcher, "123-test-run").decode()
         self.assertIn("export PYTHONSAFEPATH=1", payload)
         self.assertIn("cd /tmp", payload)
@@ -433,7 +440,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             ["create workers", "wait for workers"],
         )
         create_command = run.call_args_list[0].args[1]
-        self.assertEqual(create_command[create_command.index("--name") + 1], "dolma3p5-14t")
+        self.assertEqual(
+            create_command[create_command.index("--name") + 1], "dolma3p5-14t"
+        )
         self.assertIn("--number", create_command)
         self.assertEqual(create_command[create_command.index("--number") + 1], "2")
         wait_command = run.call_args_list[1].args[1]
@@ -617,13 +626,17 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                         {
                             "name": "default",
                             "weight": 1.0,
-                            "paths": ["dolma3p5_pool/catalog-source/topic/allenai/tokenizer/*.npy"],
+                            "paths": [
+                                "dolma3p5_pool/catalog-source/topic/allenai/tokenizer/*.npy"
+                            ],
                             "repetition_factor": -1.0,
                         },
                         {
                             "name": "dropped",
                             "weight": 0.0,
-                            "paths": ["dolma3p5_pool/catalog-source/topic/vigintile_0000/allenai/tokenizer/*.npy"],
+                            "paths": [
+                                "dolma3p5_pool/catalog-source/topic/vigintile_0000/allenai/tokenizer/*.npy"
+                            ],
                             "repetition_factor": -1.0,
                         },
                     ],
@@ -650,7 +663,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                         {
                             "name": "default",
                             "weight": 1.0,
-                            "paths": ["preprocessed/direct-source/allenai/tokenizer/*.npy"],
+                            "paths": [
+                                "preprocessed/direct-source/allenai/tokenizer/*.npy"
+                            ],
                             "repetition_factor": -1.0,
                         }
                     ],
@@ -766,7 +781,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
         self.assertEqual(captured_command[0], "s5cmd")
         self.assertEqual(captured_command.count("s5cmd"), 2)
-        collector = json.loads((self.build / "01-plan/inventory/collector.json").read_text())
+        collector = json.loads(
+            (self.build / "01-plan/inventory/collector.json").read_text()
+        )
         self.assertEqual(collector["collector"], "s5cmd")
         self.assertEqual(collector["output_records"], 8)
         self.assertTrue((self.build / "01-plan/inventory/raw-listings.jsonl").is_file())
@@ -826,7 +843,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with (phase / "required-objects.csv").open() as handle:
             required = list(csv.DictReader(handle))
         catalog_topic = [
-            row for row in required if row["leaf_id"] == "000:00" and row["category_name"] == "default"
+            row
+            for row in required
+            if row["leaf_id"] == "000:00" and row["category_name"] == "default"
         ]
         self.assertEqual(
             [row["key"].rsplit("/", 1)[-1] for row in catalog_topic],
@@ -882,11 +901,16 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with redirect_stdout(output):
             self._plan()
         self.assertIn(
-            "Plan summary: 3 catalog NPY matches, 1 direct S3 pattern, " "1 correction, 0 blocking failures",
+            "Plan summary: 3 catalog NPY matches, 1 direct S3 pattern, "
+            "1 correction, 0 blocking failures",
             output.getvalue(),
         )
-        self.assertFalse((self.build / "01-plan/resolution/plots/resolution-counts.svg").exists())
-        self.assertFalse((self.build / "01-plan/resolution/plot-data/resolution-counts.csv").exists())
+        self.assertFalse(
+            (self.build / "01-plan/resolution/plots/resolution-counts.svg").exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/resolution/plot-data/resolution-counts.csv").exists()
+        )
 
     def test_plan_command_builds_resolution_inventory_and_execution_together(self):
         from scripts.dolma3p5_resharding import plan as plan_command
@@ -933,7 +957,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             execution_args.destination_root,
             "s3://test-bucket/new-datasets/dolma3p5",
         )
-        self.assertEqual(execution_args.local_temp_root, Path("/mnt/dolma/dolma3p5-resharding"))
+        self.assertEqual(
+            execution_args.local_temp_root, Path("/mnt/dolma/dolma3p5-resharding")
+        )
         self.assertEqual(execution_args.max_unit_working_bytes, 1_500_000_000_000)
 
     def test_catalog_paths_are_decoded_to_literal_s3_keys(self):
@@ -965,7 +991,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 "category_name": "high",
             },
         ]
-        selected_mix = _filter_execution_units(rows, category="dolma3_finemath_v3:finemath")
+        selected_mix = _filter_execution_units(
+            rows, category="dolma3_finemath_v3:finemath"
+        )
         selected_leaf = _filter_execution_units(rows, category="060:00")
         selected_full = _filter_execution_units(
             rows,
@@ -973,8 +1001,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         selected_unit = _filter_execution_units(rows, unit="finemath-0002")
 
-        self.assertEqual([row["unit_id"] for row in selected_mix], ["finemath-0001", "finemath-0002"])
-        self.assertEqual(_unit_selection_digest(selected_mix), _unit_selection_digest(selected_leaf))
+        self.assertEqual(
+            [row["unit_id"] for row in selected_mix], ["finemath-0001", "finemath-0002"]
+        )
+        self.assertEqual(
+            _unit_selection_digest(selected_mix), _unit_selection_digest(selected_leaf)
+        )
         self.assertEqual([row["unit_id"] for row in selected_full], ["stack-0001"])
         self.assertEqual([row["unit_id"] for row in selected_unit], ["finemath-0002"])
 
@@ -982,7 +1014,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         mix = self.root / "encoded-mix.yaml"
         catalog = self.root / "encoded-command-catalog.csv"
         build = self.root / "encoded-command-build"
-        yaml_path = "dolma3p5_pool/the-stack-v2/C++/quality_p95/" "allenai/dolma2-tokenizer/*.npy"
+        yaml_path = (
+            "dolma3p5_pool/the-stack-v2/C++/quality_p95/allenai/dolma2-tokenizer/*.npy"
+        )
         mix.write_text(
             yaml.safe_dump(
                 {
@@ -1005,7 +1039,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             )
         )
         catalog.write_text(
-            "ai2-llm,preprocessed/the-stack-v2/C%2B%2B/quality_p95/" "allenai/dolma2-tokenizer/0000.npy\n"
+            "ai2-llm,preprocessed/the-stack-v2/C%2B%2B/quality_p95/"
+            "allenai/dolma2-tokenizer/0000.npy\n"
         )
 
         plan_build(
@@ -1036,7 +1071,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("matched NPY", plan_report)
         self.assertIn("topic", plan_report)
         self.assertIn(
-            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/" "tokenizer/0000.npy",
+            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/tokenizer/0000.npy",
             plan_report,
         )
         self.assertIn(
@@ -1051,7 +1086,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             self.assertNotIn("resolution_route", csv.DictReader(f).fieldnames)
         with (self.build / "01-plan/resolution/listing-plan.csv").open() as f:
             self.assertNotIn("resolution_routes", csv.DictReader(f).fieldnames)
-        plan_target_plot = (self.build / "01-plan/resolution/plots/target-mix.svg").read_text()
+        plan_target_plot = (
+            self.build / "01-plan/resolution/plots/target-mix.svg"
+        ).read_text()
         self.assertIn("Total target: 14T tokens (14,000,000,000,000)", plan_target_plot)
         self.assertIn("50.00% · 7T tokens", plan_target_plot)
         self.assertNotIn('text-anchor="end"', plan_target_plot)
@@ -1074,7 +1111,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertFalse(legacy_proposal.exists())
 
         self._write_inventory()
-        inventory_summary = json.loads((self.build / "01-plan/inventory/inventory-summary.json").read_text())
+        inventory_summary = json.loads(
+            (self.build / "01-plan/inventory/inventory-summary.json").read_text()
+        )
         self.assertEqual(inventory_summary["source_count"], 3)
         self.assertEqual(inventory_summary["source_family_count"], 3)
         self.assertEqual(inventory_summary["subcategory_count"], 3)
@@ -1084,19 +1123,27 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(inventory_summary["token_delta"], 13_999_999_999_350)
         self.assertGreater(inventory_summary["sampling_ratio"], 1)
         self.assertIn("upsample", inventory_summary["sampling_rate"])
-        self.assertEqual(inventory_summary["details_artifact"], "inventory-details.json")
-        inventory_details = json.loads((self.build / "01-plan/inventory/inventory-details.json").read_text())
+        self.assertEqual(
+            inventory_summary["details_artifact"], "inventory-details.json"
+        )
+        inventory_details = json.loads(
+            (self.build / "01-plan/inventory/inventory-details.json").read_text()
+        )
         self.assertEqual(inventory_details["source_uint32_values"], 650)
         self.assertEqual(inventory_details["source_family_count"], 3)
         self.assertEqual(inventory_details["subcategory_count"], 3)
         catalog_source = next(
-            source for source in inventory_details["sources"] if source["mix_name"] == "catalog-source:topic"
+            source
+            for source in inventory_details["sources"]
+            if source["mix_name"] == "catalog-source:topic"
         )
         self.assertEqual(catalog_source["source_uint32_values"], 150)
         self.assertEqual(catalog_source["source_family"], "catalog-source")
         self.assertEqual(catalog_source["subcategory_name"], "topic")
         dropped_category = next(
-            category for category in catalog_source["categories"] if category["category_name"] == "dropped"
+            category
+            for category in catalog_source["categories"]
+            if category["category_name"] == "dropped"
         )
         self.assertFalse(dropped_category["active"])
         self.assertEqual(dropped_category["source_uint32_values"], 50)
@@ -1111,17 +1158,25 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         refreshed_summary = refresh_inventory_details(self.build)
         self.assertEqual(refreshed_summary["source_count"], 3)
-        inventory_plot = (self.build / "01-plan/inventory/plots/available-by-mix.svg").read_text()
+        inventory_plot = (
+            self.build / "01-plan/inventory/plots/available-by-mix.svg"
+        ).read_text()
         self.assertIn("% ·", inventory_plot)
         self.assertIn("tokens", inventory_plot)
-        self.assertFalse((self.build / "01-plan/inventory/plot-data/object-size-bins.csv").exists())
-        self.assertFalse((self.build / "01-plan/inventory/plots/object-size-histogram.svg").exists())
+        self.assertFalse(
+            (self.build / "01-plan/inventory/plot-data/object-size-bins.csv").exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/inventory/plots/object-size-histogram.svg").exists()
+        )
         inventory_report = (self.build / "01-plan/inventory/report.html").read_text()
         self.assertIn('data-detail="inventory-family-detail-', inventory_report)
         self.assertIn('class="subcategory-row', inventory_report)
         self.assertIn('class="subcategory-detail"', inventory_report)
         self.assertIn("const setAccordionState", inventory_report)
-        self.assertIn("button.getAttribute('aria-expanded') !== 'true'", inventory_report)
+        self.assertIn(
+            "button.getAttribute('aria-expanded') !== 'true'", inventory_report
+        )
         self.assertIn('class="comparison-bars"', inventory_report)
         self.assertIn('class="category-metrics"', inventory_report)
         self.assertNotIn('class="category-counts"', inventory_report)
@@ -1132,7 +1187,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn('class="path-detail-metrics"', inventory_report)
         self.assertIn('class="path-detail-uri"', inventory_report)
         self.assertIn(
-            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/" "tokenizer/0000.npy",
+            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/tokenizer/0000.npy",
             inventory_report,
         )
         self.assertNotIn(
@@ -1154,10 +1209,14 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("upsample", inventory_report)
         self.assertIn("downsample", inventory_report)
         self.assertIn("vigintile_0000", inventory_report)
-        sampling_path = self.build / "01-plan/inventory/plot-data/sampling-by-lower-group.csv"
+        sampling_path = (
+            self.build / "01-plan/inventory/plot-data/sampling-by-lower-group.csv"
+        )
         with sampling_path.open() as f:
             sampling_paths = list(csv.DictReader(f))
-        dropped = next(row for row in sampling_paths if row["lower_group"] == "vigintile_0000")
+        dropped = next(
+            row for row in sampling_paths if row["lower_group"] == "vigintile_0000"
+        )
         self.assertEqual(dropped["original_uint32_values"], "50")
         self.assertEqual(dropped["implied_target_uint32_values"], "0")
         self.assertIn("downsample", dropped["sampling_rate"])
@@ -1182,7 +1241,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertFalse((self.build / "03-proposal").exists())
         configs = list((self.build / "01-plan/execution/config").glob("*.yaml"))
         self.assertEqual(len(configs), 4)
-        launcher_scripts = list((self.build / "01-plan/execution/launcher-scripts").glob("*.sh"))
+        launcher_scripts = list(
+            (self.build / "01-plan/execution/launcher-scripts").glob("*.sh")
+        )
         self.assertEqual(len(launcher_scripts), 4)
         self.assertTrue(all(path.stat().st_mode & 0o100 for path in launcher_scripts))
         self.assertTrue(
@@ -1202,7 +1263,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 for path in launcher_scripts
             )
         )
-        self.assertTrue(all("RESHARDING_MANIFEST_SCHEMA_VERSION" in path.read_text() for path in launcher_scripts))
+        self.assertTrue(
+            all(
+                "RESHARDING_MANIFEST_SCHEMA_VERSION" in path.read_text()
+                for path in launcher_scripts
+            )
+        )
         for path in launcher_scripts:
             self.assertEqual(
                 subprocess.run(["bash", "-n", path], check=False).returncode,
@@ -1212,15 +1278,21 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             execution_units = list(csv.DictReader(f))
         self.assertEqual(
             [row["unit_id"] for row in execution_units],
-            [f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}" for index in range(len(execution_units))],
+            [
+                f"{index:0{EXECUTION_UNIT_INDEX_WIDTH}d}"
+                for index in range(len(execution_units))
+            ],
         )
         self.assertTrue(
             all(
-                int(row["estimated_peak_local_bytes"]) <= int(row["max_unit_working_bytes"])
+                int(row["estimated_peak_local_bytes"])
+                <= int(row["max_unit_working_bytes"])
                 for row in execution_units
             )
         )
-        dataset_layout = json.loads((self.build / "01-plan/execution/dataset-layout.json").read_text())
+        dataset_layout = json.loads(
+            (self.build / "01-plan/execution/dataset-layout.json").read_text()
+        )
         self.assertEqual(dataset_layout["category_count"], 3)
         self.assertEqual(dataset_layout["execution_unit_count"], 4)
         self.assertEqual(dataset_layout["schema_version"], 1)
@@ -1229,11 +1301,19 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             r"^s3://test-bucket/new-datasets/dolma3p5/dolma3p5-14t-[0-9a-f]{12}$",
         )
         self.assertEqual(dataset_layout["layout"], "build-scoped-category-output-v1")
-        self.assertEqual(dataset_layout["execution_unit_index_width"], EXECUTION_UNIT_INDEX_WIDTH)
-        self.assertEqual(dataset_layout["execution_unit_id_width"], EXECUTION_UNIT_INDEX_WIDTH)
+        self.assertEqual(
+            dataset_layout["execution_unit_index_width"], EXECUTION_UNIT_INDEX_WIDTH
+        )
+        self.assertEqual(
+            dataset_layout["execution_unit_id_width"], EXECUTION_UNIT_INDEX_WIDTH
+        )
         self.assertEqual(_validate_execution_layout(self.build), dataset_layout)
-        runtime_requirements = json.loads((self.build / "01-plan/execution/runtime-requirements.json").read_text())
-        self.assertEqual(runtime_requirements["required_resharding_manifest_schema_version"], 2)
+        runtime_requirements = json.loads(
+            (self.build / "01-plan/execution/runtime-requirements.json").read_text()
+        )
+        self.assertEqual(
+            runtime_requirements["required_resharding_manifest_schema_version"], 2
+        )
         for config_path in configs:
             config = yaml.safe_load(config_path.read_text())
             self.assertFalse(config["allow_existing_destination"])
@@ -1250,7 +1330,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             self.assertNotIn("/categories/", destination)
             self.assertNotIn("/unit-", destination)
         for row in execution_units:
-            expected_suffix = f'/{row["source_layout_prefix"]}/{row["destination_index"]}'
+            expected_suffix = (
+                f"/{row['source_layout_prefix']}/{row['destination_index']}"
+            )
             self.assertIn(expected_suffix, row["destination_prefix"])
         for manifest_path in (self.build / "01-plan/execution/manifests").glob("*.csv"):
             with manifest_path.open() as handle:
@@ -1261,20 +1343,51 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         for plot in (self.build / "01-plan/execution/plots").glob("*.svg"):
             ElementTree.parse(plot)
         self.assertFalse(
-            (self.build / "01-plan/execution/plot-data/category-execution-unit-distribution.csv").exists()
+            (
+                self.build
+                / "01-plan/execution/plot-data/category-execution-unit-distribution.csv"
+            ).exists()
         )
-        self.assertFalse((self.build / "01-plan/execution/plot-data/most-split-categories.csv").exists())
-        self.assertFalse((self.build / "01-plan/execution/plots/execution-units-per-category.svg").exists())
-        self.assertFalse((self.build / "01-plan/execution/plot-data/object-size-bins.csv").exists())
-        self.assertFalse((self.build / "01-plan/execution/plots/object-size-histogram.svg").exists())
-        self.assertFalse((self.build / "01-plan/execution/plot-data/source-vs-target.csv").exists())
-        self.assertFalse((self.build / "01-plan/execution/plots/source-vs-target.svg").exists())
-        proposal_target_plot = (self.build / "01-plan/execution/plots/target-mix.svg").read_text()
+        self.assertFalse(
+            (
+                self.build / "01-plan/execution/plot-data/most-split-categories.csv"
+            ).exists()
+        )
+        self.assertFalse(
+            (
+                self.build / "01-plan/execution/plots/execution-units-per-category.svg"
+            ).exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/execution/plot-data/object-size-bins.csv").exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/execution/plots/object-size-histogram.svg").exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/execution/plot-data/source-vs-target.csv").exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/execution/plots/source-vs-target.svg").exists()
+        )
+        proposal_target_plot = (
+            self.build / "01-plan/execution/plots/target-mix.svg"
+        ).read_text()
         self.assertIn("50.00% · 7T tokens", proposal_target_plot)
-        self.assertFalse((self.build / "01-plan/execution/plot-data/target-vs-proposed.csv").exists())
-        self.assertFalse((self.build / "01-plan/execution/plots/target-vs-proposed.svg").exists())
-        self.assertFalse((self.build / "01-plan/execution/plot-data/upsampling-pressure.csv").exists())
-        self.assertFalse((self.build / "01-plan/execution/plots/upsampling-pressure.svg").exists())
+        self.assertFalse(
+            (self.build / "01-plan/execution/plot-data/target-vs-proposed.csv").exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/execution/plots/target-vs-proposed.svg").exists()
+        )
+        self.assertFalse(
+            (
+                self.build / "01-plan/execution/plot-data/upsampling-pressure.csv"
+            ).exists()
+        )
+        self.assertFalse(
+            (self.build / "01-plan/execution/plots/upsampling-pressure.svg").exists()
+        )
         proposal_report = (self.build / "01-plan/report.html").read_text()
         self.assertIn("Source inventory &amp; sampling", proposal_report)
         self.assertIn("Materialization execution", proposal_report)
@@ -1317,10 +1430,13 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertNotIn('class="subcategory-detail"', proposal_report)
         with (self.build / "01-plan/execution/category-allocation.csv").open() as f:
             allocation_rows = list(csv.DictReader(f))
-        catalog_allocation = next(row for row in allocation_rows if row["mix_name"] == "catalog-source:topic")
+        catalog_allocation = next(
+            row for row in allocation_rows if row["mix_name"] == "catalog-source:topic"
+        )
         self.assertEqual(catalog_allocation["available_uint32_values"], "100")
         self.assertEqual(
-            int(catalog_allocation["planned_uint32_values"]) - int(catalog_allocation["available_uint32_values"]),
+            int(catalog_allocation["planned_uint32_values"])
+            - int(catalog_allocation["available_uint32_values"]),
             int(catalog_allocation["token_change_from_original"]),
         )
         self.assertEqual(
@@ -1329,9 +1445,14 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         self.assertGreater(int(catalog_allocation["maximum_repetition"]), 1)
         self.assertEqual(int(catalog_allocation["target_residual_uint32_values"]), 0)
-        with (self.build / "01-plan/execution/plot-data/proposed-sampling-by-lower-group.csv").open() as f:
+        with (
+            self.build
+            / "01-plan/execution/plot-data/proposed-sampling-by-lower-group.csv"
+        ).open() as f:
             proposed_paths = list(csv.DictReader(f))
-        dropped_proposal = next(row for row in proposed_paths if row["lower_group"] == "vigintile_0000")
+        dropped_proposal = next(
+            row for row in proposed_paths if row["lower_group"] == "vigintile_0000"
+        )
         self.assertEqual(dropped_proposal["original_uint32_values"], "50")
         self.assertEqual(dropped_proposal["proposed_uint32_values"], "0")
         self.assertEqual(dropped_proposal["token_change_from_original"], "-50")
@@ -1339,7 +1460,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(dropped_proposal["maximum_repetition"], "0")
         self.assertEqual(dropped_proposal["dropped_object_count"], "1")
         self.assertEqual(dropped_proposal["repeated_object_count"], "0")
-        proposal_summary = json.loads((self.build / "01-plan/execution/proposal-summary.json").read_text())
+        proposal_summary = json.loads(
+            (self.build / "01-plan/execution/proposal-summary.json").read_text()
+        )
         self.assertEqual(proposal_summary["source_uint32_values"], 650)
         self.assertEqual(
             proposal_summary["token_change_from_source"],
@@ -1352,7 +1475,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
 
         with (self.build / "01-plan/inventory/normalized-s3-inventory.csv").open() as f:
-            inventory_rows = [row for row in csv.DictReader(f) if row["required"] == "true"]
+            inventory_rows = [
+                row for row in csv.DictReader(f) if row["required"] == "true"
+            ]
         source_objects = [
             S3Object(
                 bucket=row["bucket"],
@@ -1430,7 +1555,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 )
             )
         validate_build(argparse.Namespace(build=self.build))
-        output_summary = json.loads((self.build / "03-output-validation/output-summary.json").read_text())
+        output_summary = json.loads(
+            (self.build / "03-output-validation/output-summary.json").read_text()
+        )
         self.assertTrue(output_summary["aggregate_target_residual_within_bound"])
         self.assertNotEqual(
             output_summary["actual_uint32_values"],
@@ -1444,7 +1571,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 max_unit_working_bytes=20_000_000_000_000,
             )
         )
-        self.assertTrue((self.build / "01-plan/execution/proposal-summary.json").is_file())
+        self.assertTrue(
+            (self.build / "01-plan/execution/proposal-summary.json").is_file()
+        )
         self.assertFalse((self.build / "02-preflight").exists())
         self.assertFalse((self.build / "03-output-validation").exists())
 
@@ -1466,7 +1595,10 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(
             planned,
             sum(
-                size * repeat + partial for size, repeat, partial in zip([8, 12, 20], repetitions, partial_targets)
+                size * repeat + partial
+                for size, repeat, partial in zip(
+                    [8, 12, 20], repetitions, partial_targets
+                )
             ),
         )
         self.assertEqual(planned, 26)
@@ -1475,7 +1607,9 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
     def test_large_leaf_target_is_distributed_across_every_object(self):
         sizes = [2_993_314_462, 2_930_303_417, 2_852_281_877, 2_863_478_216]
-        repetitions, partial_targets, planned = _allocate_object_sampling(4_810_877_400, sizes)
+        repetitions, partial_targets, planned = _allocate_object_sampling(
+            4_810_877_400, sizes
+        )
         self.assertEqual(planned, 4_810_877_400)
         self.assertEqual(repetitions, [0, 0, 0, 0])
         self.assertTrue(all(value > 0 for value in partial_targets))
@@ -1483,12 +1617,16 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
     def test_fractional_rate_samples_the_same_fraction_from_every_shard(self):
         sizes = [1_000, 2_000, 3_000, 4_000]
-        downsample_repeats, downsample_partials, downsample_total = _allocate_object_sampling(3_000, sizes)
+        downsample_repeats, downsample_partials, downsample_total = (
+            _allocate_object_sampling(3_000, sizes)
+        )
         self.assertEqual(downsample_repeats, [0, 0, 0, 0])
         self.assertEqual(downsample_partials, [300, 600, 900, 1_200])
         self.assertEqual(downsample_total, 3_000)
 
-        upsample_repeats, upsample_partials, upsample_total = _allocate_object_sampling(13_000, sizes)
+        upsample_repeats, upsample_partials, upsample_total = _allocate_object_sampling(
+            13_000, sizes
+        )
         self.assertEqual(upsample_repeats, [1, 1, 1, 1])
         self.assertEqual(upsample_partials, [300, 600, 900, 1_200])
         self.assertEqual(upsample_total, 13_000)
@@ -1525,9 +1663,13 @@ class TestReshardingSafety(unittest.TestCase):
         metadata.write_text("0,1,id,src,0\n")
         manifest = self.root / "manifest.csv"
         with manifest.open("x", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=["npy_uri", "metadata_uri", "repeat_count"])
+            writer = csv.DictWriter(
+                f, fieldnames=["npy_uri", "metadata_uri", "repeat_count"]
+            )
             writer.writeheader()
-            writer.writerow({"npy_uri": npy, "metadata_uri": metadata, "repeat_count": 2})
+            writer.writerow(
+                {"npy_uri": npy, "metadata_uri": metadata, "repeat_count": 2}
+            )
         return manifest
 
     def test_manifest_preserves_exact_local_pair_and_repetition(self):
@@ -1595,7 +1737,7 @@ class TestReshardingSafety(unittest.TestCase):
         self.assertEqual(first_selection, second_selection)
 
         output = self.root / "partial-output/000000.npy"
-        merge_group(first, output, np.dtype(np.uint32))
+        merge_result = merge_group(first, output, np.dtype(np.uint32))
         materialized = np.fromfile(output, dtype=np.uint32)
         self.assertEqual(len(materialized), first[0].selected_uint32_values)
         previous_end = 0
@@ -1605,6 +1747,12 @@ class TestReshardingSafety(unittest.TestCase):
             self.assertEqual(int(row[0]), previous_end)
             previous_end = int(row[1])
         self.assertEqual(previous_end, len(materialized))
+        self.assertEqual(merge_result.document_count, len(rows))
+        self.assertEqual(merge_result.token_copy_operations, len(rows))
+        self.assertEqual(merge_result.output_bytes, output.stat().st_size)
+        self.assertEqual(
+            merge_result.metadata_bytes, output.with_suffix(".csv.gz").stat().st_size
+        )
         with self.assertRaises(FileExistsError):
             merge_group(first, output, np.dtype(np.uint32))
 
@@ -1652,7 +1800,9 @@ class TestReshardingSafety(unittest.TestCase):
             writer.writeheader()
             writer.writerows(manifest_rows)
 
-        paths = ReshardingManifestConfig(manifest_path).take(self.root / "distributed-partial-run", max_workers=1)
+        paths = ReshardingManifestConfig(manifest_path).take(
+            self.root / "distributed-partial-run", max_workers=2
+        )
         self.assertEqual(len(paths), 3)
         selected_index_sets = []
         for shard_index, path in enumerate(paths):
@@ -1660,7 +1810,9 @@ class TestReshardingSafety(unittest.TestCase):
             with gzip.open(path.selection_path, "rt", encoding="utf-8") as handle:
                 selected_rows = list(csv.reader(handle))
             self.assertEqual(len(selected_rows), 3)
-            self.assertTrue(all(row[2].startswith(f"shard-{shard_index}-") for row in selected_rows))
+            self.assertTrue(
+                all(row[2].startswith(f"shard-{shard_index}-") for row in selected_rows)
+            )
             selected_index_sets.append(frozenset(int(row[4]) for row in selected_rows))
         self.assertGreater(len(set(selected_index_sets)), 1)
 
@@ -1698,7 +1850,9 @@ class TestReshardingSafety(unittest.TestCase):
         }
         with patch("dolma.tokenizer.reshard.boto3.client", return_value=client):
             with self.assertRaisesRegex(RuntimeError, "changed before download"):
-                ReshardingManifestConfig(manifest_path).take(self.root / "remote-input", max_workers=1)
+                ReshardingManifestConfig(manifest_path).take(
+                    self.root / "remote-input", max_workers=1
+                )
 
     def test_existing_local_destination_is_refused(self):
         destination = self.root / "existing"

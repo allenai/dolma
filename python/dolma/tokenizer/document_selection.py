@@ -55,21 +55,26 @@ class DocumentSelectionResult:
     largest_document_uint32_values: int
 
 
-def _iter_metadata_rows(metadata_path: Path, source_uint32_values: int) -> Iterator[DocumentMetadataRow]:
+def _iter_metadata_rows(
+    metadata_path: Path, source_uint32_values: int
+) -> Iterator[DocumentMetadataRow]:
     previous_end = 0
     with smart_open.open(metadata_path, "r", encoding="utf-8") as handle:
         reader = csv.reader(handle)
         for row_number, row in enumerate(reader, start=1):
             if len(row) != 5:
                 raise ValueError(
-                    f"Invalid token metadata row {metadata_path}:{row_number}; " "expected five columns"
+                    f"Invalid token metadata row {metadata_path}:{row_number}; "
+                    "expected five columns"
                 )
             try:
                 start = int(row[0])
                 end = int(row[1])
                 source_index = int(row[4])
             except ValueError as exc:
-                raise ValueError(f"Invalid token offsets on {metadata_path}:{row_number}") from exc
+                raise ValueError(
+                    f"Invalid token offsets on {metadata_path}:{row_number}"
+                ) from exc
             if start != previous_end or end <= start or end > source_uint32_values:
                 raise ValueError(
                     f"Non-contiguous token metadata on {metadata_path}:{row_number}; "
@@ -92,9 +97,10 @@ def _iter_metadata_rows(metadata_path: Path, source_uint32_values: int) -> Itera
 
 
 def _document_hash(row: DocumentMetadataRow, seed: int) -> int:
-    payload = (f"{seed}\0{row.start}\0{row.end}\0{row.document_id}\0" f"{row.source}\0{row.source_index}").encode(
-        "utf-8"
-    )
+    payload = (
+        f"{seed}\0{row.start}\0{row.end}\0{row.document_id}\0"
+        f"{row.source}\0{row.source_index}"
+    ).encode("utf-8")
     return int.from_bytes(
         hashlib.blake2b(
             payload,
@@ -132,7 +138,9 @@ def create_document_selection(
     if source_uint32_values <= 0:
         raise ValueError("source_uint32_values must be positive")
     if not 0 < target_uint32_values < source_uint32_values:
-        raise ValueError("target_uint32_values must be between zero and the source size")
+        raise ValueError(
+            "target_uint32_values must be between zero and the source size"
+        )
     if selection_path.exists() or selection_path.is_symlink():
         raise FileExistsError(f"Refusing to replace selection index: {selection_path}")
 
@@ -140,11 +148,16 @@ def create_document_selection(
     source_document_count = 0
     largest_document = 0
     last_progress_at = time.monotonic()
+    if progress is not None:
+        progress("pass 1/2", 0, 0)
     for row in _iter_metadata_rows(metadata_path, source_uint32_values):
         bucket_values[_hash_bucket(_document_hash(row, seed))] += row.token_count
         source_document_count += 1
         largest_document = max(largest_document, row.token_count)
-        if progress is not None and time.monotonic() - last_progress_at >= progress_interval_seconds:
+        if (
+            progress is not None
+            and time.monotonic() - last_progress_at >= progress_interval_seconds
+        ):
             progress("pass 1/2", source_document_count, row.end)
             last_progress_at = time.monotonic()
     if progress is not None:
@@ -168,6 +181,8 @@ def create_document_selection(
     selection_path.parent.mkdir(parents=True, exist_ok=True)
     second_pass_documents = 0
     last_progress_at = time.monotonic()
+    if progress is not None:
+        progress("pass 2/2", 0, 0)
     with gzip.open(selection_path, "xt", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle)
         for row in _iter_metadata_rows(metadata_path, source_uint32_values):
@@ -179,7 +194,10 @@ def create_document_selection(
                 selected_documents += 1
             elif bucket == threshold_bucket:
                 threshold_rows.append((hash_value, row))
-            if progress is not None and time.monotonic() - last_progress_at >= progress_interval_seconds:
+            if (
+                progress is not None
+                and time.monotonic() - last_progress_at >= progress_interval_seconds
+            ):
                 progress("pass 2/2", second_pass_documents, row.end)
                 last_progress_at = time.monotonic()
 

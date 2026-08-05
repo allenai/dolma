@@ -52,7 +52,13 @@ import threading
 import time
 from collections import Counter
 from collections.abc import Callable
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
+from concurrent.futures import (
+    FIRST_COMPLETED,
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    as_completed,
+    wait,
+)
 from dataclasses import asdict, dataclass, field
 from functools import partial
 from pathlib import Path
@@ -67,6 +73,7 @@ import yaml
 from dolma.core.loggers import get_logger
 from dolma.tokenizer.document_selection import (
     DOCUMENT_SELECTION_ALGORITHM,
+    DocumentSelectionResult,
     create_document_selection,
 )
 from dolma.tokenizer.tokenizer import Tokenizer
@@ -86,7 +93,12 @@ def _human_count(value: int, unit: str = "") -> str:
 
 
 def _human_bytes(value: int) -> str:
-    for scale, suffix in ((1024**4, "TiB"), (1024**3, "GiB"), (1024**2, "MiB"), (1024, "KiB")):
+    for scale, suffix in (
+        (1024**4, "TiB"),
+        (1024**3, "GiB"),
+        (1024**2, "MiB"),
+        (1024, "KiB"),
+    ):
         if value >= scale:
             return f"{value / scale:.3g} {suffix}"
     return f"{value:,} B"
@@ -155,6 +167,8 @@ def _run_with_progress(
         shlex.join(command),
     )
     process = subprocess.Popen(command)
+    completed = 0
+    current_bytes = 0
     while True:
         try:
             return_code = process.wait(timeout=interval_seconds)
@@ -181,8 +195,20 @@ def _run_with_progress(
         if return_code is not None:
             break
     if return_code:
-        raise RuntimeError(f"{phase} failed with exit code {return_code}; inspect the worker log")
-    logger.info("%s complete in %s", phase, _elapsed(started_at))
+        raise RuntimeError(
+            f"{phase} failed with exit code {return_code}; inspect the worker log"
+        )
+    elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
+    logger.info(
+        "%s complete: %s/%s objects · %s/%s · average %s/s · elapsed %s",
+        phase,
+        completed,
+        expected_objects,
+        _human_bytes(current_bytes),
+        _human_bytes(expected_bytes),
+        _human_bytes(round(current_bytes / elapsed_seconds)),
+        _elapsed(started_at),
+    )
 
 
 @dataclass(frozen=True)
@@ -210,30 +236,64 @@ class TokensMetadataPaths:
         return os.path.getsize(self.npy_path)
 
 
+@dataclass(frozen=True)
+class MergeGroupResult:
+    destination: Path
+    output_bytes: int
+    metadata_bytes: int
+    document_count: int
+    token_copy_operations: int
+    elapsed_seconds: float
+
+
 def merge_group(
     paths: list[TokensMetadataPaths],
     destination: str | Path,
     dtype: np.dtype,
-):
+) -> MergeGroupResult:
     """
     Given a list of paths, merge them into a single memmap.
     """
     npy_destination = Path(destination)
     csv_destination = npy_destination.with_suffix(".csv.gz")
     total_size = sum(p.size for p in paths)
+    total_values = total_size // dtype.itemsize
     if any(path.selection_path is not None for path in paths) and dtype.itemsize != 4:
         raise ValueError("Document selections require uint32 token memmaps")
 
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
     if os.path.lexists(npy_destination) or os.path.lexists(csv_destination):
-        raise FileExistsError(f"Refusing to replace an existing reshard output: {npy_destination}")
+        raise FileExistsError(
+            f"Refusing to replace an existing reshard output: {npy_destination}"
+        )
 
-    target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_size // dtype.itemsize,), dtype=dtype)
+    started_at = time.monotonic()
+    logger.info(
+        "Merge shard %s started: %s input views · %s (%s values)",
+        npy_destination.stem,
+        len(paths),
+        _human_bytes(total_size),
+        _human_count(total_values),
+    )
+    target_memmap = np.memmap(
+        npy_destination, mode="w+", shape=(total_values,), dtype=dtype
+    )
 
     token_offset = 0
+    completed_values = 0
+    document_count = 0
+    token_copy_operations = 0
+    last_progress_at = started_at
     with smart_open.open(csv_destination, "w", encoding="utf-8") as f:
-        for path in paths:
-            rw = csv.writer(f)
+        rw = csv.writer(f)
+        for input_index, path in enumerate(paths, start=1):
+            input_started_at = time.monotonic()
+            input_documents = 0
+            input_processed_values = 0
+            input_copy_operations = 0
+            view_type = "selected" if path.selection_path is not None else "full"
+            source_path = Path(path.npy_path)
+            source_label = f"{source_path.parent.name}/{source_path.name}"
             source_memmap = np.memmap(
                 path.npy_path,
                 mode="r",
@@ -242,7 +302,22 @@ def merge_group(
             )
             metadata_path = path.selection_path or path.csv_path
             if path.selection_path is None:
-                target_memmap[token_offset : token_offset + source_memmap.shape[0]] = source_memmap
+                copy_started_at = time.monotonic()
+                target_memmap[token_offset : token_offset + source_memmap.shape[0]] = (
+                    source_memmap
+                )
+                copy_seconds = max(time.monotonic() - copy_started_at, 1e-9)
+                token_copy_operations += 1
+                input_copy_operations += 1
+                logger.info(
+                    "Merge shard %s input %s/%s token copy: %s full view · %s · %s/s",
+                    npy_destination.stem,
+                    input_index,
+                    len(paths),
+                    source_label,
+                    _human_bytes(path.size),
+                    _human_bytes(round(path.size / copy_seconds)),
+                )
                 copy_start = token_offset
                 token_offset += source_memmap.shape[0]
             else:
@@ -257,11 +332,20 @@ def merge_group(
                         assert copy_start is not None
                         output_start = copy_start + start_value
                         output_end = copy_start + end_value
+                        input_processed_values = end_value
                     else:
                         output_start = token_offset
                         output_end = token_offset + end_value - start_value
-                        target_memmap[output_start:output_end] = source_memmap[start_value:end_value]
+                        target_memmap[output_start:output_end] = source_memmap[
+                            start_value:end_value
+                        ]
                         token_offset = output_end
+                        copied_values = end_value - start_value
+                        input_processed_values += copied_values
+                        token_copy_operations += 1
+                        input_copy_operations += 1
+                    input_documents += 1
+                    document_count += 1
                     rw.writerow(
                         [
                             output_start,
@@ -271,13 +355,81 @@ def merge_group(
                             int(idx),
                         ]
                     )
+                    if document_count % 100_000 == 0:
+                        now = time.monotonic()
+                        if now - last_progress_at >= PROGRESS_INTERVAL_SECONDS:
+                            processed_values = completed_values + input_processed_values
+                            elapsed_seconds = max(now - started_at, 1e-9)
+                            logger.info(
+                                "Merge shard %s progress: input %s/%s %s view %s · %s documents · "
+                                "%s/%s values processed · %s documents/s · %s values/s · elapsed %s",
+                                npy_destination.stem,
+                                input_index,
+                                len(paths),
+                                view_type,
+                                source_label,
+                                _human_count(document_count),
+                                _human_count(processed_values),
+                                _human_count(total_values),
+                                _human_count(round(document_count / elapsed_seconds)),
+                                _human_count(round(processed_values / elapsed_seconds)),
+                                _elapsed(started_at),
+                            )
+                            last_progress_at = now
             del source_memmap
+            input_seconds = max(time.monotonic() - input_started_at, 1e-9)
+            completed_values += input_processed_values
+            logger.info(
+                "Merge shard %s input %s/%s complete: %s view %s · %s documents · %s values · "
+                "%s token copy operations · %s documents/s · %s values/s · elapsed %s",
+                npy_destination.stem,
+                input_index,
+                len(paths),
+                view_type,
+                source_label,
+                _human_count(input_documents),
+                _human_count(input_processed_values),
+                _human_count(input_copy_operations),
+                _human_count(round(input_documents / input_seconds)),
+                _human_count(round(input_processed_values / input_seconds)),
+                _elapsed(input_started_at),
+            )
+        flush_started_at = time.monotonic()
         target_memmap.flush()
-    if token_offset != total_size // dtype.itemsize:
+        logger.info(
+            "Merge shard %s token flush complete: %s · elapsed %s",
+            npy_destination.stem,
+            _human_bytes(total_size),
+            _elapsed(flush_started_at),
+        )
+    if token_offset != total_values:
         raise RuntimeError(
             f"Reshard output length mismatch for {npy_destination}: "
-            f"wrote {token_offset}, expected {total_size // dtype.itemsize}"
+            f"wrote {token_offset}, expected {total_values}"
         )
+    elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
+    metadata_bytes = csv_destination.stat().st_size
+    result = MergeGroupResult(
+        destination=npy_destination,
+        output_bytes=total_size,
+        metadata_bytes=metadata_bytes,
+        document_count=document_count,
+        token_copy_operations=token_copy_operations,
+        elapsed_seconds=elapsed_seconds,
+    )
+    logger.info(
+        "Merge shard %s complete: %s tokens · %s metadata · %s documents · "
+        "%s token copy operations · %s/s token output · %s documents/s · elapsed %s",
+        npy_destination.stem,
+        _human_bytes(total_size),
+        _human_bytes(metadata_bytes),
+        _human_count(document_count),
+        _human_count(token_copy_operations),
+        _human_bytes(round(total_size / elapsed_seconds)),
+        _human_count(round(document_count / elapsed_seconds)),
+        _elapsed(started_at),
+    )
+    return result
 
 
 def group_paths_by_max_size(
@@ -287,7 +439,9 @@ def group_paths_by_max_size(
     """
     Group paths by max size.
     """
-    counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
+    counts: dict[TokensMetadataPaths, int] = {
+        p: int(c) for p, c in Counter(paths).items()
+    }
     _log_merge_input_views(counts, len(paths))
 
     grouped_paths: list[list[TokensMetadataPaths]] = []
@@ -303,7 +457,11 @@ def group_paths_by_max_size(
                 grouped_paths[-1].append(path)
 
         # decrease counts, remove paths with 0 count.
-        counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
+        counts = {
+            path: new_count
+            for path, count in counts.items()
+            if (new_count := count - 1) > 0
+        }
 
     logger.info(
         "Grouped %s merge input uses into %s output shards capped at %.2f GiB",
@@ -451,7 +609,7 @@ def merge_all_npys(
     started_at = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=max_workers, initializer=init_fn) as pool:
-        future_sizes = {}
+        futures = set()
         for i, group in enumerate(grouped_paths):
             future = pool.submit(
                 merge_group,
@@ -459,11 +617,14 @@ def merge_all_npys(
                 destination=destination / f"{i:06d}.npy",
                 dtype=tokenizer.dtype,
             )
-            future_sizes[future] = sum(path.size for path in group)
+            futures.add(future)
 
-        pending = set(future_sizes)
+        pending = futures
         completed_shards = 0
         completed_bytes = 0
+        completed_metadata_bytes = 0
+        completed_documents = 0
+        completed_copy_operations = 0
         while pending:
             done, pending = wait(
                 pending,
@@ -472,27 +633,45 @@ def merge_all_npys(
             )
             for future in done:
                 try:
-                    future.result()
+                    result = future.result()
                 except Exception:
                     for pending_future in pending:
                         pending_future.cancel()
                     raise
                 completed_shards += 1
-                completed_bytes += future_sizes[future]
+                completed_bytes += result.output_bytes
+                completed_metadata_bytes += result.metadata_bytes
+                completed_documents += result.document_count
+                completed_copy_operations += result.token_copy_operations
+            elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
             logger.info(
-                "Merge progress: %s/%s output shards · %s/%s · %s active · elapsed %s",
+                "Merge progress: %s/%s output shards · %s/%s token output · %s metadata · "
+                "%s documents · %s token copy operations · %s/s completed output · "
+                "%s documents/s · %s active · elapsed %s",
                 completed_shards,
                 len(grouped_paths),
                 _human_bytes(completed_bytes),
                 _human_bytes(total_bytes),
+                _human_bytes(completed_metadata_bytes),
+                _human_count(completed_documents),
+                _human_count(completed_copy_operations),
+                _human_bytes(round(completed_bytes / elapsed_seconds)),
+                _human_count(round(completed_documents / elapsed_seconds)),
                 len(pending),
                 _elapsed(started_at),
             )
 
+    elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
     logger.info(
-        "Merge complete: %s output shards · %s · %s",
+        "Merge complete: %s output shards · %s tokens · %s metadata · %s documents · "
+        "%s token copy operations · %s/s token output · %s documents/s · elapsed %s",
         len(grouped_paths),
         _human_bytes(total_bytes),
+        _human_bytes(completed_metadata_bytes),
+        _human_count(completed_documents),
+        _human_count(completed_copy_operations),
+        _human_bytes(round(total_bytes / elapsed_seconds)),
+        _human_count(round(completed_documents / elapsed_seconds)),
         _elapsed(started_at),
     )
 
@@ -528,7 +707,9 @@ class ReshardingPrefixConfig:
         ]
 
         logger.info("Running command: %s", " ".join(cmd))
-        result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        result = subprocess.run(
+            cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        )
 
         if result.returncode != 0:
             print(f"s5cmd failed with error: {result.stderr}")
@@ -564,7 +745,9 @@ class ReshardingPrefixConfig:
         # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
         # of same size, we can just take a random sample.
         if (residual_frac := self.sample_rate - repetition_rate) > 0:
-            new_paths.extend(random.sample(paths, max(1, round(residual_frac * len(paths)))))
+            new_paths.extend(
+                random.sample(paths, max(1, round(residual_frac * len(paths))))
+            )
 
         # sort by size
         logger.info(
@@ -598,6 +781,93 @@ class ReshardingManifestEntry:
 
 
 @dataclass(frozen=True)
+class DocumentSelectionJob:
+    manifest_index: int
+    source_uri: str
+    metadata_path: Path
+    selection_path: Path
+    source_uint32_values: int
+    target_uint32_values: int
+    seed: int
+
+
+@dataclass(frozen=True)
+class CompletedDocumentSelection:
+    manifest_index: int
+    result: DocumentSelectionResult
+
+
+def _run_document_selection(job: DocumentSelectionJob) -> CompletedDocumentSelection:
+    """Create one selection index in a process-pool worker."""
+
+    started_at = time.monotonic()
+    current_pass = ""
+    pass_started_at = started_at
+    source_document_count: int | None = None
+
+    def report_progress(
+        pass_name: str, document_count: int, covered_values: int
+    ) -> None:
+        nonlocal current_pass, pass_started_at, source_document_count
+        now = time.monotonic()
+        if current_pass != pass_name:
+            current_pass = pass_name
+            pass_started_at = now
+            logger.info("Document selection %s %s started", job.source_uri, pass_name)
+        if document_count == 0:
+            return
+
+        pass_seconds = max(now - pass_started_at, 1e-9)
+        if pass_name == "pass 1/2" and covered_values == job.source_uint32_values:
+            source_document_count = document_count
+        if pass_name == "pass 2/2" and source_document_count is not None:
+            documents = f"{_human_count(document_count)}/{_human_count(source_document_count)} documents"
+        else:
+            documents = f"{_human_count(document_count)} documents"
+        logger.info(
+            "Document selection %s %s: %s · %s/%s values scanned · "
+            "%s documents/s · %s values/s · elapsed %s",
+            job.source_uri,
+            pass_name,
+            documents,
+            _human_count(covered_values),
+            _human_count(job.source_uint32_values),
+            _human_count(round(document_count / pass_seconds)),
+            _human_count(round(covered_values / pass_seconds)),
+            _elapsed(pass_started_at),
+        )
+
+    result = create_document_selection(
+        metadata_path=job.metadata_path,
+        selection_path=job.selection_path,
+        source_uint32_values=job.source_uint32_values,
+        target_uint32_values=job.target_uint32_values,
+        seed=job.seed,
+        progress=report_progress,
+    )
+    elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
+    scanned_documents = result.source_document_count * 2
+    scanned_values = job.source_uint32_values * 2
+    logger.info(
+        "Document selection %s complete: %s/%s documents selected · %s values selected "
+        "for %s requested (residual %+d) · %s documents/s · %s values/s · elapsed %s",
+        job.source_uri,
+        _human_count(result.selected_document_count),
+        _human_count(result.source_document_count),
+        _human_count(result.selected_uint32_values),
+        _human_count(result.requested_uint32_values),
+        result.target_residual_uint32_values,
+        _human_count(round(scanned_documents / elapsed_seconds)),
+        _human_count(round(scanned_values / elapsed_seconds)),
+        _elapsed(started_at),
+    )
+    return CompletedDocumentSelection(
+        manifest_index=job.manifest_index,
+        result=result,
+    )
+
+
+@dataclass(frozen=True)
 class ReshardingManifestConfig:
     """An exact, locally stored manifest of token/metadata object pairs.
 
@@ -609,7 +879,9 @@ class ReshardingManifestConfig:
 
     manifest: str | Path
 
-    def take(self, local_prefix: str | Path, max_workers: int) -> list[TokensMetadataPaths]:
+    def take(
+        self, local_prefix: str | Path, max_workers: int
+    ) -> list[TokensMetadataPaths]:
         manifest = Path(self.manifest)
         if not manifest.is_file():
             raise FileNotFoundError(f"Resharding manifest does not exist: {manifest}")
@@ -621,38 +893,66 @@ class ReshardingManifestConfig:
             reader = csv.DictReader(f)
             expected = {"npy_uri", "metadata_uri", "repeat_count"}
             if reader.fieldnames is None or not expected.issubset(reader.fieldnames):
-                raise ValueError(f"Manifest {manifest} must contain columns {sorted(expected)}")
+                raise ValueError(
+                    f"Manifest {manifest} must contain columns {sorted(expected)}"
+                )
             for row_number, csv_row in enumerate(reader, start=2):
                 npy_uri = csv_row["npy_uri"].strip()
                 metadata_uri = csv_row["metadata_uri"].strip()
                 try:
                     repeat_count = int(csv_row["repeat_count"])
-                    partial_target = int(csv_row.get("partial_target_uint32_values") or 0)
+                    partial_target = int(
+                        csv_row.get("partial_target_uint32_values") or 0
+                    )
                     selection_seed = int(csv_row.get("selection_seed") or 0)
                 except (TypeError, ValueError) as exc:
-                    raise ValueError(f"Invalid sampling values on {manifest}:{row_number}") from exc
+                    raise ValueError(
+                        f"Invalid sampling values on {manifest}:{row_number}"
+                    ) from exc
                 if not npy_uri.endswith(".npy") or not metadata_uri.endswith(".csv.gz"):
                     raise ValueError(f"Invalid object pair on {manifest}:{row_number}")
                 if any(ord(char) < 32 for char in npy_uri + metadata_uri):
-                    raise ValueError(f"Control character in object URI on {manifest}:{row_number}")
+                    raise ValueError(
+                        f"Control character in object URI on {manifest}:{row_number}"
+                    )
                 if Path(npy_uri).stem != Path(Path(metadata_uri).stem).stem:
-                    raise ValueError(f"Mismatched object pair on {manifest}:{row_number}")
+                    raise ValueError(
+                        f"Mismatched object pair on {manifest}:{row_number}"
+                    )
                 if repeat_count < 0 or partial_target < 0:
-                    raise ValueError(f"Sampling values cannot be negative on {manifest}:{row_number}")
+                    raise ValueError(
+                        f"Sampling values cannot be negative on {manifest}:{row_number}"
+                    )
                 if repeat_count == 0 and partial_target == 0:
-                    raise ValueError(f"Manifest row selects no tokens on {manifest}:{row_number}")
+                    raise ValueError(
+                        f"Manifest row selects no tokens on {manifest}:{row_number}"
+                    )
                 try:
-                    npy_size_bytes = int(csv_row["npy_size_bytes"]) if csv_row.get("npy_size_bytes") else None
+                    npy_size_bytes = (
+                        int(csv_row["npy_size_bytes"])
+                        if csv_row.get("npy_size_bytes")
+                        else None
+                    )
                     metadata_size_bytes = (
-                        int(csv_row["metadata_size_bytes"]) if csv_row.get("metadata_size_bytes") else None
+                        int(csv_row["metadata_size_bytes"])
+                        if csv_row.get("metadata_size_bytes")
+                        else None
                     )
                 except ValueError as exc:
-                    raise ValueError(f"Invalid expected size on {manifest}:{row_number}") from exc
+                    raise ValueError(
+                        f"Invalid expected size on {manifest}:{row_number}"
+                    ) from exc
                 if npy_size_bytes is not None and npy_size_bytes <= 0:
-                    raise ValueError(f"npy_size_bytes must be positive on {manifest}:{row_number}")
+                    raise ValueError(
+                        f"npy_size_bytes must be positive on {manifest}:{row_number}"
+                    )
                 if metadata_size_bytes is not None and metadata_size_bytes <= 0:
-                    raise ValueError(f"metadata_size_bytes must be positive on {manifest}:{row_number}")
-                if urlparse(npy_uri).scheme == "s3" and (npy_size_bytes is None or metadata_size_bytes is None):
+                    raise ValueError(
+                        f"metadata_size_bytes must be positive on {manifest}:{row_number}"
+                    )
+                if urlparse(npy_uri).scheme == "s3" and (
+                    npy_size_bytes is None or metadata_size_bytes is None
+                ):
                     raise ValueError(
                         f"Remote manifest rows require npy_size_bytes and metadata_size_bytes on "
                         f"{manifest}:{row_number}"
@@ -660,11 +960,13 @@ class ReshardingManifestConfig:
                 if partial_target:
                     if npy_size_bytes is None:
                         raise ValueError(
-                            "Partial manifest rows require npy_size_bytes on " f"{manifest}:{row_number}"
+                            "Partial manifest rows require npy_size_bytes on "
+                            f"{manifest}:{row_number}"
                         )
                     if npy_size_bytes % np.dtype(np.uint32).itemsize:
                         raise ValueError(
-                            f"Partial source size is not uint32-aligned on " f"{manifest}:{row_number}"
+                            f"Partial source size is not uint32-aligned on "
+                            f"{manifest}:{row_number}"
                         )
                     source_values = npy_size_bytes // np.dtype(np.uint32).itemsize
                     if partial_target >= source_values:
@@ -672,7 +974,10 @@ class ReshardingManifestConfig:
                             "partial_target_uint32_values must be smaller than "
                             f"the source on {manifest}:{row_number}"
                         )
-                    selection_algorithm = str(csv_row.get("selection_algorithm") or DOCUMENT_SELECTION_ALGORITHM)
+                    selection_algorithm = str(
+                        csv_row.get("selection_algorithm")
+                        or DOCUMENT_SELECTION_ALGORITHM
+                    )
                     if selection_algorithm != DOCUMENT_SELECTION_ALGORITHM:
                         raise ValueError(
                             f"Unsupported selection_algorithm on "
@@ -703,7 +1008,9 @@ class ReshardingManifestConfig:
             for entry in rows
         )
         planned_uint32_values = sum(
-            (entry.npy_size_bytes or 0) // np.dtype(np.uint32).itemsize * entry.repeat_count
+            (entry.npy_size_bytes or 0)
+            // np.dtype(np.uint32).itemsize
+            * entry.repeat_count
             + entry.partial_target_uint32_values
             for entry in rows
         )
@@ -743,7 +1050,9 @@ class ReshardingManifestConfig:
             def verify_remote(expectation: tuple[str, int, str]) -> None:
                 uri, expected_size, expected_etag = expectation
                 parsed = urlparse(uri)
-                response = client.head_object(Bucket=parsed.netloc, Key=parsed.path.lstrip("/"))
+                response = client.head_object(
+                    Bucket=parsed.netloc, Key=parsed.path.lstrip("/")
+                )
                 actual_size = int(response["ContentLength"])
                 actual_etag = str(response.get("ETag", "")).strip('"')
                 if actual_size != expected_size:
@@ -758,7 +1067,10 @@ class ReshardingManifestConfig:
                     )
 
             with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                futures = [pool.submit(verify_remote, expectation) for expectation in remote_expectations]
+                futures = [
+                    pool.submit(verify_remote, expectation)
+                    for expectation in remote_expectations
+                ]
                 checkpoint = max(1, len(futures) // 10)
                 for completed, future in enumerate(as_completed(futures), start=1):
                     future.result()
@@ -770,7 +1082,6 @@ class ReshardingManifestConfig:
                             _elapsed(validation_started_at),
                         )
 
-        paths: list[TokensMetadataPaths] = []
         downloaded_pairs: list[
             tuple[
                 ReshardingManifestEntry,
@@ -800,12 +1111,22 @@ class ReshardingManifestConfig:
                     ]
                 )
             elif npy_scheme in {"", "file"} and metadata_scheme in {"", "file"}:
-                local_npy = Path(urlparse(npy_uri).path if npy_scheme == "file" else npy_uri)
-                local_metadata = Path(urlparse(metadata_uri).path if metadata_scheme == "file" else metadata_uri)
+                local_npy = Path(
+                    urlparse(npy_uri).path if npy_scheme == "file" else npy_uri
+                )
+                local_metadata = Path(
+                    urlparse(metadata_uri).path
+                    if metadata_scheme == "file"
+                    else metadata_uri
+                )
                 if not local_npy.is_file() or not local_metadata.is_file():
-                    raise FileNotFoundError(f"Manifest object pair does not exist: {npy_uri}, {metadata_uri}")
+                    raise FileNotFoundError(
+                        f"Manifest object pair does not exist: {npy_uri}, {metadata_uri}"
+                    )
             else:
-                raise ValueError(f"Manifest row mixes unsupported URI schemes: {npy_uri}, {metadata_uri}")
+                raise ValueError(
+                    f"Manifest row mixes unsupported URI schemes: {npy_uri}, {metadata_uri}"
+                )
 
             downloaded_pairs.append(
                 (
@@ -847,74 +1168,136 @@ class ReshardingManifestConfig:
                 if not npy_path.is_file() or not metadata_path.is_file()
             ]
             if missing:
-                raise RuntimeError(f"s5cmd completed without creating {len(missing)} manifest object pairs")
+                raise RuntimeError(
+                    f"s5cmd completed without creating {len(missing)} manifest object pairs"
+                )
 
-        for (
+        row_paths: list[list[TokensMetadataPaths]] = [[] for _ in downloaded_pairs]
+        selection_jobs: list[DocumentSelectionJob] = []
+        for manifest_index, (
             entry,
             npy_path,
             metadata_path,
             selection_path,
             expected_npy_size,
             expected_metadata_size,
-        ) in downloaded_pairs:
-            if expected_npy_size is not None and npy_path.stat().st_size != expected_npy_size:
+        ) in enumerate(downloaded_pairs):
+            if (
+                expected_npy_size is not None
+                and npy_path.stat().st_size != expected_npy_size
+            ):
                 raise RuntimeError(
                     f"Downloaded NPY size does not match manifest: {npy_path}; "
                     f"expected {expected_npy_size}, found {npy_path.stat().st_size}"
                 )
-            if expected_metadata_size is not None and metadata_path.stat().st_size != expected_metadata_size:
+            if (
+                expected_metadata_size is not None
+                and metadata_path.stat().st_size != expected_metadata_size
+            ):
                 raise RuntimeError(
                     f"Downloaded metadata size does not match manifest: {metadata_path}; "
                     f"expected {expected_metadata_size}, found {metadata_path.stat().st_size}"
                 )
 
             full_path = TokensMetadataPaths(str(npy_path), str(metadata_path))
-            paths.extend([full_path] * entry.repeat_count)
+            row_paths[manifest_index].extend([full_path] * entry.repeat_count)
             if entry.partial_target_uint32_values:
                 source_values = npy_path.stat().st_size // np.dtype(np.uint32).itemsize
-
-                def selection_progress(
-                    pass_name: str,
-                    document_count: int,
-                    covered_values: int,
-                    source_total: int = source_values,
-                ) -> None:
-                    logger.info(
-                        "Document selection %s: %s documents · %s/%s uint32 values scanned",
-                        pass_name,
-                        _human_count(document_count),
-                        _human_count(covered_values),
-                        _human_count(source_total),
+                selection_jobs.append(
+                    DocumentSelectionJob(
+                        manifest_index=manifest_index,
+                        source_uri=entry.npy_uri,
+                        metadata_path=metadata_path,
+                        selection_path=selection_path,
+                        source_uint32_values=source_values,
+                        target_uint32_values=entry.partial_target_uint32_values,
+                        seed=entry.selection_seed,
                     )
+                )
 
-                selection = create_document_selection(
-                    metadata_path=metadata_path,
-                    selection_path=selection_path,
-                    source_uint32_values=source_values,
-                    target_uint32_values=entry.partial_target_uint32_values,
-                    seed=entry.selection_seed,
-                    progress=selection_progress,
-                )
-                logger.info(
-                    "Selected %s uint32 values from %s for a %s-value quota " "(residual %+d; %s documents)",
-                    selection.selected_uint32_values,
-                    entry.npy_uri,
-                    entry.partial_target_uint32_values,
-                    selection.target_residual_uint32_values,
-                    selection.selected_document_count,
-                )
-                if selection.selected_uint32_values:
-                    paths.append(
-                        TokensMetadataPaths(
-                            str(npy_path),
-                            str(metadata_path),
-                            selection_path=str(selection.selection_path),
-                            selected_uint32_values=selection.selected_uint32_values,
+        if selection_jobs:
+            selection_workers = min(max_workers, len(selection_jobs))
+            selection_started_at = time.monotonic()
+            total_source_values = sum(
+                job.source_uint32_values for job in selection_jobs
+            )
+            total_target_values = sum(
+                job.target_uint32_values for job in selection_jobs
+            )
+            logger.info(
+                "Document selection started: %s source shards · %s processes · %s source values per pass · "
+                "%s requested values",
+                len(selection_jobs),
+                selection_workers,
+                _human_count(total_source_values),
+                _human_count(total_target_values),
+            )
+            completed_source_values = 0
+            completed_scanned_documents = 0
+            selected_values = 0
+            with ProcessPoolExecutor(max_workers=selection_workers) as pool:
+                futures = {
+                    pool.submit(_run_document_selection, job): job
+                    for job in selection_jobs
+                }
+                for completed_count, future in enumerate(
+                    as_completed(futures), start=1
+                ):
+                    try:
+                        completed = future.result()
+                    except Exception:
+                        for pending_future in futures:
+                            pending_future.cancel()
+                        raise
+                    job = futures[future]
+                    selection = completed.result
+                    if selection.selected_uint32_values:
+                        _, npy_path, metadata_path, _, _, _ = downloaded_pairs[
+                            completed.manifest_index
+                        ]
+                        row_paths[completed.manifest_index].append(
+                            TokensMetadataPaths(
+                                str(npy_path),
+                                str(metadata_path),
+                                selection_path=str(selection.selection_path),
+                                selected_uint32_values=selection.selected_uint32_values,
+                            )
                         )
+                    completed_source_values += job.source_uint32_values
+                    completed_scanned_documents += selection.source_document_count * 2
+                    selected_values += selection.selected_uint32_values
+                    wall_seconds = max(time.monotonic() - selection_started_at, 1e-9)
+                    logger.info(
+                        "Document selection progress: %s/%s source shards · %s/%s values selected · "
+                        "%s documents/s · %s values/s across both passes · elapsed %s",
+                        completed_count,
+                        len(selection_jobs),
+                        _human_count(selected_values),
+                        _human_count(total_target_values),
+                        _human_count(round(completed_scanned_documents / wall_seconds)),
+                        _human_count(
+                            round((completed_source_values * 2) / wall_seconds)
+                        ),
+                        _elapsed(selection_started_at),
                     )
+            wall_seconds = max(time.monotonic() - selection_started_at, 1e-9)
+            logger.info(
+                "Document selection complete: %s source shards · %s/%s values selected · "
+                "%s documents/s · %s values/s across both passes · elapsed %s",
+                len(selection_jobs),
+                _human_count(selected_values),
+                _human_count(total_target_values),
+                _human_count(round(completed_scanned_documents / wall_seconds)),
+                _human_count(round((completed_source_values * 2) / wall_seconds)),
+                _elapsed(selection_started_at),
+            )
+
+        paths = [path for per_row_paths in row_paths for path in per_row_paths]
 
         if not paths:
-            raise RuntimeError(f"Manifest document selections produced no output: {manifest}")
+            raise RuntimeError(
+                f"Manifest document selections produced no output: {manifest}"
+            )
         selected_bytes = sum(path.size for path in paths)
         logger.info(
             "Manifest ready: %s merge input uses from %s source shards · %s planned output "
@@ -930,7 +1313,9 @@ class ReshardingManifestConfig:
         return {"manifest": str(self.manifest)}
 
     @classmethod
-    def from_dict(cls, d: dict, base_dir: Path | None = None) -> "ReshardingManifestConfig":
+    def from_dict(
+        cls, d: dict, base_dir: Path | None = None
+    ) -> "ReshardingManifestConfig":
         path = Path(d["manifest"])
         if base_dir is not None and not path.is_absolute():
             path = base_dir / path
@@ -958,7 +1343,9 @@ class ReshardingConfig:
         if self.max_size_bytes is None and self.max_num_files is None:
             raise ValueError("Either max_size_bytes or max_num_files must be provided")
         if not self.source_prefixes and not self.source_manifests:
-            raise ValueError("At least one source_prefix or source_manifest must be provided")
+            raise ValueError(
+                "At least one source_prefix or source_manifest must be provided"
+            )
         if self.allow_existing_destination:
             raise ValueError("Overwriting an existing destination is not supported")
         if self.max_workers <= 0:
@@ -980,20 +1367,31 @@ class ReshardingConfig:
 
     @classmethod
     def from_dict(cls, d: dict, base_dir: Path | None = None) -> "ReshardingConfig":
-        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
+        source_prefixes = [
+            ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])
+        ]
         source_manifests = [
-            ReshardingManifestConfig.from_dict(m, base_dir=base_dir) for m in d.get("source_manifests", [])
+            ReshardingManifestConfig.from_dict(m, base_dir=base_dir)
+            for m in d.get("source_manifests", [])
         ]
         return cls(
             destination_prefix=str(d["destination_prefix"]),
             source_prefixes=source_prefixes,
             source_manifests=source_manifests,
-            local_tempdir=(Path(p) if (p := d.get("local_tempdir")) is not None else None),
-            max_size_bytes=(int(s) if (s := d.get("max_size_bytes")) is not None else None),
-            max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
+            local_tempdir=(
+                Path(p) if (p := d.get("local_tempdir")) is not None else None
+            ),
+            max_size_bytes=(
+                int(s) if (s := d.get("max_size_bytes")) is not None else None
+            ),
+            max_num_files=(
+                int(n) if (n := d.get("max_num_files")) is not None else None
+            ),
             max_workers=int(d.get("max_workers", 1)),
             random_seed=int(d.get("random_seed", 42)),
-            tokenizer_name_or_path=str(d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer")),
+            tokenizer_name_or_path=str(
+                d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer")
+            ),
             allow_existing_destination=bool(d.get("allow_existing_destination", False)),
         )
 
@@ -1054,7 +1452,9 @@ def destination_has_objects(destination: str | Path) -> bool:
         prefix = parsed.path.lstrip("/").rstrip("/")
         if not parsed.netloc or not prefix:
             raise ValueError("Refusing to materialize into an S3 bucket root")
-        response = boto3.client("s3").list_objects_v2(Bucket=parsed.netloc, Prefix=f"{prefix}/", MaxKeys=1)
+        response = boto3.client("s3").list_objects_v2(
+            Bucket=parsed.netloc, Prefix=f"{prefix}/", MaxKeys=1
+        )
         return bool(response.get("Contents"))
     if parsed.scheme not in {"", "file"}:
         raise ValueError(f"Unsupported destination protocol: {parsed.scheme}")
@@ -1074,7 +1474,9 @@ def reshard(config: ReshardingConfig):
     )
 
     if destination_has_objects(config.destination_prefix):
-        raise FileExistsError(f"Refusing to use existing destination: {config.destination_prefix}")
+        raise FileExistsError(
+            f"Refusing to use existing destination: {config.destination_prefix}"
+        )
 
     run_tempdir: Path | None = None
     try:
@@ -1106,7 +1508,9 @@ def reshard(config: ReshardingConfig):
         ]
 
         # get repetition aware samples
-        source_paths = [path for source_prefix in source_prefixes for path in source_prefix.take()]
+        source_paths = [
+            path for source_prefix in source_prefixes for path in source_prefix.take()
+        ]
         for i, source_manifest in enumerate(config.source_manifests):
             source_paths.extend(
                 source_manifest.take(
