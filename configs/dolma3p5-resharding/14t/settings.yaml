@@ -22,6 +22,10 @@ random_seed: 42
 max_workers_per_reshard: 8
 tokenizer_name_or_path: allenai/dolma2-tokenizer
 
+# The optimizer used an approximately 7x per-category upsampling ceiling.
+# File-size estimation can differ slightly, so fail only above this review bound.
+maximum_expected_upsample_rate: 7.2
+
 # Partial copies are selected on whole-document boundaries while materializing.
 # These bounds are checked from output file sizes after all units finish.
 max_materialized_unit_target_residual_fraction: 0.001

@@ -28,14 +28,19 @@ Before continuing:
 - Confirm `01-plan/resolution-failures.csv` is empty.
 - Confirm `01-plan/corrections.csv` and `01-plan/duplicate-paths.csv` contain
   only changes you explicitly intend.
-- In the same summary, confirm all four values are zero:
-  `missing_objects`, `direct_resolution_failures`, `invalid_npy_sizes`, and
-  `head_errors`.
+- In the same summary, confirm all five values are zero: `missing_objects`,
+  `path_resolution_failures`, `invalid_npy_sizes`, `head_errors`, and
+  `sampling_rate_limit_failures`.
+- Review `02-inventory/sampling-rate-audit.csv`. Any category above the
+  configured expected maximum indicates that the YAML's source-size basis and
+  the resolved source objects disagree; do not generate configs until it is
+  reconciled.
 - Spot-check `02-inventory/required-objects.csv`, including the NPY/metadata
   pairings, sizes, and paths for large or unusual categories.
 
 Do not generate configs with missing objects, missing metadata partners, failed
-direct-prefix resolutions, or NPY sizes that are not divisible by four.
+path resolutions, invalid NPY sizes, or sampling rates above the configured
+review bound.
 
 ## 2. Generate the distributed materialization proposal
 

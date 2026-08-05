@@ -14,8 +14,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from xml.etree import ElementTree
 
-import yaml
 import numpy as np
+import yaml
 
 WORKER_STORAGE_SCRIPT = Path(__file__).resolve().parents[2] / "scripts/dolma3p5_resharding/setup_worker_storage.sh"
 
@@ -216,7 +216,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         status_output = output.getvalue()
         self.assertIn("[inventory 1/4] Bulk listing:", status_output)
         self.assertIn("[inventory 1/4] Running:", status_output)
-        self.assertIn("[inventory 2/4] Resolving required objects:", status_output)
+        self.assertIn("[inventory 2/4] Resolving required objects for", status_output)
         self.assertIn("[inventory 3/4] Validation:", status_output)
         self.assertIn("[inventory 3/4] Estimated source tokens:", status_output)
         self.assertIn("[inventory 4/4] PASS:", status_output)
@@ -243,8 +243,82 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                     max_workers=None,
                 )
             )
-
         self.assertEqual(existing.read_text(), "existing inventory")
+
+    def test_catalog_resolves_yaml_wildcard_against_live_listing(self):
+        self._plan()
+        objects = self._inventory_objects() | {
+            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/tokenizer/0001.npy": 100,
+            "s3://ai2-llm/preprocessed/catalog-source/topic/allenai/tokenizer/0001.csv.gz": 12,
+        }
+        listing = self.root / "expanded-listing.jsonl"
+        with listing.open("x") as handle:
+            for uri, size in objects.items():
+                handle.write(json.dumps(self._inventory_record(uri, size)) + "\n")
+        listed, errors = _parse_s5cmd_jsonl(listing)
+        self.assertFalse(errors)
+        phase = self.build / "02-inventory"
+        phase.mkdir()
+        summary = _finalize_inventory(
+            self.build,
+            phase,
+            listed,
+            client=MagicMock(),
+            max_workers=1,
+        )
+        with (phase / "required-objects.csv").open() as handle:
+            required = list(csv.DictReader(handle))
+        catalog_topic = [
+            row for row in required if row["leaf_id"] == "000:00" and row["category_name"] == "default"
+        ]
+        self.assertEqual(
+            [row["key"].rsplit("/", 1)[-1] for row in catalog_topic],
+            ["0000.npy", "0001.npy"],
+        )
+        self.assertEqual(summary["source_uint32_values"], 675)
+
+    def test_sampling_rate_limit_blocks_proposal(self):
+        self._plan()
+        build_manifest_path = self.build / "build.json"
+        build_manifest = json.loads(build_manifest_path.read_text())
+        build_manifest["settings"]["maximum_expected_upsample_rate"] = 7.2
+        build_manifest_path.write_text(json.dumps(build_manifest))
+        listing = self.root / "limited-listing.jsonl"
+        with listing.open("x") as handle:
+            for uri, size in self._inventory_objects().items():
+                handle.write(json.dumps(self._inventory_record(uri, size)) + "\n")
+        listed, errors = _parse_s5cmd_jsonl(listing)
+        self.assertFalse(errors)
+        phase = self.build / "02-inventory"
+        phase.mkdir()
+        with self.assertRaisesRegex(PreparationError, "Inventory validation failed"):
+            _finalize_inventory(
+                self.build,
+                phase,
+                listed,
+                client=MagicMock(),
+                max_workers=1,
+            )
+        summary = json.loads((phase / "inventory-summary.json").read_text())
+        self.assertEqual(summary["sampling_rate_limit_failures"], 3)
+        with (phase / "sampling-rate-audit.csv").open() as handle:
+            audit = list(csv.DictReader(handle))
+        self.assertEqual(
+            sum(row["status"] == "above_expected_maximum" for row in audit),
+            3,
+        )
+        inventory_report = (phase / "report.html").read_text()
+        self.assertIn("Source-size consistency check failed", inventory_report)
+        self.assertIn("Proposal generation is blocked", inventory_report)
+        with self.assertRaisesRegex(PreparationError, "blocking validation failures"):
+            propose_configs(
+                argparse.Namespace(
+                    build=self.build,
+                    destination_root="s3://test-bucket/new-datasets/dolma3p5",
+                    local_temp_root=str(self.root / "temp-base"),
+                    max_unit_working_bytes=20_000_000_000_000,
+                )
+            )
 
     def test_plan_reports_resolution_counts_without_chart_artifacts(self):
         output = io.StringIO()
@@ -536,8 +610,45 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             self.assertIn("selection_algorithm", fields)
         for plot in (self.build / "03-proposal/plots").glob("*.svg"):
             ElementTree.parse(plot)
+        with (self.build / "03-proposal/plot-data/category-execution-unit-distribution.csv").open() as handle:
+            execution_unit_distribution = list(csv.DictReader(handle))
+        self.assertEqual(
+            sum(int(row["category_count"]) for row in execution_unit_distribution),
+            dataset_layout["category_count"],
+        )
+        self.assertEqual(
+            sum(
+                int(row["execution_units_per_category"]) * int(row["category_count"])
+                for row in execution_unit_distribution
+            ),
+            dataset_layout["execution_unit_count"],
+        )
+        self.assertFalse((self.build / "03-proposal/plot-data/most-split-categories.csv").exists())
+        execution_units_plot = (self.build / "03-proposal/plots/execution-units-per-category.svg").read_text()
+        self.assertIn("Active categories by execution-unit count", execution_units_plot)
+        self.assertIn("3 active categories · 4 execution units", execution_units_plot)
+        self.assertIn("categories ·", execution_units_plot)
         proposal_target_plot = (self.build / "03-proposal/plots/target-mix.svg").read_text()
         self.assertIn("50.00% · 7T tokens", proposal_target_plot)
+        with (self.build / "03-proposal/plot-data/source-vs-target.csv").open() as handle:
+            source_target_rows = list(csv.DictReader(handle))
+        self.assertEqual(
+            sum(int(row["original_uint32_values"]) for row in source_target_rows),
+            650,
+        )
+        self.assertEqual(
+            sum(int(row["target_uint32_values"]) for row in source_target_rows),
+            dataset_layout["target_uint32_values"],
+        )
+        self.assertFalse((self.build / "03-proposal/plot-data/target-vs-proposed.csv").exists())
+        self.assertFalse((self.build / "03-proposal/plots/target-vs-proposed.svg").exists())
+        self.assertFalse((self.build / "03-proposal/plot-data/upsampling-pressure.csv").exists())
+        self.assertFalse((self.build / "03-proposal/plots/upsampling-pressure.svg").exists())
+        source_target_plot = (self.build / "03-proposal/plots/source-vs-target.svg").read_text()
+        self.assertIn("Original vs target tokens by source family", source_target_plot)
+        self.assertIn(">Original</text>", source_target_plot)
+        self.assertIn(">Target</text>", source_target_plot)
+        self.assertIn("upsample", source_target_plot)
         proposal_report = (self.build / "03-proposal/report.html").read_text()
         self.assertIn("Pre-materialization Sampling Proposal", proposal_report)
         self.assertIn('data-detail="proposal-family-detail-', proposal_report)
