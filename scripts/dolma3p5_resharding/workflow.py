@@ -33,6 +33,11 @@ from urllib.parse import unquote, urlparse
 import boto3
 import yaml
 
+try:
+    from .output_report import render_output_validation_report
+except ImportError:
+    from output_report import render_output_validation_report
+
 UINT32_BYTES = 4
 DOCUMENT_SELECTION_ALGORITHM = "document_hash_bucket_v1"
 EXECUTION_UNIT_INDEX_WIDTH = 8
@@ -3481,72 +3486,39 @@ def verify_output(args: argparse.Namespace) -> None:
             "passed": passed,
         },
     )
-    plots = phase / "plots"
     plot_data = phase / "plot-data"
-    plots.mkdir(exist_ok=False)
     plot_data.mkdir(exist_ok=False)
+    inventory_details_path = build / "01-plan/inventory/inventory-details.json"
+    if inventory_details_path.is_symlink() or not inventory_details_path.is_file():
+        raise PreparationError(
+            f"Inventory hierarchy is missing or unsafe: {inventory_details_path}"
+        )
+    with inventory_details_path.open(encoding="utf-8") as handle:
+        inventory_details = json.load(handle)
+    hierarchy_rows, hierarchy_html = render_output_validation_report(
+        inventory_details=inventory_details,
+        validation_rows=validation_rows,
+    )
     _write_csv(
-        plot_data / "target-predicted-actual.csv",
-        validation_rows,
+        plot_data / "source-target-actual.csv",
+        hierarchy_rows,
         [
-            "unit_id",
-            "leaf_id",
-            "mix_index",
-            "mix_name",
+            "level",
+            "source_family",
+            "subcategory_name",
             "category_name",
+            "lower_group",
+            "leaf_id",
+            "source_uint32_values",
             "target_uint32_values",
-            "predicted_uint32_values",
             "actual_uint32_values",
-            "actual_minus_predicted",
-            "allowed_target_residual_uint32_values",
+            "actual_minus_target",
+            "planned_sampling_ratio",
+            "realized_sampling_ratio",
             "status",
         ],
     )
-    points = [
-        (
-            int(row["predicted_uint32_values"]) / 1e9,
-            int(row["actual_uint32_values"]) / 1e9,
-            row["unit_id"],
-        )
-        for row in validation_rows
-    ]
-    _write_text(
-        plots / "predicted-vs-actual.svg",
-        _svg_scatter(
-            "Predicted versus actual materialized token counts",
-            points,
-            "Predicted (billions of tokens)",
-            "Actual (billions of tokens)",
-        ),
-    )
-    failed_rows = [row for row in validation_rows if row["status"] != "passed"]
-    status_rows = [
-        {
-            "state": "passed destinations",
-            "count": len(validation_rows) - len(failed_rows),
-        },
-        {"state": "failed destinations", "count": len(failed_rows)},
-        {"state": "request errors", "count": len(errors)},
-    ]
-    _write_csv(plot_data / "output-status.csv", status_rows, ["state", "count"])
-    _write_text(
-        plots / "output-status.svg",
-        _svg_bar_chart(
-            "Materialized output validation",
-            [row["state"] for row in status_rows],
-            [row["count"] for row in status_rows],
-            "destinations",
-        ),
-    )
-    _write_text(
-        phase / "report.html",
-        '<!doctype html><html><head><meta charset="utf-8"><title>Dolma 3.5 output validation</title></head><body>'
-        "<h1>Post-materialization size validation</h1>"
-        "<p>Token counts are estimated from output object sizes. No arrays or metadata rows were read.</p>"
-        '<img src="plots/predicted-vs-actual.svg" alt="Predicted versus actual sizes">'
-        '<img src="plots/output-status.svg" alt="Output validation status">'
-        "</body></html>\n",
-    )
+    _write_text(phase / "report.html", hierarchy_html)
     if not passed:
         raise PreparationError(
             f"Output validation failed; inspect artifacts in {phase}"

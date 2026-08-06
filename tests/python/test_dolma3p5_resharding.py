@@ -2714,6 +2714,34 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             output_summary["actual_uint32_values"],
             output_summary["predicted_uint32_values"],
         )
+        hierarchy_path = (
+            self.build
+            / "03-output-validation/plot-data/source-target-actual.csv"
+        )
+        hierarchy_rows = list(csv.DictReader(hierarchy_path.open()))
+        self.assertTrue(
+            {"source_family", "subcategory", "category", "lower_group"}
+            <= {row["level"] for row in hierarchy_rows}
+        )
+        category_row = next(
+            row
+            for row in hierarchy_rows
+            if row["level"] == "category" and row["leaf_id"] == "000:00"
+        )
+        self.assertNotEqual(category_row["actual_uint32_values"], "")
+        lower_group_row = next(
+            row
+            for row in hierarchy_rows
+            if row["level"] == "lower_group" and row["leaf_id"] == "000:00"
+        )
+        self.assertEqual(lower_group_row["actual_uint32_values"], "")
+        output_report = (
+            self.build / "03-output-validation/report.html"
+        ).read_text()
+        self.assertIn("Source, Target, and Materialized Output", output_report)
+        self.assertIn("Actual − target", output_report)
+        self.assertIn("per-input provenance", output_report)
+        self.assertNotIn("predicted-vs-actual.svg", output_report)
         propose_configs(
             argparse.Namespace(
                 build=self.build,
