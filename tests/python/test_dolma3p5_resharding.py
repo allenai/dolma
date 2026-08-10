@@ -1077,6 +1077,15 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
             assignments = _stage_worker_assignments(group)
 
+            for assignment in assignments:
+                self.assertTrue(assignment.script_dir.is_dir())
+                scripts = list(assignment.script_dir.iterdir())
+                self.assertEqual(len(scripts), 1)
+                self.assertEqual(
+                    scripts[0].name,
+                    f"{assignment.rows[0]['unit_id']}.sh",
+                )
+
         self.assertEqual(
             [assignment.rows[0]["unit_id"] for assignment in assignments],
             ["large", "medium", "small"],

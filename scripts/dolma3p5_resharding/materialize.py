@@ -1263,9 +1263,18 @@ def _stage_selection(
 def _stage_worker_assignments(
     group: MaterializationGroup,
 ) -> tuple[WorkerAssignment, ...]:
-    """Create a largest-first queue of individual execution units."""
+    """Create a largest-first queue of one-script poormanray directories."""
 
     assignments: list[WorkerAssignment] = []
+    assignment_root = group.script_dir.parent / f"{group.script_dir.name}-assignments"
+    if assignment_root.exists():
+        if assignment_root.is_symlink() or not assignment_root.is_dir():
+            raise PreparationError(
+                f"Unsafe worker-assignment path: {assignment_root}"
+            )
+    else:
+        assignment_root.mkdir(exist_ok=False)
+
     ordered = sorted(
         group.rows,
         key=lambda row: (
@@ -1275,12 +1284,39 @@ def _stage_worker_assignments(
         reverse=True,
     )
     for row in ordered:
+        unit_id = row["unit_id"]
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", unit_id) or unit_id in {".", ".."}:
+            raise PreparationError(f"Unsafe execution-unit ID: {unit_id!r}")
         launcher = group.script_dir / Path(row["launcher_path"]).name
         if launcher.is_symlink() or not launcher.is_file():
             raise PreparationError(
                 f"Staged execution-unit launcher is missing or unsafe: {launcher}"
             )
-        assignments.append(WorkerAssignment(group, (row,), launcher))
+        assignment_dir = assignment_root / unit_id
+        destination = assignment_dir / launcher.name
+        if assignment_dir.exists():
+            if assignment_dir.is_symlink() or not assignment_dir.is_dir():
+                raise PreparationError(
+                    f"Unsafe worker-assignment directory: {assignment_dir}"
+                )
+            children = list(assignment_dir.iterdir())
+            if (
+                len(children) != 1
+                or children[0] != destination
+                or destination.is_symlink()
+                or not destination.is_file()
+                or destination.read_bytes() != launcher.read_bytes()
+                or (destination.stat().st_mode & 0o777)
+                != (launcher.stat().st_mode & 0o777)
+            ):
+                raise PreparationError(
+                    f"Existing worker assignment does not match the plan: {assignment_dir}"
+                )
+        else:
+            assignment_dir.mkdir(exist_ok=False)
+            destination.write_bytes(launcher.read_bytes())
+            destination.chmod(launcher.stat().st_mode & 0o777)
+        assignments.append(WorkerAssignment(group, (row,), assignment_dir))
     return tuple(assignments)
 
 
