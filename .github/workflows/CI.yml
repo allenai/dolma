@@ -198,11 +198,14 @@ jobs:
           args: --release --out dist --find-interpreter
           manylinux: manylinux_2_28
           before-script-linux: |
-            # Build images differ per target: some are Debian-based, others RPM-based
-            # and already carry these packages.
+            # Build images differ per target. The RPM-based image already has the
+            # toolchain and cmake, but its perl lacks the modules openssl-sys needs
+            # to configure a vendored build.
             if command -v apt-get > /dev/null; then
               sudo apt-get update
               sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
+            else
+              yum install -y perl-IPC-Cmd perl-Pod-Html
             fi
       - name: Upload wheels
         uses: actions/upload-artifact@v4.4.1

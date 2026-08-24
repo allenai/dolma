@@ -1,5 +1,5 @@
 # /// script
-# requires-python = ">=3.11"
+# requires-python = ">=3.10"
 # dependencies = [
 #   "boto3",
 #   "poormanray",
@@ -30,7 +30,7 @@ from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Event, Lock
 from typing import Any, NoReturn, TypeVar
@@ -427,7 +427,7 @@ def _worker_log_line(
     bold: bool = False,
 ) -> Text:
     line = Text()
-    rendered_timestamp = timestamp or datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+    rendered_timestamp = timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     line.append(f"[{rendered_timestamp}]", style="dim")
     line.append(" ")
     line.append(f"[{tag}]", style=style)
