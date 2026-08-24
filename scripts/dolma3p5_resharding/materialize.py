@@ -28,11 +28,12 @@ import uuid
 from collections import Counter, defaultdict, deque
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, as_completed, wait
-from dataclasses import dataclass
+from contextlib import AbstractContextManager, nullcontext
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event, Lock
-from typing import Any
+from typing import Any, NoReturn, TypeVar
 from urllib.parse import urlparse
 
 import boto3
@@ -60,6 +61,7 @@ try:
         DEFAULT_REGION,
         UINT32_BYTES,
         PreparationError,
+        _count_label,
         _filter_execution_units,
         _human_byte_count,
         _human_token_count,
@@ -77,6 +79,7 @@ except ImportError:
         DEFAULT_REGION,
         UINT32_BYTES,
         PreparationError,
+        _count_label,
         _filter_execution_units,
         _human_byte_count,
         _human_token_count,
@@ -158,13 +161,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--provision-batch-size",
         type=lambda value: _positive_integer(value, "provision-batch-size"),
-        default=5,
+        default=DEFAULT_PROVISION_BATCH_SIZE,
         help="maximum VM lifecycle requests submitted concurrently in one batch",
     )
     parser.add_argument(
         "--provision-batch-delay-seconds",
         type=lambda value: _nonnegative_float(value, "provision-batch-delay-seconds"),
-        default=3.0,
+        default=DEFAULT_PROVISION_BATCH_DELAY_SECONDS,
         metavar="SECONDS",
         help="delay between VM lifecycle batches so provider API quotas can refill",
     )
@@ -269,6 +272,19 @@ DOCUMENT_SELECTION_MODULE = (
 REMOTE_STORAGE_SCRIPT = "/tmp/dolma3p5-setup-worker-storage.sh"
 REMOTE_RESHARD_MODULE = "/tmp/dolma3p5-runtime/reshard.py"
 REMOTE_DOCUMENT_SELECTION_MODULE = "/tmp/dolma3p5-runtime/document_selection.py"
+# setup_worker_storage.sh mounts the worker's local NVMe here (DOLMA_WORK_MOUNT).
+WORKER_LOCAL_MOUNT = "/mnt/dolma"
+# Must equal the `plan.py --local-temp-root` used to build the plan. That value is
+# recorded only inside each per-unit config YAML (as `local_tempdir`), never in
+# config-index.csv or dataset-layout.json, so this script cannot derive it from the
+# artifacts it loads. A different --local-temp-root therefore passes planning and
+# only fails here, at worker bootstrap.
+WORKER_LOCAL_TEMP_ROOT = f"{WORKER_LOCAL_MOUNT}/dolma3p5-resharding"
+# Interpreter installed on every worker by poormanray's setup-dolma step.
+WORKER_PYTHON_BIN = "$HOME/.venv/bin/python"
+# Per-run status and log directory. The launcher payload writes it and the progress
+# monitor reads it back, so both must resolve to exactly the same remote path.
+WORKER_STATUS_ROOT = "$HOME/dolma3p5-resharding-status"
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 DOLMA_LOG_PREFIX = re.compile(
     r"^\[(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) [^\]]+ "
@@ -289,8 +305,23 @@ SECRET_VALUE = re.compile(
 )
 PROCESS_TAIL_LINES = 12
 WORKER_LOG_PAGE_BYTES = 16 * 1024
-PMR_DISCOVERY_WORKER_LIMIT = 90
+# EC2 accepts at most this many instance IDs per DescribeInstanceStatus call.
+DESCRIBE_INSTANCE_STATUS_ID_LIMIT = 100
+# Poormanray resolves a discovery group to instance IDs before applying explicit
+# ones, so a group must stay under the limit above. Held 10 instances below it so
+# a group that grows slightly cannot reach the hard limit.
+PMR_DISCOVERY_WORKER_LIMIT = DESCRIBE_INSTANCE_STATUS_ID_LIMIT - 10
 LIFECYCLE_MAX_ATTEMPTS = 5
+# Argparse defaults, shared with the getattr fallbacks used for callers that build
+# a Namespace without these attributes.
+DEFAULT_PROVISION_BATCH_SIZE = 5
+DEFAULT_PROVISION_BATCH_DELAY_SECONDS = 3.0
+# EC2 applies tags asynchronously; wait this long for them to become readable.
+TAG_PROPAGATION_TIMEOUT_SECONDS = 60
+# One status/log page must come back before the next monitor poll is due.
+WORKER_LOG_COMMAND_TIMEOUT_SECONDS = 120
+# Instance IDs share a long common prefix, so only the tail identifies a worker.
+WORKER_TAG_LENGTH = 6
 WORKER_LOG_STYLES = (
     "bold bright_cyan",
     "bold bright_magenta",
@@ -339,6 +370,52 @@ class WorkerAssignment:
     group: MaterializationGroup
     rows: tuple[dict[str, str], ...]
     script_dir: Path
+
+
+_BatchItem = TypeVar("_BatchItem")
+
+
+def _provision_batch_size(args: argparse.Namespace) -> int:
+    """Return the lifecycle batch size, defaulted for hand-built Namespaces."""
+
+    return int(getattr(args, "provision_batch_size", DEFAULT_PROVISION_BATCH_SIZE))
+
+
+def _provision_batch_delay(args: argparse.Namespace) -> float:
+    """Return the delay between lifecycle batches, defaulted for hand-built Namespaces."""
+
+    return float(
+        getattr(
+            args,
+            "provision_batch_delay_seconds",
+            DEFAULT_PROVISION_BATCH_DELAY_SECONDS,
+        )
+    )
+
+
+def _lifecycle_batches(
+    items: Sequence[_BatchItem], batch_size: int
+) -> list[list[_BatchItem]]:
+    """Split one lifecycle request into bounded provider-API batches."""
+
+    if batch_size <= 0:
+        raise ValueError("batch_size must be positive")
+    return [
+        list(items[offset : offset + batch_size])
+        for offset in range(0, len(items), batch_size)
+    ]
+
+
+def _worker_tag(instance_id: str) -> str:
+    """Return the short display tag for one worker; instance IDs share a long prefix."""
+
+    return instance_id[-WORKER_TAG_LENGTH:]
+
+
+def _remote_status_root(status_run_id: str) -> str:
+    """Return the remote status directory shared by the launchers and the monitor."""
+
+    return f"{WORKER_STATUS_ROOT}/{status_run_id}"
 
 
 def _worker_log_line(
@@ -453,7 +530,7 @@ def _retag_cluster_instances(
             Tags=[{"Key": "Name", "Value": name}],
         )
 
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + TAG_PROPAGATION_TIMEOUT_SECONDS
     while True:
         response = client.describe_instances(InstanceIds=list(instance_ids))
         observed: dict[str, dict[str, str]] = {}
@@ -507,13 +584,6 @@ def _status_detail(stage: str, line: str) -> str | None:
         if line.startswith(("·", "•")):
             return None
     if line.startswith("[INFO]"):
-        if stage == "submit materialization":
-            scripts = re.search(r"Found ([\d,]+) scripts? to distribute", line)
-            if scripts:
-                return f"{scripts.group(1)} units"
-            workers = re.search(r"Job \S+ started on ([\d,]+) instances?", line)
-            if workers:
-                return f"accepted by {workers.group(1)} workers"
         return None
     if line.startswith(("Instance ", "stdout:", "stderr:")):
         return None
@@ -684,7 +754,7 @@ def _create_command(
         instance_type=args.instance_type,
         storage_type=args.root_storage_type,
         storage_size_gib=args.root_storage_size,
-        parallelism=min(getattr(args, "provision_batch_size", 5), number),
+        parallelism=min(_provision_batch_size(args), number),
         detach=detach,
         ssh_key_path=args.ssh_key_path,
     )
@@ -695,10 +765,9 @@ def _provision_batches(worker_count: int, batch_size: int) -> tuple[int, ...]:
 
     if worker_count < 0:
         raise ValueError("worker_count must not be negative")
-    if batch_size <= 0:
-        raise ValueError("batch_size must be positive")
-    full_batches, remainder = divmod(worker_count, batch_size)
-    return (batch_size,) * full_batches + ((remainder,) if remainder else ())
+    return tuple(
+        len(batch) for batch in _lifecycle_batches(range(worker_count), batch_size)
+    )
 
 
 def _wait_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> list[str]:
@@ -735,12 +804,8 @@ def _resume_workers_in_batches(
     ordered = sorted(set(instance_ids))
     if not ordered:
         return
-    batch_size = int(getattr(args, "provision_batch_size", 5))
-    delay = float(getattr(args, "provision_batch_delay_seconds", 3.0))
-    batches = [
-        ordered[offset : offset + batch_size]
-        for offset in range(0, len(ordered), batch_size)
-    ]
+    delay = _provision_batch_delay(args)
+    batches = _lifecycle_batches(ordered, _provision_batch_size(args))
     output = console or Console(stderr=True, highlight=False)
     discovery_name = _pmr_discovery_name(args)
 
@@ -760,6 +825,57 @@ def _resume_workers_in_batches(
             time.sleep(delay)
 
 
+def _worker_states(args: argparse.Namespace) -> dict[str, str]:
+    """Return the provider's current state for every worker in the cluster."""
+
+    return {
+        instance.instance_id: instance.state
+        for instance in _describe_cluster_instances(
+            args.cluster, args.region, args.profile
+        )
+    }
+
+
+def _retry_lifecycle_batch(
+    args: argparse.Namespace,
+    instance_ids: Sequence[str],
+    *,
+    run_attempt: Callable[[list[str]], bool],
+    describe_states: Callable[[list[str]], dict[str, str]],
+    retry_states: frozenset[str],
+    on_exhausted: Callable[[list[str], int], None],
+    on_retry: Callable[[list[str], float], None] | None = None,
+) -> None:
+    """Retry one provider-sized lifecycle batch until nothing is left to change.
+
+    `run_attempt` reports True once the batch succeeded. After a failed attempt
+    only the workers the provider still reports in `retry_states` are retried,
+    backing off exponentially from the configured inter-batch delay.
+    `on_exhausted` replaces the final retry and owns how that failure surfaces.
+    """
+
+    remaining = list(instance_ids)
+    delay = _provision_batch_delay(args)
+    for attempt in range(1, LIFECYCLE_MAX_ATTEMPTS + 1):
+        if run_attempt(remaining):
+            return
+        states = describe_states(remaining)
+        remaining = [
+            instance_id
+            for instance_id in remaining
+            if states.get(instance_id) in retry_states
+        ]
+        if not remaining:
+            return
+        if attempt == LIFECYCLE_MAX_ATTEMPTS:
+            on_exhausted(remaining, attempt)
+            return
+        retry_delay = max(1.0, delay) * (2 ** (attempt - 1))
+        if on_retry is not None:
+            on_retry(remaining, retry_delay)
+        time.sleep(retry_delay)
+
+
 def _resume_worker_batch(
     args: argparse.Namespace,
     instance_ids: Sequence[str],
@@ -770,9 +886,7 @@ def _resume_worker_batch(
 ) -> None:
     """Resume one provider-sized batch, retrying only workers still stopped."""
 
-    remaining = list(instance_ids)
-    delay = float(getattr(args, "provision_batch_delay_seconds", 3.0))
-    for attempt in range(1, LIFECYCLE_MAX_ATTEMPTS + 1):
+    def run_attempt(remaining: list[str]) -> bool:
         try:
             _run_lifecycle_command(
                 stage,
@@ -782,35 +896,34 @@ def _resume_worker_batch(
                 verbose=False,
                 live=False,
             )
-            return
         except PreparationError:
-            states = {
-                instance.instance_id: instance.state
-                for instance in _describe_cluster_instances(
-                    args.cluster, args.region, args.profile
-                )
-            }
-            remaining = [
-                instance_id
-                for instance_id in remaining
-                if states.get(instance_id) == "stopped"
-            ]
-            if not remaining:
-                return
-            if attempt == LIFECYCLE_MAX_ATTEMPTS:
-                raise PreparationError(
-                    f"Could not resume {len(remaining):,} worker(s) in {stage} "
-                    f"after {attempt:,} attempts: {', '.join(remaining)}"
-                )
-            retry_delay = max(1.0, delay) * (2 ** (attempt - 1))
-            console.print(
-                Text.assemble(
-                    ("↻", "bold yellow"),
-                    f" {stage} incomplete; retrying {len(remaining):,} worker(s) ",
-                    (f"in {retry_delay:g}s", "dim"),
-                )
+            return False
+        return True
+
+    def on_exhausted(remaining: list[str], attempt: int) -> None:
+        raise PreparationError(
+            f"Could not resume {len(remaining):,} worker(s) in {stage} "
+            f"after {attempt:,} attempts: {', '.join(remaining)}"
+        )
+
+    def on_retry(remaining: list[str], retry_delay: float) -> None:
+        console.print(
+            Text.assemble(
+                ("↻", "bold yellow"),
+                f" {stage} incomplete; retrying {len(remaining):,} worker(s) ",
+                (f"in {retry_delay:g}s", "dim"),
             )
-            time.sleep(retry_delay)
+        )
+
+    _retry_lifecycle_batch(
+        args,
+        instance_ids,
+        run_attempt=run_attempt,
+        describe_states=lambda _remaining: _worker_states(args),
+        retry_states=frozenset({"stopped"}),
+        on_exhausted=on_exhausted,
+        on_retry=on_retry,
+    )
 
 
 def _resume_worker_groups_in_batches(
@@ -822,14 +935,8 @@ def _resume_worker_groups_in_batches(
 
     if not groups:
         return
-    batch_size = min(
-        int(getattr(group_args, "provision_batch_size", 5))
-        for group_args, _ in groups
-    )
-    delay = max(
-        float(getattr(group_args, "provision_batch_delay_seconds", 3.0))
-        for group_args, _ in groups
-    )
+    batch_size = min(_provision_batch_size(group_args) for group_args, _ in groups)
+    delay = max(_provision_batch_delay(group_args) for group_args, _ in groups)
     queues = deque(
         (group_args, deque(sorted(set(instance_ids))))
         for group_args, instance_ids in groups
@@ -880,6 +987,8 @@ def _pause_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> lis
 
 def _worker_minimum_available_bytes(rows: Sequence[dict[str, str]]) -> int:
     largest_working_set = max(int(row["estimated_peak_local_bytes"]) for row in rows)
+    # Integer ceiling of 110% of the largest working set: 10% headroom over the
+    # plan's own estimate, rounded up so no worker is provisioned a byte short.
     return (largest_working_set * 11 + 9) // 10
 
 
@@ -931,7 +1040,7 @@ def _runtime_validation_command(
 ) -> list[str]:
     remote_command = (
         "set -euo pipefail; export PYTHONSAFEPATH=1; cd /tmp; "
-        'python_bin="$HOME/.venv/bin/python"; '
+        f'python_bin="{WORKER_PYTHON_BIN}"; '
         'module_dir=$("$python_bin" -P -c \'import pathlib, dolma.tokenizer; '
         "print(pathlib.Path(dolma.tokenizer.__file__).parent)'); "
         'install -m 0644 /tmp/dolma3p5-runtime/reshard.py "$module_dir/reshard.py"; '
@@ -939,7 +1048,8 @@ def _runtime_validation_command(
         '"$module_dir/document_selection.py"; '
         '"$python_bin" -P -c \'from dolma.tokenizer.reshard import '
         "RESHARDING_MANIFEST_SCHEMA_VERSION; assert RESHARDING_MANIFEST_SCHEMA_VERSION == 2'; "
-        "s5cmd version; findmnt /mnt/dolma; test -w /mnt/dolma/dolma3p5-resharding"
+        f"s5cmd version; findmnt {WORKER_LOCAL_MOUNT}; "
+        f"test -w {WORKER_LOCAL_TEMP_ROOT}"
     )
     return build_poormanray_run_command(
         remote_command=remote_command,
@@ -993,6 +1103,9 @@ def _load_execution_units(build: Path) -> list[dict[str, str]]:
         "worker_instance_type",
         "worker_storage_layout",
         "worker_vcpus",
+        # Read only during post-run verification; validating it up front keeps a
+        # stale plan from failing after the workers have already been paid for.
+        "allowed_materialized_target_residual_uint32_values",
     }
     missing = required - set(rows[0])
     if missing:
@@ -1201,8 +1314,7 @@ def _safe_path_launcher_payload(
         if not re.fullmatch(r"[a-z0-9-]+", status_run_id):
             raise PreparationError(f"Unsafe materialization run ID: {status_run_id!r}")
         status_directive = (
-            'export DOLMA_STATUS_ROOT="$HOME/dolma3p5-resharding-status/'
-            f'{status_run_id}"'
+            f'export DOLMA_STATUS_ROOT="{_remote_status_root(status_run_id)}"'
         )
         text = text.replace(strict_mode, f"{strict_mode}\n{status_directive}\n", 1)
     return text.encode("utf-8")
@@ -1378,69 +1490,79 @@ def _run_selected_preflight(
     )
 
 
+class _WorkerCleanupAbandoned(Exception):
+    """Best-effort worker cleanup stopped after printing its own instructions."""
+
+
+def _abandon_worker_cleanup(reason: str, command: Sequence[str]) -> NoReturn:
+    """Print the manual command that must replace the failed cleanup, then stop."""
+
+    print(
+        f"WARNING: {reason}; run {shlex.join(command)} immediately",
+        file=sys.stderr,
+    )
+    raise _WorkerCleanupAbandoned(reason)
+
+
+def _pause_worker_batch(
+    args: argparse.Namespace, instance_ids: Sequence[str], *, stage: str
+) -> None:
+    """Pause one provider-sized batch, retrying only workers still active."""
+
+    def run_attempt(remaining: list[str]) -> bool:
+        command = _pause_command(args, remaining)
+        try:
+            return_code = _run_compact_process(stage, command, verbose=False)
+        except OSError as exc:
+            _abandon_worker_cleanup(f"worker cleanup could not start: {exc}", command)
+        return return_code == 0
+
+    def describe_states(remaining: list[str]) -> dict[str, str]:
+        try:
+            return _worker_states(args)
+        except Exception as exc:
+            _abandon_worker_cleanup(
+                f"worker cleanup state check failed: {exc}",
+                _pause_command(args, remaining),
+            )
+
+    def on_exhausted(remaining: list[str], attempt: int) -> None:
+        _abandon_worker_cleanup(
+            f"worker cleanup failed after {attempt} attempts",
+            _pause_command(args, remaining),
+        )
+
+    _retry_lifecycle_batch(
+        args,
+        instance_ids,
+        run_attempt=run_attempt,
+        describe_states=describe_states,
+        retry_states=frozenset({"pending", "running"}),
+        on_exhausted=on_exhausted,
+    )
+
+
 def _pause_workers_after_failure(
     args: argparse.Namespace, instance_ids: Sequence[str]
 ) -> None:
     if not instance_ids:
         return
     ordered = sorted(set(instance_ids))
-    batch_size = int(getattr(args, "provision_batch_size", 5))
-    delay = float(getattr(args, "provision_batch_delay_seconds", 3.0))
-    batches = [
-        ordered[offset : offset + batch_size]
-        for offset in range(0, len(ordered), batch_size)
-    ]
-    for batch_index, batch in enumerate(batches, start=1):
-        remaining = list(batch)
-        for attempt in range(1, LIFECYCLE_MAX_ATTEMPTS + 1):
-            command = _pause_command(args, remaining)
-            try:
-                return_code = _run_compact_process(
-                    f"pause workers after failure batch {batch_index}/{len(batches)}",
-                    command,
-                    verbose=False,
-                )
-            except OSError as exc:
-                print(
-                    f"WARNING: worker cleanup could not start: {exc}; "
-                    f"run {shlex.join(command)} immediately",
-                    file=sys.stderr,
-                )
-                return
-            if return_code == 0:
-                break
-            try:
-                states = {
-                    instance.instance_id: instance.state
-                    for instance in _describe_cluster_instances(
-                        args.cluster, args.region, args.profile
-                    )
-                }
-            except Exception as exc:
-                print(
-                    f"WARNING: worker cleanup state check failed: {exc}; "
-                    f"run {shlex.join(command)} immediately",
-                    file=sys.stderr,
-                )
-                return
-            remaining = [
-                instance_id
-                for instance_id in remaining
-                if states.get(instance_id) in {"pending", "running"}
-            ]
-            if not remaining:
-                break
-            if attempt == LIFECYCLE_MAX_ATTEMPTS:
-                retry_command = _pause_command(args, remaining)
-                print(
-                    f"WARNING: worker cleanup failed after {attempt} attempts; "
-                    f"run {shlex.join(retry_command)} immediately",
-                    file=sys.stderr,
-                )
-                return
-            time.sleep(max(1.0, delay) * (2 ** (attempt - 1)))
-        if batch_index < len(batches) and delay:
-            time.sleep(delay)
+    delay = _provision_batch_delay(args)
+    batches = _lifecycle_batches(ordered, _provision_batch_size(args))
+    try:
+        for batch_index, batch in enumerate(batches, start=1):
+            _pause_worker_batch(
+                args,
+                batch,
+                stage=(
+                    f"pause workers after failure batch {batch_index}/{len(batches)}"
+                ),
+            )
+            if batch_index < len(batches) and delay:
+                time.sleep(delay)
+    except _WorkerCleanupAbandoned:
+        return
 
 
 def _prepare_workers(
@@ -1502,10 +1624,7 @@ def _prepare_workers(
                 deferred_resume_ids.extend(selected_ids)
 
         missing = worker_count - len(selected_ids)
-        batches = _provision_batches(
-            missing,
-            int(getattr(args, "provision_batch_size", 5)),
-        )
+        batches = _provision_batches(missing, _provision_batch_size(args))
         created_count = 0
         for batch_index, batch_count in enumerate(batches, start=1):
             _run_lifecycle_command(
@@ -1547,9 +1666,7 @@ def _prepare_workers(
                 delay_after_last_batch and batch_index == len(batches)
             )
             if should_delay:
-                time.sleep(
-                    float(getattr(args, "provision_batch_delay_seconds", 3.0))
-                )
+                time.sleep(_provision_batch_delay(args))
 
         if len(selected_ids) != worker_count:
             raise PreparationError(
@@ -1599,7 +1716,7 @@ def _worker_log_command(
     *,
     include_logs: bool = True,
 ) -> list[str]:
-    status_root = f"$HOME/dolma3p5-resharding-status/{status_run_id}"
+    status_root = _remote_status_root(status_run_id)
     active_instance_ids = set(instance_ids)
     offset_payload = json.dumps(
         {
@@ -1645,7 +1762,7 @@ for path in sorted(root.glob("*.log")):
     budget -= len(data)
 '''
     log_section = (
-        f'''python_bin="${{DOLMA_PYTHON:-$HOME/.venv/bin/python}}"
+        f'''python_bin="${{DOLMA_PYTHON:-{WORKER_PYTHON_BIN}}}"
 if [[ ! -x "$python_bin" ]]; then
   python_bin=$(command -v python3.12 || command -v python3 || command -v python)
 fi
@@ -1703,7 +1820,7 @@ def _worker_log_snapshots(
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=120,
+            timeout=WORKER_LOG_COMMAND_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired):
         return {}
@@ -1775,6 +1892,330 @@ def _worker_log_snapshots(
     return snapshots
 
 
+@dataclass(frozen=True)
+class _MonitorChannels:
+    """Shared state the warm-worker dispatcher and the progress monitor exchange.
+
+    Every field is optional so the monitor can also run standalone, with no
+    dispatcher on the other side of these channels.
+    """
+
+    worker_stages: dict[str, str] | None = None
+    stage_lock: Lock | None = None
+    all_dispatched: Event | None = None
+    abort: Event | None = None
+    worker_args: dict[str, argparse.Namespace] | None = None
+    unit_statuses: dict[tuple[str, str], str] | None = None
+    unit_status_lock: Lock | None = None
+    status_changed: Event | None = None
+
+    @property
+    def tracks_stages(self) -> bool:
+        return self.worker_stages is not None
+
+    @property
+    def tracks_units(self) -> bool:
+        return self.unit_statuses is not None
+
+    @property
+    def aborted(self) -> bool:
+        return self.abort is not None and self.abort.is_set()
+
+    @property
+    def dispatch_complete(self) -> bool:
+        return self.all_dispatched is None or self.all_dispatched.is_set()
+
+    def stage_guard(self) -> AbstractContextManager[Any]:
+        """Hold the dispatcher's stage lock, or nothing when running standalone."""
+
+        return self.stage_lock if self.stage_lock is not None else nullcontext()
+
+    def status_guard(self) -> AbstractContextManager[Any]:
+        """Hold the dispatcher's unit-status lock, or nothing when standalone."""
+
+        return (
+            self.unit_status_lock
+            if self.unit_status_lock is not None
+            else nullcontext()
+        )
+
+
+@dataclass
+class _WorkerOutputTracker:
+    """Remember which worker statuses and log bytes have already been printed."""
+
+    output: Console
+    verbose: bool
+    worker_tags: dict[str, tuple[str, str]]
+    previous_statuses: dict[tuple[str, str], str] = field(default_factory=dict)
+    emitted_log_lines: dict[tuple[str, str], int] = field(default_factory=dict)
+    log_byte_offsets: dict[tuple[str, str], int] = field(default_factory=dict)
+    announced_logs: set[tuple[str, str]] = field(default_factory=set)
+
+    def record_statuses(
+        self,
+        channels: _MonitorChannels,
+        instance_id: str,
+        statuses: dict[str, str],
+    ) -> bool:
+        """Publish one worker's unit statuses; report whether any of them changed."""
+
+        worker_tag, worker_style = self.worker_tags[instance_id]
+        changed = False
+        for unit_id, status in sorted(statuses.items()):
+            assert isinstance(status, str)
+            status_key = (instance_id, unit_id)
+            if channels.unit_statuses is not None:
+                with channels.status_guard():
+                    if channels.unit_statuses.get(status_key) != status:
+                        channels.unit_statuses[status_key] = status
+                        changed = True
+            if self.verbose and self.previous_statuses.get(status_key) != status:
+                self.previous_statuses[status_key] = status
+                self.output.print(
+                    _worker_log_line(
+                        worker_tag,
+                        worker_style,
+                        f"{unit_id} · {status}",
+                        bold=True,
+                    )
+                )
+        return changed
+
+    def print_new_log_lines(self, instance_id: str, snapshot: dict[str, Any]) -> None:
+        """Print only the log bytes this monitor has not already shown."""
+
+        worker_tag, worker_style = self.worker_tags[instance_id]
+        logs = snapshot["logs"]
+        assert isinstance(logs, dict)
+        offsets = snapshot.get("offsets", {})
+        assert isinstance(offsets, dict)
+        for log_name, log_lines in sorted(logs.items()):
+            assert isinstance(log_lines, tuple)
+            log_key = (instance_id, log_name)
+            if log_name in offsets:
+                new_lines = log_lines
+            else:
+                # Backward compatibility for old worker-log envelopes without
+                # acknowledged byte offsets.
+                emitted = self.emitted_log_lines.get(log_key, 0)
+                if len(log_lines) < emitted:
+                    emitted = 0
+                new_lines = log_lines[emitted:]
+            if new_lines:
+                if log_key not in self.announced_logs:
+                    self.announced_logs.add(log_key)
+                    self.output.print(
+                        _worker_log_line(
+                            worker_tag,
+                            worker_style,
+                            f"unit {Path(log_name).stem}",
+                            bold=True,
+                        )
+                    )
+                for line in new_lines:
+                    timestamp, message = _worker_log_parts(line)
+                    self.output.print(
+                        _worker_log_line(
+                            worker_tag,
+                            worker_style,
+                            message,
+                            timestamp=timestamp,
+                        )
+                    )
+            if log_name in offsets:
+                self.log_byte_offsets[log_key] = int(offsets[log_name])
+            else:
+                self.emitted_log_lines[log_key] = len(log_lines)
+
+
+def _monitored_workers(
+    describe_instances: Callable[[str, str, str | None], list[ClusterInstance]],
+    args: argparse.Namespace,
+    expected_ids: set[str],
+) -> dict[str, ClusterInstance]:
+    """Return the monitored workers, refusing to continue if any disappeared."""
+
+    selected = {
+        instance.instance_id: instance
+        for instance in describe_instances(args.cluster, args.region, args.profile)
+        if instance.instance_id in expected_ids
+    }
+    missing = expected_ids - set(selected)
+    if missing:
+        raise PreparationError(
+            "Could not find selected materialization worker(s): "
+            + ", ".join(sorted(missing))
+        )
+    return selected
+
+
+def _reconcile_worker_stages(
+    channels: _MonitorChannels, selected: dict[str, ClusterInstance]
+) -> dict[str, str]:
+    """Fold provider stop states into the shared stage map, then snapshot it."""
+
+    stages = channels.worker_stages
+    assert stages is not None
+    with channels.stage_guard():
+        for instance_id, instance in selected.items():
+            base = stages.get(instance_id, "waiting").split(":", 1)[0]
+            if base in {"materializing", "stopping"} and instance.state in {
+                "stopping",
+                "stopped",
+            }:
+                stages[instance_id] = instance.state
+        return dict(stages)
+
+
+def _unit_progress_detail(channels: _MonitorChannels, unit_count: int) -> str:
+    """Describe unit completion, counting only what the dispatcher published."""
+
+    if channels.unit_statuses is None:
+        return f"{unit_count:,} units"
+    with channels.status_guard():
+        completed_units = sum(
+            status == "succeeded" for status in channels.unit_statuses.values()
+        )
+    return f"{completed_units:,}/{unit_count:,} units"
+
+
+def _lifecycle_progress_detail(
+    channels: _MonitorChannels,
+    lifecycle_counts: Counter[str],
+    unit_count: int,
+    started_at: float,
+) -> str:
+    """Summarize the dispatcher's own per-worker stages."""
+
+    return " · ".join(
+        (
+            _unit_progress_detail(channels, unit_count),
+            f"{lifecycle_counts['waiting']:,} waiting",
+            f"{lifecycle_counts['queued']:,} queued",
+            f"{lifecycle_counts['bootstrapping']:,} bootstrapping",
+            f"{lifecycle_counts['materializing']:,} materializing",
+            f"{lifecycle_counts['stopping']:,} stopping",
+            f"{lifecycle_counts['stopped']:,} stopped",
+            f"{lifecycle_counts['failed']:,} failed",
+            _elapsed_time(started_at),
+        )
+    )
+
+
+def _provider_progress_detail(
+    state_counts: Counter[str], unit_count: int, started_at: float
+) -> str:
+    """Summarize provider instance states when no dispatcher stages exist."""
+
+    return " · ".join(
+        (
+            f"{unit_count:,} units",
+            f"{state_counts['running']:,} running",
+            f"{state_counts['stopping']:,} stopping",
+            f"{state_counts['stopped']:,} stopped",
+            _elapsed_time(started_at),
+        )
+    )
+
+
+def _materializing_worker_ids(
+    channels: _MonitorChannels,
+    selected: dict[str, ClusterInstance],
+    stage_snapshot: dict[str, str],
+) -> list[str]:
+    """Return running workers whose logs and statuses are worth reading."""
+
+    return sorted(
+        instance.instance_id
+        for instance in selected.values()
+        if instance.state == "running"
+        and (
+            not channels.tracks_stages
+            or stage_snapshot.get(instance.instance_id, "").split(":", 1)[0]
+            == "materializing"
+        )
+    )
+
+
+def _collect_worker_snapshots(
+    args: argparse.Namespace,
+    channels: _MonitorChannels,
+    instance_ids: Sequence[str],
+    status_run_id: str,
+    log_offsets: dict[tuple[str, str], int],
+    *,
+    include_logs: bool,
+) -> dict[str, dict[str, Any]]:
+    """Read one status and log page per poormanray discovery group."""
+
+    log_groups: dict[str, tuple[argparse.Namespace, list[str]]] = {}
+    for instance_id in instance_ids:
+        log_args = (channels.worker_args or {}).get(instance_id, args)
+        selector = _pmr_discovery_name(log_args)
+        if selector not in log_groups:
+            log_groups[selector] = (log_args, [])
+        log_groups[selector][1].append(instance_id)
+    snapshots: dict[str, dict[str, Any]] = {}
+    for log_args, group_instance_ids in log_groups.values():
+        snapshots.update(
+            _worker_log_snapshots(
+                log_args,
+                group_instance_ids,
+                status_run_id,
+                log_offsets,
+                include_logs=include_logs,
+            )
+        )
+    return snapshots
+
+
+def _publish_worker_output(
+    args: argparse.Namespace,
+    channels: _MonitorChannels,
+    tracker: _WorkerOutputTracker,
+    running_ids: Sequence[str],
+    status_run_id: str,
+) -> None:
+    """Print new worker output and hand fresh unit statuses to the dispatcher."""
+
+    snapshots = _collect_worker_snapshots(
+        args,
+        channels,
+        running_ids,
+        status_run_id,
+        tracker.log_byte_offsets,
+        include_logs=tracker.verbose,
+    )
+    statuses_changed = False
+    for instance_id in sorted(snapshots):
+        snapshot = snapshots[instance_id]
+        statuses = snapshot["statuses"]
+        assert isinstance(statuses, dict)
+        if tracker.record_statuses(channels, instance_id, statuses):
+            statuses_changed = True
+        if tracker.verbose:
+            tracker.print_new_log_lines(instance_id, snapshot)
+    if statuses_changed and channels.status_changed is not None:
+        channels.status_changed.set()
+
+
+def _await_next_worker_poll(
+    args: argparse.Namespace,
+    channels: _MonitorChannels,
+    sleep: Callable[[float], None],
+) -> None:
+    """Wait out one poll interval, waking early when the dispatcher aborts."""
+
+    poll_seconds = args.completion_poll_seconds
+    if channels.tracks_units:
+        poll_seconds = min(poll_seconds, args.readiness_poll_seconds)
+    if channels.abort is not None:
+        channels.abort.wait(poll_seconds)
+    else:
+        sleep(poll_seconds)
+
+
 def _wait_for_workers_to_stop(
     args: argparse.Namespace,
     instance_ids: Sequence[str],
@@ -1795,24 +2236,36 @@ def _wait_for_workers_to_stop(
 ) -> None:
     """Monitor mixed worker stages until every dispatched worker has stopped."""
 
+    # Every optional keyword is one shared-state channel to the dispatcher; they
+    # are bundled once here so the poll helpers below take a single object.
+    channels = _MonitorChannels(
+        worker_stages=worker_stages,
+        stage_lock=stage_lock,
+        all_dispatched=all_dispatched,
+        abort=abort,
+        worker_args=worker_args,
+        unit_statuses=unit_statuses,
+        unit_status_lock=unit_status_lock,
+        status_changed=status_changed,
+    )
     describe_instances = describe or _describe_cluster_instances
     output = console or Console(stderr=True, highlight=False)
     expected_ids = set(instance_ids)
     started_at = time.monotonic()
     verbose = getattr(args, "verbose", False)
-    previous_statuses: dict[tuple[str, str], str] = {}
-    emitted_log_lines: dict[tuple[str, str], int] = {}
-    log_byte_offsets: dict[tuple[str, str], int] = {}
-    announced_logs: set[tuple[str, str]] = set()
     previous_state_signature: tuple[tuple[str, int], ...] | None = None
     aborted = False
-    worker_tags = {
-        instance_id: (
-            instance_id[-6:],
-            WORKER_LOG_STYLES[(index - 1) % len(WORKER_LOG_STYLES)],
-        )
-        for index, instance_id in enumerate(sorted(expected_ids), start=1)
-    }
+    tracker = _WorkerOutputTracker(
+        output=output,
+        verbose=verbose,
+        worker_tags={
+            instance_id: (
+                _worker_tag(instance_id),
+                WORKER_LOG_STYLES[(index - 1) % len(WORKER_LOG_STYLES)],
+            )
+            for index, instance_id in enumerate(sorted(expected_ids), start=1)
+        },
+    )
     live_status = (
         output.status(_stage_status("workers"), spinner="dots")
         if output.is_terminal
@@ -1825,79 +2278,24 @@ def _wait_for_workers_to_stop(
 
     try:
         while True:
-            if abort is not None and abort.is_set():
+            if channels.aborted:
                 aborted = True
                 break
-            cluster = describe_instances(args.cluster, args.region, args.profile)
-            selected = {
-                instance.instance_id: instance
-                for instance in cluster
-                if instance.instance_id in expected_ids
-            }
-            missing = expected_ids - set(selected)
-            if missing:
-                raise PreparationError(
-                    "Could not find selected materialization worker(s): "
-                    + ", ".join(sorted(missing))
-                )
+            selected = _monitored_workers(describe_instances, args, expected_ids)
             state_counts = Counter(instance.state for instance in selected.values())
             stopped = state_counts["stopped"]
             lifecycle_counts: Counter[str] | None = None
             stage_snapshot: dict[str, str] = {}
-            if worker_stages is not None:
-                if stage_lock is not None:
-                    with stage_lock:
-                        for instance_id, instance in selected.items():
-                            current = worker_stages.get(instance_id, "waiting")
-                            base = current.split(":", 1)[0]
-                            if base in {"materializing", "stopping"} and instance.state in {
-                                "stopping",
-                                "stopped",
-                            }:
-                                worker_stages[instance_id] = instance.state
-                        stage_snapshot = dict(worker_stages)
-                else:
-                    stage_snapshot = dict(worker_stages)
+            if channels.tracks_stages:
+                stage_snapshot = _reconcile_worker_stages(channels, selected)
                 lifecycle_counts = Counter(
                     value.split(":", 1)[0] for value in stage_snapshot.values()
                 )
-                if unit_statuses is not None:
-                    if unit_status_lock is not None:
-                        with unit_status_lock:
-                            completed_units = sum(
-                                status == "succeeded"
-                                for status in unit_statuses.values()
-                            )
-                    else:
-                        completed_units = sum(
-                            status == "succeeded" for status in unit_statuses.values()
-                        )
-                    unit_detail = f"{completed_units:,}/{unit_count:,} units"
-                else:
-                    unit_detail = f"{unit_count:,} units"
-                detail = " · ".join(
-                    (
-                        unit_detail,
-                        f"{lifecycle_counts['waiting']:,} waiting",
-                        f"{lifecycle_counts['queued']:,} queued",
-                        f"{lifecycle_counts['bootstrapping']:,} bootstrapping",
-                        f"{lifecycle_counts['materializing']:,} materializing",
-                        f"{lifecycle_counts['stopping']:,} stopping",
-                        f"{lifecycle_counts['stopped']:,} stopped",
-                        f"{lifecycle_counts['failed']:,} failed",
-                        _elapsed_time(started_at),
-                    )
+                detail = _lifecycle_progress_detail(
+                    channels, lifecycle_counts, unit_count, started_at
                 )
             else:
-                detail = " · ".join(
-                    (
-                        f"{unit_count:,} units",
-                        f"{state_counts['running']:,} running",
-                        f"{state_counts['stopping']:,} stopping",
-                        f"{stopped:,} stopped",
-                        _elapsed_time(started_at),
-                    )
-                )
+                detail = _provider_progress_detail(state_counts, unit_count, started_at)
             if live_status is not None:
                 live_status.update(_stage_status("workers", detail))
             else:
@@ -1907,118 +2305,14 @@ def _wait_for_workers_to_stop(
                 if state_signature != previous_state_signature:
                     output.print(Text(f"workers  {detail}", style="dim"))
                     previous_state_signature = state_signature
-            running_ids = sorted(
-                instance.instance_id
-                for instance in selected.values()
-                if instance.state == "running"
-                and (
-                    worker_stages is None
-                    or stage_snapshot.get(instance.instance_id, "").split(":", 1)[0]
-                    == "materializing"
+            running_ids = _materializing_worker_ids(channels, selected, stage_snapshot)
+            if running_ids and (verbose or channels.tracks_units):
+                _publish_worker_output(
+                    args, channels, tracker, running_ids, status_run_id
                 )
-            )
-            if running_ids and (verbose or unit_statuses is not None):
-                snapshots: dict[str, dict[str, Any]] = {}
-                log_groups: dict[str, tuple[argparse.Namespace, list[str]]] = {}
-                for instance_id in running_ids:
-                    log_args = (worker_args or {}).get(instance_id, args)
-                    selector = _pmr_discovery_name(log_args)
-                    if selector not in log_groups:
-                        log_groups[selector] = (log_args, [])
-                    log_groups[selector][1].append(instance_id)
-                for log_args, group_instance_ids in log_groups.values():
-                    snapshots.update(
-                        _worker_log_snapshots(
-                            log_args,
-                            group_instance_ids,
-                            status_run_id,
-                            log_byte_offsets,
-                            include_logs=verbose,
-                        )
-                    )
-                statuses_changed = False
-                for instance_id in sorted(snapshots):
-                    worker_tag, worker_style = worker_tags[instance_id]
-                    snapshot = snapshots[instance_id]
-                    statuses = snapshot["statuses"]
-                    assert isinstance(statuses, dict)
-                    for unit_id, status in sorted(statuses.items()):
-                        assert isinstance(status, str)
-                        status_key = (instance_id, unit_id)
-                        if unit_statuses is not None:
-                            if unit_status_lock is not None:
-                                with unit_status_lock:
-                                    if unit_statuses.get(status_key) != status:
-                                        unit_statuses[status_key] = status
-                                        statuses_changed = True
-                            elif unit_statuses.get(status_key) != status:
-                                unit_statuses[status_key] = status
-                                statuses_changed = True
-                        if verbose and previous_statuses.get(status_key) != status:
-                            previous_statuses[status_key] = status
-                            output.print(
-                                _worker_log_line(
-                                    worker_tag,
-                                    worker_style,
-                                    f"{unit_id} · {status}",
-                                    bold=True,
-                                )
-                            )
-                    if not verbose:
-                        continue
-                    logs = snapshot["logs"]
-                    assert isinstance(logs, dict)
-                    offsets = snapshot.get("offsets", {})
-                    assert isinstance(offsets, dict)
-                    for log_name, log_lines in sorted(logs.items()):
-                        assert isinstance(log_lines, tuple)
-                        log_key = (instance_id, log_name)
-                        if log_name in offsets:
-                            new_lines = log_lines
-                        else:
-                            # Backward compatibility for old worker-log
-                            # envelopes without acknowledged byte offsets.
-                            emitted = emitted_log_lines.get(log_key, 0)
-                            if len(log_lines) < emitted:
-                                emitted = 0
-                            new_lines = log_lines[emitted:]
-                        if new_lines:
-                            if log_key not in announced_logs:
-                                announced_logs.add(log_key)
-                                output.print(
-                                    _worker_log_line(
-                                        worker_tag,
-                                        worker_style,
-                                        f"unit {Path(log_name).stem}",
-                                        bold=True,
-                                    )
-                                )
-                            for line in new_lines:
-                                timestamp, message = _worker_log_parts(line)
-                                output.print(
-                                    _worker_log_line(
-                                        worker_tag,
-                                        worker_style,
-                                        message,
-                                        timestamp=timestamp,
-                                    )
-                                )
-                        if log_name in offsets:
-                            log_byte_offsets[log_key] = int(offsets[log_name])
-                        else:
-                            emitted_log_lines[log_key] = len(log_lines)
-                if statuses_changed and status_changed is not None:
-                    status_changed.set()
-            dispatch_complete = all_dispatched is None or all_dispatched.is_set()
-            if dispatch_complete and stopped == len(expected_ids):
+            if channels.dispatch_complete and stopped == len(expected_ids):
                 break
-            poll_seconds = args.completion_poll_seconds
-            if unit_statuses is not None:
-                poll_seconds = min(poll_seconds, args.readiness_poll_seconds)
-            if abort is not None:
-                abort.wait(poll_seconds)
-            else:
-                sleep(poll_seconds)
+            _await_next_worker_poll(args, channels, sleep)
     finally:
         if live_status is not None:
             live_status.stop()
@@ -2179,10 +2473,7 @@ def _dry_run_lifecycle_commands(
 ) -> list[tuple[str, list[str]]]:
     """Show the create path; execute may resume compatible stopped workers instead."""
 
-    batches = _provision_batches(
-        worker_count,
-        int(getattr(args, "provision_batch_size", 5)),
-    )
+    batches = _provision_batches(worker_count, _provision_batch_size(args))
     create_commands = [
         (
             f"create worker batch {index}/{len(batches)}",
@@ -2224,10 +2515,6 @@ def _print_dispatch(
     largest_unit = max(int(row["estimated_peak_local_bytes"]) for row in rows)
     display_label = label.removeprefix("category-") if label.startswith("category-") else label
 
-    def count(value: int, singular: str, plural: str | None = None) -> str:
-        noun = singular if value == 1 else plural or f"{singular}s"
-        return f"{value:,} {noun}"
-
     summary = Table.grid(padding=(0, 2))
     summary.add_column(style="dim", no_wrap=True)
     summary.add_column()
@@ -2236,9 +2523,9 @@ def _print_dispatch(
         "Work",
         " · ".join(
             (
-                count(category_count, "category", "categories"),
-                count(len(rows), "unit"),
-                count(worker_count, "worker"),
+                _count_label(category_count, "category", "categories"),
+                _count_label(len(rows), "unit"),
+                _count_label(worker_count, "worker"),
             )
         ),
     )
@@ -2286,9 +2573,9 @@ def _ready_worker_ids(
     client = session.client("ec2", region_name=args.region)
     ready: set[str] = set()
     ordered = sorted(set(instance_ids))
-    for offset in range(0, len(ordered), 100):
+    for batch in _lifecycle_batches(ordered, DESCRIBE_INSTANCE_STATUS_ID_LIMIT):
         response = client.describe_instance_status(
-            InstanceIds=ordered[offset : offset + 100],
+            InstanceIds=batch,
             IncludeAllInstances=True,
         )
         for status in response.get("InstanceStatuses", []):
@@ -2320,7 +2607,7 @@ def _bootstrap_and_dispatch_worker(
 ) -> None:
     """Prepare one ready worker and dispatch only its assigned execution units."""
 
-    tag = instance_id[-6:]
+    tag = _worker_tag(instance_id)
 
     def run(stage: str, command: Sequence[str]) -> None:
         _set_worker_stage(stages, stage_lock, instance_id, f"bootstrapping:{stage}")
@@ -2376,7 +2663,7 @@ def _dispatch_assignment_to_worker(
     _set_worker_stage(stages, stage_lock, instance_id, f"queued:{unit_id}")
     try:
         _run_lifecycle_command(
-            f"{instance_id[-6:]} · dispatch {unit_id}",
+            f"{_worker_tag(instance_id)} · dispatch {unit_id}",
             _map_command(
                 assignment.group.args,
                 assignment.script_dir,
@@ -2405,7 +2692,7 @@ def _stop_worker_after_work(
     _set_worker_stage(stages, stage_lock, instance_id, "stopping")
     try:
         _run_lifecycle_command(
-            f"{instance_id[-6:]} · stop",
+            f"{_worker_tag(instance_id)} · stop",
             _pause_command(group_args, [instance_id]),
             console=console,
             verbose=False,
@@ -2414,6 +2701,192 @@ def _stop_worker_after_work(
     except BaseException:
         _set_worker_stage(stages, stage_lock, instance_id, "failed")
         raise
+
+
+@dataclass(frozen=True)
+class _DispatchChannels:
+    """Shared state the dispatcher owns and the progress monitor reads or fills."""
+
+    worker_stages: dict[str, str]
+    stage_lock: Lock = field(default_factory=Lock)
+    unit_statuses: dict[tuple[str, str], str] = field(default_factory=dict)
+    unit_status_lock: Lock = field(default_factory=Lock)
+    status_changed: Event = field(default_factory=Event)
+    all_dispatched: Event = field(default_factory=Event)
+    abort: Event = field(default_factory=Event)
+
+    def set_stage(self, instance_id: str, stage: str) -> None:
+        _set_worker_stage(self.worker_stages, self.stage_lock, instance_id, stage)
+
+    def stage_snapshot(self) -> dict[str, str]:
+        with self.stage_lock:
+            return dict(self.worker_stages)
+
+    def status_snapshot(self) -> dict[tuple[str, str], str]:
+        with self.unit_status_lock:
+            return dict(self.unit_statuses)
+
+
+def _harvest_finished_futures(futures: dict[Future[None], str]) -> None:
+    """Re-raise the first failure and forget every future that already finished."""
+
+    for future in [future for future in futures if future.done()]:
+        future.result()
+        del futures[future]
+
+
+@dataclass
+class _WarmWorkerPool:
+    """The warm-worker state machine behind one materialization run.
+
+    Each healthy worker starts one execution unit immediately, receives another
+    compatible unit from its own group's queue whenever the unit it was running
+    succeeds, and stays warm until that queue is empty, then stops.
+    """
+
+    args: argparse.Namespace
+    pool: ThreadPoolExecutor
+    console: Console
+    channels: _DispatchChannels
+    assignment_queues: list[deque[WorkerAssignment]]
+    worker_group_index: dict[str, int]
+    worker_args: dict[str, argparse.Namespace]
+    pending: set[str]
+    futures: dict[Future[None], str] = field(default_factory=dict)
+    current_assignments: dict[str, WorkerAssignment] = field(default_factory=dict)
+    completed_unit_ids: set[str] = field(default_factory=set)
+
+    @property
+    def busy(self) -> bool:
+        """Report whether any worker still owes a bootstrap, a unit, or a stop."""
+
+        return bool(
+            self.pending
+            or self.futures
+            or self.current_assignments
+            or any(self.assignment_queues)
+        )
+
+    def advance_completed_units(self) -> None:
+        """Refill or stop every warm worker whose unit is no longer running."""
+
+        inflight_ids = set(self.futures.values())
+        status_snapshot = self.channels.status_snapshot()
+        self.channels.status_changed.clear()
+        stage_snapshot = self.channels.stage_snapshot()
+        for instance_id, assignment in list(self.current_assignments.items()):
+            if instance_id in inflight_ids:
+                continue
+            unit_id = assignment.rows[0]["unit_id"]
+            status = status_snapshot.get((instance_id, unit_id))
+            if status == "succeeded":
+                self.completed_unit_ids.add(unit_id)
+                del self.current_assignments[instance_id]
+                self._dispatch_next_unit(instance_id)
+            elif status is not None and status.startswith("failed"):
+                self.channels.set_stage(instance_id, "failed")
+                raise PreparationError(
+                    f"Execution unit {unit_id} failed on {instance_id}: {status}"
+                )
+            elif stage_snapshot.get(instance_id) in {"stopping", "stopped"}:
+                raise PreparationError(
+                    f"Worker {instance_id} stopped before execution unit "
+                    f"{unit_id} reported success"
+                )
+
+    def start_ready_workers(self) -> None:
+        """Bootstrap and dispatch every worker the provider now reports healthy."""
+
+        newly_ready = (
+            _ready_worker_ids(self.args, sorted(self.pending)) if self.pending else set()
+        )
+        for instance_id in sorted(newly_ready):
+            queue = self._queue_for(instance_id)
+            if not queue:
+                self.pending.remove(instance_id)
+                self._stop_worker(instance_id)
+                continue
+            assignment = queue.popleft()
+            self.pending.remove(instance_id)
+            self.current_assignments[instance_id] = assignment
+            self.channels.set_stage(instance_id, "queued")
+            self._submit(
+                instance_id,
+                _bootstrap_and_dispatch_worker,
+                self.args,
+                instance_id,
+                assignment,
+                self.channels.worker_stages,
+                self.channels.stage_lock,
+                self.console,
+            )
+
+    def _dispatch_next_unit(self, instance_id: str) -> None:
+        """Keep one worker warm with its next unit, or stop it when none remain."""
+
+        queue = self._queue_for(instance_id)
+        if not queue:
+            self._stop_worker(instance_id)
+            return
+        assignment = queue.popleft()
+        self.current_assignments[instance_id] = assignment
+        self._submit(
+            instance_id,
+            _dispatch_assignment_to_worker,
+            instance_id,
+            assignment,
+            self.channels.worker_stages,
+            self.channels.stage_lock,
+            self.console,
+        )
+
+    def _stop_worker(self, instance_id: str) -> None:
+        self._submit(
+            instance_id,
+            _stop_worker_after_work,
+            instance_id,
+            self.worker_args[instance_id],
+            self.channels.worker_stages,
+            self.channels.stage_lock,
+            self.console,
+        )
+
+    def _queue_for(self, instance_id: str) -> deque[WorkerAssignment]:
+        """Return the queue of units this worker's instance type can run."""
+
+        return self.assignment_queues[self.worker_group_index[instance_id]]
+
+    def _submit(
+        self, instance_id: str, function: Callable[..., None], *call_args: Any
+    ) -> None:
+        self.futures[self.pool.submit(function, *call_args)] = instance_id
+
+
+def _await_dispatch_progress(
+    args: argparse.Namespace,
+    workers: _WarmWorkerPool,
+    resume_futures: dict[Future[None], str],
+) -> None:
+    """Block until the next event that can change the dispatch loop's decisions."""
+
+    if workers.pending:
+        # Readiness is only visible through the provider, so this wait must also
+        # time out on the readiness poll interval.
+        active_futures = [*workers.futures, *resume_futures]
+        if active_futures:
+            wait(
+                active_futures,
+                timeout=args.readiness_poll_seconds,
+                return_when=FIRST_COMPLETED,
+            )
+        else:
+            time.sleep(args.readiness_poll_seconds)
+    elif workers.futures:
+        wait(workers.futures, return_when=FIRST_COMPLETED)
+    elif resume_futures:
+        wait(resume_futures, return_when=FIRST_COMPLETED)
+    elif workers.current_assignments:
+        workers.channels.status_changed.wait(args.readiness_poll_seconds)
 
 
 def _execute_materialization_groups(
@@ -2444,15 +2917,10 @@ def _execute_materialization_groups(
             if group_resume_ids:
                 deferred_resumes.append((group.args, group_resume_ids))
 
-        worker_stages = {instance_id: "waiting" for instance_id in all_worker_ids}
-        stage_lock = Lock()
-        unit_statuses: dict[tuple[str, str], str] = {}
-        unit_status_lock = Lock()
-        status_changed = Event()
-        all_dispatched = Event()
-        abort = Event()
+        channels = _DispatchChannels(
+            worker_stages={instance_id: "waiting" for instance_id in all_worker_ids}
+        )
         lifecycle_console = Console(stderr=True, highlight=False)
-        pending = set(all_worker_ids)
         worker_group_index = {
             instance_id: group_index
             for group_index, (_, worker_ids) in enumerate(prepared)
@@ -2463,9 +2931,6 @@ def _execute_materialization_groups(
             for group, worker_ids in prepared
             for instance_id in worker_ids
         }
-        futures: dict[Future[None], str] = {}
-        current_assignments: dict[str, WorkerAssignment] = {}
-        completed_unit_ids: set[str] = set()
         resume_pool = ThreadPoolExecutor(max_workers=1)
         resume_futures = (
             {
@@ -2485,143 +2950,40 @@ def _execute_materialization_groups(
             all_worker_ids,
             len(selected),
             status_run_id,
-            worker_stages=worker_stages,
-            stage_lock=stage_lock,
-            all_dispatched=all_dispatched,
-            abort=abort,
+            worker_stages=channels.worker_stages,
+            stage_lock=channels.stage_lock,
+            all_dispatched=channels.all_dispatched,
+            abort=channels.abort,
             console=lifecycle_console,
             worker_args=worker_args,
-            unit_statuses=unit_statuses,
-            unit_status_lock=unit_status_lock,
-            status_changed=status_changed,
+            unit_statuses=channels.unit_statuses,
+            unit_status_lock=channels.unit_status_lock,
+            status_changed=channels.status_changed,
         )
         try:
             bootstrap_workers = min(args.bootstrap_parallelism, len(all_worker_ids))
             with ThreadPoolExecutor(max_workers=bootstrap_workers) as pool:
-                while (
-                    pending
-                    or futures
-                    or resume_futures
-                    or current_assignments
-                    or any(assignment_queues)
-                ):
-                    completed_resumes = [
-                        future for future in resume_futures if future.done()
-                    ]
-                    for future in completed_resumes:
-                        future.result()
-                        del resume_futures[future]
+                workers = _WarmWorkerPool(
+                    args=args,
+                    pool=pool,
+                    console=lifecycle_console,
+                    channels=channels,
+                    assignment_queues=assignment_queues,
+                    worker_group_index=worker_group_index,
+                    worker_args=worker_args,
+                    pending=set(all_worker_ids),
+                )
+                while workers.busy or resume_futures:
+                    _harvest_finished_futures(resume_futures)
+                    _harvest_finished_futures(workers.futures)
+                    workers.advance_completed_units()
+                    workers.start_ready_workers()
+                    _await_dispatch_progress(args, workers, resume_futures)
 
-                    completed = [future for future in futures if future.done()]
-                    for future in completed:
-                        future.result()
-                        del futures[future]
-
-                    inflight_ids = set(futures.values())
-                    with unit_status_lock:
-                        status_snapshot = dict(unit_statuses)
-                    status_changed.clear()
-                    with stage_lock:
-                        stage_snapshot = dict(worker_stages)
-                    for instance_id, assignment in list(current_assignments.items()):
-                        if instance_id in inflight_ids:
-                            continue
-                        unit_id = assignment.rows[0]["unit_id"]
-                        status = status_snapshot.get((instance_id, unit_id))
-                        if status == "succeeded":
-                            completed_unit_ids.add(unit_id)
-                            del current_assignments[instance_id]
-                            group_index = worker_group_index[instance_id]
-                            if assignment_queues[group_index]:
-                                next_assignment = assignment_queues[group_index].popleft()
-                                current_assignments[instance_id] = next_assignment
-                                future = pool.submit(
-                                    _dispatch_assignment_to_worker,
-                                    instance_id,
-                                    next_assignment,
-                                    worker_stages,
-                                    stage_lock,
-                                    lifecycle_console,
-                                )
-                                futures[future] = instance_id
-                            else:
-                                future = pool.submit(
-                                    _stop_worker_after_work,
-                                    instance_id,
-                                    worker_args[instance_id],
-                                    worker_stages,
-                                    stage_lock,
-                                    lifecycle_console,
-                                )
-                                futures[future] = instance_id
-                        elif status is not None and status.startswith("failed"):
-                            _set_worker_stage(
-                                worker_stages, stage_lock, instance_id, "failed"
-                            )
-                            raise PreparationError(
-                                f"Execution unit {unit_id} failed on {instance_id}: {status}"
-                            )
-                        elif stage_snapshot.get(instance_id) in {"stopping", "stopped"}:
-                            raise PreparationError(
-                                f"Worker {instance_id} stopped before execution unit "
-                                f"{unit_id} reported success"
-                            )
-
-                    newly_ready = (
-                        _ready_worker_ids(args, sorted(pending)) if pending else set()
-                    )
-                    for instance_id in sorted(newly_ready):
-                        group_index = worker_group_index[instance_id]
-                        if not assignment_queues[group_index]:
-                            pending.remove(instance_id)
-                            future = pool.submit(
-                                _stop_worker_after_work,
-                                instance_id,
-                                worker_args[instance_id],
-                                worker_stages,
-                                stage_lock,
-                                lifecycle_console,
-                            )
-                            futures[future] = instance_id
-                            continue
-                        assignment = assignment_queues[group_index].popleft()
-                        pending.remove(instance_id)
-                        current_assignments[instance_id] = assignment
-                        _set_worker_stage(
-                            worker_stages, stage_lock, instance_id, "queued"
-                        )
-                        future = pool.submit(
-                            _bootstrap_and_dispatch_worker,
-                            args,
-                            instance_id,
-                            assignment,
-                            worker_stages,
-                            stage_lock,
-                            lifecycle_console,
-                        )
-                        futures[future] = instance_id
-
-                    if pending:
-                        active_futures = [*futures, *resume_futures]
-                        if active_futures:
-                            wait(
-                                active_futures,
-                                timeout=args.readiness_poll_seconds,
-                                return_when=FIRST_COMPLETED,
-                            )
-                        else:
-                            time.sleep(args.readiness_poll_seconds)
-                    elif futures:
-                        wait(futures, return_when=FIRST_COMPLETED)
-                    elif resume_futures:
-                        wait(resume_futures, return_when=FIRST_COMPLETED)
-                    elif current_assignments:
-                        status_changed.wait(args.readiness_poll_seconds)
-
-            all_dispatched.set()
+            channels.all_dispatched.set()
             monitor.result()
         except BaseException:
-            abort.set()
+            channels.abort.set()
             raise
         finally:
             monitor_pool.shutdown(wait=True)
@@ -2629,9 +2991,9 @@ def _execute_materialization_groups(
 
         if any(assignment_queues):
             raise PreparationError("Not every execution-unit assignment was dispatched")
-        if len(completed_unit_ids) != len(selected):
+        if len(workers.completed_unit_ids) != len(selected):
             raise PreparationError(
-                f"Only {len(completed_unit_ids):,}/{len(selected):,} execution units "
+                f"Only {len(workers.completed_unit_ids):,}/{len(selected):,} execution units "
                 "reported success"
             )
         _verify_materialized_units(args, selected)

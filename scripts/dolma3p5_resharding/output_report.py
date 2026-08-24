@@ -6,6 +6,48 @@ import html
 from collections import Counter, defaultdict
 from typing import Any, Sequence
 
+# One light/dark value pair per report color role, shared by every report this
+# package renders. Stylesheets name the roles they use instead of repeating hex
+# literals, so a light value can never gain or lose its dark counterpart.
+REPORT_PALETTE: dict[str, tuple[str, str]] = {
+    "muted": ("#536965", "#a7bbb7"),
+    "surface": ("#edf6f4", "#142420"),
+    "surface-raised": ("#e4f0ed", "#1a2d29"),
+    "surface-hover": ("#eaf3f1", "#172522"),
+    "surface-selected": ("#dceeea", "#1b312d"),
+    "code": ("#e2efec", "#1b312d"),
+    "track": ("#d2e1de", "#2a403c"),
+    "line": ("#cbdad7", "#2a403c"),
+    "accent": ("#14786f", "#5cc8bb"),
+    "accent-output": ("#218f84", "#5cc8bb"),
+    "accent-link": ("#126a63", "#74d7cb"),
+    "neutral-series": ("#71817e", "#91a29f"),
+    "neutral-target": ("#7b8d89", "#91a29f"),
+    "warning": ("#a35f16", "#e5a456"),
+    "warning-selection": ("#d28a32", "#e5a456"),
+    "warning-strong": ("#bd711f", "#e5a456"),
+    "shell": ("#f4f8f7", "#0e1715"),
+    "shell-tab": ("#e1ece9", "#172522"),
+}
+
+
+def report_root_style(variables: Sequence[tuple[str, str]]) -> str:
+    """Render one report's light and dark ``:root`` custom-property blocks.
+
+    Each pair names a CSS custom property and the REPORT_PALETTE role supplying
+    its light and dark values.
+    """
+
+    def block(index: int) -> str:
+        return ";".join(
+            f"--{name}:{REPORT_PALETTE[role][index]}" for name, role in variables
+        )
+
+    return (
+        f":root{{color-scheme:light dark;{block(0)}}}\n"
+        f"@media(prefers-color-scheme:dark){{:root{{{block(1)}}}}}"
+    )
+
 
 def _human_count(value: int) -> str:
     for scale, suffix in (
@@ -401,15 +443,26 @@ def _render_hierarchy(families: Sequence[dict[str, Any]]) -> str:
 
 
 def _style() -> str:
-    return """
-<style>
-:root{color-scheme:light dark;--muted:#536965;--surface:#edf6f4;--surface-2:#e4f0ed;--track:#d2e1de;--target:#7b8d89;--actual:#218f84;--warning:#bd711f}
-@media(prefers-color-scheme:dark){:root{--muted:#a7bbb7;--surface:#142420;--surface-2:#1a2d29;--track:#2a403c;--target:#91a29f;--actual:#5cc8bb;--warning:#e5a456}}
+    return (
+        "\n<style>\n"
+        + report_root_style(
+            (
+                ("muted", "muted"),
+                ("surface", "surface"),
+                ("surface-2", "surface-raised"),
+                ("track", "track"),
+                ("target", "neutral-target"),
+                ("actual", "accent-output"),
+                ("warning", "warning-strong"),
+            )
+        )
+        + """
 *{box-sizing:border-box}body{max-width:1480px;margin:0 auto;padding:34px 26px 72px;background:Canvas;color:CanvasText;font:14px/1.42 system-ui,sans-serif}h1{margin:0 0 20px;font-size:28px;line-height:1.2}.aggregate-row{display:grid;grid-template-columns:repeat(5,minmax(150px,1fr));gap:12px 28px;margin-bottom:16px}.plot-legend{display:flex;gap:18px;margin:0 0 8px;color:var(--muted)}.plot-legend span::before{display:inline-block;width:18px;height:5px;margin-right:7px;border-radius:999px;content:"";vertical-align:middle}.target-key::before{background:var(--target)}.actual-key::before{background:var(--actual)}.provenance-note{max-width:940px;margin:0 0 18px;color:var(--muted)}.validation-hierarchy{display:grid;gap:7px}.validation-node{border:0}.validation-row{display:grid;grid-template-columns:minmax(250px,1.35fr) repeat(5,minmax(128px,1fr));gap:8px 22px;align-items:center;min-width:0;padding:12px 14px;list-style-position:inside}.validation-node>summary{cursor:pointer}.family-node>summary{border-radius:9px;background:var(--surface)}.family-node>summary:hover,.subcategory-node>summary:hover,.category-node>summary:hover{background:var(--surface-2)}.subcategory-node>summary{margin-top:6px;border-radius:8px;background:color-mix(in srgb,var(--surface) 62%,transparent)}.category-node>summary{border-radius:7px}.validation-name{min-width:0;overflow-wrap:anywhere;font-weight:600}.validation-context{display:block;margin:2px 0 0 18px;color:var(--muted);font-size:12px;font-weight:400}.validation-metric{min-width:0;font-variant-numeric:tabular-nums}.validation-label,.validation-value{display:block}.validation-label{color:var(--muted);font-size:12px}.validation-value{margin-top:2px}.validation-warning .validation-value{color:var(--warning)}.target-actual-bars{grid-column:2/-1;display:grid;gap:3px}.target-track,.actual-track{display:block;height:5px;border-radius:999px;background:var(--track);overflow:hidden}.target-fill,.actual-fill{display:block;height:100%;border-radius:inherit}.target-fill{background:var(--target)}.actual-fill{background:var(--actual)}.validation-children{margin-left:22px}.lower-groups{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px 22px}.lower-group-row{grid-template-columns:minmax(190px,1.15fr) repeat(5,minmax(105px,1fr));padding-top:9px;padding-bottom:9px}.lower-group-row .target-actual-bars{grid-column:2/-1}
 @media(max-width:1050px){.validation-row,.lower-group-row{grid-template-columns:minmax(220px,1fr) repeat(2,minmax(130px,1fr))}.validation-row>.validation-metric:nth-of-type(n+4){margin-top:5px}.target-actual-bars,.lower-group-row .target-actual-bars{grid-column:2/-1}.lower-groups{grid-template-columns:1fr}}
 @media(max-width:700px){body{padding:24px 14px 48px}.aggregate-row{grid-template-columns:repeat(2,minmax(0,1fr))}.validation-row,.lower-group-row{grid-template-columns:1fr 1fr;gap:8px 14px}.validation-name{grid-column:1/-1}.target-actual-bars,.lower-group-row .target-actual-bars{grid-column:1/-1}.validation-children{margin-left:8px}}
 </style>
 """
+    )
 
 
 def render_output_validation_report(

@@ -3,6 +3,31 @@
 The token count used by the planner is still derived from the uint32 memmap
 size.  This module reads the paired metadata only while materializing a partial
 copy, and writes a compact metadata index describing the selected documents.
+
+## Determinism contract
+
+Selection is a pure function of the metadata rows: each document is keyed on the
+tuple ``(seed, start, end, document_id, source, source_index)``, which is joined
+with NUL separators and hashed with blake2b (``digest_size=8``,
+``person=b"dolma-doc-v1"``); the leading bits of that digest place the document
+in one of ``DOCUMENT_HASH_BUCKETS`` buckets, and buckets are taken in ascending
+order until the requested token budget is met.  Nothing else feeds the decision:
+not the file name, not the row order, not the machine, not the worker count.
+
+The consequence, and the reason this module exists, is that a run reproduces
+**only against byte-identical source metadata**.  ``start`` and ``end`` are
+token offsets into one specific memmap, so re-tokenizing a source, re-shuffling
+it, or re-concatenating its shards changes those offsets and therefore changes
+every document key.  The same seed then silently selects a *different* set of
+documents -- no error is raised, because there is nothing in the inputs that
+says the source moved.  Reproducing a selection means pinning the exact source
+objects (the manifest carries sizes and ETags for this reason), not merely
+reusing the seed.
+
+``DOCUMENT_SELECTION_ALGORITHM`` is the version string external planners pin
+against; bump it whenever the keying, the hash, or the bucket walk changes, so
+that a manifest requesting the old algorithm is rejected instead of quietly
+resolving to a new set of documents.
 """
 
 from __future__ import annotations
@@ -19,6 +44,14 @@ import smart_open
 
 DOCUMENT_SELECTION_ALGORITHM = "document_hash_bucket_v1"
 DOCUMENT_HASH_BUCKETS = 1 << 16
+
+# Width of the document hash. `_hash_bucket` shifts a digest down to its leading
+# bucket bits, so this must stay locked to the blake2b digest size below -- it is
+# derived from it rather than restated, so shrinking the digest cannot leave a
+# stale `64` behind that would shift every bucket to zero.
+_HASH_DIGEST_SIZE_BYTES = 8
+_HASH_BITS = _HASH_DIGEST_SIZE_BYTES * 8
+_HASH_BUCKET_BITS = DOCUMENT_HASH_BUCKETS.bit_length() - 1
 
 
 @dataclass(frozen=True)
@@ -55,26 +88,21 @@ class DocumentSelectionResult:
     largest_document_uint32_values: int
 
 
-def _iter_metadata_rows(
-    metadata_path: Path, source_uint32_values: int
-) -> Iterator[DocumentMetadataRow]:
+def _iter_metadata_rows(metadata_path: Path, source_uint32_values: int) -> Iterator[DocumentMetadataRow]:
     previous_end = 0
     with smart_open.open(metadata_path, "r", encoding="utf-8") as handle:
         reader = csv.reader(handle)
         for row_number, row in enumerate(reader, start=1):
             if len(row) != 5:
                 raise ValueError(
-                    f"Invalid token metadata row {metadata_path}:{row_number}; "
-                    "expected five columns"
+                    f"Invalid token metadata row {metadata_path}:{row_number}; " "expected five columns"
                 )
             try:
                 start = int(row[0])
                 end = int(row[1])
                 source_index = int(row[4])
             except ValueError as exc:
-                raise ValueError(
-                    f"Invalid token offsets on {metadata_path}:{row_number}"
-                ) from exc
+                raise ValueError(f"Invalid token offsets on {metadata_path}:{row_number}") from exc
             if start != previous_end or end <= start or end > source_uint32_values:
                 raise ValueError(
                     f"Non-contiguous token metadata on {metadata_path}:{row_number}; "
@@ -97,14 +125,20 @@ def _iter_metadata_rows(
 
 
 def _document_hash(row: DocumentMetadataRow, seed: int) -> int:
-    payload = (
-        f"{seed}\0{row.start}\0{row.end}\0{row.document_id}\0"
-        f"{row.source}\0{row.source_index}"
-    ).encode("utf-8")
+    """Hash the document's identity tuple, mixing the seed into the payload.
+
+    The key is ``(seed, start, end, document_id, source, source_index)``. Because
+    the offsets are part of the key, this value is stable only for byte-identical
+    source metadata; see the module docstring.
+    """
+
+    payload = (f"{seed}\0{row.start}\0{row.end}\0{row.document_id}\0" f"{row.source}\0{row.source_index}").encode(
+        "utf-8"
+    )
     return int.from_bytes(
         hashlib.blake2b(
             payload,
-            digest_size=8,
+            digest_size=_HASH_DIGEST_SIZE_BYTES,
             person=b"dolma-doc-v1",
         ).digest(),
         "big",
@@ -112,7 +146,9 @@ def _document_hash(row: DocumentMetadataRow, seed: int) -> int:
 
 
 def _hash_bucket(hash_value: int) -> int:
-    return hash_value >> (64 - (DOCUMENT_HASH_BUCKETS.bit_length() - 1))
+    """Take the leading `_HASH_BUCKET_BITS` of a `_HASH_BITS`-wide digest."""
+
+    return hash_value >> (_HASH_BITS - _HASH_BUCKET_BITS)
 
 
 def create_document_selection(
@@ -131,6 +167,14 @@ def create_document_selection(
     rows below the threshold into the selection index and retains only the
     threshold bucket in memory. The realized count differs from the requested
     count by no more than the largest document in the source object.
+
+    Determinism: the result depends only on `seed` and the metadata rows, keyed
+    per document on ``(seed, start, end, document_id, source, source_index)``.
+    Since `start` and `end` are offsets into this exact memmap, re-tokenizing or
+    re-concatenating the source shifts them and the same `seed` then selects a
+    different set of documents, with no error to signal it. Pin the source
+    objects, not just the seed. `DOCUMENT_SELECTION_ALGORITHM` is the version
+    string callers pin against.
     """
 
     metadata_path = Path(metadata_path)
@@ -138,9 +182,7 @@ def create_document_selection(
     if source_uint32_values <= 0:
         raise ValueError("source_uint32_values must be positive")
     if not 0 < target_uint32_values < source_uint32_values:
-        raise ValueError(
-            "target_uint32_values must be between zero and the source size"
-        )
+        raise ValueError("target_uint32_values must be between zero and the source size")
     if selection_path.exists() or selection_path.is_symlink():
         raise FileExistsError(f"Refusing to replace selection index: {selection_path}")
 
@@ -154,10 +196,7 @@ def create_document_selection(
         bucket_values[_hash_bucket(_document_hash(row, seed))] += row.token_count
         source_document_count += 1
         largest_document = max(largest_document, row.token_count)
-        if (
-            progress is not None
-            and time.monotonic() - last_progress_at >= progress_interval_seconds
-        ):
+        if progress is not None and time.monotonic() - last_progress_at >= progress_interval_seconds:
             progress("pass 1/2", source_document_count, row.end)
             last_progress_at = time.monotonic()
     if progress is not None:
@@ -194,10 +233,7 @@ def create_document_selection(
                 selected_documents += 1
             elif bucket == threshold_bucket:
                 threshold_rows.append((hash_value, row))
-            if (
-                progress is not None
-                and time.monotonic() - last_progress_at >= progress_interval_seconds
-            ):
+            if progress is not None and time.monotonic() - last_progress_at >= progress_interval_seconds:
                 progress("pass 2/2", second_pass_documents, row.end)
                 last_progress_at = time.monotonic()
 

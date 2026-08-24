@@ -1,35 +1,45 @@
 """
-# Adding tool to reshard npy files based on minimum desired size.
+# Reshard npy token files into larger output shards.
 
-Given a prefix with npy and csv.gz files, this script will merge the npy files so that the output
-satisfies a minimum size constraint.
-
+Given sources of npy files and their csv.gz metadata partners, merge them so
+each output shard satisfies a size or file-count constraint.
 
 ## Usage
 
-In case we wanna reshard from S3, we can do:
+The entry point takes a single YAML config path, or `-` to read the config from
+stdin:
 
 ```bash
-python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded
+python -m dolma.tokenizer.reshard config.yaml
 ```
 
-If you wanna customize which local tempdir to use, you can do:
+A config names one destination and at least one source. Sources come in two
+flavors, and a config may mix them:
 
-```bash
-python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded -l /mnt/raid0/tempdir
+- `source_prefixes`: discover every npy under a prefix by listing it.
+- `source_manifests`: read an exact CSV manifest of npy/csv.gz pairs. Manifests
+  support per-row `repeat_count` and deterministic partial selection, so a run
+  can reproduce an exact subset of tokens rather than whole files.
+
+```yaml
+destination_prefix: s3://bucket/prefix-resharded
+source_manifests:
+  - manifest: ../manifests/00000231.csv
+local_tempdir: /mnt/raid0/tempdir
+max_num_files: 1
+max_workers: 8
 ```
 
-If you want to reshard locally, you can do:
+Exactly one of `max_size_bytes` or `max_num_files` must be set. See
+`ReshardingConfig` for the remaining fields.
 
-```
-python -m dolma.tokenizer.reshard -s /path/to/local/prefix -d /path/to/local/prefix-resharded
-```
+## Destinations are never overwritten
 
-To change number of workers, you can do:
-
-```bash
-python -m dolma.tokenizer.reshard -s s3://bucket/prefix -d s3://bucket/prefix-resharded -w 10
-```
+`reshard()` refuses to run when the destination already contains objects, and
+individual token and metadata files are written with no-clobber semantics. A
+partially written destination must be investigated rather than retried into.
+This is stricter than earlier versions, which reused an existing destination
+directory.
 
 ## Contact info
 
@@ -51,7 +61,7 @@ import sys
 import threading
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import (
     FIRST_COMPLETED,
     ProcessPoolExecutor,
@@ -80,8 +90,20 @@ from dolma.tokenizer.tokenizer import Tokenizer
 
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
+
+# The manifest CSV carries no version column, so there is nothing in a manifest
+# for the parser to validate against. This constant is the contract external
+# planners pin against: they import it and refuse to dispatch when it does not
+# match the version they generated for, which is how manifests are versioned --
+# out-of-band, at plan time, not per row. Bump it whenever the columns the parser
+# requires or their meaning changes.
 RESHARDING_MANIFEST_SCHEMA_VERSION = 2
 PROGRESS_INTERVAL_SECONDS = 10.0
+# Default parallelism for a single s5cmd `cp`, shared by the manifest downloader
+# and the config field that feeds it so the two cannot drift.
+DEFAULT_S5CMD_DOWNLOAD_CONCURRENCY = 32
+# Rows between progress checks while writing merged metadata.
+METADATA_ROW_LOG_INTERVAL = 100_000
 
 
 def _human_count(value: int, unit: str = "") -> str:
@@ -136,9 +158,7 @@ def _run_s5cmd(command: list[str], phase: str) -> None:
         print(line, end="", flush=True)
     returncode = process.wait()
     if returncode:
-        raise RuntimeError(
-            f"s5cmd {phase} failed with exit code {returncode}; inspect the worker log"
-        )
+        raise RuntimeError(f"s5cmd {phase} failed with exit code {returncode}; inspect the worker log")
 
 
 @dataclass(frozen=True)
@@ -149,15 +169,24 @@ class TokensMetadataPaths:
     selected_uint32_values: int | None = None
 
     def __post_init__(self):
-        assert self.npy_path.endswith(".npy")
-        assert self.csv_path.endswith(".csv.gz")
-        assert Path(self.npy_path).stem == Path(Path(self.csv_path).stem).stem
+        # Raise rather than assert: these are load-bearing invariants for the
+        # selection path, and bare asserts disappear under `python -O`.
+        if not self.npy_path.endswith(".npy"):
+            raise ValueError(f"Token path must end in .npy: {self.npy_path}")
+        if not self.csv_path.endswith(".csv.gz"):
+            raise ValueError(f"Metadata path must end in .csv.gz: {self.csv_path}")
+        if Path(self.npy_path).stem != Path(Path(self.csv_path).stem).stem:
+            raise ValueError(f"Mismatched token/metadata pair: {self.npy_path}, {self.csv_path}")
         if self.selection_path is None:
-            assert self.selected_uint32_values is None
+            if self.selected_uint32_values is not None:
+                raise ValueError("selected_uint32_values requires a selection_path")
         else:
-            assert self.selection_path.endswith(".csv.gz")
-            assert self.selected_uint32_values is not None
-            assert self.selected_uint32_values > 0
+            if not self.selection_path.endswith(".csv.gz"):
+                raise ValueError(f"Selection path must end in .csv.gz: {self.selection_path}")
+            if self.selected_uint32_values is None:
+                raise ValueError("A selection_path requires selected_uint32_values")
+            if self.selected_uint32_values <= 0:
+                raise ValueError(f"selected_uint32_values must be positive: {self.selected_uint32_values}")
 
     @property
     def size(self) -> int:
@@ -203,9 +232,7 @@ def merge_group(
 
     npy_destination.parent.mkdir(parents=True, exist_ok=True)
     if os.path.lexists(npy_destination) or os.path.lexists(csv_destination):
-        raise FileExistsError(
-            f"Refusing to replace an existing reshard output: {npy_destination}"
-        )
+        raise FileExistsError(f"Refusing to replace an existing reshard output: {npy_destination}")
 
     started_at = time.monotonic()
     logger.info(
@@ -215,9 +242,7 @@ def merge_group(
         _human_count(total_values),
         _human_bytes(total_size),
     )
-    target_memmap = np.memmap(
-        npy_destination, mode="w+", shape=(total_values,), dtype=dtype
-    )
+    target_memmap = np.memmap(npy_destination, mode="w+", shape=(total_values,), dtype=dtype)
 
     token_offset = 0
     completed_values = 0
@@ -255,9 +280,7 @@ def merge_group(
             metadata_path = path.selection_path or path.csv_path
             if path.selection_path is None:
                 copy_started_at = time.monotonic()
-                target_memmap[token_offset : token_offset + source_memmap.shape[0]] = (
-                    source_memmap
-                )
+                target_memmap[token_offset : token_offset + source_memmap.shape[0]] = source_memmap
                 copy_seconds = max(time.monotonic() - copy_started_at, 1e-9)
                 token_copy_operations += 1
                 logger.info(
@@ -286,9 +309,7 @@ def merge_group(
                     else:
                         output_start = token_offset
                         output_end = token_offset + end_value - start_value
-                        target_memmap[output_start:output_end] = source_memmap[
-                            start_value:end_value
-                        ]
+                        target_memmap[output_start:output_end] = source_memmap[start_value:end_value]
                         token_offset = output_end
                         copied_values = end_value - start_value
                         input_processed_values += copied_values
@@ -304,7 +325,7 @@ def merge_group(
                             int(idx),
                         ]
                     )
-                    if document_count % 100_000 == 0:
+                    if document_count % METADATA_ROW_LOG_INTERVAL == 0:
                         now = time.monotonic()
                         if now - last_progress_at >= PROGRESS_INTERVAL_SECONDS:
                             publish_progress()
@@ -316,8 +337,7 @@ def merge_group(
             input_processed_values = 0
             publish_progress()
             logger.info(
-                "merge %s input %s/%s done · %s · %s tokens · %s docs · "
-                "%s tokens/s · %s docs/s · %s",
+                "merge %s input %s/%s done · %s · %s tokens · %s docs · " "%s tokens/s · %s docs/s · %s",
                 npy_destination.stem,
                 input_index,
                 len(paths),
@@ -353,8 +373,7 @@ def merge_group(
     )
     publish_progress(complete=True)
     logger.info(
-        "merge %s done · %s tokens (%s) · %s metadata · %s docs · "
-        "%s tokens/s · %s docs/s · %s",
+        "merge %s done · %s tokens (%s) · %s metadata · %s docs · " "%s tokens/s · %s docs/s · %s",
         npy_destination.stem,
         _human_count(total_values),
         _human_bytes(total_size),
@@ -374,9 +393,7 @@ def group_paths_by_max_size(
     """
     Group paths by max size.
     """
-    counts: dict[TokensMetadataPaths, int] = {
-        p: int(c) for p, c in Counter(paths).items()
-    }
+    counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
     _log_merge_input_views(counts, len(paths))
 
     grouped_paths: list[list[TokensMetadataPaths]] = []
@@ -392,11 +409,7 @@ def group_paths_by_max_size(
                 grouped_paths[-1].append(path)
 
         # decrease counts, remove paths with 0 count.
-        counts = {
-            path: new_count
-            for path, count in counts.items()
-            if (new_count := count - 1) > 0
-        }
+        counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
 
     logger.info(
         "Grouped %s merge input uses into %s output shards capped at %.2f GiB",
@@ -412,8 +425,23 @@ def group_paths_by_max_num_files(
     paths: list[TokensMetadataPaths],
     max_num_files: int,
 ) -> list[list[TokensMetadataPaths]]:
-    """
-    Group paths by max number of files.
+    """Pack merge inputs into at most `max_num_files` size-balanced output shards.
+
+    This is largest-first bin packing, not the weighted round-robin it used to
+    be: every use of every input is expanded into a flat list, shuffled (so
+    equal-sized views tie-break under the configured deterministic seed rather
+    than by dict order), sorted by descending size, and then each one is placed
+    in whichever bucket is currently smallest, breaking ties randomly. The
+    result is `max_num_files` groups of roughly equal total bytes, minus any
+    that stayed empty, which happens when there are fewer inputs than buckets.
+
+    Note that nothing here separates repeated copies of the same input: when a
+    manifest row has `repeat_count > 1`, two or more copies of that shard can
+    land in the same output file. An earlier version raised `ValueError` on
+    that; the guard was intentionally dropped, since duplicate tokens within one
+    output shard are equivalent to duplicates spread across shards for every
+    downstream consumer, and forbidding it made small `max_num_files` values
+    unsatisfiable.
     """
     counts = Counter(paths)
     _log_merge_input_views(counts, len(paths))
@@ -440,7 +468,7 @@ def group_paths_by_max_num_files(
 
 
 def _log_merge_input_views(
-    counts: Counter[TokensMetadataPaths],
+    counts: Mapping[TokensMetadataPaths, int],
     total_uses: int,
 ) -> None:
     logger.info(
@@ -573,19 +601,14 @@ def merge_all_npys(
                 elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
                 with progress_lock:
                     progress_snapshot = tuple(progress_by_shard.values())
-                processed_values = sum(
-                    update.processed_values for update in progress_snapshot
-                )
-                processed_documents = sum(
-                    update.document_count for update in progress_snapshot
-                )
+                processed_values = sum(update.processed_values for update in progress_snapshot)
+                processed_documents = sum(update.document_count for update in progress_snapshot)
                 active_shards = sum(not update.complete for update in progress_snapshot)
                 queued_shards = len(grouped_paths) - len(progress_snapshot)
                 percent = 100 * processed_values / total_values
                 queued = f" · {queued_shards} queued" if queued_shards else ""
                 logger.info(
-                    "merge %.1f%% · %s/%s tokens · %s tokens/s · %s docs/s · "
-                    "%s/%s done · %s active%s · %s",
+                    "merge %.1f%% · %s/%s tokens · %s tokens/s · %s docs/s · " "%s/%s done · %s active%s · %s",
                     percent,
                     _human_count(processed_values),
                     _human_count(total_values),
@@ -600,8 +623,7 @@ def merge_all_npys(
 
     elapsed_seconds = max(time.monotonic() - started_at, 1e-9)
     logger.info(
-        "merge done · %s shards · %s tokens (%s) · %s metadata · %s docs · "
-        "%s tokens/s · %s docs/s · %s",
+        "merge done · %s shards · %s tokens (%s) · %s metadata · %s docs · " "%s tokens/s · %s docs/s · %s",
         len(grouped_paths),
         _human_count(total_values),
         _human_bytes(total_bytes),
@@ -644,9 +666,7 @@ class ReshardingPrefixConfig:
         ]
 
         logger.info("Running command: %s", " ".join(cmd))
-        result = subprocess.run(
-            cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
+        result = subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
         if result.returncode != 0:
             print(f"s5cmd failed with error: {result.stderr}")
@@ -682,9 +702,7 @@ class ReshardingPrefixConfig:
         # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
         # of same size, we can just take a random sample.
         if (residual_frac := self.sample_rate - repetition_rate) > 0:
-            new_paths.extend(
-                random.sample(paths, max(1, round(residual_frac * len(paths))))
-            )
+            new_paths.extend(random.sample(paths, max(1, round(residual_frac * len(paths)))))
 
         # sort by size
         logger.info(
@@ -718,6 +736,25 @@ class ReshardingManifestEntry:
 
 
 @dataclass(frozen=True)
+class PreparedManifestRow:
+    """One manifest row resolved to the local paths its later phases operate on.
+
+    `npy_path` and `metadata_path` are where the two objects actually live once
+    `ReshardingManifestConfig._plan_downloads` has run: inside the row's private
+    directory under the run prefix for remote rows, or wherever the manifest
+    pointed for local ones. `selection_path` is where a deterministic partial
+    selection index would be written, and goes unused by rows that do not
+    request one. Expected object sizes are deliberately not duplicated here;
+    `entry` remains the single source of truth for what the planner recorded.
+    """
+
+    entry: ReshardingManifestEntry
+    npy_path: Path
+    metadata_path: Path
+    selection_path: Path
+
+
+@dataclass(frozen=True)
 class DocumentSelectionJob:
     manifest_index: int
     source_uri: str
@@ -742,9 +779,7 @@ def _run_document_selection(job: DocumentSelectionJob) -> CompletedDocumentSelec
     pass_started_at = started_at
     source_document_count: int | None = None
 
-    def report_progress(
-        pass_name: str, document_count: int, covered_values: int
-    ) -> None:
+    def report_progress(pass_name: str, document_count: int, covered_values: int) -> None:
         nonlocal current_pass, pass_started_at, source_document_count
         now = time.monotonic()
         if current_pass != pass_name:
@@ -762,8 +797,7 @@ def _run_document_selection(job: DocumentSelectionJob) -> CompletedDocumentSelec
         else:
             documents = f"{_human_count(document_count)} documents"
         logger.info(
-            "Document selection %s %s: %s · %s/%s values scanned · "
-            "%s documents/s · %s values/s · elapsed %s",
+            "Document selection %s %s: %s · %s/%s values scanned · " "%s documents/s · %s values/s · elapsed %s",
             job.source_uri,
             pass_name,
             documents,
@@ -820,137 +854,82 @@ class ReshardingManifestConfig:
         self,
         local_prefix: str | Path,
         max_workers: int,
-        s5cmd_concurrency: int = 32,
+        s5cmd_concurrency: int = DEFAULT_S5CMD_DOWNLOAD_CONCURRENCY,
     ) -> list[TokensMetadataPaths]:
+        """Resolve this manifest into the merge inputs it names.
+
+        Six phases, in order: parse and validate the CSV, HEAD every remote
+        object to confirm it still matches the size and ETag the planner
+        recorded, lay out one local directory per row, run a single batched
+        s5cmd download, re-verify the downloaded sizes, and build any
+        deterministic partial selections in a process pool.
+
+        The returned list holds one entry per *use* of a source shard rather
+        than one per shard, so a row with ``repeat_count`` 3 contributes three
+        equal entries, and a row that also requests a partial selection
+        contributes one more.
+        """
+
         manifest = Path(self.manifest)
         if not manifest.is_file():
             raise FileNotFoundError(f"Resharding manifest does not exist: {manifest}")
 
-        local_prefix = Path(local_prefix)
-        local_prefix.mkdir(parents=True, exist_ok=False)
+        run_prefix = Path(local_prefix)
+        run_prefix.mkdir(parents=True, exist_ok=False)
+
+        rows = self._parse_manifest_rows(manifest)
+        self._verify_remote_sources(rows, max_workers=max_workers)
+        prepared, remote_commands = self._plan_downloads(
+            rows, local_prefix=run_prefix, s5cmd_concurrency=s5cmd_concurrency
+        )
+        self._download_remote_objects(prepared, remote_commands, local_prefix=run_prefix, max_workers=max_workers)
+        self._verify_downloaded_sizes(prepared)
+
+        row_paths, selection_jobs = self._build_row_views(prepared)
+        selection_views = self._run_selection_jobs(selection_jobs, prepared, max_workers=max_workers)
+        for manifest_index, selection_view in selection_views.items():
+            row_paths[manifest_index].append(selection_view)
+
+        paths = [path for per_row_paths in row_paths for path in per_row_paths]
+
+        if not paths:
+            raise RuntimeError(f"Manifest document selections produced no output: {manifest}")
+        selected_bytes = sum(path.size for path in paths)
+        logger.info(
+            "Manifest ready: %s merge input uses from %s source shards · %s planned output (%s uint32 values)",
+            len(paths),
+            len(rows),
+            _human_bytes(selected_bytes),
+            _human_count(selected_bytes // np.dtype(np.uint32).itemsize),
+        )
+        return paths
+
+    @classmethod
+    def _parse_manifest_rows(cls, manifest: Path) -> list[ReshardingManifestEntry]:
+        """Read and validate every row of the manifest CSV.
+
+        The header must carry at least the three version-one columns; each row
+        is then validated by `_parse_manifest_row`, which names
+        ``manifest:<line>`` in every message so a failure points straight at the
+        offending CSV line. Line numbers start at 2 because line 1 is the
+        header.
+        """
+
         rows: list[ReshardingManifestEntry] = []
         with manifest.open(newline="") as f:
             reader = csv.DictReader(f)
             expected = {"npy_uri", "metadata_uri", "repeat_count"}
             if reader.fieldnames is None or not expected.issubset(reader.fieldnames):
-                raise ValueError(
-                    f"Manifest {manifest} must contain columns {sorted(expected)}"
-                )
+                raise ValueError(f"Manifest {manifest} must contain columns {sorted(expected)}")
             for row_number, csv_row in enumerate(reader, start=2):
-                npy_uri = csv_row["npy_uri"].strip()
-                metadata_uri = csv_row["metadata_uri"].strip()
-                try:
-                    repeat_count = int(csv_row["repeat_count"])
-                    partial_target = int(
-                        csv_row.get("partial_target_uint32_values") or 0
-                    )
-                    selection_seed = int(csv_row.get("selection_seed") or 0)
-                except (TypeError, ValueError) as exc:
-                    raise ValueError(
-                        f"Invalid sampling values on {manifest}:{row_number}"
-                    ) from exc
-                if not npy_uri.endswith(".npy") or not metadata_uri.endswith(".csv.gz"):
-                    raise ValueError(f"Invalid object pair on {manifest}:{row_number}")
-                if any(ord(char) < 32 for char in npy_uri + metadata_uri):
-                    raise ValueError(
-                        f"Control character in object URI on {manifest}:{row_number}"
-                    )
-                if Path(npy_uri).stem != Path(Path(metadata_uri).stem).stem:
-                    raise ValueError(
-                        f"Mismatched object pair on {manifest}:{row_number}"
-                    )
-                if repeat_count < 0 or partial_target < 0:
-                    raise ValueError(
-                        f"Sampling values cannot be negative on {manifest}:{row_number}"
-                    )
-                if repeat_count == 0 and partial_target == 0:
-                    raise ValueError(
-                        f"Manifest row selects no tokens on {manifest}:{row_number}"
-                    )
-                try:
-                    npy_size_bytes = (
-                        int(csv_row["npy_size_bytes"])
-                        if csv_row.get("npy_size_bytes")
-                        else None
-                    )
-                    metadata_size_bytes = (
-                        int(csv_row["metadata_size_bytes"])
-                        if csv_row.get("metadata_size_bytes")
-                        else None
-                    )
-                except ValueError as exc:
-                    raise ValueError(
-                        f"Invalid expected size on {manifest}:{row_number}"
-                    ) from exc
-                if npy_size_bytes is not None and npy_size_bytes <= 0:
-                    raise ValueError(
-                        f"npy_size_bytes must be positive on {manifest}:{row_number}"
-                    )
-                if metadata_size_bytes is not None and metadata_size_bytes <= 0:
-                    raise ValueError(
-                        f"metadata_size_bytes must be positive on {manifest}:{row_number}"
-                    )
-                if urlparse(npy_uri).scheme == "s3" and (
-                    npy_size_bytes is None or metadata_size_bytes is None
-                ):
-                    raise ValueError(
-                        f"Remote manifest rows require npy_size_bytes and metadata_size_bytes on "
-                        f"{manifest}:{row_number}"
-                    )
-                if partial_target:
-                    if npy_size_bytes is None:
-                        raise ValueError(
-                            "Partial manifest rows require npy_size_bytes on "
-                            f"{manifest}:{row_number}"
-                        )
-                    if npy_size_bytes % np.dtype(np.uint32).itemsize:
-                        raise ValueError(
-                            f"Partial source size is not uint32-aligned on "
-                            f"{manifest}:{row_number}"
-                        )
-                    source_values = npy_size_bytes // np.dtype(np.uint32).itemsize
-                    if partial_target >= source_values:
-                        raise ValueError(
-                            "partial_target_uint32_values must be smaller than "
-                            f"the source on {manifest}:{row_number}"
-                        )
-                    selection_algorithm = str(
-                        csv_row.get("selection_algorithm")
-                        or DOCUMENT_SELECTION_ALGORITHM
-                    )
-                    if selection_algorithm != DOCUMENT_SELECTION_ALGORITHM:
-                        raise ValueError(
-                            f"Unsupported selection_algorithm on "
-                            f"{manifest}:{row_number}: {selection_algorithm}"
-                        )
-                else:
-                    selection_algorithm = DOCUMENT_SELECTION_ALGORITHM
-                rows.append(
-                    ReshardingManifestEntry(
-                        npy_uri=npy_uri,
-                        metadata_uri=metadata_uri,
-                        repeat_count=repeat_count,
-                        partial_target_uint32_values=partial_target,
-                        selection_seed=selection_seed,
-                        selection_algorithm=selection_algorithm,
-                        npy_size_bytes=npy_size_bytes,
-                        metadata_size_bytes=metadata_size_bytes,
-                        npy_etag=str(csv_row.get("npy_etag", "")).strip('"'),
-                        metadata_etag=str(csv_row.get("metadata_etag", "")).strip('"'),
-                    )
-                )
+                rows.append(cls._parse_manifest_row(csv_row, manifest=manifest, row_number=row_number))
 
         if not rows:
             raise ValueError(f"Resharding manifest is empty: {manifest}")
 
-        known_source_bytes = sum(
-            (entry.npy_size_bytes or 0) + (entry.metadata_size_bytes or 0)
-            for entry in rows
-        )
+        known_source_bytes = sum((entry.npy_size_bytes or 0) + (entry.metadata_size_bytes or 0) for entry in rows)
         planned_uint32_values = sum(
-            (entry.npy_size_bytes or 0)
-            // np.dtype(np.uint32).itemsize
-            * entry.repeat_count
+            (entry.npy_size_bytes or 0) // np.dtype(np.uint32).itemsize * entry.repeat_count
             + entry.partial_target_uint32_values
             for entry in rows
         )
@@ -963,6 +942,98 @@ class ReshardingManifestConfig:
             _human_count(planned_uint32_values),
             sum(entry.partial_target_uint32_values > 0 for entry in rows),
         )
+        return rows
+
+    @staticmethod
+    def _parse_manifest_row(
+        csv_row: Mapping[str, str],
+        manifest: Path,
+        row_number: int,
+    ) -> ReshardingManifestEntry:
+        """Validate one CSV row and turn it into a `ReshardingManifestEntry`.
+
+        Sizes and ETags are optional for local rows but mandatory for ``s3://``
+        ones, because they are what `_verify_remote_sources` and
+        `_verify_downloaded_sizes` compare against. A row requesting a partial
+        selection additionally needs a uint32-aligned source size strictly
+        larger than the requested count, and must name a selection algorithm
+        this build implements.
+        """
+
+        npy_uri = csv_row["npy_uri"].strip()
+        metadata_uri = csv_row["metadata_uri"].strip()
+        try:
+            repeat_count = int(csv_row["repeat_count"])
+            partial_target = int(csv_row.get("partial_target_uint32_values") or 0)
+            selection_seed = int(csv_row.get("selection_seed") or 0)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid sampling values on {manifest}:{row_number}") from exc
+        if not npy_uri.endswith(".npy") or not metadata_uri.endswith(".csv.gz"):
+            raise ValueError(f"Invalid object pair on {manifest}:{row_number}")
+        if any(ord(char) < 32 for char in npy_uri + metadata_uri):
+            raise ValueError(f"Control character in object URI on {manifest}:{row_number}")
+        if Path(npy_uri).stem != Path(Path(metadata_uri).stem).stem:
+            raise ValueError(f"Mismatched object pair on {manifest}:{row_number}")
+        if repeat_count < 0 or partial_target < 0:
+            raise ValueError(f"Sampling values cannot be negative on {manifest}:{row_number}")
+        if repeat_count == 0 and partial_target == 0:
+            raise ValueError(f"Manifest row selects no tokens on {manifest}:{row_number}")
+        try:
+            npy_size_bytes = int(csv_row["npy_size_bytes"]) if csv_row.get("npy_size_bytes") else None
+            metadata_size_bytes = (
+                int(csv_row["metadata_size_bytes"]) if csv_row.get("metadata_size_bytes") else None
+            )
+        except ValueError as exc:
+            raise ValueError(f"Invalid expected size on {manifest}:{row_number}") from exc
+        if npy_size_bytes is not None and npy_size_bytes <= 0:
+            raise ValueError(f"npy_size_bytes must be positive on {manifest}:{row_number}")
+        if metadata_size_bytes is not None and metadata_size_bytes <= 0:
+            raise ValueError(f"metadata_size_bytes must be positive on {manifest}:{row_number}")
+        if urlparse(npy_uri).scheme == "s3" and (npy_size_bytes is None or metadata_size_bytes is None):
+            raise ValueError(
+                f"Remote manifest rows require npy_size_bytes and metadata_size_bytes on "
+                f"{manifest}:{row_number}"
+            )
+        if partial_target:
+            if npy_size_bytes is None:
+                raise ValueError(f"Partial manifest rows require npy_size_bytes on {manifest}:{row_number}")
+            if npy_size_bytes % np.dtype(np.uint32).itemsize:
+                raise ValueError(f"Partial source size is not uint32-aligned on {manifest}:{row_number}")
+            source_values = npy_size_bytes // np.dtype(np.uint32).itemsize
+            if partial_target >= source_values:
+                raise ValueError(
+                    f"partial_target_uint32_values must be smaller than the source on {manifest}:{row_number}"
+                )
+            selection_algorithm = str(csv_row.get("selection_algorithm") or DOCUMENT_SELECTION_ALGORITHM)
+            if selection_algorithm != DOCUMENT_SELECTION_ALGORITHM:
+                raise ValueError(
+                    f"Unsupported selection_algorithm on {manifest}:{row_number}: {selection_algorithm}"
+                )
+        else:
+            selection_algorithm = DOCUMENT_SELECTION_ALGORITHM
+        return ReshardingManifestEntry(
+            npy_uri=npy_uri,
+            metadata_uri=metadata_uri,
+            repeat_count=repeat_count,
+            partial_target_uint32_values=partial_target,
+            selection_seed=selection_seed,
+            selection_algorithm=selection_algorithm,
+            npy_size_bytes=npy_size_bytes,
+            metadata_size_bytes=metadata_size_bytes,
+            npy_etag=str(csv_row.get("npy_etag", "")).strip('"'),
+            metadata_etag=str(csv_row.get("metadata_etag", "")).strip('"'),
+        )
+
+    @staticmethod
+    def _verify_remote_sources(rows: list[ReshardingManifestEntry], max_workers: int) -> None:
+        """HEAD every remote object and confirm its size and ETag still match.
+
+        The manifest describes what the planner saw. A source object rewritten
+        since then would silently change which tokens this run emits -- and, for
+        partial rows, which documents get selected -- so a mismatch aborts
+        before anything is downloaded. Rows whose recorded ETag is empty are
+        size-checked only. No-ops when the manifest is entirely local.
+        """
 
         remote_expectations: list[tuple[str, int, str]] = []
         for entry in rows:
@@ -972,66 +1043,68 @@ class ReshardingManifestConfig:
                 remote_expectations.extend(
                     [
                         (entry.npy_uri, entry.npy_size_bytes, entry.npy_etag),
-                        (
-                            entry.metadata_uri,
-                            entry.metadata_size_bytes,
-                            entry.metadata_etag,
-                        ),
+                        (entry.metadata_uri, entry.metadata_size_bytes, entry.metadata_etag),
                     ]
                 )
-        if remote_expectations:
-            client = boto3.client("s3")
-            validation_started_at = time.monotonic()
-            logger.info(
-                "Source validation started: checking size and ETag for %s objects",
-                len(remote_expectations),
-            )
+        if not remote_expectations:
+            return
 
-            def verify_remote(expectation: tuple[str, int, str]) -> None:
-                uri, expected_size, expected_etag = expectation
-                parsed = urlparse(uri)
-                response = client.head_object(
-                    Bucket=parsed.netloc, Key=parsed.path.lstrip("/")
+        client = boto3.client("s3")
+        validation_started_at = time.monotonic()
+        logger.info(
+            "Source validation started: checking size and ETag for %s objects",
+            len(remote_expectations),
+        )
+
+        def verify_remote(expectation: tuple[str, int, str]) -> None:
+            uri, expected_size, expected_etag = expectation
+            parsed = urlparse(uri)
+            response = client.head_object(Bucket=parsed.netloc, Key=parsed.path.lstrip("/"))
+            actual_size = int(response["ContentLength"])
+            actual_etag = str(response.get("ETag", "")).strip('"')
+            if actual_size != expected_size:
+                raise RuntimeError(
+                    f"Source object size changed before download: {uri}; "
+                    f"expected {expected_size}, found {actual_size}"
                 )
-                actual_size = int(response["ContentLength"])
-                actual_etag = str(response.get("ETag", "")).strip('"')
-                if actual_size != expected_size:
-                    raise RuntimeError(
-                        f"Source object size changed before download: {uri}; "
-                        f"expected {expected_size}, found {actual_size}"
-                    )
-                if expected_etag and actual_etag != expected_etag:
-                    raise RuntimeError(
-                        f"Source object ETag changed before download: {uri}; "
-                        f"expected {expected_etag}, found {actual_etag}"
+            if expected_etag and actual_etag != expected_etag:
+                raise RuntimeError(
+                    f"Source object ETag changed before download: {uri}; "
+                    f"expected {expected_etag}, found {actual_etag}"
+                )
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = [pool.submit(verify_remote, expectation) for expectation in remote_expectations]
+            checkpoint = max(1, len(futures) // 10)
+            for completed, future in enumerate(as_completed(futures), start=1):
+                future.result()
+                if completed == len(futures) or completed % checkpoint == 0:
+                    logger.info(
+                        "Source validation progress: %s/%s objects · elapsed %s",
+                        completed,
+                        len(futures),
+                        _elapsed(validation_started_at),
                     )
 
-            with ThreadPoolExecutor(max_workers=max_workers) as pool:
-                futures = [
-                    pool.submit(verify_remote, expectation)
-                    for expectation in remote_expectations
-                ]
-                checkpoint = max(1, len(futures) // 10)
-                for completed, future in enumerate(as_completed(futures), start=1):
-                    future.result()
-                    if completed == len(futures) or completed % checkpoint == 0:
-                        logger.info(
-                            "Source validation progress: %s/%s objects · elapsed %s",
-                            completed,
-                            len(futures),
-                            _elapsed(validation_started_at),
-                        )
+    @staticmethod
+    def _plan_downloads(
+        rows: list[ReshardingManifestEntry],
+        local_prefix: Path,
+        s5cmd_concurrency: int,
+    ) -> tuple[list[PreparedManifestRow], list[str]]:
+        """Give every row a private local directory and resolve its object paths.
 
-        downloaded_pairs: list[
-            tuple[
-                ReshardingManifestEntry,
-                Path,
-                Path,
-                Path,
-                int | None,
-                int | None,
-            ]
-        ] = []
+        Remote rows are copied into ``<local_prefix>/<index>/tokens.{npy,csv.gz}``
+        and contribute two s5cmd `cp` command lines each; local rows are read
+        where they already are and only checked for existence, so nothing is
+        copied for them. A single row may not mix schemes across its two
+        objects.
+
+        Returns the prepared rows in manifest order, plus the s5cmd command
+        lines, which are empty when there is nothing to download.
+        """
+
+        prepared: list[PreparedManifestRow] = []
         remote_commands: list[str] = []
         for index, entry in enumerate(rows):
             npy_uri = entry.npy_uri
@@ -1059,211 +1132,216 @@ class ReshardingManifestConfig:
                     ]
                 )
             elif npy_scheme in {"", "file"} and metadata_scheme in {"", "file"}:
-                local_npy = Path(
-                    urlparse(npy_uri).path if npy_scheme == "file" else npy_uri
-                )
-                local_metadata = Path(
-                    urlparse(metadata_uri).path
-                    if metadata_scheme == "file"
-                    else metadata_uri
-                )
+                local_npy = Path(urlparse(npy_uri).path if npy_scheme == "file" else npy_uri)
+                local_metadata = Path(urlparse(metadata_uri).path if metadata_scheme == "file" else metadata_uri)
                 if not local_npy.is_file() or not local_metadata.is_file():
-                    raise FileNotFoundError(
-                        f"Manifest object pair does not exist: {npy_uri}, {metadata_uri}"
-                    )
+                    raise FileNotFoundError(f"Manifest object pair does not exist: {npy_uri}, {metadata_uri}")
             else:
-                raise ValueError(
-                    f"Manifest row mixes unsupported URI schemes: {npy_uri}, {metadata_uri}"
-                )
+                raise ValueError(f"Manifest row mixes unsupported URI schemes: {npy_uri}, {metadata_uri}")
 
-            downloaded_pairs.append(
-                (
-                    entry,
-                    local_npy,
-                    local_metadata,
-                    row_dir / "selection.csv.gz",
-                    entry.npy_size_bytes,
-                    entry.metadata_size_bytes,
+            prepared.append(
+                PreparedManifestRow(
+                    entry=entry,
+                    npy_path=local_npy,
+                    metadata_path=local_metadata,
+                    selection_path=row_dir / "selection.csv.gz",
                 )
             )
+        return prepared, remote_commands
 
-        if remote_commands:
-            commands_path = local_prefix / "s5cmd-download-commands.txt"
-            with commands_path.open("x") as f:
-                f.write("\n".join(remote_commands) + "\n")
-            cmd = [
-                "s5cmd",
-                "--stat",
-                "--numworkers",
-                str(max_workers),
-                "run",
-                str(commands_path),
-            ]
-            _run_s5cmd(cmd, "source download")
+    @staticmethod
+    def _download_remote_objects(
+        prepared: list[PreparedManifestRow],
+        remote_commands: list[str],
+        local_prefix: Path,
+        max_workers: int,
+    ) -> None:
+        """Run one batched s5cmd job and confirm it created every object.
 
-            missing = [
-                (npy_path, metadata_path)
-                for _, npy_path, metadata_path, _, _, _ in downloaded_pairs
-                if not npy_path.is_file() or not metadata_path.is_file()
-            ]
-            if missing:
-                raise RuntimeError(
-                    f"s5cmd completed without creating {len(missing)} manifest object pairs"
-                )
+        All command lines go through a single command file so that one s5cmd
+        process handles the whole manifest. s5cmd can exit zero having skipped
+        work, so the object pairs are checked afterwards rather than trusted.
+        No-ops when nothing needs downloading.
+        """
 
-        row_paths: list[list[TokensMetadataPaths]] = [[] for _ in downloaded_pairs]
-        selection_jobs: list[DocumentSelectionJob] = []
-        for manifest_index, (
-            entry,
-            npy_path,
-            metadata_path,
-            selection_path,
-            expected_npy_size,
-            expected_metadata_size,
-        ) in enumerate(downloaded_pairs):
-            if (
-                expected_npy_size is not None
-                and npy_path.stat().st_size != expected_npy_size
-            ):
+        if not remote_commands:
+            return
+
+        commands_path = local_prefix / "s5cmd-download-commands.txt"
+        with commands_path.open("x") as f:
+            f.write("\n".join(remote_commands) + "\n")
+        cmd = ["s5cmd", "--stat", "--numworkers", str(max_workers), "run", str(commands_path)]
+        _run_s5cmd(cmd, "source download")
+
+        missing = [
+            (row.npy_path, row.metadata_path)
+            for row in prepared
+            if not row.npy_path.is_file() or not row.metadata_path.is_file()
+        ]
+        if missing:
+            raise RuntimeError(f"s5cmd completed without creating {len(missing)} manifest object pairs")
+
+    @staticmethod
+    def _verify_downloaded_sizes(prepared: list[PreparedManifestRow]) -> None:
+        """Re-check the on-disk sizes against the manifest after downloading.
+
+        `_verify_remote_sources` checked the source before the copy; this checks
+        the copy itself, so a truncated or partially resumed download cannot
+        reach the merge. Rows whose manifest recorded no size -- only possible
+        for local rows -- are skipped.
+        """
+
+        for row in prepared:
+            npy_path = row.npy_path
+            metadata_path = row.metadata_path
+            expected_npy_size = row.entry.npy_size_bytes
+            expected_metadata_size = row.entry.metadata_size_bytes
+            if expected_npy_size is not None and npy_path.stat().st_size != expected_npy_size:
                 raise RuntimeError(
                     f"Downloaded NPY size does not match manifest: {npy_path}; "
                     f"expected {expected_npy_size}, found {npy_path.stat().st_size}"
                 )
-            if (
-                expected_metadata_size is not None
-                and metadata_path.stat().st_size != expected_metadata_size
-            ):
+            if expected_metadata_size is not None and metadata_path.stat().st_size != expected_metadata_size:
                 raise RuntimeError(
                     f"Downloaded metadata size does not match manifest: {metadata_path}; "
                     f"expected {expected_metadata_size}, found {metadata_path.stat().st_size}"
                 )
 
-            full_path = TokensMetadataPaths(str(npy_path), str(metadata_path))
+    @staticmethod
+    def _build_row_views(
+        prepared: list[PreparedManifestRow],
+    ) -> tuple[list[list[TokensMetadataPaths]], list[DocumentSelectionJob]]:
+        """Expand each row's whole-file repeats and collect its selection job, if any.
+
+        Returns one list of merge inputs per manifest row -- ``repeat_count``
+        copies of the full object, which may be zero for a purely partial row --
+        plus one `DocumentSelectionJob` for every row that also requests a
+        partial selection. The partial view is appended to its row later, once
+        its selection index exists.
+        """
+
+        row_paths: list[list[TokensMetadataPaths]] = [[] for _ in prepared]
+        selection_jobs: list[DocumentSelectionJob] = []
+        for manifest_index, row in enumerate(prepared):
+            entry = row.entry
+            full_path = TokensMetadataPaths(str(row.npy_path), str(row.metadata_path))
             row_paths[manifest_index].extend([full_path] * entry.repeat_count)
             if entry.partial_target_uint32_values:
-                source_values = npy_path.stat().st_size // np.dtype(np.uint32).itemsize
+                source_values = row.npy_path.stat().st_size // np.dtype(np.uint32).itemsize
                 selection_jobs.append(
                     DocumentSelectionJob(
                         manifest_index=manifest_index,
                         source_uri=entry.npy_uri,
-                        metadata_path=metadata_path,
-                        selection_path=selection_path,
+                        metadata_path=row.metadata_path,
+                        selection_path=row.selection_path,
                         source_uint32_values=source_values,
                         target_uint32_values=entry.partial_target_uint32_values,
                         seed=entry.selection_seed,
                     )
                 )
+        return row_paths, selection_jobs
 
-        if selection_jobs:
-            selection_workers = min(max_workers, len(selection_jobs))
-            selection_started_at = time.monotonic()
-            total_source_values = sum(
-                job.source_uint32_values for job in selection_jobs
-            )
-            total_target_values = sum(
-                job.target_uint32_values for job in selection_jobs
-            )
-            logger.info(
-                "Document selection started: %s source shards · %s processes · %s source values per pass · "
-                "%s requested values",
-                len(selection_jobs),
-                selection_workers,
-                _human_count(total_source_values),
-                _human_count(total_target_values),
-            )
-            completed_source_values = 0
-            completed_scanned_documents = 0
-            selected_values = 0
-            with ProcessPoolExecutor(max_workers=selection_workers) as pool:
-                futures = {
-                    pool.submit(_run_document_selection, job): job
-                    for job in selection_jobs
-                }
-                for completed_count, future in enumerate(
-                    as_completed(futures), start=1
-                ):
-                    try:
-                        completed = future.result()
-                    except Exception:
-                        for pending_future in futures:
-                            pending_future.cancel()
-                        raise
-                    job = futures[future]
-                    selection = completed.result
-                    if selection.selected_uint32_values:
-                        _, npy_path, metadata_path, _, _, _ = downloaded_pairs[
-                            completed.manifest_index
-                        ]
-                        row_paths[completed.manifest_index].append(
-                            TokensMetadataPaths(
-                                str(npy_path),
-                                str(metadata_path),
-                                selection_path=str(selection.selection_path),
-                                selected_uint32_values=selection.selected_uint32_values,
-                            )
-                        )
-                    completed_source_values += job.source_uint32_values
-                    completed_scanned_documents += selection.source_document_count * 2
-                    selected_values += selection.selected_uint32_values
-                    wall_seconds = max(time.monotonic() - selection_started_at, 1e-9)
-                    logger.info(
-                        "Document selection progress: %s/%s source shards · %s/%s values selected · "
-                        "%s documents/s · %s values/s across both passes · elapsed %s",
-                        completed_count,
-                        len(selection_jobs),
-                        _human_count(selected_values),
-                        _human_count(total_target_values),
-                        _human_count(round(completed_scanned_documents / wall_seconds)),
-                        _human_count(
-                            round((completed_source_values * 2) / wall_seconds)
-                        ),
-                        _elapsed(selection_started_at),
-                    )
-            wall_seconds = max(time.monotonic() - selection_started_at, 1e-9)
-            logger.info(
-                "Document selection complete: %s source shards · %s/%s values selected · "
-                "%s documents/s · %s values/s across both passes · elapsed %s",
-                len(selection_jobs),
-                _human_count(selected_values),
-                _human_count(total_target_values),
-                _human_count(round(completed_scanned_documents / wall_seconds)),
-                _human_count(round((completed_source_values * 2) / wall_seconds)),
-                _elapsed(selection_started_at),
-            )
+    @staticmethod
+    def _run_selection_jobs(
+        selection_jobs: list[DocumentSelectionJob],
+        prepared: list[PreparedManifestRow],
+        max_workers: int,
+    ) -> dict[int, TokensMetadataPaths]:
+        """Build every requested partial selection index in a process pool.
 
-        paths = [path for per_row_paths in row_paths for path in per_row_paths]
+        Selection is CPU-bound -- two passes over a shard's metadata -- hence
+        processes rather than threads. Returns the partial merge-input view for
+        each row that selected at least one value, keyed by manifest index; a
+        row whose selection came back empty is omitted. Every row has at most
+        one selection job, so a manifest index appears at most once. No-ops when
+        no row requested a selection.
+        """
 
-        if not paths:
-            raise RuntimeError(
-                f"Manifest document selections produced no output: {manifest}"
-            )
-        selected_bytes = sum(path.size for path in paths)
+        if not selection_jobs:
+            return {}
+
+        selection_views: dict[int, TokensMetadataPaths] = {}
+        selection_workers = min(max_workers, len(selection_jobs))
+        selection_started_at = time.monotonic()
+        total_source_values = sum(job.source_uint32_values for job in selection_jobs)
+        total_target_values = sum(job.target_uint32_values for job in selection_jobs)
         logger.info(
-            "Manifest ready: %s merge input uses from %s source shards · %s planned output "
-            "(%s uint32 values)",
-            len(paths),
-            len(rows),
-            _human_bytes(selected_bytes),
-            _human_count(selected_bytes // np.dtype(np.uint32).itemsize),
+            "Document selection started: %s source shards · %s processes · %s source values per pass · "
+            "%s requested values",
+            len(selection_jobs),
+            selection_workers,
+            _human_count(total_source_values),
+            _human_count(total_target_values),
         )
-        return paths
+        completed_source_values = 0
+        completed_scanned_documents = 0
+        selected_values = 0
+        with ProcessPoolExecutor(max_workers=selection_workers) as pool:
+            futures = {pool.submit(_run_document_selection, job): job for job in selection_jobs}
+            for completed_count, future in enumerate(as_completed(futures), start=1):
+                try:
+                    completed = future.result()
+                except Exception:
+                    for pending_future in futures:
+                        pending_future.cancel()
+                    raise
+                job = futures[future]
+                selection = completed.result
+                if selection.selected_uint32_values:
+                    source_row = prepared[completed.manifest_index]
+                    selection_views[completed.manifest_index] = TokensMetadataPaths(
+                        str(source_row.npy_path),
+                        str(source_row.metadata_path),
+                        selection_path=str(selection.selection_path),
+                        selected_uint32_values=selection.selected_uint32_values,
+                    )
+                completed_source_values += job.source_uint32_values
+                completed_scanned_documents += selection.source_document_count * 2
+                selected_values += selection.selected_uint32_values
+                wall_seconds = max(time.monotonic() - selection_started_at, 1e-9)
+                logger.info(
+                    "Document selection progress: %s/%s source shards · %s/%s values selected · "
+                    "%s documents/s · %s values/s across both passes · elapsed %s",
+                    completed_count,
+                    len(selection_jobs),
+                    _human_count(selected_values),
+                    _human_count(total_target_values),
+                    _human_count(round(completed_scanned_documents / wall_seconds)),
+                    _human_count(round((completed_source_values * 2) / wall_seconds)),
+                    _elapsed(selection_started_at),
+                )
+        wall_seconds = max(time.monotonic() - selection_started_at, 1e-9)
+        logger.info(
+            "Document selection complete: %s source shards · %s/%s values selected · "
+            "%s documents/s · %s values/s across both passes · elapsed %s",
+            len(selection_jobs),
+            _human_count(selected_values),
+            _human_count(total_target_values),
+            _human_count(round(completed_scanned_documents / wall_seconds)),
+            _human_count(round((completed_source_values * 2) / wall_seconds)),
+            _elapsed(selection_started_at),
+        )
+        return selection_views
 
     def to_dict(self) -> dict:
         return {"manifest": str(self.manifest)}
 
     @classmethod
-    def from_dict(
-        cls, d: dict, base_dir: Path | None = None
-    ) -> "ReshardingManifestConfig":
+    def from_dict(cls, d: dict, base_dir: Path | None = None) -> "ReshardingManifestConfig":
         path = Path(d["manifest"])
         if base_dir is not None and not path.is_absolute():
             path = base_dir / path
         return cls(manifest=path)
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ReshardingConfig:
-    """Base configuration for resharding."""
+    """Base configuration for resharding.
+
+    Fields are keyword-only: `source_prefixes` is no longer the first field now
+    that `source_manifests` is an alternative source, so a positional call that
+    predates manifests would bind arguments to the wrong fields.
+    """
 
     destination_prefix: str
     source_prefixes: list[ReshardingPrefixConfig] = field(default_factory=list)
@@ -1272,9 +1350,11 @@ class ReshardingConfig:
     max_size_bytes: int | None = None
     max_num_files: int | None = None
     max_workers: int = os.cpu_count() or 1
-    s5cmd_download_concurrency: int = 32
+    s5cmd_download_concurrency: int = DEFAULT_S5CMD_DOWNLOAD_CONCURRENCY
     random_seed: int = 42
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer"
+    # Tombstone. Older configs carried this flag; resharding now always refuses a
+    # populated destination, so setting it True is rejected rather than ignored.
     allow_existing_destination: bool = False
 
     def __post_init__(self):
@@ -1283,9 +1363,7 @@ class ReshardingConfig:
         if self.max_size_bytes is None and self.max_num_files is None:
             raise ValueError("Either max_size_bytes or max_num_files must be provided")
         if not self.source_prefixes and not self.source_manifests:
-            raise ValueError(
-                "At least one source_prefix or source_manifest must be provided"
-            )
+            raise ValueError("At least one source_prefix or source_manifest must be provided")
         if self.allow_existing_destination:
             raise ValueError("Overwriting an existing destination is not supported")
         if self.max_workers <= 0:
@@ -1309,32 +1387,23 @@ class ReshardingConfig:
 
     @classmethod
     def from_dict(cls, d: dict, base_dir: Path | None = None) -> "ReshardingConfig":
-        source_prefixes = [
-            ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])
-        ]
+        source_prefixes = [ReshardingPrefixConfig.from_dict(p) for p in d.get("source_prefixes", [])]
         source_manifests = [
-            ReshardingManifestConfig.from_dict(m, base_dir=base_dir)
-            for m in d.get("source_manifests", [])
+            ReshardingManifestConfig.from_dict(m, base_dir=base_dir) for m in d.get("source_manifests", [])
         ]
         return cls(
             destination_prefix=str(d["destination_prefix"]),
             source_prefixes=source_prefixes,
             source_manifests=source_manifests,
-            local_tempdir=(
-                Path(p) if (p := d.get("local_tempdir")) is not None else None
-            ),
-            max_size_bytes=(
-                int(s) if (s := d.get("max_size_bytes")) is not None else None
-            ),
-            max_num_files=(
-                int(n) if (n := d.get("max_num_files")) is not None else None
-            ),
+            local_tempdir=(Path(p) if (p := d.get("local_tempdir")) is not None else None),
+            max_size_bytes=(int(s) if (s := d.get("max_size_bytes")) is not None else None),
+            max_num_files=(int(n) if (n := d.get("max_num_files")) is not None else None),
             max_workers=int(d.get("max_workers", 1)),
-            s5cmd_download_concurrency=int(d.get("s5cmd_download_concurrency", 32)),
-            random_seed=int(d.get("random_seed", 42)),
-            tokenizer_name_or_path=str(
-                d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer")
+            s5cmd_download_concurrency=int(
+                d.get("s5cmd_download_concurrency", DEFAULT_S5CMD_DOWNLOAD_CONCURRENCY)
             ),
+            random_seed=int(d.get("random_seed", 42)),
+            tokenizer_name_or_path=str(d.get("tokenizer_name_or_path", "allenai/dolma2-tokenizer")),
             allow_existing_destination=bool(d.get("allow_existing_destination", False)),
         )
 
@@ -1385,9 +1454,7 @@ def destination_has_objects(destination: str | Path) -> bool:
         prefix = parsed.path.lstrip("/").rstrip("/")
         if not parsed.netloc or not prefix:
             raise ValueError("Refusing to materialize into an S3 bucket root")
-        response = boto3.client("s3").list_objects_v2(
-            Bucket=parsed.netloc, Prefix=f"{prefix}/", MaxKeys=1
-        )
+        response = boto3.client("s3").list_objects_v2(Bucket=parsed.netloc, Prefix=f"{prefix}/", MaxKeys=1)
         return bool(response.get("Contents"))
     if parsed.scheme not in {"", "file"}:
         raise ValueError(f"Unsupported destination protocol: {parsed.scheme}")
@@ -1407,9 +1474,7 @@ def reshard(config: ReshardingConfig):
     )
 
     if destination_has_objects(config.destination_prefix):
-        raise FileExistsError(
-            f"Refusing to use existing destination: {config.destination_prefix}"
-        )
+        raise FileExistsError(f"Refusing to use existing destination: {config.destination_prefix}")
 
     run_tempdir: Path | None = None
     try:
@@ -1441,9 +1506,7 @@ def reshard(config: ReshardingConfig):
         ]
 
         # get repetition aware samples
-        source_paths = [
-            path for source_prefix in source_prefixes for path in source_prefix.take()
-        ]
+        source_paths = [path for source_prefix in source_prefixes for path in source_prefix.take()]
         for i, source_manifest in enumerate(config.source_manifests):
             source_paths.extend(
                 source_manifest.take(

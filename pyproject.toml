@@ -247,3 +247,10 @@ plugins = ["numpy.typing.mypy_plugin"]
 
 [tool.mypy-tests]
 strict_optional = false
+
+[tool.pytest.ini_options]
+# Tests under tests/python import helper packages from scripts/ (for example
+# scripts.resharding.dispatch). Bare `pytest tests/python/` does not put the
+# repository root on sys.path, so make it explicit instead of depending on the
+# invocation directory.
+pythonpath = ["."]

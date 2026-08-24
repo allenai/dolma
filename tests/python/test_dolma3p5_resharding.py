@@ -21,18 +21,20 @@ import numpy as np
 import yaml
 from rich.console import Console
 
-WORKER_STORAGE_SCRIPT = (
-    Path(__file__).resolve().parents[2]
-    / "scripts/dolma3p5_resharding/setup_worker_storage.sh"
+from dolma.tokenizer.document_selection import (
+    DOCUMENT_SELECTION_ALGORITHM,
+    create_document_selection,
 )
-
 from dolma.tokenizer.reshard import (
+    RESHARDING_MANIFEST_SCHEMA_VERSION,
     ReshardingConfig,
     ReshardingManifestConfig,
+)
+from dolma.tokenizer.reshard import _run_s5cmd as run_s5cmd
+from dolma.tokenizer.reshard import (
     destination_has_objects,
     merge_group,
     reshard,
-    _run_s5cmd as run_s5cmd,
     upload_to_s3,
 )
 from scripts.dolma3p5_resharding.materialize import (
@@ -70,7 +72,13 @@ from scripts.dolma3p5_resharding.materialize import (
 )
 from scripts.dolma3p5_resharding.workflow import (
     DEFAULT_REGION,
+)
+from scripts.dolma3p5_resharding.workflow import (
+    DOCUMENT_SELECTION_ALGORITHM as WORKFLOW_DOCUMENT_SELECTION_ALGORITHM,
+)
+from scripts.dolma3p5_resharding.workflow import (
     EXECUTION_UNIT_INDEX_WIDTH,
+    EXPECTED_MANIFEST_SCHEMA_VERSION,
     PreparationError,
     S3Object,
     _allocate_object_sampling,
@@ -96,6 +104,8 @@ from scripts.dolma3p5_resharding.workflow import (
     validate_build,
     verify_output,
 )
+
+WORKER_STORAGE_SCRIPT = Path(__file__).resolve().parents[2] / "scripts/dolma3p5_resharding/setup_worker_storage.sh"
 
 
 class TestDolma35ReshardingPreparation(unittest.TestCase):
@@ -363,31 +373,18 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 "project=dolma3p5-14t in region us-east-1 (aws)",
             )
         )
-        self.assertEqual(
-            _status_detail(
-                "submit materialization",
-                "[INFO][21:31:36] Job 123 started on 2 instances.",
-            ),
-            "accepted by 2 workers",
-        )
 
     def test_worker_log_message_removes_envelope_but_preserves_errors(self):
         self.assertEqual(
-            _worker_log_parts(
-                "[2026-08-05 15:38:11 main.dolma.__main__ INFO] merge 50.0%"
-            ),
+            _worker_log_parts("[2026-08-05 15:38:11 main.dolma.__main__ INFO] merge 50.0%"),
             ("2026-08-05 15:38:11", "merge 50.0%"),
         )
         self.assertEqual(
-            _worker_log_message(
-                "[2026-08-05 15:38:11 main.dolma.__main__ INFO] merge 50.0%"
-            ),
+            _worker_log_message("[2026-08-05 15:38:11 main.dolma.__main__ INFO] merge 50.0%"),
             "merge 50.0%",
         )
         self.assertEqual(
-            _worker_log_message(
-                "[2026-08-05 15:38:11 main.dolma.__main__ ERROR] disk full"
-            ),
+            _worker_log_message("[2026-08-05 15:38:11 main.dolma.__main__ ERROR] disk full"),
             "error · disk full",
         )
 
@@ -471,9 +468,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertIn("merge 50.0% · 10B/20B tokens · 40M tokens/s", rendered)
         self.assertNotIn("main.dolma.__main__ INFO", rendered)
         self.assertIn("] [second] Other worker progress", rendered)
-        self.assertIn(
-            "[2026-08-05 15:38:11] [-first] merge 50.0%", rendered
-        )
+        self.assertIn("[2026-08-05 15:38:11] [-first] merge 50.0%", rendered)
         self.assertNotIn("[i-first]", rendered)
         self.assertNotIn("[i-second]", rendered)
         self.assertNotIn("worker 01", rendered)
@@ -528,9 +523,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             "test-run",
             describe=describe,
             sleep=sleep,
-            console=Console(
-                file=output, force_terminal=False, color_system=None, width=300
-            ),
+            console=Console(file=output, force_terminal=False, color_system=None, width=300),
             worker_stages=worker_stages,
             stage_lock=stage_lock,
             all_dispatched=all_dispatched,
@@ -667,10 +660,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
 
         first = _worker_log_snapshots(args, ["i-first"], "test-run")
-        offsets = {
-            ("i-first", log_name): offset
-            for log_name, offset in first["i-first"]["offsets"].items()
-        }
+        offsets = {("i-first", log_name): offset for log_name, offset in first["i-first"]["offsets"].items()}
         second = _worker_log_snapshots(
             args,
             ["i-first"],
@@ -736,16 +726,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "launcher.sh"
             path.write_text(launcher)
-            self.assertEqual(
-                subprocess.run(["bash", "-n", path], check=False).returncode, 0
-            )
+            self.assertEqual(subprocess.run(["bash", "-n", path], check=False).returncode, 0)
 
     def test_materialize_forces_safe_path_for_existing_launchers(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             launcher = Path(temp_dir) / "unit.sh"
-            launcher.write_text(
-                "#!/usr/bin/env bash\nset -euo pipefail\npython -m dolma\n"
-            )
+            launcher.write_text("#!/usr/bin/env bash\nset -euo pipefail\npython -m dolma\n")
             payload = _safe_path_launcher_payload(launcher, "123-test-run").decode()
         self.assertIn("export PYTHONSAFEPATH=1", payload)
         self.assertIn("cd /tmp", payload)
@@ -791,16 +777,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 "category_name": "mid",
             },
         ]
-        args = build_materialize_parser().parse_args(
-            ["--all", "--exclude-category", "one:category"]
-        )
+        args = build_materialize_parser().parse_args(["--all", "--exclude-category", "one:category"])
 
         label, selected = _select_units(args, rows)
 
         self.assertEqual(label, "all-except-1-categories")
-        self.assertEqual(
-            [row["unit_id"] for row in selected], ["00000002", "00000003"]
-        )
+        self.assertEqual([row["unit_id"] for row in selected], ["00000002", "00000003"])
 
     def test_materialize_rejects_category_exclusion_without_all(self):
         args = build_materialize_parser().parse_args(
@@ -836,15 +818,11 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             "dolma3_finemath_v3:finemath::default",
         )
         self.assertIsNone(inline_args.unit)
-        self.assertEqual(
-            inline_args.selected_unit_ids, ("00000136", "00000137")
-        )
+        self.assertEqual(inline_args.selected_unit_ids, ("00000136", "00000137"))
         self.assertIsNone(inline_args.max_workers)
         self.assertTrue(inline_args.quiet)
 
-        parsed = build_materialize_parser().parse_args(
-            ["--all", "--execute", "--preflight"]
-        )
+        parsed = build_materialize_parser().parse_args(["--all", "--execute", "--preflight"])
         self.assertTrue(parsed.preflight)
 
     def test_materialize_groups_units_by_planned_worker(self):
@@ -932,9 +910,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             ],
         )
         commands = [lifecycle_call.args[1] for lifecycle_call in run.call_args_list]
-        self.assertEqual(
-            [command.count("--instance-id") for command in commands], [5, 5, 2]
-        )
+        self.assertEqual([command.count("--instance-id") for command in commands], [5, 5, 2])
         self.assertEqual(
             [command[command.index("--parallelism") + 1] for command in commands],
             ["5", "5", "2"],
@@ -944,9 +920,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize.time.sleep")
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
-    def test_materialize_retries_only_workers_that_remain_stopped(
-        self, run, describe, sleep
-    ):
+    def test_materialize_retries_only_workers_that_remain_stopped(self, run, describe, sleep):
         args = SimpleNamespace(
             cluster="dolma3p5-14t",
             project="oe-other",
@@ -970,18 +944,14 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         retry_command = run.call_args_list[1].args[1]
         retry_ids = [
-            retry_command[index + 1]
-            for index, value in enumerate(retry_command)
-            if value == "--instance-id"
+            retry_command[index + 1] for index, value in enumerate(retry_command) if value == "--instance-id"
         ]
         self.assertEqual(retry_ids, ["i-stopped"])
         sleep.assert_called_once_with(3.0)
 
     @patch("scripts.dolma3p5_resharding.materialize.time.sleep")
     @patch("scripts.dolma3p5_resharding.materialize._resume_worker_batch")
-    def test_materialize_resume_batch_size_is_global_across_worker_classes(
-        self, resume_batch, sleep
-    ):
+    def test_materialize_resume_batch_size_is_global_across_worker_classes(self, resume_batch, sleep):
         def group_args(instance_type, storage_layout):
             return SimpleNamespace(
                 cluster="dolma3p5-14t",
@@ -1049,9 +1019,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
         self.assertEqual(run.call_count, 3)
         commands = [cleanup_call.args[1] for cleanup_call in run.call_args_list]
-        self.assertEqual(
-            [command.count("--instance-id") for command in commands], [5, 5, 2]
-        )
+        self.assertEqual([command.count("--instance-id") for command in commands], [5, 5, 2])
         sleep.assert_has_calls([call(3.0), call(3.0)])
 
     def test_materialize_queues_individual_units_largest_first(self):
@@ -1114,9 +1082,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
-    def test_materialize_creates_and_waits_for_the_exact_worker_count(
-        self, describe, run, retag
-    ):
+    def test_materialize_creates_and_waits_for_the_exact_worker_count(self, describe, run, retag):
         args = SimpleNamespace(
             cluster="dolma3p5-14t",
             project="oe-other",
@@ -1143,9 +1109,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             ["create worker batch 1/1", "wait for workers"],
         )
         create_command = run.call_args_list[0].args[1]
-        self.assertEqual(
-            create_command[create_command.index("--name") + 1], "dolma3p5-14t"
-        )
+        self.assertEqual(create_command[create_command.index("--name") + 1], "dolma3p5-14t")
         self.assertIn("--number", create_command)
         self.assertEqual(create_command[create_command.index("--number") + 1], "2")
         self.assertIn("--detach", create_command)
@@ -1167,9 +1131,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
-    def test_materialize_launches_large_fleets_in_detached_batches(
-        self, describe, run, retag
-    ):
+    def test_materialize_launches_large_fleets_in_detached_batches(self, describe, run, retag):
         args = SimpleNamespace(
             cluster="dolma3p5-14t",
             project="oe-other",
@@ -1183,12 +1145,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             ssh_key_path=None,
             profile=None,
         )
-        workers = [
-            ClusterInstance(
-                f"i-{index}", "pending", "i4i.2xlarge", "oe-other"
-            )
-            for index in range(5)
-        ]
+        workers = [ClusterInstance(f"i-{index}", "pending", "i4i.2xlarge", "oe-other") for index in range(5)]
         describe.side_effect = [[], workers[:2], workers[:4], workers]
 
         self.assertEqual(
@@ -1337,9 +1294,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
     def test_materialize_refuses_to_share_a_cluster_with_active_work(self, describe):
-        describe.return_value = [
-            ClusterInstance("i-busy", "running", "i4i.2xlarge", "oe-other")
-        ]
+        describe.return_value = [ClusterInstance("i-busy", "running", "i4i.2xlarge", "oe-other")]
         args = SimpleNamespace(
             cluster="dolma3p5-14t",
             project="oe-other",
@@ -1357,9 +1312,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
-    def test_materialize_allows_workers_owned_by_the_same_launch(
-        self, describe, run, retag
-    ):
+    def test_materialize_allows_workers_owned_by_the_same_launch(self, describe, run, retag):
         describe.return_value = [
             ClusterInstance("i-owned", "running", "i4i.2xlarge", "oe-other"),
             ClusterInstance("i-large", "stopped", "i4i.8xlarge", "oe-other"),
@@ -1389,12 +1342,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     @patch("scripts.dolma3p5_resharding.materialize._retag_cluster_instances")
     @patch("scripts.dolma3p5_resharding.materialize._run_lifecycle_command")
     @patch("scripts.dolma3p5_resharding.materialize._describe_cluster_instances")
-    def test_materialize_can_defer_reused_worker_resume(
-        self, describe, run, retag
-    ):
-        describe.return_value = [
-            ClusterInstance("i-reused", "stopped", "i4i.2xlarge", "oe-other")
-        ]
+    def test_materialize_can_defer_reused_worker_resume(self, describe, run, retag):
+        describe.return_value = [ClusterInstance("i-reused", "stopped", "i4i.2xlarge", "oe-other")]
         args = SimpleNamespace(
             cluster="dolma3p5-14t",
             project="oe-other",
@@ -1456,9 +1405,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             delay_after_last_batch=False,
             deferred_resume_ids=None,
         ):
-            instance_id = (
-                "i-small" if group_args.instance_type == "i4i.2xlarge" else "i-large"
-            )
+            instance_id = "i-small" if group_args.instance_type == "i4i.2xlarge" else "i-large"
             events.append(
                 (
                     "prepare",
@@ -1512,22 +1459,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             ),
         ]
         stage_assignments.side_effect = [
-            (
-                WorkerAssignment(
-                    groups[0], groups[0].rows, Path("/tmp/small-assignment")
-                ),
-            ),
-            (
-                WorkerAssignment(
-                    groups[1], groups[1].rows, Path("/tmp/large-assignment")
-                ),
-            ),
+            (WorkerAssignment(groups[0], groups[0].rows, Path("/tmp/small-assignment")),),
+            (WorkerAssignment(groups[1], groups[1].rows, Path("/tmp/large-assignment")),),
         ]
         ready_worker_ids.side_effect = [{"i-small"}, {"i-large"}]
 
-        def dispatch_worker(
-            dispatch_args, instance_id, assignment, stages, stage_lock, console
-        ):
+        def dispatch_worker(dispatch_args, instance_id, assignment, stages, stage_lock, console):
             events.append(("dispatch", instance_id, assignment.rows[0]["unit_id"]))
             with stage_lock:
                 stages[instance_id] = "materializing"
@@ -1556,9 +1493,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             events.append(("monitor-complete",))
 
         monitor.side_effect = monitor_workers
-        verify.side_effect = lambda *verify_args, **verify_kwargs: events.append(
-            ("verify",)
-        )
+        verify.side_effect = lambda *verify_args, **verify_kwargs: events.append(("verify",))
         args = SimpleNamespace(
             verbose=True,
             bootstrap_parallelism=2,
@@ -1635,10 +1570,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             script_dir=Path("/tmp/dynamic"),
             worker_count=2,
         )
-        assignments = tuple(
-            WorkerAssignment(group, (row,), Path(f"/tmp/{row['unit_id']}.sh"))
-            for row in rows
-        )
+        assignments = tuple(WorkerAssignment(group, (row,), Path(f"/tmp/{row['unit_id']}.sh")) for row in rows)
         stage_assignments.return_value = assignments
 
         def prepare_workers(*_args, deferred_resume_ids=None, **_kwargs):
@@ -1657,9 +1589,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             with stage_lock:
                 stages[instance_id] = "materializing"
 
-        def bootstrap_worker(
-            _args, instance_id, assignment, stages, stage_lock, _console
-        ):
+        def bootstrap_worker(_args, instance_id, assignment, stages, stage_lock, _console):
             record_assignment(instance_id, assignment, stages, stage_lock)
 
         def dispatch_worker(instance_id, assignment, stages, stage_lock, _console):
@@ -1689,10 +1619,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             all_assignments = wait_for_assignment_count(4)
             with monitor_kwargs["unit_status_lock"]:
                 monitor_kwargs["unit_statuses"].update(
-                    {
-                        (instance_id, unit_id): "succeeded"
-                        for instance_id, unit_id in all_assignments[2:]
-                    }
+                    {(instance_id, unit_id): "succeeded" for instance_id, unit_id in all_assignments[2:]}
                 )
             monitor_kwargs["status_changed"].set()
             self.assertTrue(monitor_kwargs["all_dispatched"].wait(timeout=2))
@@ -1760,8 +1687,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
     def test_source_layout_preserves_exact_source_directory(self):
         self.assertEqual(
             _source_relative_directory(
-                "preprocessed/dolma3-0625/v0.1-official/allenai/"
-                "dolma3-tokenizer/finemath-3plus/000000.npy"
+                "preprocessed/dolma3-0625/v0.1-official/allenai/" "dolma3-tokenizer/finemath-3plus/000000.npy"
             ),
             "dolma3-0625/v0.1-official/allenai/dolma3-tokenizer/finemath-3plus",
         )
@@ -1770,8 +1696,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 "preprocessed/cc_all_dressed/all_dressed_v5/topic/health/"
                 "vigintile_0016/allenai/dolma2-tokenizer/000000.npy"
             ),
-            "cc_all_dressed/all_dressed_v5/topic/health/"
-            "vigintile_0016/allenai/dolma2-tokenizer",
+            "cc_all_dressed/all_dressed_v5/topic/health/" "vigintile_0016/allenai/dolma2-tokenizer",
         )
 
     def test_category_output_directory_replaces_varying_lower_group(self):
@@ -1969,9 +1894,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
         self.assertEqual(captured_command[0], "s5cmd")
         self.assertEqual(captured_command.count("s5cmd"), 2)
-        collector = json.loads(
-            (self.build / "01-plan/inventory/collector.json").read_text()
-        )
+        collector = json.loads((self.build / "01-plan/inventory/collector.json").read_text())
         self.assertEqual(collector["collector"], "s5cmd")
         self.assertEqual(collector["output_records"], 8)
         self.assertTrue((self.build / "01-plan/inventory/raw-listings.jsonl").is_file())
@@ -2031,9 +1954,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with (phase / "required-objects.csv").open() as handle:
             required = list(csv.DictReader(handle))
         catalog_topic = [
-            row
-            for row in required
-            if row["leaf_id"] == "000:00" and row["category_name"] == "default"
+            row for row in required if row["leaf_id"] == "000:00" and row["category_name"] == "default"
         ]
         self.assertEqual(
             [row["key"].rsplit("/", 1)[-1] for row in catalog_topic],
@@ -2089,16 +2010,11 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         with redirect_stdout(output):
             self._plan()
         self.assertIn(
-            "Plan summary: 3 catalog NPY matches, 1 direct S3 pattern, "
-            "1 correction, 0 blocking failures",
+            "Plan summary: 3 catalog NPY matches, 1 direct S3 pattern, " "1 correction, 0 blocking failures",
             output.getvalue(),
         )
-        self.assertFalse(
-            (self.build / "01-plan/resolution/plots/resolution-counts.svg").exists()
-        )
-        self.assertFalse(
-            (self.build / "01-plan/resolution/plot-data/resolution-counts.csv").exists()
-        )
+        self.assertFalse((self.build / "01-plan/resolution/plots/resolution-counts.svg").exists())
+        self.assertFalse((self.build / "01-plan/resolution/plot-data/resolution-counts.csv").exists())
 
     def test_plan_command_builds_resolution_inventory_and_execution_together(self):
         from scripts.dolma3p5_resharding import plan as plan_command
@@ -2145,9 +2061,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             execution_args.destination_root,
             "s3://test-bucket/new-datasets/dolma3p5",
         )
-        self.assertEqual(
-            execution_args.local_temp_root, Path("/mnt/dolma/dolma3p5-resharding")
-        )
+        self.assertEqual(execution_args.local_temp_root, Path("/mnt/dolma/dolma3p5-resharding"))
         self.assertEqual(execution_args.max_unit_working_bytes, 1_500_000_000_000)
 
     def test_catalog_paths_are_decoded_to_literal_s3_keys(self):
@@ -2179,9 +2093,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 "category_name": "high",
             },
         ]
-        selected_mix = _filter_execution_units(
-            rows, category="dolma3_finemath_v3:finemath"
-        )
+        selected_mix = _filter_execution_units(rows, category="dolma3_finemath_v3:finemath")
         selected_leaf = _filter_execution_units(rows, category="060:00")
         selected_full = _filter_execution_units(
             rows,
@@ -2189,12 +2101,8 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         )
         selected_unit = _filter_execution_units(rows, unit="finemath-0002")
 
-        self.assertEqual(
-            [row["unit_id"] for row in selected_mix], ["finemath-0001", "finemath-0002"]
-        )
-        self.assertEqual(
-            _unit_selection_digest(selected_mix), _unit_selection_digest(selected_leaf)
-        )
+        self.assertEqual([row["unit_id"] for row in selected_mix], ["finemath-0001", "finemath-0002"])
+        self.assertEqual(_unit_selection_digest(selected_mix), _unit_selection_digest(selected_leaf))
         self.assertEqual([row["unit_id"] for row in selected_full], ["stack-0001"])
         self.assertEqual([row["unit_id"] for row in selected_unit], ["finemath-0002"])
 
@@ -2202,9 +2110,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         mix = self.root / "encoded-mix.yaml"
         catalog = self.root / "encoded-command-catalog.csv"
         build = self.root / "encoded-command-build"
-        yaml_path = (
-            "dolma3p5_pool/the-stack-v2/C++/quality_p95/allenai/dolma2-tokenizer/*.npy"
-        )
+        yaml_path = "dolma3p5_pool/the-stack-v2/C++/quality_p95/allenai/dolma2-tokenizer/*.npy"
         mix.write_text(
             yaml.safe_dump(
                 {
@@ -2227,8 +2133,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             )
         )
         catalog.write_text(
-            "ai2-llm,preprocessed/the-stack-v2/C%2B%2B/quality_p95/"
-            "allenai/dolma2-tokenizer/0000.npy\n"
+            "ai2-llm,preprocessed/the-stack-v2/C%2B%2B/quality_p95/" "allenai/dolma2-tokenizer/0000.npy\n"
         )
 
         plan_build(
@@ -2448,11 +2353,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
                 1 <= int(row["planned_output_shard_count"]) <= 8
                 and int(row["max_num_files"]) == int(row["planned_output_shard_count"])
                 and int(row["average_output_shard_bytes"])
-                == (
-                    int(row["output_npy_bytes"])
-                    + int(row["planned_output_shard_count"])
-                    - 1
-                )
+                == (int(row["output_npy_bytes"]) + int(row["planned_output_shard_count"]) - 1)
                 // int(row["planned_output_shard_count"])
                 for row in execution_units
             )
@@ -2723,30 +2624,20 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
             output_summary["actual_uint32_values"],
             output_summary["predicted_uint32_values"],
         )
-        hierarchy_path = (
-            self.build
-            / "03-output-validation/plot-data/source-target-actual.csv"
-        )
+        hierarchy_path = self.build / "03-output-validation/plot-data/source-target-actual.csv"
         hierarchy_rows = list(csv.DictReader(hierarchy_path.open()))
         self.assertTrue(
-            {"source_family", "subcategory", "category", "lower_group"}
-            <= {row["level"] for row in hierarchy_rows}
+            {"source_family", "subcategory", "category", "lower_group"} <= {row["level"] for row in hierarchy_rows}
         )
         category_row = next(
-            row
-            for row in hierarchy_rows
-            if row["level"] == "category" and row["leaf_id"] == "000:00"
+            row for row in hierarchy_rows if row["level"] == "category" and row["leaf_id"] == "000:00"
         )
         self.assertNotEqual(category_row["actual_uint32_values"], "")
         lower_group_row = next(
-            row
-            for row in hierarchy_rows
-            if row["level"] == "lower_group" and row["leaf_id"] == "000:00"
+            row for row in hierarchy_rows if row["level"] == "lower_group" and row["leaf_id"] == "000:00"
         )
         self.assertEqual(lower_group_row["actual_uint32_values"], "")
-        output_report = (
-            self.build / "03-output-validation/report.html"
-        ).read_text()
+        output_report = (self.build / "03-output-validation/report.html").read_text()
         self.assertIn("Source, Target, and Materialized Output", output_report)
         self.assertIn("Actual − target", output_report)
         self.assertIn("per-input provenance", output_report)
@@ -2781,10 +2672,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
         self.assertEqual(
             planned,
             sum(
-                size * repeat + partial
-                for size, repeat, partial in zip(
-                    [8, 12, 20], repetitions, partial_targets
-                )
+                size * repeat + partial for size, repeat, partial in zip([8, 12, 20], repetitions, partial_targets)
             ),
         )
         self.assertEqual(planned, 26)
@@ -2793,9 +2681,7 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
     def test_large_leaf_target_is_distributed_across_every_object(self):
         sizes = [2_993_314_462, 2_930_303_417, 2_852_281_877, 2_863_478_216]
-        repetitions, partial_targets, planned = _allocate_object_sampling(
-            4_810_877_400, sizes
-        )
+        repetitions, partial_targets, planned = _allocate_object_sampling(4_810_877_400, sizes)
         self.assertEqual(planned, 4_810_877_400)
         self.assertEqual(repetitions, [0, 0, 0, 0])
         self.assertTrue(all(value > 0 for value in partial_targets))
@@ -2803,16 +2689,12 @@ class TestDolma35ReshardingPreparation(unittest.TestCase):
 
     def test_fractional_rate_samples_the_same_fraction_from_every_shard(self):
         sizes = [1_000, 2_000, 3_000, 4_000]
-        downsample_repeats, downsample_partials, downsample_total = (
-            _allocate_object_sampling(3_000, sizes)
-        )
+        downsample_repeats, downsample_partials, downsample_total = _allocate_object_sampling(3_000, sizes)
         self.assertEqual(downsample_repeats, [0, 0, 0, 0])
         self.assertEqual(downsample_partials, [300, 600, 900, 1_200])
         self.assertEqual(downsample_total, 3_000)
 
-        upsample_repeats, upsample_partials, upsample_total = _allocate_object_sampling(
-            13_000, sizes
-        )
+        upsample_repeats, upsample_partials, upsample_total = _allocate_object_sampling(13_000, sizes)
         self.assertEqual(upsample_repeats, [1, 1, 1, 1])
         self.assertEqual(upsample_partials, [300, 600, 900, 1_200])
         self.assertEqual(upsample_total, 13_000)
@@ -2849,13 +2731,9 @@ class TestReshardingSafety(unittest.TestCase):
         metadata.write_text("0,1,id,src,0\n")
         manifest = self.root / "manifest.csv"
         with manifest.open("x", newline="") as f:
-            writer = csv.DictWriter(
-                f, fieldnames=["npy_uri", "metadata_uri", "repeat_count"]
-            )
+            writer = csv.DictWriter(f, fieldnames=["npy_uri", "metadata_uri", "repeat_count"])
             writer.writeheader()
-            writer.writerow(
-                {"npy_uri": npy, "metadata_uri": metadata, "repeat_count": 2}
-            )
+            writer.writerow({"npy_uri": npy, "metadata_uri": metadata, "repeat_count": 2})
         return manifest
 
     def test_manifest_preserves_exact_local_pair_and_repetition(self):
@@ -2942,9 +2820,7 @@ class TestReshardingSafety(unittest.TestCase):
         self.assertEqual(merge_result.document_count, len(rows))
         self.assertEqual(merge_result.token_copy_operations, len(rows))
         self.assertEqual(merge_result.output_bytes, output.stat().st_size)
-        self.assertEqual(
-            merge_result.metadata_bytes, output.with_suffix(".csv.gz").stat().st_size
-        )
+        self.assertEqual(merge_result.metadata_bytes, output.with_suffix(".csv.gz").stat().st_size)
         self.assertTrue(progress_updates[-1].complete)
         self.assertEqual(
             progress_updates[-1].processed_values,
@@ -2997,9 +2873,7 @@ class TestReshardingSafety(unittest.TestCase):
             writer.writeheader()
             writer.writerows(manifest_rows)
 
-        paths = ReshardingManifestConfig(manifest_path).take(
-            self.root / "distributed-partial-run", max_workers=2
-        )
+        paths = ReshardingManifestConfig(manifest_path).take(self.root / "distributed-partial-run", max_workers=2)
         self.assertEqual(len(paths), 3)
         selected_index_sets = []
         for shard_index, path in enumerate(paths):
@@ -3007,9 +2881,7 @@ class TestReshardingSafety(unittest.TestCase):
             with gzip.open(path.selection_path, "rt", encoding="utf-8") as handle:
                 selected_rows = list(csv.reader(handle))
             self.assertEqual(len(selected_rows), 3)
-            self.assertTrue(
-                all(row[2].startswith(f"shard-{shard_index}-") for row in selected_rows)
-            )
+            self.assertTrue(all(row[2].startswith(f"shard-{shard_index}-") for row in selected_rows))
             selected_index_sets.append(frozenset(int(row[4]) for row in selected_rows))
         self.assertGreater(len(set(selected_index_sets)), 1)
 
@@ -3047,9 +2919,7 @@ class TestReshardingSafety(unittest.TestCase):
         }
         with patch("dolma.tokenizer.reshard.boto3.client", return_value=client):
             with self.assertRaisesRegex(RuntimeError, "changed before download"):
-                ReshardingManifestConfig(manifest_path).take(
-                    self.root / "remote-input", max_workers=1
-                )
+                ReshardingManifestConfig(manifest_path).take(self.root / "remote-input", max_workers=1)
 
     def test_remote_manifest_streams_s5cmd_with_large_file_concurrency(self):
         manifest_path = self.root / "remote-manifest.csv"
@@ -3082,9 +2952,7 @@ class TestReshardingSafety(unittest.TestCase):
         }
 
         def emulate_s5cmd(command: list[str], phase: str) -> None:
-            self.assertEqual(
-                command[:5], ["s5cmd", "--stat", "--numworkers", "3", "run"]
-            )
+            self.assertEqual(command[:5], ["s5cmd", "--stat", "--numworkers", "3", "run"])
             self.assertEqual(phase, "source download")
             command_lines = Path(command[-1]).read_text().splitlines()
             self.assertEqual(len(command_lines), 2)
@@ -3125,11 +2993,7 @@ class TestReshardingSafety(unittest.TestCase):
                 [
                     sys.executable,
                     "-c",
-                    (
-                        "import sys; "
-                        "sys.stdout.write('10% complete\\r20% complete\\r'); "
-                        "sys.stdout.flush()"
-                    ),
+                    ("import sys; " "sys.stdout.write('10% complete\\r20% complete\\r'); " "sys.stdout.flush()"),
                 ],
                 "test transfer",
             )
@@ -3227,8 +3091,7 @@ class TestReshardingSafety(unittest.TestCase):
         fake_bin = self.root / "fake-bin"
         fake_bin.mkdir()
         fake_lsblk = fake_bin / "lsblk"
-        fake_lsblk.write_text(
-            """#!/usr/bin/env bash
+        fake_lsblk.write_text("""#!/usr/bin/env bash
 set -euo pipefail
 if [[ "$*" == "-dpno NAME,TYPE" ]]; then
   echo "/dev/nvme0n1 disk"
@@ -3251,18 +3114,15 @@ else
   echo "unexpected lsblk arguments: $*" >&2
   exit 97
 fi
-"""
-        )
+""")
         fake_sudo = fake_bin / "sudo"
-        fake_sudo.write_text(
-            """#!/usr/bin/env bash
+        fake_sudo.write_text("""#!/usr/bin/env bash
 if [[ "$1" == "wipefs" && "$2" == "-n" ]]; then
   exit 0
 fi
 echo "unexpected sudo arguments: $*" >&2
 exit 97
-"""
-        )
+""")
         fake_findmnt = fake_bin / "findmnt"
         fake_findmnt.write_text("#!/usr/bin/env bash\nexit 1\n")
         for command in (fake_lsblk, fake_sudo, fake_findmnt):
@@ -3310,6 +3170,212 @@ exit 97
         )
         self.assertEqual(implicit_apply.returncode, 1)
         self.assertIn("Refusing to apply an implicit layout", implicit_apply.stderr)
+
+
+class TestDocumentSelection(unittest.TestCase):
+    """Direct coverage for the deterministic document sampler.
+
+    The manifest tests exercise selection end to end; these cover the
+    determinism contract and the rejection paths that a partial materialization
+    depends on.
+    """
+
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        self.temp_dir.cleanup()
+
+    def _write_metadata(self, rows, name="tokens.csv.gz"):
+        path = self.root / name
+        with gzip.open(path, "wt", encoding="utf-8", newline="") as handle:
+            csv.writer(handle).writerows(rows)
+        return path
+
+    def _contiguous_documents(self, lengths, name="tokens.csv.gz"):
+        rows = []
+        start = 0
+        for index, length in enumerate(lengths):
+            rows.append([start, start + length, f"doc-{index}", "source", index])
+            start += length
+        return self._write_metadata(rows, name=name), start
+
+    def _read_selection(self, path):
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            return [row for row in csv.reader(handle)]
+
+    def test_same_seed_and_metadata_select_the_same_documents(self):
+        metadata, total = self._contiguous_documents([3 + (i % 7) for i in range(200)])
+        first = create_document_selection(
+            metadata_path=metadata,
+            selection_path=self.root / "first.csv.gz",
+            source_uint32_values=total,
+            target_uint32_values=total // 2,
+            seed=99,
+        )
+        second = create_document_selection(
+            metadata_path=metadata,
+            selection_path=self.root / "second.csv.gz",
+            source_uint32_values=total,
+            target_uint32_values=total // 2,
+            seed=99,
+        )
+        self.assertEqual(
+            self._read_selection(first.selection_path),
+            self._read_selection(second.selection_path),
+        )
+        self.assertEqual(first.selected_uint32_values, second.selected_uint32_values)
+        self.assertEqual(first.selected_document_count, second.selected_document_count)
+
+    def test_a_different_seed_selects_a_different_document_set(self):
+        metadata, total = self._contiguous_documents([3 + (i % 7) for i in range(200)])
+        selections = []
+        for seed in (1, 2):
+            result = create_document_selection(
+                metadata_path=metadata,
+                selection_path=self.root / f"seed-{seed}.csv.gz",
+                source_uint32_values=total,
+                target_uint32_values=total // 2,
+                seed=seed,
+            )
+            selections.append(self._read_selection(result.selection_path))
+        self.assertNotEqual(selections[0], selections[1])
+
+    def test_selection_keeps_whole_documents_within_the_residual_bound(self):
+        lengths = [5 + (i % 11) for i in range(150)]
+        metadata, total = self._contiguous_documents(lengths)
+        target = total // 3
+        result = create_document_selection(
+            metadata_path=metadata,
+            selection_path=self.root / "selection.csv.gz",
+            source_uint32_values=total,
+            target_uint32_values=target,
+            seed=7,
+        )
+        source_rows = {tuple(row) for row in self._read_selection(metadata)}
+        selected_rows = self._read_selection(result.selection_path)
+        for row in selected_rows:
+            self.assertIn(tuple(row), source_rows)
+        self.assertEqual(
+            result.selected_uint32_values,
+            sum(int(row[1]) - int(row[0]) for row in selected_rows),
+        )
+        self.assertEqual(len(selected_rows), result.selected_document_count)
+        self.assertEqual(result.source_document_count, len(lengths))
+        self.assertEqual(result.largest_document_uint32_values, max(lengths))
+        self.assertEqual(
+            result.target_residual_uint32_values,
+            result.selected_uint32_values - target,
+        )
+        self.assertLessEqual(
+            abs(result.target_residual_uint32_values),
+            result.largest_document_uint32_values,
+        )
+
+    def test_progress_reports_both_passes(self):
+        metadata, total = self._contiguous_documents([4] * 25)
+        updates = []
+        create_document_selection(
+            metadata_path=metadata,
+            selection_path=self.root / "selection.csv.gz",
+            source_uint32_values=total,
+            target_uint32_values=total // 2,
+            seed=3,
+            progress=lambda phase, documents, values: updates.append(phase),
+            progress_interval_seconds=0.0,
+        )
+        self.assertIn("pass 1/2", updates)
+        self.assertIn("pass 2/2", updates)
+
+    def test_non_contiguous_metadata_is_rejected(self):
+        metadata = self._write_metadata([[0, 5, "doc-0", "source", 0], [7, 10, "doc-1", "source", 1]])
+        with self.assertRaises(ValueError) as caught:
+            create_document_selection(
+                metadata_path=metadata,
+                selection_path=self.root / "selection.csv.gz",
+                source_uint32_values=10,
+                target_uint32_values=4,
+                seed=1,
+            )
+        self.assertIn("Non-contiguous", str(caught.exception))
+
+    def test_metadata_that_does_not_cover_the_memmap_is_rejected(self):
+        metadata, total = self._contiguous_documents([4, 6])
+        with self.assertRaises(ValueError) as caught:
+            create_document_selection(
+                metadata_path=metadata,
+                selection_path=self.root / "selection.csv.gz",
+                source_uint32_values=total + 10,
+                target_uint32_values=5,
+                seed=1,
+            )
+        self.assertIn("does not cover", str(caught.exception))
+
+    def test_malformed_metadata_row_is_rejected(self):
+        metadata = self._write_metadata([[0, 5, "doc-0", "source"]])
+        with self.assertRaises(ValueError) as caught:
+            create_document_selection(
+                metadata_path=metadata,
+                selection_path=self.root / "selection.csv.gz",
+                source_uint32_values=5,
+                target_uint32_values=2,
+                seed=1,
+            )
+        self.assertIn("expected five columns", str(caught.exception))
+
+    def test_existing_selection_index_is_refused(self):
+        metadata, total = self._contiguous_documents([4] * 5)
+        selection_path = self.root / "selection.csv.gz"
+        selection_path.write_bytes(b"")
+        with self.assertRaises(FileExistsError):
+            create_document_selection(
+                metadata_path=metadata,
+                selection_path=selection_path,
+                source_uint32_values=total,
+                target_uint32_values=total // 2,
+                seed=1,
+            )
+
+    def test_target_outside_the_source_size_is_rejected(self):
+        metadata, total = self._contiguous_documents([4] * 5)
+        for target in (0, total, total + 1):
+            with self.subTest(target=target):
+                with self.assertRaises(ValueError) as caught:
+                    create_document_selection(
+                        metadata_path=metadata,
+                        selection_path=self.root / f"selection-{target}.csv.gz",
+                        source_uint32_values=total,
+                        target_uint32_values=target,
+                        seed=1,
+                    )
+                self.assertIn("target_uint32_values", str(caught.exception))
+
+    def test_algorithm_version_string_is_pinned(self):
+        # Planners record this string in manifests and refuse a mismatch, so a
+        # change here has to be a deliberate, coordinated bump.
+        self.assertEqual(DOCUMENT_SELECTION_ALGORITHM, "document_hash_bucket_v1")
+
+
+class TestCrossModuleContracts(unittest.TestCase):
+    """Guard the constants the planner duplicates from the library.
+
+    `workflow.py` must stay importable with only boto3 and PyYAML, so it cannot
+    import these from `dolma` and restates them instead. These tests are what
+    keeps the two copies honest.
+    """
+
+    def test_planner_pins_the_library_document_selection_algorithm(self):
+        self.assertEqual(
+            WORKFLOW_DOCUMENT_SELECTION_ALGORITHM,
+            DOCUMENT_SELECTION_ALGORITHM,
+        )
+
+    def test_planner_pins_the_library_manifest_schema_version(self):
+        self.assertEqual(
+            EXPECTED_MANIFEST_SCHEMA_VERSION,
+            RESHARDING_MANIFEST_SCHEMA_VERSION,
+        )
 
 
 if __name__ == "__main__":

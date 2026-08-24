@@ -37,8 +37,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mix",
         type=Path,
-        default=CONFIG_ROOT / "inputs/dolma3p5-14t-optimal-mix.yaml",
-        help="authoritative mix YAML",
+        default=CONFIG_ROOT / "inputs/mix-v2.yaml",
+        help="authoritative mix YAML; inputs/dolma3p5-14t-optimal-mix.yaml is the superseded v1",
     )
     parser.add_argument(
         "--catalog",
