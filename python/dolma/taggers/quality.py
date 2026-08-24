@@ -30,7 +30,7 @@ class DclmQualityClassifier(BaseFastTextTagger):
         pred = self.classifier.predict(text)
 
         # Extract the predicted label and its probability
-        (pred_label, pred_prob) = pred
+        pred_label, pred_prob = pred
         pred_label = pred_label[0]
         probability_score = pred_prob[0]
 

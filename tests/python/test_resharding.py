@@ -11,9 +11,174 @@ import smart_open
 
 from dolma.cli.__main__ import main as cli_main
 from dolma.tokenizer import Tokenizer
-from dolma.tokenizer.reshard import ReshardingConfig, reshard
+from dolma.tokenizer.reshard import (
+    ReshardingConfig,
+    TokensMetadataPaths,
+    group_paths_by_max_num_files,
+    reshard,
+)
+from scripts.resharding.dispatch import (
+    build_poormanray_create_command,
+    build_poormanray_instance_command,
+    build_poormanray_map_command,
+    build_poormanray_run_command,
+)
 
 DOLMA2_TOKENIZER = Path(__file__).parent.parent / "data" / "tokenizer" / "dolma2-test-tokenizer.json"
+
+
+class TestReshardDispatch(unittest.TestCase):
+    def test_repeated_inputs_stay_within_fixed_output_shard_cap(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            npy_path = Path(temp_dir) / "source.npy"
+            npy_path.write_bytes(b"\0" * 4)
+            source = TokensMetadataPaths(str(npy_path), str(npy_path.with_suffix(".csv.gz")))
+
+            groups = group_paths_by_max_num_files([source] * 21, max_num_files=4)
+
+            self.assertEqual(len(groups), 4)
+            self.assertEqual(sum(len(group) for group in groups), 21)
+            self.assertLessEqual(
+                max(len(group) for group in groups) - min(len(group) for group in groups),
+                1,
+            )
+
+    def test_merge_input_log_distinguishes_full_and_selected_views(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            npy_path = Path(temp_dir) / "source.npy"
+            npy_path.write_bytes(b"\0" * 4)
+            metadata_path = npy_path.with_suffix(".csv.gz")
+            full = TokensMetadataPaths(str(npy_path), str(metadata_path))
+            selected = TokensMetadataPaths(
+                str(npy_path),
+                str(metadata_path),
+                selection_path=str(Path(temp_dir) / "selection.csv.gz"),
+                selected_uint32_values=10,
+            )
+
+            with self.assertLogs(level="INFO") as captured:
+                group_paths_by_max_num_files([full, selected], max_num_files=2)
+
+        message = "\n".join(captured.output)
+        self.assertIn(
+            "Merge inputs: 2 uses · 2 distinct inputs · max uses of any input: 1×",
+            message,
+        )
+
+    def test_output_groups_are_balanced_by_bytes(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            paths = []
+            for index, size in enumerate((100, 90, 20, 10)):
+                npy_path = Path(temp_dir) / f"{index:06d}.npy"
+                npy_path.write_bytes(b"\0" * size)
+                paths.append(
+                    TokensMetadataPaths(
+                        str(npy_path),
+                        str(npy_path.with_suffix(".csv.gz")),
+                    )
+                )
+
+            groups = group_paths_by_max_num_files(paths, max_num_files=2)
+
+            self.assertEqual([sum(path.size for path in group) for group in groups], [110, 110])
+
+    def test_poormanray_lifecycle_commands_scope_work_to_selected_instances(self):
+        create = build_poormanray_create_command(
+            cluster="resharding",
+            project="oe-other",
+            region="us-east-1",
+            number=2,
+            instance_type="i4i.2xlarge",
+            storage_type="gp3",
+            storage_size_gib=200,
+            parallelism=2,
+            detach=True,
+        )
+        self.assertEqual(
+            create,
+            [
+                "pmr",
+                "create",
+                "--name",
+                "resharding",
+                "--project",
+                "oe-other",
+                "--region",
+                "us-east-1",
+                "--number",
+                "2",
+                "--instance-type",
+                "i4i.2xlarge",
+                "--storage-type",
+                "gp3",
+                "--storage-size",
+                "200",
+                "--detach",
+                "--parallelism",
+                "2",
+            ],
+        )
+
+        run = build_poormanray_run_command(
+            cluster="resharding",
+            project="oe-other",
+            region="us-east-1",
+            remote_command="true",
+            instance_ids=("i-first", "i-second"),
+            parallelism=2,
+        )
+        self.assertEqual(
+            run[-6:],
+            [
+                "--instance-id",
+                "i-first",
+                "--instance-id",
+                "i-second",
+                "--parallelism",
+                "2",
+            ],
+        )
+
+        resume = build_poormanray_instance_command(
+            "resume",
+            cluster="resharding",
+            project="oe-other",
+            region="us-east-1",
+            instance_ids=("i-first", "i-second"),
+            parallelism=2,
+            detach=True,
+        )
+        self.assertIn("--detach", resume)
+        self.assertEqual(resume.count("--instance-id"), 2)
+
+        command = build_poormanray_map_command(
+            cluster="resharding",
+            project="oe-other",
+            region="us-east-1",
+            script_dir="/tmp/dispatch",
+            spindown=True,
+            instance_ids=("i-first", "i-second"),
+        )
+        self.assertEqual(
+            command,
+            [
+                "pmr",
+                "map",
+                "--name",
+                "resharding",
+                "--project",
+                "oe-other",
+                "--region",
+                "us-east-1",
+                "--script",
+                "/tmp/dispatch",
+                "--spindown",
+                "--instance-id",
+                "i-first",
+                "--instance-id",
+                "i-second",
+            ],
+        )
 
 
 class Sequence(NamedTuple):
