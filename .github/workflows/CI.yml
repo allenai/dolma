@@ -197,10 +197,17 @@ jobs:
           target: ${{ matrix.target }}
           args: --release --out dist --find-interpreter
           manylinux: manylinux_2_28
-          container: "ghcr.io/rust-cross/manylinux_2_28-cross:${{ matrix.target }}"
+          # The rust-cross x86_64 image currently publishes an empty toolchain
+          # directory while still pinning the linker inside it, so native builds
+          # use maturin-action's own manylinux image instead.
+          container: ${{ matrix.target == 'x86_64' && 'auto' || format('ghcr.io/rust-cross/manylinux_2_28-cross:{0}', matrix.target) }}
           before-script-linux: |
-            sudo apt-get update
-            sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
+            # Only the rust-cross images are Ubuntu; manylinux is AlmaLinux and
+            # already has everything the build needs.
+            if command -v apt-get &> /dev/null; then
+              sudo apt-get update
+              sudo apt-get install --yes --upgrade build-essential cmake protobuf-compiler libssl-dev glibc-source musl-tools
+            fi
       - name: Upload wheels
         uses: actions/upload-artifact@v4.4.1
         with:
