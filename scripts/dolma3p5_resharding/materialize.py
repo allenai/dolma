@@ -274,16 +274,15 @@ REMOTE_RESHARD_MODULE = "/tmp/dolma3p5-runtime/reshard.py"
 REMOTE_DOCUMENT_SELECTION_MODULE = "/tmp/dolma3p5-runtime/document_selection.py"
 # setup_worker_storage.sh mounts the worker's local NVMe here (DOLMA_WORK_MOUNT).
 WORKER_LOCAL_MOUNT = "/mnt/dolma"
-# Must equal the `plan.py --local-temp-root` used to build the plan. That value is
-# recorded only inside each per-unit config YAML (as `local_tempdir`), never in
-# config-index.csv or dataset-layout.json, so this script cannot derive it from the
-# artifacts it loads. A different --local-temp-root therefore passes planning and
-# only fails here, at worker bootstrap.
+# Must equal the `plan.py --local-temp-root` used to build the plan. That value
+# is recorded only in each per-unit config YAML (as `local_tempdir`), not in
+# config-index.csv or dataset-layout.json, so a mismatch is first detected at
+# worker bootstrap.
 WORKER_LOCAL_TEMP_ROOT = f"{WORKER_LOCAL_MOUNT}/dolma3p5-resharding"
 # Interpreter installed on every worker by poormanray's setup-dolma step.
 WORKER_PYTHON_BIN = "$HOME/.venv/bin/python"
-# Per-run status and log directory. The launcher payload writes it and the progress
-# monitor reads it back, so both must resolve to exactly the same remote path.
+# Per-run status and log directory. The launcher payload writes it and the
+# progress monitor reads it, so both must resolve to the same remote path.
 WORKER_STATUS_ROOT = "$HOME/dolma3p5-resharding-status"
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 DOLMA_LOG_PREFIX = re.compile(
@@ -308,12 +307,10 @@ WORKER_LOG_PAGE_BYTES = 16 * 1024
 # EC2 accepts at most this many instance IDs per DescribeInstanceStatus call.
 DESCRIBE_INSTANCE_STATUS_ID_LIMIT = 100
 # Poormanray resolves a discovery group to instance IDs before applying explicit
-# ones, so a group must stay under the limit above. Held 10 instances below it so
-# a group that grows slightly cannot reach the hard limit.
+# ones, so a group must stay under the limit above, with a 10-instance margin.
 PMR_DISCOVERY_WORKER_LIMIT = DESCRIBE_INSTANCE_STATUS_ID_LIMIT - 10
 LIFECYCLE_MAX_ATTEMPTS = 5
-# Argparse defaults, shared with the getattr fallbacks used for callers that build
-# a Namespace without these attributes.
+# Argparse defaults, also used as getattr fallbacks for hand-built Namespaces.
 DEFAULT_PROVISION_BATCH_SIZE = 5
 DEFAULT_PROVISION_BATCH_DELAY_SECONDS = 3.0
 # EC2 applies tags asynchronously; wait this long for them to become readable.
@@ -382,7 +379,7 @@ def _provision_batch_size(args: argparse.Namespace) -> int:
 
 
 def _provision_batch_delay(args: argparse.Namespace) -> float:
-    """Return the delay between lifecycle batches, defaulted for hand-built Namespaces."""
+    """Return the seconds between lifecycle batches, defaulted for hand-built Namespaces."""
 
     return float(
         getattr(
@@ -396,7 +393,7 @@ def _provision_batch_delay(args: argparse.Namespace) -> float:
 def _lifecycle_batches(
     items: Sequence[_BatchItem], batch_size: int
 ) -> list[list[_BatchItem]]:
-    """Split one lifecycle request into bounded provider-API batches."""
+    """Split items into batches of at most batch_size."""
 
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
@@ -407,7 +404,7 @@ def _lifecycle_batches(
 
 
 def _worker_tag(instance_id: str) -> str:
-    """Return the short display tag for one worker; instance IDs share a long prefix."""
+    """Return the instance-ID suffix used as a worker's display tag."""
 
     return instance_id[-WORKER_TAG_LENGTH:]
 
@@ -437,7 +434,7 @@ def _worker_log_line(
 
 
 def _worker_log_parts(message: str) -> tuple[str | None, str]:
-    """Extract the source timestamp and remove logger metadata from one worker line."""
+    """Return one worker line's source timestamp and its text without logger metadata."""
 
     match = DOLMA_LOG_PREFIX.match(message)
     if match is not None:
@@ -461,7 +458,7 @@ def _worker_log_message(message: str) -> str:
 def _describe_cluster_instances(
     cluster: str, region: str, profile: str | None = None
 ) -> list[ClusterInstance]:
-    """Return instances using the cluster tag plus legacy poormanray discovery."""
+    """Return the instances tagged cluster, project, or Project with this cluster name."""
 
     session = boto3.Session(profile_name=profile, region_name=region)
     client = session.client("ec2", region_name=region)
@@ -506,16 +503,20 @@ def _retag_cluster_instances(
     *,
     names: dict[str, str] | None = None,
 ) -> None:
-    """Apply bounded discovery, accounting, and cluster tags."""
+    """Apply the discovery, accounting, and cluster tags to each worker.
+
+    Blocks until the provider reports every tag and raises PreparationError
+    after TAG_PROPAGATION_TIMEOUT_SECONDS.
+    """
 
     if not instance_ids:
         return
     session = boto3.Session(profile_name=args.profile, region_name=args.region)
     client = session.client("ec2", region_name=args.region)
     required_tags = {
-        # Poormanray discovers existing AWS instances through this tag before
-        # applying explicit instance IDs. Keep each discovery group below the
-        # provider's 100-ID DescribeInstanceStatus limit.
+        # Poormanray discovers instances through this tag before applying
+        # explicit instance IDs; each discovery group must stay below the
+        # 100-ID DescribeInstanceStatus limit.
         "project": _pmr_discovery_name(args),
         "ai2-project": args.project,
         "cluster": args.cluster,
@@ -614,7 +615,10 @@ def _run_compact_process(
     verbose: bool = False,
     live: bool = True,
 ) -> int:
-    """Run a command with one in-place status and a bounded failure log."""
+    """Run a command with an in-place status line and return its exit code.
+
+    On a non-zero exit the last PROCESS_TAIL_LINES lines of output are printed.
+    """
 
     output = console or Console(stderr=True, highlight=False)
     started_at = time.monotonic()
@@ -709,9 +713,8 @@ def _instance_options(
     args: argparse.Namespace, instance_ids: Sequence[str]
 ) -> dict[str, Any]:
     return {
-        # Poormanray selects existing AWS instances through the canonical
-        # `project` tag supplied as --name. `ai2-project` remains the accounting
-        # project and is passed independently as --project.
+        # Poormanray selects instances through the `project` tag, passed as
+        # --name. `ai2-project` is the accounting project, passed as --project.
         "cluster": _pmr_discovery_name(args),
         "project": args.project,
         "region": args.region,
@@ -726,7 +729,11 @@ def _instance_options(
 
 
 def _pmr_discovery_name(args: argparse.Namespace) -> str:
-    """Return the bounded poormanray discovery group for one worker class."""
+    """Return the poormanray discovery group name for one worker class.
+
+    Falls back to the plain cluster name when the instance type or the storage
+    layout is not pinned.
+    """
 
     instance_type = getattr(args, "instance_type", None)
     storage_layout = getattr(args, "storage_layout", None)
@@ -761,7 +768,7 @@ def _create_command(
 
 
 def _provision_batches(worker_count: int, batch_size: int) -> tuple[int, ...]:
-    """Split worker creation into bounded provider-API launch batches."""
+    """Return the worker count for each creation batch."""
 
     if worker_count < 0:
         raise ValueError("worker_count must not be negative")
@@ -799,7 +806,10 @@ def _resume_workers_in_batches(
     detach: bool = True,
     console: Console | None = None,
 ) -> None:
-    """Resume stopped workers without bursting the provider's start API."""
+    """Resume stopped workers in batches of --provision-batch-size.
+
+    Sleeps --provision-batch-delay-seconds between batches.
+    """
 
     ordered = sorted(set(instance_ids))
     if not ordered:
@@ -846,12 +856,12 @@ def _retry_lifecycle_batch(
     on_exhausted: Callable[[list[str], int], None],
     on_retry: Callable[[list[str], float], None] | None = None,
 ) -> None:
-    """Retry one provider-sized lifecycle batch until nothing is left to change.
+    """Retry one lifecycle batch until no worker still needs the change.
 
-    `run_attempt` reports True once the batch succeeded. After a failed attempt
-    only the workers the provider still reports in `retry_states` are retried,
-    backing off exponentially from the configured inter-batch delay.
-    `on_exhausted` replaces the final retry and owns how that failure surfaces.
+    `run_attempt` returns True when the batch succeeded. After a failed attempt
+    only the workers the provider reports in `retry_states` are retried, with
+    the inter-batch delay doubling per attempt. `on_exhausted` runs in place of
+    the attempt after LIFECYCLE_MAX_ATTEMPTS.
     """
 
     remaining = list(instance_ids)
@@ -892,7 +902,7 @@ def _resume_worker_batch(
                 stage,
                 _resume_command(args, remaining, detach=detach),
                 console=console,
-                # Per-instance PMR messages overwhelm the materialization logs.
+                # Per-instance PMR output floods the materialization logs.
                 verbose=False,
                 live=False,
             )
@@ -931,7 +941,11 @@ def _resume_worker_groups_in_batches(
     *,
     console: Console,
 ) -> None:
-    """Resume all worker classes in globally bounded, round-robin waves."""
+    """Resume every worker class in round-robin waves.
+
+    Wave size is the smallest batch size across the groups; the delay between
+    waves is the largest inter-batch delay across the groups.
+    """
 
     if not groups:
         return
@@ -988,7 +1002,7 @@ def _pause_command(args: argparse.Namespace, instance_ids: Sequence[str]) -> lis
 def _worker_minimum_available_bytes(rows: Sequence[dict[str, str]]) -> int:
     largest_working_set = max(int(row["estimated_peak_local_bytes"]) for row in rows)
     # Integer ceiling of 110% of the largest working set: 10% headroom over the
-    # plan's own estimate, rounded up so no worker is provisioned a byte short.
+    # plan's estimate.
     return (largest_working_set * 11 + 9) // 10
 
 
@@ -1103,8 +1117,8 @@ def _load_execution_units(build: Path) -> list[dict[str, str]]:
         "worker_instance_type",
         "worker_storage_layout",
         "worker_vcpus",
-        # Read only during post-run verification; validating it up front keeps a
-        # stale plan from failing after the workers have already been paid for.
+        # Read only during post-run verification; checked here so a stale plan
+        # fails before workers are provisioned.
         "allowed_materialized_target_residual_uint32_values",
     }
     missing = required - set(rows[0])
@@ -1114,7 +1128,7 @@ def _load_execution_units(build: Path) -> list[dict[str, str]]:
 
 
 def _planned_worker_groups(args: argparse.Namespace, rows: Sequence[dict[str, str]]) -> list[PlannedWorkerGroup]:
-    """Group selected units by their planned i4i worker configuration."""
+    """Group selected units by planned worker instance type and storage layout."""
 
     if args.instance_type:
         if args.storage_layout == "auto":
@@ -1161,7 +1175,11 @@ def _planned_worker_groups(args: argparse.Namespace, rows: Sequence[dict[str, st
 def _worker_counts_for_groups(
     groups: Sequence[PlannedWorkerGroup], maximum_workers: int
 ) -> list[int]:
-    """Allocate the global worker limit while keeping every worker group active."""
+    """Split maximum_workers across groups, giving every group at least one worker.
+
+    Each group is capped at its unit count and at PMR_DISCOVERY_WORKER_LIMIT.
+    Raises PreparationError when maximum_workers is below the group count.
+    """
 
     if not groups:
         return []
@@ -1292,7 +1310,12 @@ def _safe_path_launcher_payload(
     launcher: Path,
     status_run_id: str | None = None,
 ) -> bytes:
-    """Force safe-path mode for existing and newly generated worker launchers."""
+    """Return the launcher script with the safe-path directives inserted.
+
+    Adds PYTHONSAFEPATH, `cd /tmp`, and DOLMA_STATUS_ROOT when status_run_id is
+    given. Raises PreparationError when the launcher has no `set -euo pipefail`
+    line or when status_run_id is not [a-z0-9-]+.
+    """
 
     text = launcher.read_text(encoding="utf-8")
     safe_path_export = "export PYTHONSAFEPATH=1"
@@ -1375,7 +1398,7 @@ def _stage_selection(
 def _stage_worker_assignments(
     group: MaterializationGroup,
 ) -> tuple[WorkerAssignment, ...]:
-    """Create a largest-first queue of one-script poormanray directories."""
+    """Return one single-launcher poormanray directory per unit, largest unit first."""
 
     assignments: list[WorkerAssignment] = []
     assignment_root = group.script_dir.parent / f"{group.script_dir.name}-assignments"
@@ -1491,11 +1514,11 @@ def _run_selected_preflight(
 
 
 class _WorkerCleanupAbandoned(Exception):
-    """Best-effort worker cleanup stopped after printing its own instructions."""
+    """Raised after worker cleanup failed and the manual command was printed."""
 
 
 def _abandon_worker_cleanup(reason: str, command: Sequence[str]) -> NoReturn:
-    """Print the manual command that must replace the failed cleanup, then stop."""
+    """Print the manual cleanup command and raise _WorkerCleanupAbandoned."""
 
     print(
         f"WARNING: {reason}; run {shlex.join(command)} immediately",
@@ -1574,7 +1597,11 @@ def _prepare_workers(
     delay_after_last_batch: bool = False,
     deferred_resume_ids: list[str] | None = None,
 ) -> list[str]:
-    """Resume stopped compatible workers and create missing workers in batches."""
+    """Resume compatible stopped workers and create the missing ones in batches.
+
+    Raises PreparationError when the cluster holds active or transitioning
+    workers that are not in owned_instance_ids.
+    """
 
     try:
         before = _describe_cluster_instances(args.cluster, args.region, args.profile)
@@ -1804,7 +1831,11 @@ def _worker_log_snapshots(
     *,
     include_logs: bool = True,
 ) -> dict[str, dict[str, Any]]:
-    """Read one acknowledged page of new log bytes from every active worker."""
+    """Return each worker's unit statuses and one page of new log bytes.
+
+    A page is at most WORKER_LOG_PAGE_BYTES. Returns an empty mapping when the
+    remote command fails or times out.
+    """
 
     try:
         result = subprocess.run(
@@ -1877,7 +1908,7 @@ def _worker_log_snapshots(
                     logs[current_log] = tuple(current_lines)
                     offsets[current_log] = int(fields[2])
                 elif current_log is not None and len(fields) == 2:
-                    # Accept envelopes written by the older full-log reader.
+                    # Envelope without acknowledged byte offsets.
                     logs[current_log] = tuple(current_lines)
                 current_log = None
                 current_lines = []
@@ -1896,8 +1927,7 @@ def _worker_log_snapshots(
 class _MonitorChannels:
     """Shared state the warm-worker dispatcher and the progress monitor exchange.
 
-    Every field is optional so the monitor can also run standalone, with no
-    dispatcher on the other side of these channels.
+    Every field is optional; the monitor runs standalone when none are set.
     """
 
     worker_stages: dict[str, str] | None = None
@@ -1926,12 +1956,12 @@ class _MonitorChannels:
         return self.all_dispatched is None or self.all_dispatched.is_set()
 
     def stage_guard(self) -> AbstractContextManager[Any]:
-        """Hold the dispatcher's stage lock, or nothing when running standalone."""
+        """Return the dispatcher's stage lock, or a null context when standalone."""
 
         return self.stage_lock if self.stage_lock is not None else nullcontext()
 
     def status_guard(self) -> AbstractContextManager[Any]:
-        """Hold the dispatcher's unit-status lock, or nothing when standalone."""
+        """Return the dispatcher's unit-status lock, or a null context when standalone."""
 
         return (
             self.unit_status_lock
@@ -1958,7 +1988,7 @@ class _WorkerOutputTracker:
         instance_id: str,
         statuses: dict[str, str],
     ) -> bool:
-        """Publish one worker's unit statuses; report whether any of them changed."""
+        """Publish one worker's unit statuses and return whether any changed."""
 
         worker_tag, worker_style = self.worker_tags[instance_id]
         changed = False
@@ -1983,7 +2013,7 @@ class _WorkerOutputTracker:
         return changed
 
     def print_new_log_lines(self, instance_id: str, snapshot: dict[str, Any]) -> None:
-        """Print only the log bytes this monitor has not already shown."""
+        """Print the log lines this monitor has not already shown."""
 
         worker_tag, worker_style = self.worker_tags[instance_id]
         logs = snapshot["logs"]
@@ -1996,8 +2026,8 @@ class _WorkerOutputTracker:
             if log_name in offsets:
                 new_lines = log_lines
             else:
-                # Backward compatibility for old worker-log envelopes without
-                # acknowledged byte offsets.
+                # Envelope without acknowledged byte offsets: fall back to the
+                # emitted line count.
                 emitted = self.emitted_log_lines.get(log_key, 0)
                 if len(log_lines) < emitted:
                     emitted = 0
@@ -2034,7 +2064,7 @@ def _monitored_workers(
     args: argparse.Namespace,
     expected_ids: set[str],
 ) -> dict[str, ClusterInstance]:
-    """Return the monitored workers, refusing to continue if any disappeared."""
+    """Return the monitored workers, raising PreparationError if any is missing."""
 
     selected = {
         instance.instance_id: instance
@@ -2069,7 +2099,7 @@ def _reconcile_worker_stages(
 
 
 def _unit_progress_detail(channels: _MonitorChannels, unit_count: int) -> str:
-    """Describe unit completion, counting only what the dispatcher published."""
+    """Return the unit-completion detail from the statuses the dispatcher published."""
 
     if channels.unit_statuses is None:
         return f"{unit_count:,} units"
@@ -2086,7 +2116,7 @@ def _lifecycle_progress_detail(
     unit_count: int,
     started_at: float,
 ) -> str:
-    """Summarize the dispatcher's own per-worker stages."""
+    """Summarize the dispatcher's per-worker stages."""
 
     return " · ".join(
         (
@@ -2124,7 +2154,7 @@ def _materializing_worker_ids(
     selected: dict[str, ClusterInstance],
     stage_snapshot: dict[str, str],
 ) -> list[str]:
-    """Return running workers whose logs and statuses are worth reading."""
+    """Return the running workers currently in the materializing stage."""
 
     return sorted(
         instance.instance_id
@@ -2177,7 +2207,7 @@ def _publish_worker_output(
     running_ids: Sequence[str],
     status_run_id: str,
 ) -> None:
-    """Print new worker output and hand fresh unit statuses to the dispatcher."""
+    """Print new worker output and publish new unit statuses to the dispatcher."""
 
     snapshots = _collect_worker_snapshots(
         args,
@@ -2234,10 +2264,11 @@ def _wait_for_workers_to_stop(
     unit_status_lock: Lock | None = None,
     status_changed: Event | None = None,
 ) -> None:
-    """Monitor mixed worker stages until every dispatched worker has stopped."""
+    """Monitor worker stages until every dispatched worker has stopped.
 
-    # Every optional keyword is one shared-state channel to the dispatcher; they
-    # are bundled once here so the poll helpers below take a single object.
+    Each optional keyword is one shared-state channel to the dispatcher.
+    """
+
     channels = _MonitorChannels(
         worker_stages=worker_stages,
         stage_lock=stage_lock,
@@ -2395,7 +2426,10 @@ def _verify_materialized_units(
     client: Any | None = None,
     console: Console | None = None,
 ) -> list[MaterializedUnitCheck]:
-    """Prove selected units completed using destination objects and their sizes."""
+    """Check every selected unit's destination objects and their sizes.
+
+    Raises PreparationError when any unit has problems or its listing failed.
+    """
 
     if client is None:
         session = boto3.Session(profile_name=args.profile, region_name=args.region)
@@ -2471,7 +2505,11 @@ def _dry_run_lifecycle_commands(
     script_dir: Path,
     worker_count: int,
 ) -> list[tuple[str, list[str]]]:
-    """Show the create path; execute may resume compatible stopped workers instead."""
+    """Return the lifecycle commands for the create path.
+
+    --execute resumes compatible stopped workers when the cluster has any,
+    instead of creating them.
+    """
 
     batches = _provision_batches(worker_count, _provision_batch_size(args))
     create_commands = [
@@ -2605,7 +2643,7 @@ def _bootstrap_and_dispatch_worker(
     stage_lock: Lock,
     console: Console | None = None,
 ) -> None:
-    """Prepare one ready worker and dispatch only its assigned execution units."""
+    """Prepare one ready worker and dispatch its assigned execution units."""
 
     tag = _worker_tag(instance_id)
 
@@ -2657,7 +2695,7 @@ def _dispatch_assignment_to_worker(
     stage_lock: Lock,
     console: Console,
 ) -> None:
-    """Dispatch the next unit without rebuilding or stopping the warm worker."""
+    """Dispatch one unit to a warm worker without bootstrapping or stopping it."""
 
     unit_id = assignment.rows[0]["unit_id"]
     _set_worker_stage(stages, stage_lock, instance_id, f"queued:{unit_id}")
@@ -2687,7 +2725,7 @@ def _stop_worker_after_work(
     stage_lock: Lock,
     console: Console,
 ) -> None:
-    """Stop one warm worker after its compatible unit queue is empty."""
+    """Stop one warm worker once its group's unit queue is empty."""
 
     _set_worker_stage(stages, stage_lock, instance_id, "stopping")
     try:
@@ -2728,7 +2766,7 @@ class _DispatchChannels:
 
 
 def _harvest_finished_futures(futures: dict[Future[None], str]) -> None:
-    """Re-raise the first failure and forget every future that already finished."""
+    """Drop every finished future, re-raising the first failure."""
 
     for future in [future for future in futures if future.done()]:
         future.result()
@@ -2737,11 +2775,11 @@ def _harvest_finished_futures(futures: dict[Future[None], str]) -> None:
 
 @dataclass
 class _WarmWorkerPool:
-    """The warm-worker state machine behind one materialization run.
+    """Warm-worker state machine for one materialization run.
 
-    Each healthy worker starts one execution unit immediately, receives another
-    compatible unit from its own group's queue whenever the unit it was running
-    succeeds, and stays warm until that queue is empty, then stops.
+    A worker starts one execution unit as soon as the provider reports it
+    healthy, then takes the next unit from its own group's queue each time the
+    running unit succeeds. It stops once that queue is empty.
     """
 
     args: argparse.Namespace
@@ -2758,7 +2796,7 @@ class _WarmWorkerPool:
 
     @property
     def busy(self) -> bool:
-        """Report whether any worker still owes a bootstrap, a unit, or a stop."""
+        """Report whether any worker still has a bootstrap, unit, or stop outstanding."""
 
         return bool(
             self.pending
@@ -2768,7 +2806,11 @@ class _WarmWorkerPool:
         )
 
     def advance_completed_units(self) -> None:
-        """Refill or stop every warm worker whose unit is no longer running."""
+        """Refill or stop every warm worker whose unit is no longer running.
+
+        Raises PreparationError when a unit reports failure or when a worker
+        stops before its unit reports success.
+        """
 
         inflight_ids = set(self.futures.values())
         status_snapshot = self.channels.status_snapshot()
@@ -2822,7 +2864,7 @@ class _WarmWorkerPool:
             )
 
     def _dispatch_next_unit(self, instance_id: str) -> None:
-        """Keep one worker warm with its next unit, or stop it when none remain."""
+        """Give one worker its next unit, or stop the worker when none remain."""
 
         queue = self._queue_for(instance_id)
         if not queue:
@@ -2870,8 +2912,8 @@ def _await_dispatch_progress(
     """Block until the next event that can change the dispatch loop's decisions."""
 
     if workers.pending:
-        # Readiness is only visible through the provider, so this wait must also
-        # time out on the readiness poll interval.
+        # Readiness is visible only through the provider, so this wait must time
+        # out on the readiness poll interval.
         active_futures = [*workers.futures, *resume_futures]
         if active_futures:
             wait(

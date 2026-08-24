@@ -1,7 +1,7 @@
 """Shared implementation for the Dolma 3.5 resharding preparation scripts.
 
-This module has no command-line interface. Use the plainly named sibling
-scripts for each workflow phase. Nothing here materializes token data.
+This module has no command-line interface; each workflow phase has a sibling
+script. It does not materialize token data.
 """
 
 from __future__ import annotations
@@ -40,9 +40,9 @@ except ImportError:
     from output_report import render_output_validation_report, report_root_style
 
 UINT32_BYTES = 4
-# Mirrors DOCUMENT_SELECTION_ALGORITHM in python/dolma/tokenizer/document_selection.py,
-# which is the source of truth. Copied rather than imported so this module stays
-# importable with only boto3 and PyYAML installed.
+# Mirrors DOCUMENT_SELECTION_ALGORITHM in
+# python/dolma/tokenizer/document_selection.py. Copied rather than imported to keep
+# this module importable with only boto3 and PyYAML installed.
 DOCUMENT_SELECTION_ALGORITHM = "document_hash_bucket_v1"
 # Pins RESHARDING_MANIFEST_SCHEMA_VERSION from python/dolma/tokenizer/reshard.py.
 # The generated launcher makes the worker runtime assert the same value.
@@ -60,8 +60,8 @@ PREPARATION_PHASES = (
     "02-preflight",
     "03-output-validation",
 )
-# Every phase generated after the plan. All of them go stale as soon as any plan
-# stage is replaced, so they are reset together.
+# Phases generated after the plan. Replacing any plan stage invalidates all of
+# them, so they are reset together.
 DOWNSTREAM_PREPARATION_PHASES = PREPARATION_PHASES[1:]
 PLAN_STAGES = ("resolution", "inventory", "execution")
 PLAN_ROOT_ARTIFACTS = {"report.html"}
@@ -123,7 +123,7 @@ class PreparationError(RuntimeError):
 
 
 def normalize_region(region: str | None) -> str:
-    """Return the configured region, falling back to the workflow default."""
+    """Return the region, or DEFAULT_REGION when it is empty or None."""
 
     normalized = (region or "").strip()
     return normalized or DEFAULT_REGION
@@ -182,14 +182,19 @@ def _count_label(value: int, singular: str, plural: str | None = None) -> str:
 
 
 def _expected_build_id(mix_sha256: str, catalog_sha256: str) -> str:
-    """Derive the one build ID that a mix and catalog digest pair must produce."""
+    """Return the build ID for a mix and catalog SHA-256 pair."""
 
     seed = f"{mix_sha256}:{catalog_sha256}".encode()
     return f"{BUILD_ID_PREFIX}{hashlib.sha256(seed).hexdigest()[:12]}"
 
 
 def _validate_preparation_build(path: Path) -> dict[str, Any]:
-    """Verify that an existing directory is owned by this preparation workflow."""
+    """Return build.json after checking the directory belongs to this workflow.
+
+    Raises PreparationError unless build.json is a regular file whose build_id
+    matches its recorded mix and catalog digests, and every top-level entry is a
+    recognized phase.
+    """
 
     if not path.exists():
         raise PreparationError(
@@ -252,7 +257,11 @@ def _validate_preparation_build(path: Path) -> dict[str, Any]:
 
 
 def _validate_execution_layout(build: Path) -> dict[str, Any]:
-    """Refuse stale execution artifacts before checking or writing destinations."""
+    """Return 01-plan/execution/dataset-layout.json, raising if it is stale.
+
+    The layout must name this build's ID and dataset root, DESTINATION_LAYOUT,
+    and EXECUTION_UNIT_INDEX_WIDTH.
+    """
 
     manifest = _validate_preparation_build(build)
     layout_path = build / "01-plan/execution/dataset-layout.json"
@@ -298,7 +307,10 @@ def _remove_generated_phase(path: Path) -> None:
 
 
 def _reset_preparation_build(path: Path) -> None:
-    """Reset only a recognized local preparation build, never source/token data."""
+    """Remove the generated phases and build.json from a recognized build.
+
+    Creates the directory when it does not exist and leaves an empty one alone.
+    """
 
     if not path.exists():
         path.mkdir(parents=True, exist_ok=False)
@@ -316,7 +328,10 @@ def _reset_preparation_build(path: Path) -> None:
 def _reset_preparation_phase(
     build: Path, phase_name: str, *downstream_phase_names: str
 ) -> Path:
-    """Replace generated local phases after verifying the build ownership marker."""
+    """Remove phase_name and the downstream phases, then recreate phase_name.
+
+    Every name must be in PREPARATION_PHASES. Returns the new phase directory.
+    """
 
     _validate_preparation_build(build)
     names = (phase_name, *downstream_phase_names)
@@ -330,7 +345,12 @@ def _reset_preparation_phase(
 
 
 def _reset_plan_stage(build: Path, stage_name: str, *downstream_stage_names: str) -> Path:
-    """Replace generated plan stages while preserving earlier reviewed stages."""
+    """Remove stage_name and the downstream stages, then recreate stage_name.
+
+    Every name must be in PLAN_STAGES. Also removes PLAN_ROOT_ARTIFACTS and
+    every DOWNSTREAM_PREPARATION_PHASES directory. Returns the new stage
+    directory.
+    """
 
     _validate_preparation_build(build)
     plan_root = build / "01-plan"
@@ -364,7 +384,11 @@ def _reset_plan_stage(build: Path, stage_name: str, *downstream_stage_names: str
 
 
 def _restore_inventory_report_from_combined(plan_root: Path) -> None:
-    """Recover the source-report input before replacing only execution artifacts."""
+    """Restore 01-plan/inventory/report.html from the combined 01-plan/report.html.
+
+    Does nothing when the inventory report is already present or the combined
+    report is absent.
+    """
 
     inventory_report = plan_root / "inventory/report.html"
     if inventory_report.is_file() and not inventory_report.is_symlink():
@@ -432,8 +456,6 @@ def _load_settings(path: Path | None) -> dict[str, Any]:
         if unknown:
             raise PreparationError(f"Unknown settings: {', '.join(unknown)}")
         settings.update(loaded)
-    # Every numeric knob is bounded here so a typo fails with the setting's name
-    # rather than as an opaque error inside a thread pool or an S3 collector.
     for name in (
         "target_uint32_values",
         "max_workers_per_reshard",
@@ -469,7 +491,12 @@ def _load_settings(path: Path | None) -> dict[str, Any]:
 
 
 def _validate_worker_instance_grid(value: Any) -> list[dict[str, Any]]:
-    """Validate the ordered CPU/storage choices used by the execution planner."""
+    """Return the normalized worker_instance_grid.
+
+    Entries must be distinct i4i types ordered by strictly increasing vCPUs,
+    local NVMe bytes, and work limits. Only the final entry may set
+    max_estimated_work_uint32_values to None, which means unbounded work.
+    """
 
     if not isinstance(value, list) or not value:
         raise PreparationError("worker_instance_grid must be a non-empty list")
@@ -568,10 +595,9 @@ def _load_catalog(path: Path) -> list[dict[str, str]]:
                     f"Control character in catalog object on row {line_number}"
                 )
             if not key.endswith(".npy"):
-                # The reference file is nominally an NPY catalog but currently
-                # contains at least one metadata row. Metadata never defines
-                # membership, so ignore it here and verify the derived partner
-                # against S3 during inventory.
+                # The catalog also carries metadata rows. Only NPY rows define
+                # membership; the derived metadata partner is verified against
+                # S3 during inventory.
                 continue
             rows.append(
                 {"bucket": bucket, "key": key, "catalog_line": str(line_number)}
@@ -596,9 +622,8 @@ def _direct_s3_pattern(yaml_path: str, bucket: str) -> tuple[str, str]:
 
 @lru_cache(maxsize=None)
 def _compiled_path_pattern(pattern: str) -> re.Pattern[str]:
-    # YAML paths use ``*`` for expansion. Treat every other character
-    # literally so language names containing ``+``, ``[``, or ``?`` cannot be
-    # reinterpreted as local glob syntax.
+    # "*" is the only wildcard in a YAML path. Every other character is escaped,
+    # so names containing regex or glob metacharacters match literally.
     expression = re.escape(unquote(pattern)).replace(r"\*", ".*")
     return re.compile(expression)
 
@@ -635,7 +660,7 @@ def _build_id(mix_path: Path, catalog_path: Path) -> str:
 
 @dataclass
 class _MixResolution:
-    """Everything the resolution stage derives from one mix YAML document."""
+    """Resolution-stage output for one mix YAML document."""
 
     normalized_mix: list[dict[str, Any]] = dataclass_field(default_factory=list)
     normalized_paths: list[dict[str, Any]] = dataclass_field(default_factory=list)
@@ -660,7 +685,11 @@ def _resolve_category_paths(
     catalog: Sequence[dict[str, str]],
     direct_s3_bucket: str,
 ) -> None:
-    """Route one category's YAML paths to catalog matches or direct S3 patterns."""
+    """Resolve one category's YAML paths into the fields of resolution.
+
+    A dolma3p5_pool/ path is matched against the catalog, a preprocessed/ path
+    becomes a direct S3 pattern, and any other root becomes a failure row.
+    """
 
     seen_paths: Counter[str] = Counter()
     for path_index, yaml_path_value in enumerate(category.get("paths", [])):
@@ -788,8 +817,7 @@ def _resolve_mix_document(
 ) -> _MixResolution:
     """Normalize the mix into per-category targets and resolved source objects.
 
-    Every problem is collected as a resolution failure rather than raised, so one
-    run reports the complete list.
+    Problems are collected in the returned failures list rather than raised.
     """
 
     resolution = _MixResolution()
@@ -884,10 +912,11 @@ def _plan_bulk_listings(
     catalog_by_bucket: dict[str, list[dict[str, str]]],
     settings: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Group resolved objects into the narrowest safe set of S3 listing prefixes.
+    """Group resolved objects into S3 listing prefixes.
 
-    Groups whose common prefix is too shallow, too large, or too wasteful are
-    split so no listing walks a broad slice of the namespace.
+    A group is split when its common prefix has fewer than
+    minimum_catalog_prefix_components components, or when it would exceed
+    max_listing_catalog_objects or max_listing_overfetch_ratio.
     """
 
     listing_groups: dict[tuple[str, str], dict[str, Any]] = {}
@@ -898,8 +927,6 @@ def _plan_bulk_listings(
         prefix = _common_directory_prefix([row["key"] for row in matches])
         prefix_depth = len([part for part in prefix.split("/") if part])
         if prefix_depth < int(settings["minimum_catalog_prefix_components"]):
-            # Shallow common prefixes are split by YAML expression rather than
-            # risking a broad S3 namespace listing.
             by_path: dict[str, list[dict[str, Any]]] = defaultdict(list)
             for match in matches:
                 by_path[match["path_id"]].append(match)
@@ -978,9 +1005,10 @@ def _plan_bulk_listings(
 def plan_build(args: argparse.Namespace) -> None:
     """Resolve the mix YAML against the reference catalog into a fresh build.
 
-    Writes the build.json ownership marker plus the 01-plan/resolution stage:
-    normalized mix and path CSVs, catalog matches, the bulk listing plan, and
-    the target-allocation report.
+    Writes build.json and the 01-plan/resolution stage: the normalized mix and
+    path CSVs, catalog-matches.csv, direct-s3-patterns.csv, listing-plan.csv,
+    bulk-listing-commands.txt, the corrections and failure CSVs, and report.html.
+    Raises PreparationError when the resolution produced any failure row.
     """
 
     mix_path = args.mix.resolve()
@@ -1197,7 +1225,10 @@ def _head_object(client: Any, bucket: str, key: str) -> S3Object:
 def _s3_reader(
     args: argparse.Namespace, manifest: dict[str, Any], region: str
 ) -> tuple[Any, int]:
-    """Open the read-only S3 client and resolve this run's listing fan-out width."""
+    """Return an S3 client and the worker count for concurrent listings.
+
+    The worker count is args.max_workers, or the inventory_max_workers setting.
+    """
 
     session = (
         boto3.Session(profile_name=args.profile) if args.profile else boto3.Session()
@@ -1216,10 +1247,10 @@ def _head_missing_objects(
     max_workers: int,
     on_progress: Callable[[int, int], None] | None = None,
 ) -> None:
-    """Resolve objects absent from bulk listings with concurrent HeadObject calls.
+    """HeadObject every identity absent from the bulk listings.
 
-    Objects that resolve are added to ``found``; per-object failures are appended
-    to ``errors`` rather than raised, so one pass reports every problem.
+    Resolved objects are added to found. Per-object failures are appended to
+    errors rather than raised.
     """
 
     total = len(identities)
@@ -1306,9 +1337,11 @@ def _run_s5cmd_inventory(
 def collect_inventory(args: argparse.Namespace) -> None:
     """List and size every S3 object the resolved plan requires.
 
-    Writes the 01-plan/inventory stage: the raw collector output, the
-    normalized inventory and required-object CSVs, the sampling-rate audit, and
-    the source-inventory report and summary.
+    Requires s5cmd on PATH. Writes the 01-plan/inventory stage:
+    raw-listings.jsonl, collector.json, normalized-s3-inventory.csv,
+    required-objects.csv, the missing-object and error CSVs,
+    sampling-rate-audit.csv, inventory-summary.json, inventory-details.json,
+    and report.html.
     """
 
     build = args.build.resolve()
@@ -1456,9 +1489,8 @@ def _parse_s5cmd_jsonl(
 ) -> tuple[dict[tuple[str, str], S3Object], list[dict[str, str]]]:
     objects: dict[tuple[str, str], S3Object] = {}
     errors: list[dict[str, str]] = []
-    # An object record carrying no readable size cannot be inventoried, and
-    # dropping it silently would shrink the inventory invisibly. Count them and
-    # report the total rather than failing the whole collection.
+    # Records naming an object with no parseable size are counted and reported
+    # as a warning, not treated as a collection failure.
     unsized_records = 0
     with path.open(encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
@@ -1878,12 +1910,13 @@ def _finalize_inventory(
 def _allocate_object_sampling(
     target: int, sizes: Sequence[int]
 ) -> tuple[list[int], list[int], int]:
-    """Allocate every shard the same rate, using partial quotas for the residual.
+    """Apply one sampling rate to every shard, with partial quotas for the residual.
 
-    A 0.30 rate assigns roughly 30% of every shard, rather than selecting 30%
-    of the shard files. Largest-remainder apportionment keeps the aggregate
-    target exact while each per-shard quota differs from its ideal by less than
-    one uint32 value.
+    A 0.30 rate assigns 30% of every shard rather than 30% of the shard files.
+    Largest-remainder apportionment makes the planned total equal target, with
+    each per-shard quota within one uint32 value of its ideal. target and sizes
+    are uint32 value counts. Returns the per-shard repetition counts, the
+    partial uint32 targets, and the planned total.
     """
 
     if target <= 0 or not sizes or any(size <= 0 for size in sizes):
@@ -1971,11 +2004,11 @@ def _execution_unit_sizes(rows: Sequence[dict[str, Any]]) -> dict[str, int]:
 
 
 def _execution_unit_work(rows: Sequence[dict[str, Any]], document_selection_work_passes: int) -> dict[str, int]:
-    """Estimate CPU work without changing the requested output-shard count.
+    """Estimate one execution unit's CPU work, in uint32 values.
 
     Every planned output value is merged once. A source shard using document
-    selection also requires full metadata scans before its selected documents
-    can be merged; the current selector performs two passes.
+    selection also costs document_selection_work_passes full scans of its whole
+    source.
     """
 
     if document_selection_work_passes < 0:
@@ -2002,7 +2035,11 @@ def _planned_output_shards(
     target_output_shard_bytes: int,
     max_output_shards_per_unit: int,
 ) -> int:
-    """Choose a small, size-based output count bounded by available input views."""
+    """Return one execution unit's output shard count.
+
+    output_npy_bytes divided by target_output_shard_bytes, clamped to at least
+    one and to at most max_output_shards_per_unit and input_view_count.
+    """
 
     if output_npy_bytes <= 0 or input_view_count <= 0:
         raise ValueError("Output bytes and input view count must be positive")
@@ -2019,7 +2056,11 @@ def _select_worker_instance(
     estimated_work_uint32_values: int,
     disk_headroom_ratio: float,
 ) -> dict[str, Any]:
-    """Choose the smallest i4i grid entry satisfying disk and CPU workload."""
+    """Return the smallest grid entry meeting the disk and work estimates.
+
+    The returned copy adds required_local_nvme_bytes and storage_layout. Raises
+    PreparationError when no entry fits.
+    """
 
     if estimated_peak_local_bytes <= 0 or estimated_work_uint32_values <= 0:
         raise ValueError("Execution-unit disk and work estimates must be positive")
@@ -2049,7 +2090,11 @@ def _select_worker_instance(
 def _partition_object_uses(
     rows: Sequence[dict[str, Any]], max_unit_working_bytes: int
 ) -> list[list[dict[str, Any]]]:
-    """Partition one category into deterministic worker-sized units."""
+    """Split one category's object uses into units of at most max_unit_working_bytes.
+
+    Uses are ordered by npy_uri, so the partition is deterministic. A single
+    object that cannot fit with one output copy raises PreparationError.
+    """
 
     if max_unit_working_bytes <= 0:
         raise ValueError("max_unit_working_bytes must be positive")
@@ -2270,7 +2315,11 @@ def _category_output_directory(
     objects: Sequence[dict[str, str]],
     category_name: str,
 ) -> str:
-    """Build one source-shaped output directory for a YAML category."""
+    """Return one output directory for a category, derived from its source paths.
+
+    A single source directory is reused unchanged. Otherwise the result is the
+    sources' common prefix, the category name, and their common suffix.
+    """
 
     if not category_name or category_name in {".", ".."} or "/" in category_name:
         raise PreparationError(
@@ -2311,7 +2360,7 @@ EXECUTION_MANIFEST_FIELDS = [
 
 @dataclass(frozen=True)
 class _ExecutionPlanContext:
-    """Per-run inputs that every execution unit is emitted against."""
+    """Per-run inputs shared by every emitted execution unit."""
 
     build: Path
     build_id: str
@@ -2331,7 +2380,7 @@ class _ExecutionPlanContext:
 
 
 def _require_clean_inventory(inventory_phase: Path) -> dict[str, Any]:
-    """Load the inventory summary, refusing to plan on top of a failed inventory."""
+    """Return inventory-summary.json, raising if it recorded a blocking failure."""
 
     summary_path = inventory_phase / "inventory-summary.json"
     if not summary_path.is_file():
@@ -2361,10 +2410,10 @@ def _require_clean_inventory(inventory_phase: Path) -> dict[str, Any]:
 def _index_active_inventory(
     inventory: Sequence[dict[str, str]], phase: Path
 ) -> tuple[dict[str, dict[tuple[str, str], dict[str, str]]], list[str]]:
-    """Group active inventory rows by category and refuse cross-category reuse.
+    """Group active inventory rows by category, rejecting cross-category reuse.
 
-    Writes cross-leaf-overlaps.csv, then returns the per-category object index
-    and every distinct source storage root.
+    Writes cross-leaf-overlaps.csv. Returns the per-category object index and
+    the distinct source storage roots.
     """
 
     by_leaf: dict[str, dict[tuple[str, str], dict[str, str]]] = defaultdict(dict)
@@ -2398,8 +2447,8 @@ def _allocate_category_object_uses(
 ) -> tuple[dict[str, Any], list[dict[str, Any]], int]:
     """Spread one category's target across its inventoried source objects.
 
-    Returns the category's allocation summary row, one planned-use row for every
-    source object, and the exact planned uint32 total.
+    Returns the category's allocation summary row, one planned-use row per
+    source object, and the planned uint32 total.
     """
 
     mix_index = int(leaf["mix_index"])
@@ -2493,7 +2542,9 @@ def _emit_execution_unit(
 ) -> tuple[dict[str, Any], str]:
     """Write one execution unit's manifest, reshard config, and launcher.
 
-    Returns the unit's config-index row and its single-unit debugging command.
+    Writes manifests/<unit_id>.csv, config/<unit_id>.yaml, and the executable
+    launcher-scripts/<unit_id>.sh. Returns the unit's config-index row and its
+    single-unit debugging command.
     """
 
     settings = context.settings
@@ -2619,7 +2670,7 @@ def _category_execution_row(
     planned: int,
     max_unit_working_bytes: int,
 ) -> dict[str, Any]:
-    """Summarize one category's execution units for the review CSV."""
+    """Summarize one category's execution units for category-execution-summary.csv."""
 
     return {
         "leaf_id": leaf["leaf_id"],
@@ -2649,9 +2700,10 @@ def _category_execution_row(
 def propose_configs(args: argparse.Namespace) -> None:
     """Allocate per-object sampling and partition it into worker execution units.
 
-    Writes the 01-plan/execution stage: one reshard config, manifest, and
-    launcher per execution unit, the allocation and unit CSVs, the dataset
-    layout and proposal summaries, and the combined plan report.
+    Writes the 01-plan/execution stage: one config, manifest, and launcher per
+    unit, the allocation and unit CSVs, execution-units.jsonl,
+    dataset-layout.json, runtime-requirements.json, dataset-prefixes.txt, and
+    proposal-summary.json. Also rewrites the combined 01-plan/report.html.
     """
 
     build = args.build.resolve()
@@ -2743,7 +2795,7 @@ def propose_configs(args: argparse.Namespace) -> None:
                 f"the {EXECUTION_UNIT_INDEX_WIDTH}-digit destination counter"
             )
         source_layout_prefix = _category_output_directory(objects, leaf["category_name"])
-        # Each unit's target is exactly the output its own partition plans.
+        # A unit's target is the output its own partition plans.
         unit_targets = [_execution_unit_sizes(unit)["output_npy_bytes"] // UINT32_BYTES for unit in units]
 
         leaf_unit_rows: list[dict[str, Any]] = []
@@ -3273,7 +3325,11 @@ def _unit_selection_digest(rows: Sequence[dict[str, str]]) -> str:
 
 
 def preflight_build(args: argparse.Namespace) -> None:
-    """Re-inventory selected inputs and verify that selected destinations are empty."""
+    """Re-list the selected inputs and check that their destinations are empty.
+
+    Writes the 02-preflight phase: input-drift.csv, destination-status.csv,
+    preflight-errors.csv, and preflight-summary.json.
+    """
 
     build = args.build.resolve()
     manifest = _load_build(build)
@@ -3523,7 +3579,12 @@ def preflight_build(args: argparse.Namespace) -> None:
 
 
 def verify_output(args: argparse.Namespace) -> None:
-    """Verify materialized outputs using only S3 object listings and sizes."""
+    """Verify materialized outputs from S3 object listings and sizes alone.
+
+    Writes the 03-output-validation phase: output-inventory.csv,
+    output-validation.csv, output-problems.csv, output-errors.csv,
+    output-summary.json, plot-data/source-target-actual.csv, and report.html.
+    """
 
     build = args.build.resolve()
     manifest = _load_build(build)
@@ -4379,7 +4440,11 @@ def _report_document_with_base(document: str, relative_base: str) -> str:
 
 
 def _combine_plan_reports(build: Path) -> None:
-    """Embed the sampling and execution reports in one tabbed, self-contained file."""
+    """Write 01-plan/report.html with the inventory and execution reports embedded.
+
+    Each stage report is inlined in a template element, then the stage copies
+    are deleted.
+    """
 
     plan_root = build / "01-plan"
     resolution_report_path = plan_root / "resolution/report.html"
@@ -4495,7 +4560,7 @@ def _percent_of(part: int, whole: int) -> float:
 def _token_share_metric(
     label: str, value: int, percent: float, suffix: str = ""
 ) -> dict[str, str]:
-    """One rollup metric column: a token count and its share of a parent total."""
+    """Return one metric column: a token count and its share of a parent total."""
 
     share = f"{percent:.2f}%" + (f" {suffix}" if suffix else "")
     return {"label": label, "value": f"{_human_token_count(value)} tokens · {share}"}
@@ -4504,10 +4569,10 @@ def _token_share_metric(
 def _group_subcategories_by_family(
     rows: Sequence[dict[str, Any]],
 ) -> dict[str, list[dict[str, Any]]]:
-    """Tag each mix row with its source family and subcategory, grouped by family.
+    """Group mix rows by source family.
 
-    Rows are annotated in place because the chart and detail renderers read the
-    same dictionaries back.
+    Each row is annotated in place with source_family, subcategory_name, and
+    display_name; the chart and detail renderers read the same dictionaries.
     """
 
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -4532,8 +4597,8 @@ def _family_chart_rows(
 ) -> str:
     """Render the source-family chart and each family's subcategory chart.
 
-    Returns the family chart rows and stores every family's subcategory chart
-    under ``subcategory_chart_rows``. Both levels gain their accordion IDs here.
+    Returns the family chart rows and stores each family's subcategory chart
+    under its subcategory_chart_rows key. Both levels gain accordion IDs here.
     """
 
     chart_rows = _interactive_chart_rows(
@@ -4566,7 +4631,7 @@ def _subcategory_detail_section(
 
 
 def _source_to_target_total_html(row: dict[str, Any], source: int, target: int) -> str:
-    """Render an inventory accordion's source → target headline and sampling rate."""
+    """Render one inventory accordion's source-to-target totals and sampling rate."""
 
     return (
         f"source {_human_token_count(source)} → "
@@ -5055,10 +5120,10 @@ def _inventory_path_details(
     category_target: int,
     path_comparisons: list[dict[str, Any]],
 ) -> str:
-    """Render one category's YAML-path rows and record their sampling comparisons.
+    """Render one category's YAML-path rows.
 
-    Appends one row per path to ``path_comparisons`` for the lower-group CSV and
-    returns the collapsed path list's HTML.
+    Appends one row per path to path_comparisons for
+    sampling-by-lower-group.csv. Returns the collapsed path list's HTML.
     """
 
     path_rows: list[str] = []
@@ -5149,9 +5214,9 @@ def _inventory_category_section(
 
 
 def _sampling_audit_html(sampling_rate_rows: Sequence[dict[str, Any]]) -> str:
-    """Render the blocking banner for categories above the expected upsample rate.
+    """Render the banner for categories above maximum_expected_upsample_rate.
 
-    Returns an empty string when every category is within its configured limit.
+    Returns an empty string when no category exceeds it.
     """
 
     failures = [
@@ -5699,9 +5764,9 @@ def _render_report(
 
     original_total = sum(entry["original"] for entry in source_totals.values())
     proposed_total = sum(entry["planned"] for entry in source_totals.values())
-    # This report's own HTML is rendered by _render_execution_proposal_html. The
-    # per-mix walk below exists to emit the two proposed-sampling CSVs, so it
-    # only needs the mix names in descending proposed-output order.
+    # The per-mix walk below feeds only the two proposed-sampling CSVs, so it
+    # needs the mix names in descending proposed-output order. The report HTML
+    # comes from _render_execution_proposal_html.
     ordered_mix_names = [
         mix_name
         for mix_name, _ in sorted(
@@ -5847,10 +5912,10 @@ def _render_report(
 
 
 def validate_build(args: argparse.Namespace) -> None:
-    """Re-check every phase summary a build has recorded so far.
+    """Re-check every phase summary a build has recorded.
 
-    Writes nothing; prints one JSON check report to stdout and fails if any
-    recorded check did not pass.
+    Writes no artifacts. Prints one JSON check report to stdout and raises
+    PreparationError if any check failed.
     """
 
     build = args.build.resolve()

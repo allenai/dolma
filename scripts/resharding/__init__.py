@@ -1,7 +1,6 @@
-"""Mixture-agnostic helpers shared by resharding campaigns.
+"""Mixture-agnostic resharding helpers.
 
-Nothing here knows about a particular mixture. `dispatch` builds poormanray
-command lines for the worker lifecycle; the campaign-specific planning and
-materialization workflow for the Dolma 3.5 14T mix lives in
-`scripts/dolma3p5_resharding/`, which consumes these builders.
+`dispatch` builds poormanray command lines for the worker lifecycle. The
+planning and materialization workflow for the Dolma 3.5 14T mix is in
+`scripts/dolma3p5_resharding/` and consumes these builders.
 """

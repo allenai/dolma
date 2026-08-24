@@ -6,9 +6,8 @@ import html
 from collections import Counter, defaultdict
 from typing import Any, Sequence
 
-# One light/dark value pair per report color role, shared by every report this
-# package renders. Stylesheets name the roles they use instead of repeating hex
-# literals, so a light value can never gain or lose its dark counterpart.
+# One light/dark value pair per report color role. Report stylesheets name the
+# roles they use instead of repeating hex literals.
 REPORT_PALETTE: dict[str, tuple[str, str]] = {
     "muted": ("#536965", "#a7bbb7"),
     "surface": ("#edf6f4", "#142420"),
@@ -32,10 +31,10 @@ REPORT_PALETTE: dict[str, tuple[str, str]] = {
 
 
 def report_root_style(variables: Sequence[tuple[str, str]]) -> str:
-    """Render one report's light and dark ``:root`` custom-property blocks.
+    """Render one report's light and dark :root custom-property blocks.
 
-    Each pair names a CSS custom property and the REPORT_PALETTE role supplying
-    its light and dark values.
+    Each pair is a CSS custom-property name and the REPORT_PALETTE role
+    supplying its light and dark values.
     """
 
     def block(index: int) -> str:
@@ -469,7 +468,10 @@ def render_output_validation_report(
     inventory_details: dict[str, Any],
     validation_rows: Sequence[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], str]:
-    """Render exact output totals against the inventory and sampling plan."""
+    """Render materialized output totals against the inventory and sampling plan.
+
+    Returns the flat hierarchy rows for the CSV and the report HTML.
+    """
 
     families, flat_rows = _build_hierarchy(inventory_details, validation_rows)
     total_source = sum(row["source"] for row in families)

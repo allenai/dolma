@@ -10,10 +10,9 @@ s5cmd_numworkers: 64
 s5cmd_retry_count: 10
 inventory_max_workers: 32
 
-# Optional guard on how far a leaf may be upsampled, as target / available
-# tokens. Left unset, so the plan records every leaf's sampling rate but reports
-# `not_checked` instead of failing. Set it above 1.0 to make the inventory stage
-# flag any leaf whose sampling rate exceeds it.
+# Upper bound on target / available tokens per leaf. Unset means the plan records
+# each leaf's sampling rate and reports `not_checked`. A value above 1.0 makes the
+# inventory stage flag leaves whose rate exceeds it.
 # maximum_expected_upsample_rate:
 
 # Catalog-backed objects are grouped under narrow common prefixes. Groups that

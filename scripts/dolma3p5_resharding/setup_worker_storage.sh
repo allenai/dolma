@@ -93,7 +93,7 @@ for device_index in "${!instance_devices[@]}"; do
   fi
 done
 
-# Leave two percent for filesystem overhead when comparing raw device capacity
+# Add two percent for filesystem overhead when comparing raw device capacity
 # with the requested usable capacity.
 minimum_direct_device_bytes=$((minimum_available_bytes + minimum_available_bytes / 50))
 layout_decision_required=0

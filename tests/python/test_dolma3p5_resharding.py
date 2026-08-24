@@ -3173,11 +3173,9 @@ exit 97
 
 
 class TestDocumentSelection(unittest.TestCase):
-    """Direct coverage for the deterministic document sampler.
+    """Covers create_document_selection directly, including its rejection paths.
 
-    The manifest tests exercise selection end to end; these cover the
-    determinism contract and the rejection paths that a partial materialization
-    depends on.
+    The manifest tests exercise selection end to end.
     """
 
     def setUp(self):
@@ -3352,17 +3350,15 @@ class TestDocumentSelection(unittest.TestCase):
                 self.assertIn("target_uint32_values", str(caught.exception))
 
     def test_algorithm_version_string_is_pinned(self):
-        # Planners record this string in manifests and refuse a mismatch, so a
-        # change here has to be a deliberate, coordinated bump.
+        # Manifests record this string and are rejected on mismatch.
         self.assertEqual(DOCUMENT_SELECTION_ALGORITHM, "document_hash_bucket_v1")
 
 
 class TestCrossModuleContracts(unittest.TestCase):
-    """Guard the constants the planner duplicates from the library.
+    """Checks constants that workflow.py restates from the library.
 
-    `workflow.py` must stay importable with only boto3 and PyYAML, so it cannot
-    import these from `dolma` and restates them instead. These tests are what
-    keeps the two copies honest.
+    workflow.py stays importable with only boto3 and PyYAML, so it cannot import
+    them from dolma.
     """
 
     def test_planner_pins_the_library_document_selection_algorithm(self):

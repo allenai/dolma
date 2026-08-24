@@ -1,47 +1,19 @@
-"""
-# Reshard npy token files into larger output shards.
+"""Reshard npy token files into larger output shards.
 
-Given sources of npy files and their csv.gz metadata partners, merge them so
-each output shard satisfies a size or file-count constraint.
+Merges npy files and their csv.gz metadata partners so that each output shard
+satisfies a size or file-count constraint. The entry point takes a single YAML
+config path, or "-" to read the config from stdin.
 
-## Usage
+A config names one destination and at least one source, and may mix the two source
+kinds. source_prefixes discovers every npy under a prefix by listing it.
+source_manifests reads an exact CSV manifest of npy/csv.gz pairs, with per-row
+repeat_count and deterministic partial selection, so a run can reproduce an exact
+subset of tokens rather than whole files. Exactly one of max_size_bytes or
+max_num_files must be set; ReshardingConfig holds the remaining fields.
 
-The entry point takes a single YAML config path, or `-` to read the config from
-stdin:
-
-```bash
-python -m dolma.tokenizer.reshard config.yaml
-```
-
-A config names one destination and at least one source. Sources come in two
-flavors, and a config may mix them:
-
-- `source_prefixes`: discover every npy under a prefix by listing it.
-- `source_manifests`: read an exact CSV manifest of npy/csv.gz pairs. Manifests
-  support per-row `repeat_count` and deterministic partial selection, so a run
-  can reproduce an exact subset of tokens rather than whole files.
-
-```yaml
-destination_prefix: s3://bucket/prefix-resharded
-source_manifests:
-  - manifest: ../manifests/00000231.csv
-local_tempdir: /mnt/raid0/tempdir
-max_num_files: 1
-max_workers: 8
-```
-
-Exactly one of `max_size_bytes` or `max_num_files` must be set. See
-`ReshardingConfig` for the remaining fields.
-
-## Destinations are never overwritten
-
-`reshard()` refuses to run when the destination already contains objects, and
-individual token and metadata files are written with no-clobber semantics. A
-partially written destination must be investigated rather than retried into.
-This is stricter than earlier versions, which reused an existing destination
-directory.
-
-## Contact info
+Destinations are never overwritten: reshard() refuses to run when the destination
+already contains objects, and token and metadata files are written with no-clobber
+semantics.
 
 Author: Luca Soldaini
 Email:  luca@soldaini.net
@@ -91,16 +63,13 @@ from dolma.tokenizer.tokenizer import Tokenizer
 logger = get_logger(__name__)
 logger.setLevel(logging.INFO)
 
-# The manifest CSV carries no version column, so there is nothing in a manifest
-# for the parser to validate against. This constant is the contract external
-# planners pin against: they import it and refuse to dispatch when it does not
-# match the version they generated for, which is how manifests are versioned --
-# out-of-band, at plan time, not per row. Bump it whenever the columns the parser
-# requires or their meaning changes.
+# Manifests carry no version column. External planners import this constant and
+# refuse to dispatch when it does not match the version they generated for. Bump it
+# when the columns the parser requires, or their meaning, change.
 RESHARDING_MANIFEST_SCHEMA_VERSION = 2
 PROGRESS_INTERVAL_SECONDS = 10.0
 # Default parallelism for a single s5cmd `cp`, shared by the manifest downloader
-# and the config field that feeds it so the two cannot drift.
+# and the config field that feeds it.
 DEFAULT_S5CMD_DOWNLOAD_CONCURRENCY = 32
 # Rows between progress checks while writing merged metadata.
 METADATA_ROW_LOG_INTERVAL = 100_000
@@ -138,7 +107,7 @@ def _elapsed(started_at: float) -> str:
 
 
 def _run_s5cmd(command: list[str], phase: str) -> None:
-    """Run s5cmd while preserving every in-place progress update in the worker log."""
+    """Run s5cmd, forwarding its in-place progress updates to the worker log."""
 
     logger.info("s5cmd %s: %s", phase, shlex.join(command))
     process = subprocess.Popen(
@@ -152,9 +121,9 @@ def _run_s5cmd(command: list[str], phase: str) -> None:
     )
     assert process.stdout is not None
     for line in process.stdout:
-        # TextIOWrapper's universal-newline handling converts the carriage
-        # returns used by --show-progress into newlines. Flush each update so
-        # the controller can retrieve it while s5cmd is still running.
+        # TextIOWrapper's universal-newline handling converts the carriage returns
+        # used by --show-progress into newlines. Flush each update so the controller
+        # can retrieve it while s5cmd is still running.
         print(line, end="", flush=True)
     returncode = process.wait()
     if returncode:
@@ -169,8 +138,8 @@ class TokensMetadataPaths:
     selected_uint32_values: int | None = None
 
     def __post_init__(self):
-        # Raise rather than assert: these are load-bearing invariants for the
-        # selection path, and bare asserts disappear under `python -O`.
+        # These checks raise rather than assert because asserts are stripped
+        # under `python -O`.
         if not self.npy_path.endswith(".npy"):
             raise ValueError(f"Token path must end in .npy: {self.npy_path}")
         if not self.csv_path.endswith(".csv.gz"):
@@ -220,8 +189,13 @@ def merge_group(
     dtype: np.dtype,
     progress: Callable[[MergeGroupProgress], None] | None = None,
 ) -> MergeGroupResult:
-    """
-    Given a list of paths, merge them into a single memmap.
+    """Merge the given inputs into one npy memmap plus a sibling csv.gz of metadata.
+
+    Document offsets in the merged metadata are rebased onto the output memmap. Inputs
+    carrying a selection index contribute only their selected documents and require a
+    uint32 dtype. Raises FileExistsError when either output path exists, and
+    RuntimeError when the number of values written does not match the total computed
+    from the inputs.
     """
     npy_destination = Path(destination)
     csv_destination = npy_destination.with_suffix(".csv.gz")
@@ -390,25 +364,24 @@ def group_paths_by_max_size(
     paths: list[TokensMetadataPaths],
     max_size_bytes: int,
 ) -> list[list[TokensMetadataPaths]]:
-    """
-    Group paths by max size.
+    """Group merge inputs into output shards of at most max_size_bytes each.
+
+    Every pass over the remaining inputs starts a new group and emits one copy of each
+    input, so repeated copies of an input are spread across groups.
     """
     counts: dict[TokensMetadataPaths, int] = {p: int(c) for p, c in Counter(paths).items()}
     _log_merge_input_views(counts, len(paths))
 
     grouped_paths: list[list[TokensMetadataPaths]] = []
     while len(counts) > 0:
-        # add a fresh group
         grouped_paths.append([])
 
-        # partition in groups of max_num_files
         for path, _ in sorted(counts.items(), key=lambda x: -x[1]):
             if sum(p.size for p in grouped_paths[-1]) + path.size > max_size_bytes:
                 grouped_paths.append([path])
             else:
                 grouped_paths[-1].append(path)
 
-        # decrease counts, remove paths with 0 count.
         counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
 
     logger.info(
@@ -427,30 +400,22 @@ def group_paths_by_max_num_files(
 ) -> list[list[TokensMetadataPaths]]:
     """Pack merge inputs into at most `max_num_files` size-balanced output shards.
 
-    This is largest-first bin packing, not the weighted round-robin it used to
-    be: every use of every input is expanded into a flat list, shuffled (so
-    equal-sized views tie-break under the configured deterministic seed rather
-    than by dict order), sorted by descending size, and then each one is placed
-    in whichever bucket is currently smallest, breaking ties randomly. The
-    result is `max_num_files` groups of roughly equal total bytes, minus any
-    that stayed empty, which happens when there are fewer inputs than buckets.
+    Largest-first bin packing: every use of every input is expanded into a flat list,
+    shuffled so equal-sized views tie-break under the configured deterministic seed
+    rather than by dict order, sorted by descending size, and then placed in whichever
+    bucket is currently smallest, with ties broken randomly. The result is
+    `max_num_files` groups of roughly equal total bytes, minus any that stayed empty,
+    which happens when there are fewer inputs than buckets.
 
-    Note that nothing here separates repeated copies of the same input: when a
-    manifest row has `repeat_count > 1`, two or more copies of that shard can
-    land in the same output file. An earlier version raised `ValueError` on
-    that; the guard was intentionally dropped, since duplicate tokens within one
-    output shard are equivalent to duplicates spread across shards for every
-    downstream consumer, and forbidding it made small `max_num_files` values
-    unsatisfiable.
+    Repeated copies of the same input are not separated: when a manifest row has
+    `repeat_count > 1`, two or more copies of that shard can land in the same output
+    file.
     """
     counts = Counter(paths)
     _log_merge_input_views(counts, len(paths))
 
     grouped_paths: list[list[TokensMetadataPaths]] = [[] for _ in range(max_num_files)]
     grouped_sizes = [0] * max_num_files
-    # Use largest-first bin packing so the bounded number of final output shards
-    # remain close in size. Shuffle before sorting to randomize equal-sized views
-    # under the configured deterministic seed.
     expanded_paths = [element for element, count in counts.items() for _ in range(count)]
     random.shuffle(expanded_paths)
     expanded_paths.sort(key=lambda path: path.size, reverse=True)
@@ -461,7 +426,6 @@ def group_paths_by_max_num_files(
         grouped_paths[bucket].append(element)
         grouped_sizes[bucket] += element.size
 
-    # there is still a change that some buckets might be empty; we remove them.
     grouped_paths = [group for group in grouped_paths if len(group) > 0]
 
     return grouped_paths
@@ -510,7 +474,7 @@ def _get_worker_rank() -> int:
 
 
 def _worker_init(seed: int):
-    """Initialize the random seed for the current worker."""
+    """Seed the global random module with `seed` offset by this worker's rank."""
     random.seed(seed + _get_worker_rank())
 
 
@@ -637,10 +601,10 @@ def merge_all_npys(
 
 @dataclass
 class ReshardingPrefixConfig:
-    """
-    Configuration for a resharding source.
+    """A source prefix and the rate at which the npy files under it are sampled.
 
-    Can be used to download the files and compute file up/down sampling.
+    `download` copies an s3 prefix to a local directory; `take` lists the local
+    prefix and applies `sample_rate`.
     """
 
     prefix: str | Path
@@ -694,17 +658,16 @@ class ReshardingPrefixConfig:
 
         new_paths = []
 
-        # if the multiplier k is > 1, we first take ⌊k⌋ copies of each path.
+        # Take floor(sample_rate) copies of every path.
         if (repetition_rate := int(math.floor(self.sample_rate))) > 0:
             new_paths.extend(paths * repetition_rate)
 
-        # this is the remaining non-integer part of the sample rate; because the npys are actually uneven in
-        # size, the proper way to do this is to use an ILP solver; however, since usually most of the npys are
-        # of same size, we can just take a random sample.
+        # The fractional remainder is drawn as a uniform random sample of files. Exact
+        # token-level sampling would need an ILP solver, since the npys are uneven in
+        # size; this approximation holds when most npys are of similar size.
         if (residual_frac := self.sample_rate - repetition_rate) > 0:
             new_paths.extend(random.sample(paths, max(1, round(residual_frac * len(paths)))))
 
-        # sort by size
         logger.info(
             "Taking %s paths from %s using %s sample rate",
             len(new_paths),
@@ -739,13 +702,12 @@ class ReshardingManifestEntry:
 class PreparedManifestRow:
     """One manifest row resolved to the local paths its later phases operate on.
 
-    `npy_path` and `metadata_path` are where the two objects actually live once
+    `npy_path` and `metadata_path` are where the two objects live once
     `ReshardingManifestConfig._plan_downloads` has run: inside the row's private
-    directory under the run prefix for remote rows, or wherever the manifest
-    pointed for local ones. `selection_path` is where a deterministic partial
-    selection index would be written, and goes unused by rows that do not
-    request one. Expected object sizes are deliberately not duplicated here;
-    `entry` remains the single source of truth for what the planner recorded.
+    directory under the run prefix for remote rows, or wherever the manifest pointed
+    for local ones. `selection_path` is where a deterministic partial selection index
+    is written, and is unused by rows that do not request one. Expected object sizes
+    are not duplicated here; `entry` holds what the planner recorded.
     """
 
     entry: ReshardingManifestEntry
@@ -858,16 +820,15 @@ class ReshardingManifestConfig:
     ) -> list[TokensMetadataPaths]:
         """Resolve this manifest into the merge inputs it names.
 
-        Six phases, in order: parse and validate the CSV, HEAD every remote
-        object to confirm it still matches the size and ETag the planner
-        recorded, lay out one local directory per row, run a single batched
-        s5cmd download, re-verify the downloaded sizes, and build any
-        deterministic partial selections in a process pool.
+        Six phases, in order: parse and validate the CSV, HEAD every remote object to
+        confirm it still matches the size and ETag the planner recorded, lay out one
+        local directory per row, run a single batched s5cmd download, re-verify the
+        downloaded sizes, and build any deterministic partial selections in a process
+        pool.
 
-        The returned list holds one entry per *use* of a source shard rather
-        than one per shard, so a row with ``repeat_count`` 3 contributes three
-        equal entries, and a row that also requests a partial selection
-        contributes one more.
+        The returned list holds one entry per use of a source shard rather than one per
+        shard: a row with ``repeat_count`` 3 contributes three equal entries, and a row
+        that also requests a partial selection contributes one more.
         """
 
         manifest = Path(self.manifest)
@@ -908,11 +869,9 @@ class ReshardingManifestConfig:
     def _parse_manifest_rows(cls, manifest: Path) -> list[ReshardingManifestEntry]:
         """Read and validate every row of the manifest CSV.
 
-        The header must carry at least the three version-one columns; each row
-        is then validated by `_parse_manifest_row`, which names
-        ``manifest:<line>`` in every message so a failure points straight at the
-        offending CSV line. Line numbers start at 2 because line 1 is the
-        header.
+        The header must carry at least the three version-one columns. Each row is then
+        validated by `_parse_manifest_row`, which names ``manifest:<line>`` in every
+        message. Line numbers start at 2 because line 1 is the header.
         """
 
         rows: list[ReshardingManifestEntry] = []
@@ -952,12 +911,11 @@ class ReshardingManifestConfig:
     ) -> ReshardingManifestEntry:
         """Validate one CSV row and turn it into a `ReshardingManifestEntry`.
 
-        Sizes and ETags are optional for local rows but mandatory for ``s3://``
-        ones, because they are what `_verify_remote_sources` and
-        `_verify_downloaded_sizes` compare against. A row requesting a partial
-        selection additionally needs a uint32-aligned source size strictly
-        larger than the requested count, and must name a selection algorithm
-        this build implements.
+        Sizes and ETags are optional for local rows and mandatory for ``s3://`` ones,
+        which is what `_verify_remote_sources` and `_verify_downloaded_sizes` compare
+        against. A row requesting a partial selection also needs a uint32-aligned
+        source size strictly larger than the requested count, and must name a selection
+        algorithm this build implements.
         """
 
         npy_uri = csv_row["npy_uri"].strip()
@@ -1028,11 +986,10 @@ class ReshardingManifestConfig:
     def _verify_remote_sources(rows: list[ReshardingManifestEntry], max_workers: int) -> None:
         """HEAD every remote object and confirm its size and ETag still match.
 
-        The manifest describes what the planner saw. A source object rewritten
-        since then would silently change which tokens this run emits -- and, for
-        partial rows, which documents get selected -- so a mismatch aborts
-        before anything is downloaded. Rows whose recorded ETag is empty are
-        size-checked only. No-ops when the manifest is entirely local.
+        A source object rewritten since the manifest was planned would change which
+        tokens this run emits, and for partial rows which documents get selected, so a
+        mismatch aborts before anything is downloaded. Rows whose recorded ETag is
+        empty are size-checked only. No-ops when the manifest is entirely local.
         """
 
         remote_expectations: list[tuple[str, int, str]] = []
@@ -1094,14 +1051,13 @@ class ReshardingManifestConfig:
     ) -> tuple[list[PreparedManifestRow], list[str]]:
         """Give every row a private local directory and resolve its object paths.
 
-        Remote rows are copied into ``<local_prefix>/<index>/tokens.{npy,csv.gz}``
-        and contribute two s5cmd `cp` command lines each; local rows are read
-        where they already are and only checked for existence, so nothing is
-        copied for them. A single row may not mix schemes across its two
-        objects.
+        Remote rows are copied into ``<local_prefix>/<index>/tokens.{npy,csv.gz}`` and
+        contribute two s5cmd `cp` command lines each. Local rows are read where they
+        already are and only checked for existence, so nothing is copied for them. A
+        single row may not mix schemes across its two objects.
 
-        Returns the prepared rows in manifest order, plus the s5cmd command
-        lines, which are empty when there is nothing to download.
+        Returns the prepared rows in manifest order, plus the s5cmd command lines,
+        which are empty when there is nothing to download.
         """
 
         prepared: list[PreparedManifestRow] = []
@@ -1158,10 +1114,9 @@ class ReshardingManifestConfig:
     ) -> None:
         """Run one batched s5cmd job and confirm it created every object.
 
-        All command lines go through a single command file so that one s5cmd
-        process handles the whole manifest. s5cmd can exit zero having skipped
-        work, so the object pairs are checked afterwards rather than trusted.
-        No-ops when nothing needs downloading.
+        All command lines go through a single command file, so one s5cmd process
+        handles the whole manifest. s5cmd can exit zero having skipped work, so the
+        object pairs are checked afterwards. No-ops when nothing needs downloading.
         """
 
         if not remote_commands:
@@ -1185,10 +1140,10 @@ class ReshardingManifestConfig:
     def _verify_downloaded_sizes(prepared: list[PreparedManifestRow]) -> None:
         """Re-check the on-disk sizes against the manifest after downloading.
 
-        `_verify_remote_sources` checked the source before the copy; this checks
-        the copy itself, so a truncated or partially resumed download cannot
-        reach the merge. Rows whose manifest recorded no size -- only possible
-        for local rows -- are skipped.
+        `_verify_remote_sources` checks the source before the copy; this checks the
+        copy itself, so a truncated or partially resumed download cannot reach the
+        merge. Rows whose manifest recorded no size, only possible for local rows, are
+        skipped.
         """
 
         for row in prepared:
@@ -1213,11 +1168,10 @@ class ReshardingManifestConfig:
     ) -> tuple[list[list[TokensMetadataPaths]], list[DocumentSelectionJob]]:
         """Expand each row's whole-file repeats and collect its selection job, if any.
 
-        Returns one list of merge inputs per manifest row -- ``repeat_count``
-        copies of the full object, which may be zero for a purely partial row --
-        plus one `DocumentSelectionJob` for every row that also requests a
-        partial selection. The partial view is appended to its row later, once
-        its selection index exists.
+        Returns one list of merge inputs per manifest row, holding ``repeat_count``
+        copies of the full object, which may be zero for a purely partial row, plus one
+        `DocumentSelectionJob` for every row that also requests a partial selection.
+        The partial view is appended to its row later, once its selection index exists.
         """
 
         row_paths: list[list[TokensMetadataPaths]] = [[] for _ in prepared]
@@ -1249,12 +1203,11 @@ class ReshardingManifestConfig:
     ) -> dict[int, TokensMetadataPaths]:
         """Build every requested partial selection index in a process pool.
 
-        Selection is CPU-bound -- two passes over a shard's metadata -- hence
-        processes rather than threads. Returns the partial merge-input view for
-        each row that selected at least one value, keyed by manifest index; a
-        row whose selection came back empty is omitted. Every row has at most
-        one selection job, so a manifest index appears at most once. No-ops when
-        no row requested a selection.
+        Selection is CPU-bound, two passes over a shard's metadata, hence processes
+        rather than threads. Returns the partial merge-input view for each row that
+        selected at least one value, keyed by manifest index; a row whose selection
+        came back empty is omitted. Every row has at most one selection job, so a
+        manifest index appears at most once. No-ops when no row requested a selection.
         """
 
         if not selection_jobs:
@@ -1338,9 +1291,9 @@ class ReshardingManifestConfig:
 class ReshardingConfig:
     """Base configuration for resharding.
 
-    Fields are keyword-only: `source_prefixes` is no longer the first field now
-    that `source_manifests` is an alternative source, so a positional call that
-    predates manifests would bind arguments to the wrong fields.
+    Fields are keyword-only: `source_prefixes` is one of two alternative source lists
+    and is not the first field, so positional construction would bind arguments to the
+    wrong fields.
     """
 
     destination_prefix: str
@@ -1353,8 +1306,8 @@ class ReshardingConfig:
     s5cmd_download_concurrency: int = DEFAULT_S5CMD_DOWNLOAD_CONCURRENCY
     random_seed: int = 42
     tokenizer_name_or_path: str = "allenai/dolma2-tokenizer"
-    # Tombstone. Older configs carried this flag; resharding now always refuses a
-    # populated destination, so setting it True is rejected rather than ignored.
+    # Tombstone: resharding always refuses a populated destination, and the field
+    # exists so that a config setting it True is rejected rather than ignored.
     allow_existing_destination: bool = False
 
     def __post_init__(self):
@@ -1418,8 +1371,9 @@ class ReshardingConfig:
 
 
 def upload_to_s3(local_prefix: str | Path, remote_prefix: str, max_workers: int):
-    """
-    Upload a local directory to S3.
+    """Upload a local directory to S3 with no-clobber semantics.
+
+    No-ops when `remote_prefix` is not an s3 URI.
     """
     if urlparse(remote_prefix).scheme != "s3":
         return
@@ -1444,8 +1398,9 @@ def destination_has_objects(destination: str | Path) -> bool:
     """Return whether a destination already contains data.
 
     S3 is queried with a read-only, one-key ``ListObjectsV2`` request. Local
-    destinations are considered occupied when the path exists at all; this
-    deliberately refuses even an empty pre-created directory.
+    destinations count as occupied when the path exists at all, including an empty
+    pre-created directory. Raises ValueError for an S3 bucket root or an unsupported
+    scheme.
     """
 
     destination = str(destination)
@@ -1527,7 +1482,6 @@ def reshard(config: ReshardingConfig):
             _elapsed(started_at),
         )
 
-        # make destination directory
         local_output_dir.mkdir(parents=True, exist_ok=False)
 
         merge_all_npys(

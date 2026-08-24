@@ -1,33 +1,25 @@
-"""Deterministic, document-boundary sampling for token memmaps.
+"""Sample whole documents from a token memmap at document boundaries.
 
-The token count used by the planner is still derived from the uint32 memmap
-size.  This module reads the paired metadata only while materializing a partial
-copy, and writes a compact metadata index describing the selected documents.
+Reads the metadata paired with a memmap and writes a metadata index describing
+the selected documents. Planners still derive total token counts from the memmap
+size; this module is only used when materializing a partial copy.
 
-## Determinism contract
+Each document is keyed on (seed, start, end, document_id, source,
+source_index), joined with NUL separators and hashed with blake2b
+(digest_size=8, person=b"dolma-doc-v1"). The leading bits of the digest assign
+the document to one of DOCUMENT_HASH_BUCKETS buckets, and buckets are taken in
+ascending order until the requested token count is reached. File name, row
+order, and worker count do not affect the result.
 
-Selection is a pure function of the metadata rows: each document is keyed on the
-tuple ``(seed, start, end, document_id, source, source_index)``, which is joined
-with NUL separators and hashed with blake2b (``digest_size=8``,
-``person=b"dolma-doc-v1"``); the leading bits of that digest place the document
-in one of ``DOCUMENT_HASH_BUCKETS`` buckets, and buckets are taken in ascending
-order until the requested token budget is met.  Nothing else feeds the decision:
-not the file name, not the row order, not the machine, not the worker count.
+Because start and end are token offsets into one specific memmap, a selection
+reproduces only against byte-identical source metadata. Re-tokenizing,
+reshuffling, or re-concatenating a source changes those offsets, so the same
+seed selects a different set of documents and nothing in the inputs reports
+that the source moved. Manifests record source sizes and ETags to pin this.
 
-The consequence, and the reason this module exists, is that a run reproduces
-**only against byte-identical source metadata**.  ``start`` and ``end`` are
-token offsets into one specific memmap, so re-tokenizing a source, re-shuffling
-it, or re-concatenating its shards changes those offsets and therefore changes
-every document key.  The same seed then silently selects a *different* set of
-documents -- no error is raised, because there is nothing in the inputs that
-says the source moved.  Reproducing a selection means pinning the exact source
-objects (the manifest carries sizes and ETags for this reason), not merely
-reusing the seed.
-
-``DOCUMENT_SELECTION_ALGORITHM`` is the version string external planners pin
-against; bump it whenever the keying, the hash, or the bucket walk changes, so
-that a manifest requesting the old algorithm is rejected instead of quietly
-resolving to a new set of documents.
+DOCUMENT_SELECTION_ALGORITHM is the version string planners pin against.
+Changing the keying, the hash, or the bucket walk requires bumping it so a
+manifest requesting the old algorithm is rejected.
 """
 
 from __future__ import annotations
@@ -45,10 +37,8 @@ import smart_open
 DOCUMENT_SELECTION_ALGORITHM = "document_hash_bucket_v1"
 DOCUMENT_HASH_BUCKETS = 1 << 16
 
-# Width of the document hash. `_hash_bucket` shifts a digest down to its leading
-# bucket bits, so this must stay locked to the blake2b digest size below -- it is
-# derived from it rather than restated, so shrinking the digest cannot leave a
-# stale `64` behind that would shift every bucket to zero.
+# Digest width in bits, derived from the blake2b digest size rather than
+# restated, since _hash_bucket shifts a digest down to its leading bucket bits.
 _HASH_DIGEST_SIZE_BYTES = 8
 _HASH_BITS = _HASH_DIGEST_SIZE_BYTES * 8
 _HASH_BUCKET_BITS = DOCUMENT_HASH_BUCKETS.bit_length() - 1
@@ -125,12 +115,7 @@ def _iter_metadata_rows(metadata_path: Path, source_uint32_values: int) -> Itera
 
 
 def _document_hash(row: DocumentMetadataRow, seed: int) -> int:
-    """Hash the document's identity tuple, mixing the seed into the payload.
-
-    The key is ``(seed, start, end, document_id, source, source_index)``. Because
-    the offsets are part of the key, this value is stable only for byte-identical
-    source metadata; see the module docstring.
-    """
+    """Hash the document identity tuple with the seed mixed into the payload."""
 
     payload = (f"{seed}\0{row.start}\0{row.end}\0{row.document_id}\0" f"{row.source}\0{row.source_index}").encode(
         "utf-8"
@@ -161,20 +146,15 @@ def create_document_selection(
     progress: Callable[[str, int, int], None] | None = None,
     progress_interval_seconds: float = 10.0,
 ) -> DocumentSelectionResult:
-    """Select a deterministic hash-ranked prefix of whole documents.
+    """Select whole documents up to target_uint32_values, ranked by hash bucket.
 
-    A first pass totals document lengths by hash bucket. A second pass streams
-    rows below the threshold into the selection index and retains only the
-    threshold bucket in memory. The realized count differs from the requested
-    count by no more than the largest document in the source object.
+    The first pass totals document lengths per bucket. The second pass writes
+    rows below the threshold bucket to the selection index, holding only the
+    threshold bucket in memory. The selected count differs from the requested
+    count by at most the largest document in the source.
 
-    Determinism: the result depends only on `seed` and the metadata rows, keyed
-    per document on ``(seed, start, end, document_id, source, source_index)``.
-    Since `start` and `end` are offsets into this exact memmap, re-tokenizing or
-    re-concatenating the source shifts them and the same `seed` then selects a
-    different set of documents, with no error to signal it. Pin the source
-    objects, not just the seed. `DOCUMENT_SELECTION_ALGORITHM` is the version
-    string callers pin against.
+    Writes a gzipped CSV to selection_path and fails if it already exists. See
+    the module docstring for what the result depends on.
     """
 
     metadata_path = Path(metadata_path)
