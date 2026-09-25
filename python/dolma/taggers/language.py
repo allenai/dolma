@@ -307,7 +307,8 @@ def add_global_language_score_from_slice_score(result: DocResult) -> DocResult:
         )
         doc_not_en_score = 1 - doc_en_score
     except ZeroDivisionError:
-        doc_en_score = doc_not_en_score = 0.0
+        # empty document: there is no english text, so score it like a document without english spans
+        doc_en_score, doc_not_en_score = 0.0, 1.0
 
     doc_level = (
         Span(start=0, end=len(result.doc.text), type="doc_en", score=doc_en_score),
