@@ -1,7 +1,7 @@
 import unittest
 from typing import Callable, Dict, List, Optional, Tuple, Type
 
-from dolma.core import BaseTagger, Document, Span
+from dolma.core import BaseTagger, DocResult, Document, Span
 from dolma.taggers.language import (
     Cld2EnglishLanguageParagraphTagger,
     Cld2EnglishLanguageTagger,
@@ -19,6 +19,7 @@ from dolma.taggers.language import (
     LinguaEnglishTaggerParagraph,
     LinguaTagger,
     LinguaTaggerParagraph,
+    add_global_language_score_from_slice_score,
 )
 
 ENGLISH_PARAGRAPH = """
@@ -194,3 +195,56 @@ class TestLingua(BaseMultilingualTaggerTest, unittest.TestCase):
 class TestLinguaEnglish(BaseEnglishTaggerTest, unittest.TestCase):
     doc_tagger_cls = LinguaEnglishTagger
     par_tagger_cls = LinguaEnglishTaggerParagraph
+
+
+class TestGlobalLanguageScoreFromSliceScore(unittest.TestCase):
+    def doc_scores(self, text: str, spans: List[Span]) -> Tuple[float, float]:
+        doc = Document(text=text, id="test", source=__file__)
+        result = add_global_language_score_from_slice_score(DocResult(doc=doc, spans=spans))
+        doc_en, doc_not_en = result.spans[-2:]
+        self.assertEqual((doc_en.type, doc_not_en.type), ("doc_en", "doc_not_en"))
+        self.assertEqual((doc_en.start, doc_en.end), (0, len(text)))
+        self.assertEqual((doc_not_en.start, doc_not_en.end), (0, len(text)))
+        return doc_en.score, doc_not_en.score
+
+    def test_english_document(self):
+        text = "This is an English document."
+        spans = [
+            Span(start=0, end=len(text), type="en", score=1.0),
+            Span(start=0, end=len(text), type="not_en", score=0.0),
+        ]
+        self.assertEqual(self.doc_scores(text, spans), (1.0, 0.0))
+
+    def test_non_english_document(self):
+        text = "Ceci est un document."
+        spans = [
+            Span(start=0, end=len(text), type="en", score=0.0),
+            Span(start=0, end=len(text), type="not_en", score=1.0),
+        ]
+        self.assertEqual(self.doc_scores(text, spans), (0.0, 1.0))
+
+    def test_mixed_document(self):
+        text = "Hello there.\nBonjour tout le monde."
+        spans = [
+            Span(start=0, end=13, type="en", score=0.9),
+            Span(start=13, end=len(text), type="en", score=0.1),
+            Span(start=0, end=13, type="not_en", score=0.1),
+            Span(start=13, end=len(text), type="not_en", score=0.9),
+        ]
+        doc_en, doc_not_en = self.doc_scores(text, spans)
+        self.assertAlmostEqual(doc_en, (13 * 0.9 + (len(text) - 13) * 0.1) / len(text))
+        self.assertEqual(doc_not_en, 1 - doc_en)
+
+    def test_document_without_paragraphs(self):
+        # whitespace-only text has no paragraphs, so the paragraph taggers emit no spans
+        self.assertEqual(self.doc_scores(" \n", []), (0.0, 1.0))
+
+    def test_empty_document_is_not_english(self):
+        # filters that drop documents with a low doc_en score must keep dropping empty documents
+        doc_en, _ = self.doc_scores("", [])
+        self.assertEqual(doc_en, 0.0)
+
+    def test_empty_document_scores_sum_to_one(self):
+        doc_en, doc_not_en = self.doc_scores("", [])
+        self.assertEqual(doc_not_en, 1.0)
+        self.assertEqual(doc_en + doc_not_en, 1.0)
