@@ -1,5 +1,9 @@
 <img alt="Dolma's official logo. It's dolma written in yellow, round lowercase letters over a blue background." src="https://raw.githubusercontent.com/allenai/dolma/main/docs/assets/AI2_Blog_1400x685_2x.webp" width="100%">
 
+<p align="center">
+  <b>English</b> · <a href="https://github.com/allenai/dolma/blob/main/README.zh.md">简体中文</a>
+</p>
+
 Dolma is two things:
 
 1. **Dolma Dataset**: an open dataset of 3 trillion tokens from a diverse mix of web content, academic publications, code, books, and encyclopedic materials.
