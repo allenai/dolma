@@ -1,6 +1,7 @@
 import functools
 import os
 import re
+import shutil
 from contextlib import ExitStack
 from csv import writer
 from pathlib import Path
@@ -192,11 +193,11 @@ class MemmapWriter:
                 with ExitStack() as stack:
                     f = stack.enter_context(smart_open.open(self._local_memmap_path, "rb"))
                     g = stack.enter_context(smart_open.open(self.memmap_path, mode="wb"))
-                    g.write(f.read())
+                    shutil.copyfileobj(f, g, length=8 * 1024 * 1024)
 
                     f = stack.enter_context(smart_open.open(self._local_metadata_path, "rb"))
                     g = stack.enter_context(smart_open.open(self.metadata_path, mode="wb"))
-                    g.write(f.read())
+                    shutil.copyfileobj(f, g, length=8 * 1024 * 1024)
 
                 log.info(f"Written memmap file to {self.memmap_path}")
         finally:
