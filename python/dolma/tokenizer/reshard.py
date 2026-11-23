@@ -140,12 +140,16 @@ def group_paths_by_max_size(
         # add a fresh group
         grouped_paths.append([])
 
-        # partition in groups of max_num_files
+        # Track the current group size instead of repeatedly stat-ing its files.
+        group_size = 0
         for path, _ in sorted(counts.items(), key=lambda x: -x[1]):
-            if sum(p.size for p in grouped_paths[-1]) + path.size > max_size_bytes:
+            path_size = path.size
+            if group_size + path_size > max_size_bytes:
                 grouped_paths.append([path])
+                group_size = path_size
             else:
                 grouped_paths[-1].append(path)
+                group_size += path_size
 
         # decrease counts, remove paths with 0 count.
         counts = {path: new_count for path, count in counts.items() if (new_count := count - 1) > 0}
